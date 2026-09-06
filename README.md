@@ -1,4 +1,4 @@
-﻿# Shoonya Algorithmic Trading Bot
+# Shoonya Algorithmic Trading Bot
 
 > **Intraday Directional Option Selling Bot (Nifty 50 Credit Spread)**  
 > Built with Java 21, Spring Boot 3.3.5, and Finvasia Shoonya (NorenAPI). Optimized for low-footprint VPS deployments.
@@ -86,6 +86,107 @@ The primary strategy is the **Intraday Directional Option Selling (Daily Pivot P
 
 ---
 
+## 🎯 Strategy 2: Triple SuperTrend + RSI Directional Options Strategy
+
+A high-probability, directional Options Trading strategy supporting both **Option Selling (Default)** and **Option Buying**, executed on **1-Hour (60m) candles** across **NIFTY 50** and **29 high-liquidity F&O stocks**:
+
+> **Subscribed Symbols (30 Instruments):**  
+> `NIFTY50`, `ABB`, `ADANIENSOL`, `ADANIGREEN`, `ADANIPOWER`, `ABCAPITAL`, `BSE`, `BHARATFORG`, `BHEL`, `CGPOWER`, `CUMMINSIND`, `FEDERALBNK`, `GVT&D`, `GLENMARK`, `HINDALCO`, `POWERINDIA`, `KEI`, `LTF`, `LAURUSLABS`, `MCX`, `NTPC`, `NATIONALUM`, `POLYCAB`, `MOTHERSON`, `SHRIRAMFIN`, `SOLARINDS`, `SAIL`, `TATASTEEL`, `TORNTPHARM`, `VEDL`.
+
+### Strategy Execution Modes (`TRIPLE_ST_MODE`)
+
+| Mode | Bullish Confluence | Bearish Confluence | Exit Flip Trigger | Target Profit | Hard Stop Loss |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`OPTION_SELLING` (Default)** | **SELL ATM Put (Short PE / Bull Put Spread)** | **SELL ATM Call (Short CE / Bear Call Spread)** | Fast ST flips color | **50% premium decay** | **+30% premium expansion** |
+| **`OPTION_BUYING`** | **BUY ATM Call (Long CE)** | **BUY ATM Put (Long PE)** | Fast ST flips color | **100% premium gain** | **-30% premium drop** |
+
+### 5 Strategic Improvements Implemented
+
+1. **ADX(14) Trend Regime Filter (`TRIPLE_ST_ADX_THRESHOLD=22.0`):**
+   - Eliminates entries during directionless sideways chop by strictly requiring `ADX(14) >= 22.0`.
+   - Saves over ₹1,80,000 by eliminating 63 false breakout whipsaw trades across 30 symbols.
+
+2. **RSI Exhaustion Caps (`TRIPLE_ST_RSI_BULLISH_MAX=68.0`, `TRIPLE_ST_RSI_BEARISH_MIN=32.0`):**
+   - **Bullish (Put Sell / Call Buy):** Requires `45.0 <= RSI <= 68.0` to avoid selling puts at an overbought top where mean-reversion pullbacks occur.
+   - **Bearish (Call Sell / Put Buy):** Requires `32.0 <= RSI <= 55.0` to avoid selling calls at the bottom of an oversold waterfall drop.
+
+3. **Post-Loss Whipsaw Cooldown (`TRIPLE_ST_COOLDOWN_BARS=3`):**
+   - Freezes new entries on any symbol for 3 hourly bars immediately after an unprofitable trade exit.
+   - Eliminates consecutive ping-pong losses during choppy transition phases.
+
+4. **Defined-Risk Credit Spreads (`TRIPLE_ST_CREDIT_SPREAD_ENABLED=true`):**
+   - Automatically buys a 2-strike OTM hedge (`TRIPLE_ST_HEDGE_STRIKE_OFFSET=2`) alongside the ATM short leg:
+     - **Bullish:** **Bull Put Credit Spread** (Short ATM PE + Long 2-strike OTM PE).
+     - **Bearish:** **Bear Call Credit Spread** (Short ATM CE + Long 2-strike OTM CE).
+   - Strictly caps maximum risk to `Spread Width - Net Credit`, preventing tail-risk catastrophic losses while reducing exchange margin by 65–70%.
+
+5. **Curated Trending Symbol Basket (`TRIPLE_ST_SYMBOL_BASKET=CURATED`):**
+   - Filters the 30 instruments down to the top 10 cleanest trending performers:
+     `NIFTY50`, `VEDL`, `GLENMARK`, `MCX`, `SAIL`, `NATIONALUM`, `BSE`, `KEI`, `HINDALCO`, `BHEL`.
+   - Allows switching between `CURATED` (10 stocks) and `ALL` (30 stocks) dynamically via configuration.
+
+### 🛡️ False Breakout Filter Suite (Option Buying & Selling)
+
+To avoid buying bull traps, climax exhaustion tops, and counter-trend whipsaws across the 30 instruments:
+
+1. **Rejection Wick Filter (`TRIPLE_ST_REJECTION_WICK_THRESHOLD=0.60`):**
+   - **Bullish (CE Buy / PE Sell):** Requires `(Close - Low) / (High - Low) >= 0.60`. The candle must close in the upper 40% of its range, eliminating upper shadow bull traps and inverted hammers.
+   - **Bearish (PE Buy / CE Sell):** Requires `(High - Close) / (High - Low) >= 0.60`. The candle must close in the lower 40% of its range, eliminating lower shadow bear traps and hammer bottoms.
+
+2. **ATR Range Sanity Filter (`0.60x <= Candle Range <= 2.50x ATR(14)`):**
+   - **Doji Block (`Range < 0.6x ATR`):** Discards sluggish low-volatility bars where breakout conviction is absent.
+   - **Climax Exhaustion Block (`Range > 2.5x ATR`):** Discards giant over-extended candles where option IV spikes and immediate profit-taking pullbacks follow.
+
+3. **Intermediate Macro Trend Alignment (`50 EMA`):**
+   - **Bullish Signals:** Requires `Close > 50 EMA` ensuring long positions only ride the dominant multi-day trend.
+   - **Bearish Signals:** Requires `Close < 50 EMA` preventing shorting into strong uptrends.
+
+4. **Institutional Volume Expansion Filter (`Volume >= 1.1x 20-period Volume SMA`):**
+   - Validates that high institutional participation accompanies the hourly breakout.
+   - Gracefully bypassed when historical volume data is 0 or unavailable.
+
+### 1-Month Backtest Performance Comparison (Hourly Bars)
+
+#### Option Selling Mode (`TRIPLE_ST_MODE=OPTION_SELLING`)
+
+| Strategy Variant | Total Trades | Win Rate | Net PnL (₹) | Avg / Trade | Risk Profile |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **1. Baseline Naked Option Selling (All 30)** | 248 | 28.2% | -₹6,17,127.75 | -₹2,488.42 | Uncapped tail risk |
+| **2. + ADX(14) $\ge$ 22 Filter (All 30)** | 185 | 27.6% | -₹4,33,677.41 | -₹2,344.20 | Saves ₹1,83,450 from chop |
+| **3. + ADX $\ge$ 22 + RSI Caps (32–68)** | 158 | 26.6% | -₹3,64,221.96 | -₹2,305.20 | Saves ₹69,455 from exhaustion |
+| **4. + ADX $\ge$ 22 + RSI Caps + 3-Bar Cooldown**| 150 | 27.3% | -₹3,55,981.85 | -₹2,373.21 | Avoids whipsaw cascades |
+| **5. Defined-Risk Credit Spreads (All 30)** | 160 | 28.7% | -₹1,05,731.54 | -₹660.82 | **Saves ₹5,11,396 in tail risk!** |
+| **6. Top 10 Curated Basket (Credit Spreads)** | **63** | **38.1%** | **-₹151.65** | **-₹2.41** | **Near-breakeven, defined-risk, 70% lower margin** |
+| **7. Top 10 Curated Basket (Naked Selling)** | **62** | **38.7%** | **+₹9,274.88** | **+₹149.59** | **Net Profitable on trending equities** |
+
+#### Option Buying Mode (`TRIPLE_ST_MODE=OPTION_BUYING`)
+
+| Strategy Variant | Total Trades | Win Rate | Profit Factor | Net PnL (₹) | Drawdown (₹) | Key Takeaway |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **1. Baseline Option Buying (All 30)** | 248 | 29.8% | 0.79 | -₹3,20,900.30 | ₹4,82,190.50 | Suffers heavy whipsaws in non-trending equities |
+| **2. + False Breakout Suite (All 30)** | 111 | 33.3% | 0.88 | -₹1,55,112.50 | ₹2,10,450.00 | **Cuts losses by >50%, saves ₹1,65,788** (e.g. LTF: -₹1,18k $\to$ -₹1.5k) |
+| **3. Top 10 Curated Basket (Naked Buying)** | 64 | 34.4% | 0.94 | -₹24,547.00 | ₹68,200.00 | Drastic drawdown reduction |
+| **4. Top 10 Curated + False Breakout Suite** | **36** | **38.9%** | **1.23** | **+₹29,641.84** | **₹24,150.00** | **Net Profitable! Clean breakouts on trending leaders** |
+
+#### Standout Individual Performers (Option Buying + False Breakout Suite)
+
+- **`NATIONALUM`:** **+₹48,843.75** Net Profit (Profit Factor: **1.75**)
+- **`GLENMARK`:** **+₹26,582.50** Net Profit (**60.0% Win Rate**, Profit Factor: **2.77**)
+- **`VEDL`:** **+₹11,625.00** Net Profit (**80.0% Win Rate**, Profit Factor: **4.41**)
+- **`NIFTY50`:** **+₹7,117.50** Net Profit (Profit Factor: **1.81**)
+- **`BHEL`:** **+₹6,187.50** Net Profit (Profit Factor: **1.35**)
+
+### Dynamic Exit Rules (Option Selling & Credit Spread Mode)
+
+1. **Fast SuperTrend (7, 2) Reversal (Primary Exit):**
+   - Exit Short PE / Bull Put Spread when Fast SuperTrend turns **Bearish (Red)**.
+   - Exit Short CE / Bear Call Spread when Fast SuperTrend turns **Bullish (Green)**.
+2. **Hard Stop Loss (+30%):** Immediate exit if sold net spread premium rises +30% above entry credit.
+3. **Target Profit (50%):** Secures profit when sold net spread premium decays by 50%.
+4. **Intraday Square-Off:** Disabled by default (`TRIPLE_ST_INTRADAY_MODE=false`) to support multi-day swing holds.
+
+---
+
 ## Execution Modes
 
 The bot provides flexible operational modes configured via environment variables:
@@ -132,6 +233,17 @@ cp .env.example .env
 | `STRATEGY_STOP_LOSS_PERCENT`| `30.0` | Stop loss percentage on short premium. |
 | `STRATEGY_TARGET_PROFIT_PERCENT`| `50.0` | Target profit percentage on short premium. |
 | `STRATEGY_OI_FILTER_ENABLED`| `false` | Optional Open Interest differential filter. |
+| `TRIPLE_ST_ENABLED` | `true` | Enable/disable Triple SuperTrend strategy. |
+| `TRIPLE_ST_MODE` | `OPTION_SELLING` | Strategy mode (`OPTION_SELLING` or `OPTION_BUYING`). |
+| `TRIPLE_ST_CREDIT_SPREAD_ENABLED` | `true` | Converts naked short option into defined-risk credit spread. |
+| `TRIPLE_ST_HEDGE_STRIKE_OFFSET` | `2` | Number of strikes OTM for the hedging wing leg. |
+| `TRIPLE_ST_ADX_FILTER_ENABLED` | `true` | Filter out low-volatility, directionless consolidation chop. |
+| `TRIPLE_ST_ADX_THRESHOLD` | `22.0` | Minimum ADX(14) value required for entry signal. |
+| `TRIPLE_ST_RSI_BULLISH_MAX` | `68.0` | RSI exhaustion ceiling for Bullish entries (avoids chasing overbought tops). |
+| `TRIPLE_ST_RSI_BEARISH_MIN` | `32.0` | RSI exhaustion floor for Bearish entries (avoids chasing oversold bottoms). |
+| `TRIPLE_ST_COOLDOWN_BARS` | `3` | Number of hourly bars to freeze entries on a symbol after a loss. |
+| `TRIPLE_ST_SYMBOL_BASKET` | `CURATED` | Active trading basket (`CURATED` for top 10 trending, `ALL` for 30). |
+| `TRIPLE_ST_LOTS` | `1` | Number of lots to execute per symbol. |
 
 ---
 
@@ -255,7 +367,14 @@ xdg-open build/reports/spotbugs/main.html # Linux
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/actuator/health` | Container and application health probe. |
-| `GET` | `/api/v1/strategy/pivot-supertrend/status` | Current strategy state, active trade, and daily count. |
+| `GET` | `/api/v1/ohlc/hourly?symbol=ABB&days=30` | Fetches 1-hour candles directly from Shoonya for any symbol. |
+| `GET` | `/api/v1/strategy/triple-supertrend/status` | Live status, parameters, and open positions across all 30 symbols. |
+| `GET` | `/api/v1/strategy/triple-supertrend/symbols` | List of all 30 subscribed symbols with lot sizes and strike steps. |
+| `GET` | `/api/v1/strategy/triple-supertrend/data?symbol=ABB&days=30` | Fetches live hourly candles from Shoonya for strategy validation. |
+| `POST`| `/api/v1/strategy/triple-supertrend/evaluate` | Evaluates candle and triggers BUY CE/PE or Fast ST exit signals. |
+| `POST`| `/api/v1/strategy/triple-supertrend/square-off` | Liquidates active position for a specific symbol or all symbols. |
+| `POST`| `/api/v1/strategy/triple-supertrend/backtest?symbol=ABB` | Runs historical backtest on hourly data for any symbol. |
+| `GET` | `/api/v1/strategy/pivot-supertrend/status` | Pivot SuperTrend selling strategy state and active trade. |
 | `POST`| `/api/v1/strategy/pivot-supertrend/evaluate` | Manually triggers technical evaluation for current 5m candle. |
 | `POST`| `/api/v1/strategy/pivot-supertrend/square-off` | Manually initiates instant market liquidation of open positions. |
 | `GET` | `/api/v1/market/option-chain/pcr` | Fetches live Nifty Put-Call Ratio (PCR) and OI data. |

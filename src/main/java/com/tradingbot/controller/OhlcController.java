@@ -92,6 +92,19 @@ public class OhlcController {
         return ResponseEntity.ok(OhlcResponse.of(symbol, exchange, token, interval, candles));
     }
 
+    /**
+     * Fetch hourly (60m) OHLC records for any symbol (NIFTY 50 or 29 F&O stocks) directly from
+     * Shoonya. Example: GET /api/v1/ohlc/hourly?symbol=ABB&days=30
+     */
+    @GetMapping("/hourly")
+    public ResponseEntity<OhlcResponse> getHourlyOhlc(
+            @RequestParam(defaultValue = "NIFTY50") String symbol,
+            @RequestParam(defaultValue = "30") int days) {
+        String token = marketDataService.resolveToken(symbol);
+        List<Candle> candles = marketDataService.fetchHourlyCandles(symbol, days);
+        return ResponseEntity.ok(OhlcResponse.of(symbol, "NSE", token, "1h", candles));
+    }
+
     /** Health check endpoint. */
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {

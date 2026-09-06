@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.model.Candle;
+import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -61,6 +62,127 @@ public class ShoonyaMarketDataService {
         this.authenticator = authenticator;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
+    }
+
+    /**
+     * Fetches historical candles for the specified number of days back from now.
+     *
+     * @param exchange Exchange code (e.g. "NSE", "NFO")
+     * @param token Instrument token (e.g. "2885" for RELIANCE)
+     * @param symbol Canonical display symbol (e.g. "NSE:RELIANCE")
+     * @param timeframe Timeframe in minutes (e.g. "1", "5", "15")
+     * @param daysBack Number of calendar days back to fetch
+     * @return Chronological list of Candle instances
+     */
+    /**
+     * Fetches hourly (60-minute) candles for any symbol (NIFTY 50 or any of the 29 supported F&O
+     * equities). Automatically resolves the exchange and instrument token via StockFnoRegistry /
+     * Shoonya SearchScrip.
+     *
+     * @param symbol Canonical symbol (e.g. "NIFTY50", "ABB", "TATASTEEL")
+     * @param daysBack Number of calendar days back to fetch
+     * @return Chronological list of 1-hour Candle instances
+     */
+    public List<Candle> fetchHourlyCandles(String symbol, int daysBack) {
+        String token = resolveToken(symbol);
+        int boundedDays = Math.max(1, Math.min(daysBack, 95));
+        log.info(
+                "[HOURLY-DATA] Fetching {} days of 1-hour candles for {} (token: {})",
+                boundedDays,
+                symbol,
+                token);
+        return fetchHistoricalCandles("NSE", token, symbol, "60", boundedDays);
+    }
+
+    /**
+     * Fetches daily (EOD) candles for a symbol.
+     *
+     * @param symbol Canonical symbol (e.g. "NIFTY50", "ABB")
+     * @param daysBack Number of calendar days back to fetch (e.g. 365 for 1 year)
+     * @return Chronological list of Daily Candle instances
+     */
+    public List<Candle> fetchDailyCandles(String symbol, int daysBack) {
+        String token = resolveToken(symbol);
+        int boundedDays = Math.max(1, Math.min(daysBack, 400));
+        log.info(
+                "[DAILY-DATA] Fetching {} days of daily candles for {} (token: {})",
+                boundedDays,
+                symbol,
+                token);
+        return fetchHistoricalCandles("NSE", token, symbol, "D", boundedDays);
+    }
+
+    /** Resolves the instrument token for a symbol using StockFnoRegistry or Shoonya SearchScrip. */
+    public String resolveToken(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return "10576";
+        }
+        String clean = symbol.toUpperCase().trim();
+        if (clean.startsWith("NSE:")) clean = clean.substring(4);
+        if ("NIFTY".equalsIgnoreCase(clean)) clean = "NIFTY50";
+
+        String registeredToken = StockFnoRegistry.getToken(clean);
+        if (registeredToken != null && !registeredToken.isBlank()) {
+            return registeredToken;
+        }
+
+        // Fallback: Query SearchScrip API from Shoonya
+        try {
+            JsonNode searchRes = searchScrip("NSE", clean);
+            if (searchRes != null && searchRes.isArray() && !searchRes.isEmpty()) {
+                for (JsonNode item : searchRes) {
+                    String tsym = item.path("tsym").asText("");
+                    if (tsym.equalsIgnoreCase(clean + "-EQ") || tsym.equalsIgnoreCase(clean)) {
+                        return item.path("token").asText("");
+                    }
+                }
+                return searchRes.get(0).path("token").asText("");
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[HOURLY-DATA] Failed to resolve token via SearchScrip for {}: {}",
+                    clean,
+                    e.getMessage());
+        }
+
+        return "10576";
+    }
+
+    /** Searches for scrips on Shoonya using the SearchScrip API. */
+    public JsonNode searchScrip(String exchange, String searchText) {
+        if (!config.isEnabled()) {
+            return null;
+        }
+        try {
+            String sessionToken = authenticator.getOrAuthenticateToken();
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("uid", config.getUserId());
+            payload.put("exch", exchange != null ? exchange : "NSE");
+            payload.put("stext", searchText);
+
+            String jDataStr = objectMapper.writeValueAsString(payload);
+            String formBody = "jData=" + jDataStr + "&jKey=" + sessionToken;
+
+            HttpRequest request =
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/SearchScrip"))
+                            .header("Content-Type", "application/x-www-form-urlencoded")
+                            .header("X-Forwarded-For", config.resolvePublicIp())
+                            .POST(
+                                    HttpRequest.BodyPublishers.ofString(
+                                            formBody, StandardCharsets.UTF_8))
+                            .build();
+
+            HttpResponse<String> response =
+                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            JsonNode root = objectMapper.readTree(response.body());
+            if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
+                return root.path("values");
+            }
+        } catch (Exception e) {
+            log.warn("[SEARCH-SCRIP] Error searching for scrip {}: {}", searchText, e.getMessage());
+        }
+        return null;
     }
 
     /**

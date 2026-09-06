@@ -276,4 +276,105 @@ public class TechnicalAnalysisService {
 
         return vwap;
     }
+
+    /** Calculates Average Directional Index (ADX) using TA-Lib across all bars. */
+    public double[] calculateAdxSeries(double[] high, double[] low, double[] close, int period) {
+        int len = close != null ? close.length : 0;
+        double[] result = new double[len];
+        Arrays.fill(result, Double.NaN);
+
+        if (high == null || low == null || close == null || len < (period * 2) || period <= 0) {
+            return result;
+        }
+
+        int validLen = Math.min(len, Math.min(high.length, low.length));
+        MInteger outBegIdx = new MInteger();
+        MInteger outNBElement = new MInteger();
+        double[] output = new double[validLen];
+
+        RetCode retCode =
+                TA_LIB.adx(
+                        0, validLen - 1, high, low, close, period, outBegIdx, outNBElement, output);
+        if (retCode == RetCode.Success && outNBElement.value > 0) {
+            int start = outBegIdx.value;
+            for (int i = 0; i < outNBElement.value; i++) {
+                result[start + i] = output[i];
+            }
+        }
+        return result;
+    }
+
+    /** Calculates Average Directional Index (ADX) for the latest bar. */
+    public double calculateLatestAdx(double[] high, double[] low, double[] close, int period) {
+        double[] series = calculateAdxSeries(high, low, close, period);
+        for (int i = series.length - 1; i >= 0; i--) {
+            if (!Double.isNaN(series[i])) {
+                return series[i];
+            }
+        }
+        return Double.NaN;
+    }
+
+    /** Calculates Exponential Moving Average (EMA) using TA-Lib across all bars. */
+    public double[] calculateEmaSeries(double[] close, int period) {
+        int len = close != null ? close.length : 0;
+        double[] result = new double[len];
+        Arrays.fill(result, Double.NaN);
+
+        if (close == null || len < period || period <= 0) {
+            return result;
+        }
+
+        MInteger outBegIdx = new MInteger();
+        MInteger outNBElement = new MInteger();
+        double[] output = new double[len];
+
+        RetCode retCode = TA_LIB.ema(0, len - 1, close, period, outBegIdx, outNBElement, output);
+        if (retCode == RetCode.Success && outNBElement.value > 0) {
+            int start = outBegIdx.value;
+            for (int i = 0; i < outNBElement.value; i++) {
+                result[start + i] = output[i];
+            }
+        }
+        return result;
+    }
+
+    /** Calculates Average True Range (ATR) using TA-Lib across all bars. */
+    public double[] calculateAtrSeries(double[] high, double[] low, double[] close, int period) {
+        int len = close != null ? close.length : 0;
+        double[] result = new double[len];
+        Arrays.fill(result, Double.NaN);
+
+        if (high == null || low == null || close == null || len < period + 1 || period <= 0) {
+            return result;
+        }
+
+        int validLen = Math.min(len, Math.min(high.length, low.length));
+        MInteger outBegIdx = new MInteger();
+        MInteger outNBElement = new MInteger();
+        double[] output = new double[validLen];
+
+        RetCode retCode =
+                TA_LIB.atr(
+                        0, validLen - 1, high, low, close, period, outBegIdx, outNBElement, output);
+        if (retCode == RetCode.Success && outNBElement.value > 0) {
+            int start = outBegIdx.value;
+            for (int i = 0; i < outNBElement.value; i++) {
+                result[start + i] = output[i];
+            }
+        }
+        return result;
+    }
+
+    /** Calculates simple moving average of long volume array. */
+    public double calculateLatestVolumeSma(long[] values, int period) {
+        if (values == null || values.length < period || period <= 0) {
+            return 0.0;
+        }
+        long sum = 0;
+        for (int i = values.length - period; i < values.length; i++) {
+            sum += values[i];
+        }
+        return (double) sum / period;
+    }
 }

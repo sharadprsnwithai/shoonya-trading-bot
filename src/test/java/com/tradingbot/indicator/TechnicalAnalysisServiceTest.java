@@ -102,4 +102,25 @@ class TechnicalAnalysisServiceTest {
         assertThat(response.latest()).isNotNull();
         assertThat(response.latest().vwap()).isNotNull();
     }
+
+    @Test
+    void testAdxCalculation() {
+        int len = 40;
+        double[] high = new double[len];
+        double[] low = new double[len];
+        double[] close = new double[len];
+
+        for (int i = 0; i < len; i++) {
+            high[i] = 100.0 + (i * 3.0) + 1.0;
+            low[i] = 100.0 + (i * 3.0) - 1.0;
+            close[i] = 100.0 + (i * 3.0);
+        }
+
+        double[] adxSeries = taService.calculateAdxSeries(high, low, close, 14);
+        assertThat(adxSeries).hasSize(len);
+
+        double latestAdx = taService.calculateLatestAdx(high, low, close, 14);
+        assertThat(Double.isNaN(latestAdx)).isFalse();
+        assertThat(latestAdx).isGreaterThan(20.0); // Strong trending series
+    }
 }

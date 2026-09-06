@@ -263,6 +263,68 @@ public class TelegramService {
         sendAsync(message);
     }
 
+    /**
+     * Sends an exit alert for an Option Buying position where: Est. PnL Points = Exit Premium -
+     * Entry Premium.
+     */
+    public void sendOptionBuyingExitAlert(
+            String strategyName,
+            String underlying,
+            String exitAction,
+            BigDecimal underlyingExitPrice,
+            BigDecimal strikePrice,
+            String optionType,
+            BigDecimal entryPremium,
+            BigDecimal exitPremium,
+            String exitReason,
+            Instant timestamp) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            log.debug(
+                    "[TELEGRAM] Option Buying Exit alert skipped (Telegram disabled or credentials empty)");
+            return;
+        }
+
+        // For Option Buying: PnL Points = Exit Premium - Entry Premium
+        BigDecimal premiumDiff =
+                (entryPremium != null && exitPremium != null)
+                        ? exitPremium.subtract(entryPremium).setScale(2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+        String pnlEmoji = premiumDiff.signum() >= 0 ? "🟢" : "🔴";
+        String pnlSign = premiumDiff.signum() >= 0 ? "+" : "";
+
+        String message =
+                String.format(
+                        "🏁 *[OPTION BUYING EXIT ALERT]* 🏁\n"
+                                + "📈 *Strategy:* %s\n"
+                                + "🎯 *Underlying:* %s\n"
+                                + "👉 *Action:* %s\n\n"
+                                + "📊 *Exit Details:*\n"
+                                + "   • *Strike:* %.0f %s\n"
+                                + "   • *Underlying Exit Price:* ₹%.2f\n"
+                                + "   • *Option Entry Premium:* ₹%.2f\n"
+                                + "   • *Option Exit Premium:* ₹%.2f\n"
+                                + "   • %s *Realized P&L:* *%s₹%.2f* / share\n\n"
+                                + "ℹ️ *Exit Reason:* %s\n"
+                                + "⏰ *Exit Time:* %s IST",
+                        strategyName != null ? strategyName : "Option Buying Strategy",
+                        underlying != null ? underlying : "NIFTY 50",
+                        exitAction,
+                        strikePrice != null ? strikePrice : BigDecimal.ZERO,
+                        optionType != null ? optionType : "",
+                        underlyingExitPrice != null ? underlyingExitPrice : BigDecimal.ZERO,
+                        entryPremium != null ? entryPremium : BigDecimal.ZERO,
+                        exitPremium != null ? exitPremium : BigDecimal.ZERO,
+                        pnlEmoji,
+                        pnlSign,
+                        premiumDiff,
+                        exitReason != null ? exitReason : "Fast SuperTrend Reversal",
+                        TIME_FMT.format(timestamp != null ? timestamp : Instant.now()));
+
+        sendAsync(message);
+    }
+
     private String formatKey(String key) {
         if ("r1".equalsIgnoreCase(key)) return "Pivot R1 Level";
         if ("s1".equalsIgnoreCase(key)) return "Pivot S1 Level";
