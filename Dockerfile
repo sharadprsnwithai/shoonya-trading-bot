@@ -41,6 +41,7 @@ EXPOSE 8080
 # Environment and JVM settings for VPS
 ENV JAVA_OPTS="-XX:+UseSerialGC -Xms256m -Xmx384m -XX:+ExitOnOutOfMemoryError -Duser.timezone=Asia/Kolkata -Djava.security.egd=file:/dev/./urandom"
 ENV SERVER_PORT=8080
+ENV LOGGING_FILE_NAME=/app/logs/shoonya-trading-bot.log
 
 VOLUME ["/app/data", "/app/logs"]
 
