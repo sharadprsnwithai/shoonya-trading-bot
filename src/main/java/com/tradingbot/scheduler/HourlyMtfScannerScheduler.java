@@ -65,26 +65,31 @@ public class HourlyMtfScannerScheduler {
     }
 
     /**
-     * Executes the multi-timeframe scan across NIFTY 200 and sends the Telegram report. Can be
-     * invoked programmatically on-demand or by the scheduled cron.
+     * Executes the multi-timeframe scan across NIFTY 200 (both Gainers and Losers) and sends the
+     * Telegram report. Can be invoked programmatically on-demand or by the scheduled cron.
      */
     public List<MtfTrendStatus> runScanAndNotify() {
         log.info(
-                "[HOURLY-MTF-SCHEDULER] Starting hourly Multi-Timeframe Uptrend scan across NIFTY 200...");
+                "[HOURLY-MTF-SCHEDULER] Starting hourly Multi-Timeframe scan across NIFTY 200 (Gainers & Losers)...");
         long start = System.currentTimeMillis();
 
         List<MtfTrendStatus> allScanned = scannerService.scanAllNifty200();
-        List<MtfTrendStatus> confluence = scannerService.getConfluenceUptrendStocks(allScanned);
+        List<MtfTrendStatus> uptrend = scannerService.getConfluenceUptrendStocks(allScanned);
+        List<MtfTrendStatus> downtrend = scannerService.getConfluenceDowntrendStocks(allScanned);
 
         long elapsed = System.currentTimeMillis() - start;
         log.info(
-                "[HOURLY-MTF-SCHEDULER] Scan completed in {} ms. Found {} / {} stocks in full 3-timeframe uptrend confluence.",
+                "[HOURLY-MTF-SCHEDULER] Scan completed in {} ms. Found {} Gainers (Uptrend) & {} Losers (Downtrend) / {} total scanned.",
                 elapsed,
-                confluence.size(),
+                uptrend.size(),
+                downtrend.size(),
                 allScanned.size());
 
-        scannerService.sendTelegramReport(confluence, allScanned.size());
-        return confluence;
+        scannerService.sendTelegramReport(uptrend, downtrend, allScanned.size());
+
+        List<MtfTrendStatus> combined = new java.util.ArrayList<>(uptrend);
+        combined.addAll(downtrend);
+        return combined;
     }
 
     public boolean isEnabled() {

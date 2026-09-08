@@ -3,6 +3,10 @@ package com.tradingbot.telegram;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.model.execution.ActiveSpreadPosition;
 import com.tradingbot.model.execution.ExecutionMode;
+import com.tradingbot.model.strategy.LowestVolumeDirection;
+import com.tradingbot.model.strategy.LowestVolumePaperPosition;
+import com.tradingbot.model.strategy.LowestVolumeSetup;
+import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
@@ -15,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -368,6 +373,306 @@ public class TelegramService {
 
         sendAsync(message);
         return true;
+    }
+
+    /** Sends an alert when a Lowest Volume Reversal setup passes all filters and entry is ARMED. */
+    public void sendLvrSetupArmedAlert(LowestVolumeSetup setup, int potentialQty, BigDecimal rpt) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String dirEmoji =
+                setup.getDirection() == LowestVolumeDirection.LONG
+                        ? "🟢 [LONG SETUP ARMED]"
+                        : "🔴 [SHORT SETUP ARMED]";
+        String triggerLabel =
+                setup.getDirection() == LowestVolumeDirection.LONG
+                        ? "Breakout Above High"
+                        : "Breakdown Below Low";
+
+        String message =
+                String.format(
+                        "🎯 *%s* 🎯\n"
+                                + "📈 *Strategy:* Lowest Volume Reversal (5m)\n"
+                                + "🏷️ *Symbol:* `%s` (NSE Cash MIS)\n"
+                                + "⚡ *Trigger Condition:* %s\n\n"
+                                + "📊 *Setup Levels:*\n"
+                                + "   • *Trigger Entry Price:* ₹%.2f\n"
+                                + "   • *Stop-Loss (SL):* ₹%.2f (Low - 1 tick)\n"
+                                + "   • *Target 1 (1:2 RR):* ₹%.2f\n"
+                                + "   • *Trigger Candle Vol:* %,d (Lowest in 10-bar window)\n"
+                                + "   • *5m ATR(14):* ₹%.2f\n\n"
+                                + "💼 *Position Sizing (1%% Risk):*\n"
+                                + "   • *Calculated Qty:* %d shares\n"
+                                + "   • *Risk at Stake:* ₹%.2f\n"
+                                + "⏳ *Timeout:* Order expires if not filled within 12 bars (60 min)\n"
+                                + "⏰ *Time:* %s IST",
+                        dirEmoji,
+                        setup.getSymbol(),
+                        triggerLabel,
+                        setup.getTriggerPrice(),
+                        setup.getStopLossPrice(),
+                        setup.getTarget1Price(),
+                        setup.getTriggerCandleVolume(),
+                        setup.getAtr14(),
+                        potentialQty,
+                        rpt != null ? rpt : BigDecimal.valueOf(1000),
+                        TIME_FMT.format(Instant.now()));
+
+        sendAsync(message);
+    }
+
+    /** Sends an alert when a Paper Trade Entry is filled for Lowest Volume Reversal. */
+    public void sendLvrTradeEntryAlert(LowestVolumePaperPosition pos, LowestVolumeSetup setup) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String dirEmoji =
+                pos.getDirection() == LowestVolumeDirection.LONG
+                        ? "🚀 *[PAPER TRADE: LONG ENTRY]* 🚀"
+                        : "🔻 *[PAPER TRADE: SHORT ENTRY]* 🔻";
+
+        String message =
+                String.format(
+                        "%s\n"
+                                + "📈 *Strategy:* Lowest Volume Reversal & Continuation\n"
+                                + "🏷️ *Trade ID:* `%s`\n"
+                                + "📌 *Symbol:* `%s` (Cash Intraday)\n"
+                                + "👉 *Direction:* %s\n\n"
+                                + "📊 *Fill Details:*\n"
+                                + "   • *Entry Price:* ₹%.2f\n"
+                                + "   • *Quantity:* %d shares\n"
+                                + "   • *Stop-Loss (SL):* ₹%.2f\n"
+                                + "   • *Target 1 (1:2 RR):* ₹%.2f\n"
+                                + "   • *Risk Allocated:* ₹%.2f\n\n"
+                                + "🛡️ *Trade Management:*\n"
+                                + "   • At Target 1: Book 50%% profit & Move SL to Breakeven\n"
+                                + "   • Runner 50%%: Trailed via 5m SuperTrend(10, 3)\n"
+                                + "⏰ *Entry Time:* %s IST",
+                        dirEmoji,
+                        pos.getTradeId(),
+                        pos.getSymbol(),
+                        pos.getDirection(),
+                        pos.getEntryPrice(),
+                        pos.getTotalQuantity(),
+                        pos.getInitialSl(),
+                        pos.getTarget1Price(),
+                        pos.getPlannedRisk(),
+                        TIME_FMT.format(pos.getEntryTime()));
+
+        sendAsync(message);
+    }
+
+    /** Sends an alert when Target 1 (1:2 RR) is hit: 50% booked and SL moved to Breakeven. */
+    public void sendLvrPartialBookAlert(LowestVolumePaperPosition pos, BigDecimal partialPnl) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        int bookedQty = (pos.getTotalQuantity() + 1) / 2;
+
+        String message =
+                String.format(
+                        "💰 *[TARGET 1 HIT: 50%% PROFIT BOOKED]* 💰\n"
+                                + "📈 *Strategy:* Lowest Volume Reversal (1:2 RR Achieved)\n"
+                                + "🏷️ *Trade ID:* `%s`\n"
+                                + "📌 *Symbol:* `%s` (%s)\n\n"
+                                + "📊 *Booking Execution:*\n"
+                                + "   • *Target 1 Price:* ₹%.2f\n"
+                                + "   • *Shares Booked:* %d shares (50%%)\n"
+                                + "   • 🟢 *Partial Realized P&L:* *+₹%.2f*\n\n"
+                                + "🛡️ *Risk Free Mode Activated:*\n"
+                                + "   • *Remaining Runner:* %d shares\n"
+                                + "   • *New Stop-Loss:* ₹%.2f (Moved to Breakeven / Cost)\n"
+                                + "   • *Trailing Engine:* 5m SuperTrend(10, 3)\n"
+                                + "⏰ *Time:* %s IST",
+                        pos.getTradeId(),
+                        pos.getSymbol(),
+                        pos.getDirection(),
+                        pos.getPartialExitPrice(),
+                        bookedQty,
+                        partialPnl,
+                        pos.getRemainingQuantity(),
+                        pos.getCurrentSl(),
+                        TIME_FMT.format(
+                                pos.getPartialExitTime() != null
+                                        ? pos.getPartialExitTime()
+                                        : Instant.now()));
+
+        sendAsync(message);
+    }
+
+    /**
+     * Sends an alert when a position is fully exited (SL hit, SuperTrend flip, or 15:00 Hard Exit).
+     */
+    public void sendLvrTradeExitAlert(LowestVolumePaperPosition pos, String reason) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String pnlEmoji =
+                (pos.getTotalRealizedPnl() != null && pos.getTotalRealizedPnl().signum() >= 0)
+                        ? "🟢"
+                        : "🔴";
+        String pnlSign =
+                (pos.getTotalRealizedPnl() != null && pos.getTotalRealizedPnl().signum() >= 0)
+                        ? "+"
+                        : "";
+
+        String message =
+                String.format(
+                        "🏁 *[PAPER TRADE CLOSED]* 🏁\n"
+                                + "📈 *Strategy:* Lowest Volume Reversal & Continuation\n"
+                                + "🏷️ *Trade ID:* `%s`\n"
+                                + "📌 *Symbol:* `%s` (%s)\n\n"
+                                + "📊 *Trade Summary:*\n"
+                                + "   • *Entry Price:* ₹%.2f (Qty: %d)\n"
+                                + "   • *Final Exit Price:* ₹%.2f\n"
+                                + "   • *Partial Booking P&L:* ₹%.2f\n"
+                                + "   • *Runner P&L:* ₹%.2f\n"
+                                + "   • %s *Total Realized P&L:* *%s₹%.2f*\n\n"
+                                + "ℹ️ *Exit Reason:* %s\n"
+                                + "⏰ *Exit Time:* %s IST",
+                        pos.getTradeId(),
+                        pos.getSymbol(),
+                        pos.getDirection(),
+                        pos.getEntryPrice(),
+                        pos.getTotalQuantity(),
+                        pos.getRunnerExitPrice() != null
+                                ? pos.getRunnerExitPrice()
+                                : pos.getEntryPrice(),
+                        pos.getPartialPnl(),
+                        pos.getRunnerPnl(),
+                        pnlEmoji,
+                        pnlSign,
+                        pos.getTotalRealizedPnl(),
+                        reason,
+                        TIME_FMT.format(
+                                pos.getExitTime() != null ? pos.getExitTime() : Instant.now()));
+
+        sendAsync(message);
+    }
+
+    /**
+     * Sends a detailed alert with all identified F&O stocks (Top Gainers & Losers) including live
+     * spot prices, % changes, day open, and market alignment.
+     */
+    public void sendLvrIdentifiedStocksAlert(
+            List<StockQuoteSnapshot> topGainers,
+            List<StockQuoteSnapshot> topLosers,
+            boolean niftyBullish,
+            int activeSetupsCount,
+            int openTradesCount) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String niftyEmoji =
+                niftyBullish
+                        ? "🟢 BULLISH (Long Trades Active)"
+                        : "🔴 BEARISH (Short Trades Active)";
+        String activeSide = niftyBullish ? "✅ Longs Eligible" : "✅ Shorts Eligible";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("📊 *[LOWEST VOLUME REVERSAL: 09:25 AM FIXED WATCHLIST]* 📊\n\n");
+        sb.append("🕒 *Scan Time:* ")
+                .append(TIME_FMT.format(Instant.now()))
+                .append(" IST (Daily Fixed List)\n");
+        sb.append("🧭 *NIFTY 50 Direction:* ").append(niftyEmoji).append("\n");
+        sb.append("📈 *Execution Status:* ").append(activeSide).append("\n");
+        sb.append(
+                "📌 *Notice:* This list is fixed for the day. Strategy will monitor this basket exclusively.\n\n");
+
+        sb.append("🟢 *TOP GAINERS (LONG CANDIDATES):*\n");
+        if (topGainers == null || topGainers.isEmpty()) {
+            sb.append("   • None meeting >= +1.0% threshold\n");
+        } else {
+            for (int i = 0; i < topGainers.size(); i++) {
+                StockQuoteSnapshot s = topGainers.get(i);
+                sb.append(
+                        String.format(
+                                "%d. *%s* ➔ Spot: *₹%.2f* (+%.2f%%) | Open: ₹%.2f\n",
+                                (i + 1), s.symbol(), s.ltp(), s.pctChange(), s.open()));
+            }
+        }
+
+        sb.append("\n🔴 *TOP LOSERS (SHORT CANDIDATES):*\n");
+        if (topLosers == null || topLosers.isEmpty()) {
+            sb.append("   • None meeting <= -1.0% threshold\n");
+        } else {
+            for (int i = 0; i < topLosers.size(); i++) {
+                StockQuoteSnapshot s = topLosers.get(i);
+                sb.append(
+                        String.format(
+                                "%d. *%s* ➔ Spot: *₹%.2f* (%.2f%%) | Open: ₹%.2f\n",
+                                (i + 1), s.symbol(), s.ltp(), s.pctChange(), s.open()));
+            }
+        }
+
+        sb.append(
+                String.format(
+                        "\n🎯 *Tracked Setups Forming:* `%d` | 💼 *Open Paper Positions:* `%d` / 2\n",
+                        activeSetupsCount, openTradesCount));
+        sb.append("🤖 *Automation:* 5-min candle polling active on this list (09:26 - 15:00 IST)");
+
+        sendAsync(sb.toString());
+    }
+
+    /**
+     * Sends an intraday scan summary report with Top Gainers/Losers and Nifty Breadth alignment.
+     */
+    public void sendLvrScanSummaryAlert(
+            List<String> topGainers,
+            List<String> topLosers,
+            boolean niftyBullish,
+            int activeSetupsCount,
+            int openTradesCount) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String niftyEmoji =
+                niftyBullish ? "🟢 BULLISH (Longs Eligible)" : "🔴 BEARISH (Shorts Eligible)";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("📊 *[LOWEST VOLUME REVERSAL: SCANNER UPDATE]* 📊\n\n");
+        sb.append("🕒 *Time:* ").append(TIME_FMT.format(Instant.now())).append(" IST\n");
+        sb.append("🧭 *NIFTY 50 Alignment:* ").append(niftyEmoji).append("\n\n");
+
+        sb.append("🟢 *Top Gainers (Long Watchlist):*\n");
+        if (topGainers == null || topGainers.isEmpty()) {
+            sb.append("   • None meeting >= +1.0% threshold\n");
+        } else {
+            sb.append("   `").append(String.join(", ", topGainers)).append("`\n");
+        }
+
+        sb.append("\n🔴 *Top Losers (Short Watchlist):*\n");
+        if (topLosers == null || topLosers.isEmpty()) {
+            sb.append("   • None meeting <= -1.0% threshold\n");
+        } else {
+            sb.append("   `").append(String.join(", ", topLosers)).append("`\n");
+        }
+
+        sb.append(
+                String.format(
+                        "\n🎯 *Active Setups Tracking:* `%d` | 💼 *Open Paper Trades:* `%d` / 2\n",
+                        activeSetupsCount, openTradesCount));
+        sb.append("🤖 *Automation:* 5-min candle polling active (09:26 - 15:00 IST)");
+
+        sendAsync(sb.toString());
     }
 
     /** Sends a raw message asynchronously to avoid blocking execution threads. */

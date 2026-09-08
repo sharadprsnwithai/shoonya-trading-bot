@@ -5,7 +5,6 @@ import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.indicator.SuperTrendResult;
 import com.tradingbot.strategy.SignalAction;
-import com.tradingbot.strategy.impl.TripleSuperTrendRsiOptionBuyingStrategy;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -31,6 +30,7 @@ public class TripleSuperTrendBacktestService {
             LoggerFactory.getLogger(TripleSuperTrendBacktestService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    public static final String STRATEGY_ID = "TRIPLE_SUPERTREND_RSI_OPTION_BUYING";
 
     private final TechnicalAnalysisService taService;
     private final ShoonyaMarketDataService marketDataService;
@@ -158,7 +158,7 @@ public class TripleSuperTrendBacktestService {
                         ? (creditSpreadEnabled
                                 ? "TRIPLE_SUPERTREND_RSI_CREDIT_SPREAD"
                                 : "TRIPLE_SUPERTREND_RSI_OPTION_SELLING")
-                        : TripleSuperTrendRsiOptionBuyingStrategy.STRATEGY_ID;
+                        : STRATEGY_ID;
 
         int minCandles = adxFilterEnabled ? 30 : 25;
         if (candles == null || candles.size() < minCandles) {
@@ -635,7 +635,7 @@ public class TripleSuperTrendBacktestService {
                                 / (24 * 3600));
 
         return new BacktestResult(
-                TripleSuperTrendRsiOptionBuyingStrategy.STRATEGY_ID,
+                STRATEGY_ID,
                 symbol,
                 (int) daysTested,
                 totalTrades,

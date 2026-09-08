@@ -61,7 +61,10 @@ public class MultiTimeframeTrendService {
                     false,
                     BigDecimal.ZERO,
                     0,
-                    false);
+                    false,
+                    false,
+                    false,
+                    BigDecimal.ZERO);
         }
 
         double currentPrice = hourlyCandles.get(hourlyCandles.size() - 1).close().doubleValue();
@@ -70,6 +73,7 @@ public class MultiTimeframeTrendService {
         // 1. Weekly Horizon (Macro Trend)
         // -------------------------------------------------------------
         boolean weeklyUptrend = false;
+        boolean weeklyBelowSuperTrend = false;
         double weeklyEma20 = Double.NaN;
         double weeklySt = Double.NaN;
 
@@ -101,12 +105,14 @@ public class MultiTimeframeTrendService {
             boolean emaOk = Double.isNaN(weeklyEma20) || currentPrice >= weeklyEma20;
             boolean stOk = latestWst != null && latestWst.isBullish();
             weeklyUptrend = emaOk && stOk;
+            weeklyBelowSuperTrend = latestWst != null && !latestWst.isBullish();
         }
 
         // -------------------------------------------------------------
         // 2. Daily Horizon (Intermediate Trend)
         // -------------------------------------------------------------
         boolean dailyUptrend = false;
+        boolean dailyBelowSuperTrend = false;
         double dailyEma50 = Double.NaN;
         double dailySt = Double.NaN;
         double dailyRsi = Double.NaN;
@@ -145,6 +151,7 @@ public class MultiTimeframeTrendService {
             boolean stOk = latestDst != null && latestDst.isBullish();
             boolean rsiOk = Double.isNaN(dailyRsi) || dailyRsi >= 48.0;
             dailyUptrend = emaOk && stOk && rsiOk;
+            dailyBelowSuperTrend = latestDst != null && !latestDst.isBullish();
         }
 
         // -------------------------------------------------------------
@@ -186,8 +193,22 @@ public class MultiTimeframeTrendService {
                         && hStSeries.length > 1
                         && !hStSeries[hSize - 2].isBullish();
 
-        // Confluence: All 3 horizons are bullish
+        // Loser (Downtrend) Criteria:
+        // Price below SuperTrend in both upper horizons (Weekly & Daily) and crossed/below
+        // SuperTrend on Hourly
+        boolean hourlyBelowSuperTrend = latestHst != null && !latestHst.isBullish();
+        boolean isFreshHourlyBearishTrigger =
+                latestHst != null
+                        && !latestHst.isBullish()
+                        && hStSeries.length > 1
+                        && hStSeries[hSize - 2].isBullish();
+
         boolean isFullConfluence = weeklyUptrend && dailyUptrend && hourlyUptrend;
+        boolean isBearishConfluence =
+                weeklyBelowSuperTrend
+                        && dailyBelowSuperTrend
+                        && (hourlyBelowSuperTrend || isFreshHourlyBearishTrigger);
+
         BigDecimal atmStrike = Nifty200Registry.calculateAtmStrike(symbol, currentPrice);
 
         return new MtfTrendStatus(
@@ -207,7 +228,10 @@ public class MultiTimeframeTrendService {
                 isFullConfluence,
                 atmStrike,
                 round2(hourlySt),
-                isFreshTrigger);
+                isFreshTrigger,
+                isBearishConfluence,
+                isFreshHourlyBearishTrigger,
+                atmStrike);
     }
 
     private double round2(double val) {

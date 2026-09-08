@@ -43,6 +43,7 @@ public class ShoonyaMarketDataService {
     private final ShoonyaAuthenticator authenticator;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final Map<String, String> tokenCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
     public ShoonyaMarketDataService(ShoonyaConfig config, ShoonyaAuthenticator authenticator) {
@@ -112,7 +113,23 @@ public class ShoonyaMarketDataService {
         return fetchHistoricalCandles("NSE", token, symbol, "D", boundedDays);
     }
 
-    /** Resolves the instrument token for a symbol using StockFnoRegistry or Shoonya SearchScrip. */
+    /**
+     * Fetches 5-minute candles for a symbol.
+     *
+     * @param symbol Canonical symbol (e.g. "RELIANCE", "TATASTEEL")
+     * @param daysBack Number of calendar days back to fetch (e.g. 2 for today and prior day)
+     * @return Chronological list of 5-minute Candle instances
+     */
+    public List<Candle> fetch5MinCandles(String symbol, int daysBack) {
+        String token = resolveToken(symbol);
+        int boundedDays = Math.max(1, Math.min(daysBack, 10));
+        return fetchHistoricalCandles("NSE", token, symbol, "5", boundedDays);
+    }
+
+    /**
+     * Resolves the instrument token for a symbol using cache, StockFnoRegistry, Nifty200Registry,
+     * or Shoonya SearchScrip.
+     */
     public String resolveToken(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return "10576";
@@ -121,9 +138,23 @@ public class ShoonyaMarketDataService {
         if (clean.startsWith("NSE:")) clean = clean.substring(4);
         if ("NIFTY".equalsIgnoreCase(clean)) clean = "NIFTY50";
 
+        if (tokenCache.containsKey(clean)) {
+            return tokenCache.get(clean);
+        }
+
         String registeredToken = StockFnoRegistry.getToken(clean);
         if (registeredToken != null && !registeredToken.isBlank()) {
+            tokenCache.put(clean, registeredToken);
             return registeredToken;
+        }
+
+        var n200Meta = com.tradingbot.util.Nifty200Registry.getMetadata(clean);
+        if (n200Meta != null
+                && n200Meta.token() != null
+                && !n200Meta.token().isBlank()
+                && !"10576".equals(n200Meta.token())) {
+            tokenCache.put(clean, n200Meta.token());
+            return n200Meta.token();
         }
 
         // Fallback: Query SearchScrip API from Shoonya
@@ -133,19 +164,85 @@ public class ShoonyaMarketDataService {
                 for (JsonNode item : searchRes) {
                     String tsym = item.path("tsym").asText("");
                     if (tsym.equalsIgnoreCase(clean + "-EQ") || tsym.equalsIgnoreCase(clean)) {
-                        return item.path("token").asText("");
+                        String tok = item.path("token").asText("");
+                        if (!tok.isBlank()) {
+                            tokenCache.put(clean, tok);
+                            return tok;
+                        }
                     }
                 }
-                return searchRes.get(0).path("token").asText("");
+                String tok = searchRes.get(0).path("token").asText("");
+                if (!tok.isBlank()) {
+                    tokenCache.put(clean, tok);
+                    return tok;
+                }
             }
         } catch (Exception e) {
             log.warn(
-                    "[HOURLY-DATA] Failed to resolve token via SearchScrip for {}: {}",
+                    "[MARKET-DATA] Failed to resolve token via SearchScrip for {}: {}",
                     clean,
                     e.getMessage());
         }
 
         return "10576";
+    }
+
+    /** Fetches real-time quote for a token from Shoonya GetQuotes API. */
+    public JsonNode fetchQuote(String exchange, String token) {
+        if (!config.isEnabled()) {
+            return null;
+        }
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String sessionToken = authenticator.getOrAuthenticateToken();
+                Map<String, Object> payload =
+                        Map.of(
+                                "uid",
+                                config.getUserId(),
+                                "actid",
+                                config.getUserId(),
+                                "exch",
+                                exchange != null ? exchange : "NSE",
+                                "token",
+                                token);
+                String body =
+                        "jData="
+                                + objectMapper.writeValueAsString(payload)
+                                + "&jKey="
+                                + sessionToken;
+
+                HttpRequest req =
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/GetQuotes"))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-For", config.resolvePublicIp())
+                                .POST(
+                                        HttpRequest.BodyPublishers.ofString(
+                                                body, StandardCharsets.UTF_8))
+                                .build();
+
+                HttpResponse<String> resp =
+                        httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                String respBody = resp.body();
+                if (respBody != null
+                        && (respBody.contains("Session Expired")
+                                || respBody.contains("Invalid Session Key")
+                                || respBody.contains("NOT_LOGGED_IN"))) {
+                    log.warn(
+                            "Shoonya session expired during GetQuotes fetch. Invalidating session...");
+                    authenticator.invalidateSession();
+                    continue;
+                }
+                return objectMapper.readTree(respBody);
+            } catch (Exception e) {
+                log.warn(
+                        "[QUOTE] Error fetching quote for token {} (attempt {}): {}",
+                        token,
+                        attempt,
+                        e.getMessage());
+            }
+        }
+        return null;
     }
 
     /** Searches for scrips on Shoonya using the SearchScrip API. */

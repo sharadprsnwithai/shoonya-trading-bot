@@ -48,36 +48,42 @@ class HourlyMtfScannerSchedulerTest {
                         false);
         MtfTrendStatus s2 =
                 new MtfTrendStatus(
-                        "VEDL",
-                        270.0,
-                        true,
-                        250.0,
-                        255.0,
-                        true,
-                        260.0,
-                        258.0,
-                        56.0,
+                        "TATASTEEL",
+                        140.0,
                         false,
-                        265.0,
-                        266.0,
-                        18.0,
+                        150.0,
+                        148.0,
                         false,
-                        BigDecimal.valueOf(270),
-                        266.0,
-                        false);
+                        146.0,
+                        145.0,
+                        42.0,
+                        false,
+                        144.0,
+                        143.0,
+                        25.0,
+                        false,
+                        BigDecimal.valueOf(140),
+                        143.0,
+                        false,
+                        true,
+                        true,
+                        BigDecimal.valueOf(140));
 
         List<MtfTrendStatus> all = List.of(s1, s2);
-        List<MtfTrendStatus> confluence = List.of(s1);
+        List<MtfTrendStatus> uptrend = List.of(s1);
+        List<MtfTrendStatus> downtrend = List.of(s2);
 
         when(scannerService.scanAllNifty200()).thenReturn(all);
-        when(scannerService.getConfluenceUptrendStocks(all)).thenReturn(confluence);
-        when(scannerService.sendTelegramReport(anyList(), anyInt())).thenReturn(true);
+        when(scannerService.getConfluenceUptrendStocks(all)).thenReturn(uptrend);
+        when(scannerService.getConfluenceDowntrendStocks(all)).thenReturn(downtrend);
+        when(scannerService.sendTelegramReport(anyList(), anyList(), anyInt())).thenReturn(true);
 
         List<MtfTrendStatus> result = scheduler.runScanAndNotify();
 
-        assertThat(result).hasSize(1);
+        assertThat(result).hasSize(2);
         assertThat(result.get(0).symbol()).isEqualTo("COFORGE");
-        verify(scannerService).sendTelegramReport(confluence, 2);
+        assertThat(result.get(1).symbol()).isEqualTo("TATASTEEL");
+        verify(scannerService).sendTelegramReport(uptrend, downtrend, 2);
     }
 
     @Test

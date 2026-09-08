@@ -142,4 +142,58 @@ class MultiTimeframeTrendServiceTest {
         assertThat(status.weeklyUptrend()).isFalse();
         assertThat(status.isFullConfluence()).isFalse();
     }
+
+    @Test
+    void testEvaluateTrendLoserBearishConfluence() {
+        List<Candle> weekly = createCandles(20, 300.0, -5.0);
+        List<Candle> daily = createCandles(30, 250.0, -2.0);
+        List<Candle> hourly = createCandles(30, 200.0, -1.0);
+
+        // Weekly Bearish (Price below ST)
+        double[] wEma = new double[20];
+        Arrays.fill(wEma, 250.0);
+        SuperTrendResult[] wSt = new SuperTrendResult[20];
+        Arrays.fill(wSt, SuperTrendResult.of(260.0, 270.0, 255.0, false));
+
+        // Daily Bearish (Price below ST)
+        double[] dEma = new double[30];
+        Arrays.fill(dEma, 220.0);
+        SuperTrendResult[] dSt = new SuperTrendResult[30];
+        Arrays.fill(dSt, SuperTrendResult.of(230.0, 240.0, 225.0, false));
+        double[] dRsi = new double[30];
+        Arrays.fill(dRsi, 40.0);
+
+        // Hourly: Crossed below SuperTrend (Previous bar was Bullish, Current bar is Bearish)
+        double[] hEma = new double[30];
+        Arrays.fill(hEma, 180.0);
+        SuperTrendResult[] hSt = new SuperTrendResult[30];
+        for (int i = 0; i < 29; i++) {
+            hSt[i] = SuperTrendResult.of(170.0, 175.0, 168.0, true);
+        }
+        hSt[29] = SuperTrendResult.of(175.0, 180.0, 172.0, false); // Crossed below SuperTrend!
+
+        double[] hAdx = new double[30];
+        Arrays.fill(hAdx, 26.0);
+
+        when(taService.calculateEmaSeries(any(), anyInt()))
+                .thenReturn(wEma)
+                .thenReturn(dEma)
+                .thenReturn(hEma);
+        when(taService.calculateSuperTrendSeries(any(), any(), any(), anyInt(), anyDouble()))
+                .thenReturn(wSt)
+                .thenReturn(dSt)
+                .thenReturn(hSt);
+        when(taService.calculateRsiSeries(any(), anyInt())).thenReturn(dRsi);
+        when(taService.calculateAdxSeries(any(), any(), any(), anyInt())).thenReturn(hAdx);
+
+        MtfTrendStatus status = trendService.evaluateTrend("TEST", weekly, daily, hourly);
+
+        assertThat(status).isNotNull();
+        assertThat(status.weeklyUptrend()).isFalse();
+        assertThat(status.dailyUptrend()).isFalse();
+        assertThat(status.isFullConfluence()).isFalse(); // Uptrend confluence is false
+        assertThat(status.isBearishConfluence()).isTrue(); // Loser / Bearish confluence is true
+        assertThat(status.isFreshHourlyBearishTrigger()).isTrue(); // Crossed below ST in hourly
+        assertThat(status.atmPutStrike()).isGreaterThan(BigDecimal.ZERO);
+    }
 }

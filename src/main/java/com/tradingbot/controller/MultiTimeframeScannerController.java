@@ -36,14 +36,19 @@ public class MultiTimeframeScannerController {
     @GetMapping("/scan")
     public ResponseEntity<Map<String, Object>> runScan() {
         List<MtfTrendStatus> allScanned = scannerService.scanAllNifty200();
-        List<MtfTrendStatus> confluence = scannerService.getConfluenceUptrendStocks(allScanned);
+        List<MtfTrendStatus> uptrend = scannerService.getConfluenceUptrendStocks(allScanned);
+        List<MtfTrendStatus> downtrend = scannerService.getConfluenceDowntrendStocks(allScanned);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "SUCCESS");
         response.put("totalUniverseSize", Nifty200Registry.getAllSymbols().size());
         response.put("totalScanned", allScanned.size());
-        response.put("confluenceCount", confluence.size());
-        response.put("confluenceStocks", confluence);
+        response.put("confluenceCount", uptrend.size() + downtrend.size());
+        response.put("uptrendCount", uptrend.size());
+        response.put("uptrendStocks", uptrend);
+        response.put("downtrendCount", downtrend.size());
+        response.put("downtrendStocks", downtrend);
+        response.put("confluenceStocks", uptrend);
 
         return ResponseEntity.ok(response);
     }
@@ -66,13 +71,15 @@ public class MultiTimeframeScannerController {
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("strategy", "Multi-Timeframe Uptrend Confluence (Weekly + Daily + Hourly)");
+        status.put(
+                "strategy",
+                "Multi-Timeframe Confluence Scanner (Gainers & Losers: Weekly + Daily + Hourly)");
         status.put("universe", "NIFTY 200");
         status.put("universeSize", Nifty200Registry.getAllSymbols().size());
         status.put("hourlySchedulerEnabled", scheduler.isEnabled());
         status.put(
                 "scheduleCron",
-                "0 30 9-15 ? * MON-FRI (09:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:15 IST)");
+                "0 15 10-15 ? * MON-FRI (10:15, 11:15, 12:15, 13:15, 14:15, 15:15 IST)");
 
         return ResponseEntity.ok(status);
     }

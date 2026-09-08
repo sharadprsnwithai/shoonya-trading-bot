@@ -94,10 +94,14 @@ public class MultiTimeframeScannerService {
             }
         }
 
-        // Sort: full confluence first, then fresh triggers, then highest hourly ADX
+        // Sort: Any confluence (bullish or bearish) first, then fresh triggers, then highest hourly
+        // ADX
         results.sort(
-                Comparator.comparing(MtfTrendStatus::isFullConfluence)
-                        .thenComparing(MtfTrendStatus::isFreshHourlyTrigger)
+                Comparator.comparing(
+                                (MtfTrendStatus s) ->
+                                        s.isFullConfluence() || s.isBearishConfluence())
+                        .thenComparing(
+                                s -> s.isFreshHourlyTrigger() || s.isFreshHourlyBearishTrigger())
                         .thenComparingDouble(MtfTrendStatus::hourlyAdx)
                         .reversed());
 
@@ -110,80 +114,148 @@ public class MultiTimeframeScannerService {
      */
     public List<MtfTrendStatus> getConfluenceUptrendStocks(List<MtfTrendStatus> scanResults) {
         if (scanResults == null) return List.of();
-        return scanResults.stream().filter(MtfTrendStatus::isFullConfluence).toList();
+        return scanResults.stream()
+                .filter(MtfTrendStatus::isFullConfluence)
+                .sorted(
+                        Comparator.comparing(MtfTrendStatus::isFreshHourlyTrigger)
+                                .thenComparingDouble(MtfTrendStatus::hourlyAdx)
+                                .reversed())
+                .toList();
     }
 
     /**
-     * Dispatches the Multi-Timeframe Uptrend Report to Telegram.
+     * Filters for symbols that exhibit full bearish confluence (Loser stocks: Weekly and Daily
+     * price below SuperTrend, and Hourly crossed below / below SuperTrend).
+     */
+    public List<MtfTrendStatus> getConfluenceDowntrendStocks(List<MtfTrendStatus> scanResults) {
+        if (scanResults == null) return List.of();
+        return scanResults.stream()
+                .filter(MtfTrendStatus::isBearishConfluence)
+                .sorted(
+                        Comparator.comparing(MtfTrendStatus::isFreshHourlyBearishTrigger)
+                                .thenComparingDouble(MtfTrendStatus::hourlyAdx)
+                                .reversed())
+                .toList();
+    }
+
+    /**
+     * Dispatches the Multi-Timeframe Confluence Report (Gainers & Losers) to Telegram.
      *
-     * @param confluenceStocks list of stocks with full 3-horizon confluence
+     * @param uptrendStocks list of stocks with bullish confluence
+     * @param downtrendStocks list of stocks with bearish confluence
      * @param totalScanned total number of stocks evaluated
      * @return true if notification was dispatched
      */
-    public boolean sendTelegramReport(List<MtfTrendStatus> confluenceStocks, int totalScanned) {
-        if (confluenceStocks == null) {
-            confluenceStocks = Collections.emptyList();
+    public boolean sendTelegramReport(
+            List<MtfTrendStatus> uptrendStocks,
+            List<MtfTrendStatus> downtrendStocks,
+            int totalScanned) {
+        if (uptrendStocks == null) {
+            uptrendStocks = Collections.emptyList();
+        }
+        if (downtrendStocks == null) {
+            downtrendStocks = Collections.emptyList();
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("🚀 *[MULTI-TIMEFRAME UPTREND ALERT: 3-HORIZON CONFLUENCE]* 🚀\n\n");
+        sb.append("📊 *[MULTI-TIMEFRAME SCANNER: GAINERS & LOSERS]* 📊\n\n");
         sb.append("🕒 *Scan Time:* ")
                 .append(TIME_FMT.format(Instant.now()))
                 .append(" IST (Hourly Run)\n");
-        sb.append("📊 *Scope:* NIFTY 200 Universe (").append(totalScanned).append(" Scanned)\n");
-        sb.append(
-                "📈 *Condition:* Weekly (Macro) + Daily (Swing) + Hourly (Execution) Bullish\n\n");
+        sb.append("📊 *Scope:* NIFTY 200 Universe (").append(totalScanned).append(" Scanned)\n\n");
 
-        if (confluenceStocks.isEmpty()) {
+        if (uptrendStocks.isEmpty() && downtrendStocks.isEmpty()) {
             sb.append(
-                    "ℹ️ *No stocks currently exhibit simultaneous 3-timeframe uptrend alignment.*\n");
-            sb.append("Market is in consolidation or divergent trend. Bot will re-scan next hour.");
+                    "ℹ️ *No stocks currently exhibit multi-timeframe confluence (Gainers or Losers).*\n");
+            sb.append("Market is in consolidation or mixed trend. Bot will re-scan next hour.");
             telegramService.sendAsync(sb.toString());
             return true;
         }
 
-        sb.append("🏆 *TOP CONFLUENCE UPTREND LEADERS:*\n\n");
         LocalDate now = LocalDate.now(IST);
 
-        int count = Math.min(10, confluenceStocks.size());
-        for (int i = 0; i < count; i++) {
-            MtfTrendStatus s = confluenceStocks.get(i);
-            LocalDate expiry = StockFnoRegistry.calculateTargetExpiry(s.symbol(), now, false, 8);
-            String expiryStr = expiry.format(EXPIRY_FMT).toUpperCase();
+        // Section 1: GAINERS / UPTREND LEADERS
+        if (!uptrendStocks.isEmpty()) {
+            sb.append("🟢 *TOP GAINERS (UPTREND CONFLUENCE - CALL BUYING)* 🟢\n");
+            sb.append("• _Weekly, Daily & Hourly SuperTrend Bullish_\n\n");
 
-            String freshTag = s.isFreshHourlyTrigger() ? " ⚡ *[FRESH TRIGGER]*" : "";
-            sb.append(
-                    String.format(
-                            "%d. *%s*%s ➔ Spot: *₹%.2f*\n",
-                            (i + 1), s.symbol(), freshTag, s.currentPrice()));
-            sb.append(
-                    String.format(
-                            "   • *Target ATM:* `%.1f CE` | Exp: `%s`\n",
-                            s.atmCallStrike(), expiryStr));
-            sb.append(String.format("   • *Confluence:* %s\n", s.getTrendSummary()));
-            sb.append(
-                    String.format(
-                            "   • *Metrics:* Daily RSI: `%.1f` | Hourly ADX: `%.1f`\n",
-                            s.dailyRsi(), s.hourlyAdx()));
-            sb.append(
-                    String.format(
-                            "   • *Trailing SL Anchor:* ₹%.2f (Hourly ST)\n\n",
-                            s.trailingStopLoss()));
+            int count = Math.min(6, uptrendStocks.size());
+            for (int i = 0; i < count; i++) {
+                MtfTrendStatus s = uptrendStocks.get(i);
+                LocalDate expiry =
+                        StockFnoRegistry.calculateTargetExpiry(s.symbol(), now, false, 8);
+                String expiryStr = expiry.format(EXPIRY_FMT).toUpperCase();
+
+                String freshTag = s.isFreshHourlyTrigger() ? " ⚡ *[FRESH TRIGGER]*" : "";
+                sb.append(
+                        String.format(
+                                "%d. *%s*%s ➔ Spot: *₹%.2f*\n",
+                                (i + 1), s.symbol(), freshTag, s.currentPrice()));
+                sb.append(
+                        String.format(
+                                "   • *Target ATM:* `%.1f CE` | Exp: `%s`\n",
+                                s.atmCallStrike(), expiryStr));
+                sb.append(String.format("   • *Confluence:* %s\n", s.getTrendSummary()));
+                sb.append(
+                        String.format(
+                                "   • *Metrics:* Daily RSI: `%.1f` | Hourly ADX: `%.1f`\n",
+                                s.dailyRsi(), s.hourlyAdx()));
+                sb.append(
+                        String.format(
+                                "   • *Trailing SL Anchor:* ₹%.2f (Hourly ST)\n\n",
+                                s.trailingStopLoss()));
+            }
         }
 
-        sb.append("💡 *Total Confluence Stocks Found:* `")
-                .append(confluenceStocks.size())
-                .append("` / ")
-                .append(totalScanned)
-                .append("\n\n");
+        // Section 2: LOSERS / DOWNTREND LEADERS
+        if (!downtrendStocks.isEmpty()) {
+            sb.append("🔴 *TOP LOSERS (DOWNTREND CONFLUENCE - PUT BUYING)* 🔴\n");
+            sb.append("• _Weekly & Daily Below SuperTrend + Hourly Crossed Below SuperTrend_\n\n");
 
-        sb.append("🛡️ *Confluence Rules:*\n");
-        sb.append("• Weekly: Price >= 20 EMA & SuperTrend Bullish\n");
-        sb.append("• Daily: Price >= 50 EMA & SuperTrend Bullish & RSI >= 48\n");
-        sb.append("• Hourly: Price >= 50 EMA & Fast SuperTrend Bullish & ADX >= 20\n\n");
+            int count = Math.min(6, downtrendStocks.size());
+            for (int i = 0; i < count; i++) {
+                MtfTrendStatus s = downtrendStocks.get(i);
+                LocalDate expiry =
+                        StockFnoRegistry.calculateTargetExpiry(s.symbol(), now, false, 8);
+                String expiryStr = expiry.format(EXPIRY_FMT).toUpperCase();
+
+                String freshTag = s.isFreshHourlyBearishTrigger() ? " ⚡ *[FRESH BREAKDOWN]*" : "";
+                sb.append(
+                        String.format(
+                                "%d. *%s*%s ➔ Spot: *₹%.2f*\n",
+                                (i + 1), s.symbol(), freshTag, s.currentPrice()));
+                sb.append(
+                        String.format(
+                                "   • *Target ATM:* `%.1f PE` | Exp: `%s`\n",
+                                s.atmPutStrike(), expiryStr));
+                sb.append(String.format("   • *Confluence:* %s\n", s.getTrendSummary()));
+                sb.append(
+                        String.format(
+                                "   • *Metrics:* Daily RSI: `%.1f` | Hourly ADX: `%.1f`\n",
+                                s.dailyRsi(), s.hourlyAdx()));
+                sb.append(
+                        String.format(
+                                "   • *Trailing SL Anchor:* ₹%.2f (Hourly ST Resistance)\n\n",
+                                s.trailingStopLoss()));
+            }
+        }
+
+        sb.append("💡 *Summary:* `")
+                .append(uptrendStocks.size())
+                .append("` Gainers (CE) | `")
+                .append(downtrendStocks.size())
+                .append("` Losers (PE) / ")
+                .append(totalScanned)
+                .append(" Scanned\n\n");
+
         sb.append("🤖 *Bot Automation:* Monitoring hourly during market hours (09:15 - 15:30 IST)");
 
         telegramService.sendAsync(sb.toString());
         return true;
+    }
+
+    /** Backwards-compatible overload. */
+    public boolean sendTelegramReport(List<MtfTrendStatus> confluenceStocks, int totalScanned) {
+        return sendTelegramReport(confluenceStocks, Collections.emptyList(), totalScanned);
     }
 }
