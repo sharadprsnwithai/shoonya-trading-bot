@@ -88,6 +88,28 @@ public class LowestVolumeReversalScheduler {
         }
     }
 
+    /**
+     * 30-second live price check for armed triggers and open position SL/Target1. Runs every 30
+     * seconds during market hours to catch breaches between 5-minute candle closes.
+     */
+    @Scheduled(fixedRate = 30000)
+    public void scheduledLivePriceCheck() {
+        if (!schedulerEnabled) {
+            return;
+        }
+
+        LocalTime now = LocalTime.now(IST);
+        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 0))) {
+            return;
+        }
+
+        try {
+            strategyService.evaluateLivePriceActions();
+        } catch (Exception e) {
+            log.error("[LVR-SCHEDULER] Exception during live price check: {}", e.getMessage(), e);
+        }
+    }
+
     public boolean isSchedulerEnabled() {
         return schedulerEnabled;
     }

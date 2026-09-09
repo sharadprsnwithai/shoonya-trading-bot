@@ -184,12 +184,16 @@ public class ShoonyaMarketDataService {
                     e.getMessage());
         }
 
-        return "10576";
+        if ("NIFTY50".equalsIgnoreCase(clean) || "NIFTY".equalsIgnoreCase(clean)) {
+            return "10576";
+        }
+        log.warn("[MARKET-DATA] Unable to resolve token for symbol: {}", clean);
+        return null;
     }
 
     /** Fetches real-time quote for a token from Shoonya GetQuotes API. */
     public JsonNode fetchQuote(String exchange, String token) {
-        if (!config.isEnabled()) {
+        if (!config.isEnabled() || token == null || token.isBlank()) {
             return null;
         }
         for (int attempt = 1; attempt <= 2; attempt++) {
@@ -223,6 +227,14 @@ public class ShoonyaMarketDataService {
 
                 HttpResponse<String> resp =
                         httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() != 200) {
+                    log.error(
+                            "[QUOTE] HTTP error {} fetching quote for token {}: {}",
+                            resp.statusCode(),
+                            token,
+                            resp.body());
+                    return null;
+                }
                 String respBody = resp.body();
                 if (respBody != null
                         && (respBody.contains("Session Expired")
@@ -272,6 +284,14 @@ public class ShoonyaMarketDataService {
 
             HttpResponse<String> response =
                     httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.error(
+                        "[SEARCH-SCRIP] HTTP error {} searching for {}: {}",
+                        response.statusCode(),
+                        searchText,
+                        response.body());
+                return null;
+            }
             JsonNode root = objectMapper.readTree(response.body());
             if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
                 return root.path("values");
@@ -311,6 +331,10 @@ public class ShoonyaMarketDataService {
             log.info("Shoonya is disabled. Returning empty candle list for {}", symbol);
             return Collections.emptyList();
         }
+        if (token == null || token.isBlank()) {
+            log.warn("Cannot fetch candles for {} because token is null/blank", symbol);
+            return Collections.emptyList();
+        }
 
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
@@ -339,6 +363,14 @@ public class ShoonyaMarketDataService {
 
                 HttpResponse<String> response =
                         httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) {
+                    log.error(
+                            "HTTP error {} fetching TPSeries for {}: {}",
+                            response.statusCode(),
+                            symbol,
+                            response.body());
+                    return Collections.emptyList();
+                }
                 String body = response.body();
 
                 if (body != null

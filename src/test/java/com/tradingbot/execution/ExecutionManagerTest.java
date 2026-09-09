@@ -118,13 +118,50 @@ class ExecutionManagerTest {
     }
 
     @Test
-    void testExecutionModeInitializedFromShoonyaConfig() {
-        com.tradingbot.config.ShoonyaConfig mockConfig =
-                org.mockito.Mockito.mock(com.tradingbot.config.ShoonyaConfig.class);
-        org.mockito.Mockito.when(mockConfig.getExecutionMode()).thenReturn(ExecutionMode.LIVE);
+    void testLiveMode_AbortsWhenHedgeOrderFails() {
+        executionManager.setExecutionMode(ExecutionMode.LIVE);
+        BigDecimal atm = new BigDecimal("24000");
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(createMockChain(atm));
 
-        ExecutionManager liveManager =
-                new ExecutionManager(orderService, optionChainService, telegramService, mockConfig);
-        assertThat(liveManager.getExecutionMode()).isEqualTo(ExecutionMode.LIVE);
+        // Mock hedge order failure
+        when(orderService.placeOrder(any()))
+                .thenReturn(
+                        com.tradingbot.model.order.OrderResponse.failure(
+                                null, "Margin Insufficient for Hedge"));
+
+        ActiveSpreadPosition pos =
+                executionManager.executeDirectionalOptionSelling(
+                        "PIVOT_SUPERTREND", "NIFTY", "PE", atm, 65, true);
+
+        assertThat(pos).isNull();
+        assertThat(executionManager.getOpenPositions()).isEmpty();
+    }
+
+    @Test
+    void testLiveMode_RollsBackHedgeWhenShortFails() {
+        executionManager.setExecutionMode(ExecutionMode.LIVE);
+        BigDecimal atm = new BigDecimal("24000");
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(createMockChain(atm));
+
+        // 1. Hedge succeeds, 2. Short fails, 3. Rollback hedge succeeds
+        when(orderService.placeOrder(any()))
+                .thenReturn(
+                        com.tradingbot.model.order.OrderResponse.success(
+                                "HEDGE_ORD_1", null, "Success"))
+                .thenReturn(
+                        com.tradingbot.model.order.OrderResponse.failure(
+                                null, "RMS: Short selling disabled"))
+                .thenReturn(
+                        com.tradingbot.model.order.OrderResponse.success(
+                                "ROLLBACK_ORD_1", null, "Rollback success"));
+
+        ActiveSpreadPosition pos =
+                executionManager.executeDirectionalOptionSelling(
+                        "PIVOT_SUPERTREND", "NIFTY", "PE", atm, 65, true);
+
+        assertThat(pos).isNull();
+        assertThat(executionManager.getOpenPositions()).isEmpty();
     }
 }

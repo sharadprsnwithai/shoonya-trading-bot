@@ -68,72 +68,104 @@ public class ShoonyaOrderService {
             return OrderResponse.success(mockId, request, "Mock order placed successfully");
         }
 
-        try {
-            String sessionToken = authenticator.getOrAuthenticateToken();
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String sessionToken = authenticator.getOrAuthenticateToken();
 
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("uid", config.getUserId());
-            payload.put("actid", config.getUserId());
-            payload.put("exch", request.exchange() != null ? request.exchange() : "NFO");
-            payload.put("tsym", request.symbol());
-            payload.put("qty", String.valueOf(request.quantity()));
-            payload.put(
-                    "prd", request.productType() != null ? request.productType().getCode() : "M");
-            payload.put("trantype", request.transactionType().getCode());
-            payload.put("prctyp", request.orderType().getCode());
-            payload.put("ret", "DAY");
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("uid", config.getUserId());
+                payload.put("actid", config.getUserId());
+                payload.put("exch", request.exchange() != null ? request.exchange() : "NFO");
+                payload.put("tsym", request.symbol());
+                payload.put("qty", String.valueOf(request.quantity()));
+                payload.put(
+                        "prd",
+                        request.productType() != null ? request.productType().getCode() : "M");
+                payload.put("trantype", request.transactionType().getCode());
+                payload.put("prctyp", request.orderType().getCode());
+                payload.put("ret", "DAY");
 
-            if (request.price() != null && request.price().compareTo(BigDecimal.ZERO) > 0) {
-                payload.put("prc", request.price().toPlainString());
-            } else {
-                payload.put("prc", "0");
+                if (request.price() != null && request.price().compareTo(BigDecimal.ZERO) > 0) {
+                    payload.put("prc", request.price().toPlainString());
+                } else {
+                    payload.put("prc", "0");
+                }
+
+                if (request.triggerPrice() != null
+                        && request.triggerPrice().compareTo(BigDecimal.ZERO) > 0) {
+                    payload.put("trgprc", request.triggerPrice().toPlainString());
+                }
+
+                if (request.tag() != null && !request.tag().isBlank()) {
+                    payload.put("remarks", request.tag());
+                }
+
+                String formBody =
+                        "jData="
+                                + objectMapper.writeValueAsString(payload)
+                                + "&jKey="
+                                + sessionToken;
+
+                HttpRequest httpReq =
+                        HttpRequest.newBuilder()
+                                .uri(
+                                        URI.create(
+                                                config.getBaseUrl() + "/NorenWClientAPI/PlaceOrder"))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-For", config.resolvePublicIp())
+                                .POST(
+                                        HttpRequest.BodyPublishers.ofString(
+                                                formBody, StandardCharsets.UTF_8))
+                                .build();
+
+                HttpResponse<String> resp =
+                        httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() != 200) {
+                    log.error(
+                            "[SHOONYA-ORDER] HTTP error {} placing order: {}",
+                            resp.statusCode(),
+                            resp.body());
+                    return OrderResponse.failure(
+                            request, "HTTP " + resp.statusCode() + ": " + resp.body());
+                }
+
+                String body = resp.body();
+                if (isSessionExpired(body)) {
+                    log.warn(
+                            "[SHOONYA-ORDER] Session expired during PlaceOrder (attempt {}). Invalidating session and retrying...",
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
+                JsonNode root = objectMapper.readTree(body);
+                if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
+                    String norenordno = root.path("norenordno").asText();
+                    log.info(
+                            "[SHOONYA-ORDER] Order Placed Successfully! OrderId: {} | {} {} Qty: {}",
+                            norenordno,
+                            request.transactionType(),
+                            request.symbol(),
+                            request.quantity());
+                    return OrderResponse.success(norenordno, request, "Order placed successfully");
+                } else {
+                    String emsg = root.path("emsg").asText(body);
+                    log.error("[SHOONYA-ORDER] Order Placement Rejected: {}", emsg);
+                    return OrderResponse.failure(request, emsg);
+                }
+
+            } catch (Exception e) {
+                log.error(
+                        "[SHOONYA-ORDER] Order placement exception (attempt {}): {}",
+                        attempt,
+                        e.getMessage(),
+                        e);
+                if (attempt == 2) {
+                    return OrderResponse.failure(request, e.getMessage());
+                }
             }
-
-            if (request.triggerPrice() != null
-                    && request.triggerPrice().compareTo(BigDecimal.ZERO) > 0) {
-                payload.put("trgprc", request.triggerPrice().toPlainString());
-            }
-
-            if (request.tag() != null && !request.tag().isBlank()) {
-                payload.put("remarks", request.tag());
-            }
-
-            String formBody =
-                    "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + sessionToken;
-
-            HttpRequest httpReq =
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/PlaceOrder"))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("X-Forwarded-For", config.resolvePublicIp())
-                            .POST(
-                                    HttpRequest.BodyPublishers.ofString(
-                                            formBody, StandardCharsets.UTF_8))
-                            .build();
-
-            HttpResponse<String> resp =
-                    httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
-            JsonNode root = objectMapper.readTree(resp.body());
-
-            if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
-                String norenordno = root.path("norenordno").asText();
-                log.info(
-                        "[SHOONYA-ORDER] Order Placed Successfully! OrderId: {} | {} {} Qty: {}",
-                        norenordno,
-                        request.transactionType(),
-                        request.symbol(),
-                        request.quantity());
-                return OrderResponse.success(norenordno, request, "Order placed successfully");
-            } else {
-                String emsg = root.path("emsg").asText(resp.body());
-                log.error("[SHOONYA-ORDER] Order Placement Rejected: {}", emsg);
-                return OrderResponse.failure(request, emsg);
-            }
-
-        } catch (Exception e) {
-            log.error("[SHOONYA-ORDER] Order placement exception: {}", e.getMessage(), e);
-            return OrderResponse.failure(request, e.getMessage());
         }
+        return OrderResponse.failure(request, "Failed to place order after retries");
     }
 
     /** Modifies an existing open or trigger-pending order. */
@@ -149,53 +181,93 @@ public class ShoonyaOrderService {
             return OrderResponse.success(orderId, null, "Mock order modified");
         }
 
-        try {
-            String sessionToken = authenticator.getOrAuthenticateToken();
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String sessionToken = authenticator.getOrAuthenticateToken();
 
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("uid", config.getUserId());
-            payload.put("actid", config.getUserId());
-            payload.put("norenordno", orderId);
-            payload.put("tsym", symbol);
-            payload.put("exch", exchange != null ? exchange : "NFO");
-            payload.put("qty", String.valueOf(quantity));
-            payload.put("prctyp", newType != null ? newType.getCode() : "LMT");
-            payload.put("ret", "DAY");
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("uid", config.getUserId());
+                payload.put("actid", config.getUserId());
+                payload.put("norenordno", orderId);
+                payload.put("tsym", symbol);
+                payload.put("exch", exchange != null ? exchange : "NFO");
+                payload.put("qty", String.valueOf(quantity));
+                payload.put("prctyp", newType != null ? newType.getCode() : "LMT");
+                payload.put("ret", "DAY");
 
-            if (newPrice != null && newPrice.compareTo(BigDecimal.ZERO) > 0) {
-                payload.put("prc", newPrice.toPlainString());
+                if (newPrice != null && newPrice.compareTo(BigDecimal.ZERO) > 0) {
+                    payload.put("prc", newPrice.toPlainString());
+                }
+
+                if (newTriggerPrice != null && newTriggerPrice.compareTo(BigDecimal.ZERO) > 0) {
+                    payload.put("trgprc", newTriggerPrice.toPlainString());
+                }
+
+                String formBody =
+                        "jData="
+                                + objectMapper.writeValueAsString(payload)
+                                + "&jKey="
+                                + sessionToken;
+
+                HttpRequest httpReq =
+                        HttpRequest.newBuilder()
+                                .uri(
+                                        URI.create(
+                                                config.getBaseUrl()
+                                                        + "/NorenWClientAPI/ModifyOrder"))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-For", config.resolvePublicIp())
+                                .POST(
+                                        HttpRequest.BodyPublishers.ofString(
+                                                formBody, StandardCharsets.UTF_8))
+                                .build();
+
+                HttpResponse<String> resp =
+                        httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() != 200) {
+                    log.error(
+                            "[SHOONYA-ORDER] HTTP error {} modifying order {}: {}",
+                            resp.statusCode(),
+                            orderId,
+                            resp.body());
+                    return OrderResponse.failure(
+                            null, "HTTP " + resp.statusCode() + ": " + resp.body());
+                }
+
+                String body = resp.body();
+                if (isSessionExpired(body)) {
+                    log.warn(
+                            "[SHOONYA-ORDER] Session expired during ModifyOrder for {} (attempt {}). Invalidating session and retrying...",
+                            orderId,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
+                JsonNode root = objectMapper.readTree(body);
+                if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
+                    log.info("[SHOONYA-ORDER] Modified order {} successfully", orderId);
+                    return OrderResponse.success(orderId, null, "Order modified successfully");
+                } else {
+                    String emsg = root.path("emsg").asText(body);
+                    log.error(
+                            "[SHOONYA-ORDER] Modify order {} rejected: {}", orderId, emsg);
+                    return OrderResponse.failure(null, emsg);
+                }
+
+            } catch (Exception e) {
+                log.error(
+                        "[SHOONYA-ORDER] Error modifying order {} (attempt {}): {}",
+                        orderId,
+                        attempt,
+                        e.getMessage(),
+                        e);
+                if (attempt == 2) {
+                    return OrderResponse.failure(null, e.getMessage());
+                }
             }
-
-            if (newTriggerPrice != null && newTriggerPrice.compareTo(BigDecimal.ZERO) > 0) {
-                payload.put("trgprc", newTriggerPrice.toPlainString());
-            }
-
-            String formBody =
-                    "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + sessionToken;
-
-            HttpRequest httpReq =
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/ModifyOrder"))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("X-Forwarded-For", config.resolvePublicIp())
-                            .POST(
-                                    HttpRequest.BodyPublishers.ofString(
-                                            formBody, StandardCharsets.UTF_8))
-                            .build();
-
-            HttpResponse<String> resp =
-                    httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
-            JsonNode root = objectMapper.readTree(resp.body());
-
-            if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
-                return OrderResponse.success(orderId, null, "Order modified successfully");
-            } else {
-                return OrderResponse.failure(null, root.path("emsg").asText(resp.body()));
-            }
-
-        } catch (Exception e) {
-            return OrderResponse.failure(null, e.getMessage());
         }
+        return OrderResponse.failure(null, "Failed to modify order after retries");
     }
 
     /** Cancels an open or trigger-pending order on Shoonya. */
@@ -204,44 +276,84 @@ public class ShoonyaOrderService {
             return OrderResponse.success(orderId, null, "Mock order cancelled");
         }
 
-        try {
-            String sessionToken = authenticator.getOrAuthenticateToken();
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String sessionToken = authenticator.getOrAuthenticateToken();
 
-            Map<String, Object> payload = Map.of("uid", config.getUserId(), "norenordno", orderId);
+                Map<String, Object> payload =
+                        Map.of("uid", config.getUserId(), "norenordno", orderId);
 
-            String formBody =
-                    "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + sessionToken;
+                String formBody =
+                        "jData="
+                                + objectMapper.writeValueAsString(payload)
+                                + "&jKey="
+                                + sessionToken;
 
-            HttpRequest httpReq =
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/CancelOrder"))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("X-Forwarded-For", config.resolvePublicIp())
-                            .POST(
-                                    HttpRequest.BodyPublishers.ofString(
-                                            formBody, StandardCharsets.UTF_8))
-                            .build();
+                HttpRequest httpReq =
+                        HttpRequest.newBuilder()
+                                .uri(
+                                        URI.create(
+                                                config.getBaseUrl()
+                                                        + "/NorenWClientAPI/CancelOrder"))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-For", config.resolvePublicIp())
+                                .POST(
+                                        HttpRequest.BodyPublishers.ofString(
+                                                formBody, StandardCharsets.UTF_8))
+                                .build();
 
-            HttpResponse<String> resp =
-                    httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
-            JsonNode root = objectMapper.readTree(resp.body());
+                HttpResponse<String> resp =
+                        httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() != 200) {
+                    log.error(
+                            "[SHOONYA-ORDER] HTTP error {} cancelling order {}: {}",
+                            resp.statusCode(),
+                            orderId,
+                            resp.body());
+                    return OrderResponse.failure(
+                            null, "HTTP " + resp.statusCode() + ": " + resp.body());
+                }
 
-            if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
-                log.info("[SHOONYA-ORDER] Cancelled order {}", orderId);
-                return new OrderResponse(
-                        true,
+                String body = resp.body();
+                if (isSessionExpired(body)) {
+                    log.warn(
+                            "[SHOONYA-ORDER] Session expired during CancelOrder for {} (attempt {}). Invalidating session and retrying...",
+                            orderId,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
+                JsonNode root = objectMapper.readTree(body);
+                if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
+                    log.info("[SHOONYA-ORDER] Cancelled order {}", orderId);
+                    return new OrderResponse(
+                            true,
+                            orderId,
+                            OrderStatus.CANCELLED,
+                            "Cancelled",
+                            null,
+                            java.time.Instant.now());
+                } else {
+                    String emsg = root.path("emsg").asText(body);
+                    log.error(
+                            "[SHOONYA-ORDER] Cancel order {} rejected: {}", orderId, emsg);
+                    return OrderResponse.failure(null, emsg);
+                }
+
+            } catch (Exception e) {
+                log.error(
+                        "[SHOONYA-ORDER] Error cancelling order {} (attempt {}): {}",
                         orderId,
-                        OrderStatus.CANCELLED,
-                        "Cancelled",
-                        null,
-                        java.time.Instant.now());
-            } else {
-                return OrderResponse.failure(null, root.path("emsg").asText(resp.body()));
+                        attempt,
+                        e.getMessage(),
+                        e);
+                if (attempt == 2) {
+                    return OrderResponse.failure(null, e.getMessage());
+                }
             }
-
-        } catch (Exception e) {
-            return OrderResponse.failure(null, e.getMessage());
         }
+        return OrderResponse.failure(null, "Failed to cancel order after retries");
     }
 
     /** Fetches current order book from Shoonya. */
@@ -259,27 +371,69 @@ public class ShoonyaOrderService {
     }
 
     private JsonNode postShoonyaJson(String endpoint, Map<String, Object> payload) {
-        try {
-            String sessionToken = authenticator.getOrAuthenticateToken();
-            String formBody =
-                    "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + sessionToken;
-
-            HttpRequest httpReq =
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(config.getBaseUrl() + endpoint))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("X-Forwarded-For", config.resolvePublicIp())
-                            .POST(
-                                    HttpRequest.BodyPublishers.ofString(
-                                            formBody, StandardCharsets.UTF_8))
-                            .build();
-
-            HttpResponse<String> resp =
-                    httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
-            return objectMapper.readTree(resp.body());
-        } catch (Exception e) {
-            log.error("Failed to query Shoonya endpoint {}: {}", endpoint, e.getMessage());
+        if (!config.isEnabled()) {
             return objectMapper.createArrayNode();
         }
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String sessionToken = authenticator.getOrAuthenticateToken();
+                String formBody =
+                        "jData="
+                                + objectMapper.writeValueAsString(payload)
+                                + "&jKey="
+                                + sessionToken;
+
+                HttpRequest httpReq =
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(config.getBaseUrl() + endpoint))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-For", config.resolvePublicIp())
+                                .POST(
+                                        HttpRequest.BodyPublishers.ofString(
+                                                formBody, StandardCharsets.UTF_8))
+                                .build();
+
+                HttpResponse<String> resp =
+                        httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() != 200) {
+                    log.error(
+                            "HTTP error {} querying Shoonya endpoint {}: {}",
+                            resp.statusCode(),
+                            endpoint,
+                            resp.body());
+                    return objectMapper.createArrayNode();
+                }
+
+                String body = resp.body();
+                if (isSessionExpired(body)) {
+                    log.warn(
+                            "Session expired querying {} (attempt {}). Invalidating session...",
+                            endpoint,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
+                return objectMapper.readTree(body);
+            } catch (Exception e) {
+                log.error(
+                        "Failed to query Shoonya endpoint {} (attempt {}): {}",
+                        endpoint,
+                        attempt,
+                        e.getMessage(),
+                        e);
+            }
+        }
+        return objectMapper.createArrayNode();
+    }
+
+    private boolean isSessionExpired(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        return body.contains("Session Expired")
+                || body.contains("Invalid Session Key")
+                || body.contains("NOT_LOGGED_IN")
+                || body.contains("Invalid Token");
     }
 }

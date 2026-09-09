@@ -376,48 +376,49 @@ public class TelegramService {
     }
 
     /** Sends an alert when a Lowest Volume Reversal setup passes all filters and entry is ARMED. */
-    public void sendLvrSetupArmedAlert(LowestVolumeSetup setup, int potentialQty, BigDecimal rpt) {
+    public void sendLvrSetupArmedAlert(LowestVolumeSetup setup, int minLots, BigDecimal rpt) {
         if (!config.isTelegramEnabled()
                 || config.getTelegramBotToken().isBlank()
                 || config.getTelegramChatId().isBlank()) {
             return;
         }
 
-        String dirEmoji =
-                setup.getDirection() == LowestVolumeDirection.LONG
-                        ? "🟢 [LONG SETUP ARMED]"
-                        : "🔴 [SHORT SETUP ARMED]";
-        String triggerLabel =
-                setup.getDirection() == LowestVolumeDirection.LONG
-                        ? "Breakout Above High"
-                        : "Breakdown Below Low";
+        boolean longDir = setup.getDirection() == LowestVolumeDirection.LONG;
+        String dirEmoji = longDir ? "🟢 [LONG SETUP ARMED]" : "🔴 [SHORT SETUP ARMED]";
+        String optionType = longDir ? "CE" : "PE";
+        String triggerLabel = longDir ? "Breakout Above High" : "Breakdown Below Low";
+        String slLabel = longDir ? "Low - 1 tick" : "High + 1 tick";
 
         String message =
                 String.format(
                         "🎯 *%s* 🎯\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal (5m)\n"
-                                + "🏷️ *Symbol:* `%s` (NSE Cash MIS)\n"
+                                + "🏷️ *Symbol:* `%s` — Buy ATM %s (Monthly)\n"
                                 + "⚡ *Trigger Condition:* %s\n\n"
-                                + "📊 *Setup Levels:*\n"
-                                + "   • *Trigger Entry Price:* ₹%.2f\n"
-                                + "   • *Stop-Loss (SL):* ₹%.2f (Low - 1 tick)\n"
+                                + "📊 *Stock Setup Levels:*\n"
+                                + "   • *Trigger Price:* ₹%.2f\n"
+                                + "   • *Stop-Loss (SL):* ₹%.2f (%s)\n"
                                 + "   • *Target 1 (1:2 RR):* ₹%.2f\n"
                                 + "   • *Trigger Candle Vol:* %,d (Lowest in 10-bar window)\n"
                                 + "   • *5m ATR(14):* ₹%.2f\n\n"
-                                + "💼 *Position Sizing (1%% Risk):*\n"
-                                + "   • *Calculated Qty:* %d shares\n"
+                                + "💼 *Option Execution:*\n"
+                                + "   • *Instrument:* ATM %s, strike fixed at entry\n"
+                                + "   • *Min Lots:* %d (final lots sized from live premium at fill)\n"
                                 + "   • *Risk at Stake:* ₹%.2f\n"
-                                + "⏳ *Timeout:* Order expires if not filled within 12 bars (60 min)\n"
+                                + "⏳ *Timeout:* Order expires if not filled within 6 bars (30 min)\n"
                                 + "⏰ *Time:* %s IST",
                         dirEmoji,
                         setup.getSymbol(),
+                        optionType,
                         triggerLabel,
                         setup.getTriggerPrice(),
                         setup.getStopLossPrice(),
+                        slLabel,
                         setup.getTarget1Price(),
                         setup.getTriggerCandleVolume(),
                         setup.getAtr14(),
-                        potentialQty,
+                        optionType,
+                        minLots,
                         rpt != null ? rpt : BigDecimal.valueOf(1000),
                         TIME_FMT.format(Instant.now()));
 
@@ -442,13 +443,14 @@ public class TelegramService {
                         "%s\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal & Continuation\n"
                                 + "🏷️ *Trade ID:* `%s`\n"
-                                + "📌 *Symbol:* `%s` (Cash Intraday)\n"
+                                + "📌 *Symbol:* `%s`\n"
+                                + "🎯 *Option:* ATM %s (Strike: ₹%s)\n"
                                 + "👉 *Direction:* %s\n\n"
                                 + "📊 *Fill Details:*\n"
-                                + "   • *Entry Price:* ₹%.2f\n"
-                                + "   • *Quantity:* %d shares\n"
-                                + "   • *Stop-Loss (SL):* ₹%.2f\n"
-                                + "   • *Target 1 (1:2 RR):* ₹%.2f\n"
+                                + "   • *Entry Premium:* ₹%.2f\n"
+                                + "   • *Lots:* %d × %d = %d units\n"
+                                + "   • *Stock SL:* ₹%.2f\n"
+                                + "   • *Stock Target 1 (1:2 RR):* ₹%.2f\n"
                                 + "   • *Risk Allocated:* ₹%.2f\n\n"
                                 + "🛡️ *Trade Management:*\n"
                                 + "   • At Target 1: Book 50%% profit & Move SL to Breakeven\n"
@@ -457,11 +459,15 @@ public class TelegramService {
                         dirEmoji,
                         pos.getTradeId(),
                         pos.getSymbol(),
+                        pos.getOptionType(),
+                        pos.getAtmStrike(),
                         pos.getDirection(),
-                        pos.getEntryPrice(),
+                        pos.getEntryPremium(),
+                        pos.getLots(),
+                        pos.getLotSize(),
                         pos.getTotalQuantity(),
-                        pos.getInitialSl(),
-                        pos.getTarget1Price(),
+                        pos.getCurrentStockSl(),
+                        pos.getTarget1StockPrice(),
                         pos.getPlannedRisk(),
                         TIME_FMT.format(pos.getEntryTime()));
 
@@ -483,24 +489,26 @@ public class TelegramService {
                         "💰 *[TARGET 1 HIT: 50%% PROFIT BOOKED]* 💰\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal (1:2 RR Achieved)\n"
                                 + "🏷️ *Trade ID:* `%s`\n"
-                                + "📌 *Symbol:* `%s` (%s)\n\n"
+                                + "📌 *Symbol:* `%s` %s ₹%s\n\n"
                                 + "📊 *Booking Execution:*\n"
-                                + "   • *Target 1 Price:* ₹%.2f\n"
-                                + "   • *Shares Booked:* %d shares (50%%)\n"
-                                + "   • 🟢 *Partial Realized P&L:* *+₹%.2f*\n\n"
+                                + "   • *Entry Premium:* ₹%.2f\n"
+                                + "   • *Exit Premium:* ₹%.2f\n"
+                                + "   • *Units Booked:* %d (50%%)\n"
+                                + "   • 🟢 *Partial Realized P&L:* *₹%.2f*\n\n"
                                 + "🛡️ *Risk Free Mode Activated:*\n"
-                                + "   • *Remaining Runner:* %d shares\n"
-                                + "   • *New Stop-Loss:* ₹%.2f (Moved to Breakeven / Cost)\n"
+                                + "   • *Remaining Runner:* %d units\n"
+                                + "   • *New SL:* Entry Premium (Breakeven)\n"
                                 + "   • *Trailing Engine:* 5m SuperTrend(10, 3)\n"
                                 + "⏰ *Time:* %s IST",
                         pos.getTradeId(),
                         pos.getSymbol(),
-                        pos.getDirection(),
-                        pos.getPartialExitPrice(),
+                        pos.getOptionType(),
+                        pos.getAtmStrike(),
+                        pos.getEntryPremium(),
+                        pos.getPartialExitPremium(),
                         bookedQty,
                         partialPnl,
                         pos.getRemainingQuantity(),
-                        pos.getCurrentSl(),
                         TIME_FMT.format(
                                 pos.getPartialExitTime() != null
                                         ? pos.getPartialExitTime()
@@ -533,10 +541,11 @@ public class TelegramService {
                         "🏁 *[PAPER TRADE CLOSED]* 🏁\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal & Continuation\n"
                                 + "🏷️ *Trade ID:* `%s`\n"
-                                + "📌 *Symbol:* `%s` (%s)\n\n"
+                                + "📌 *Symbol:* `%s` %s ₹%s\n\n"
                                 + "📊 *Trade Summary:*\n"
-                                + "   • *Entry Price:* ₹%.2f (Qty: %d)\n"
-                                + "   • *Final Exit Price:* ₹%.2f\n"
+                                + "   • *Entry Premium:* ₹%.2f\n"
+                                + "   • *Exit Premium:* ₹%.2f\n"
+                                + "   • *Units:* %d\n"
                                 + "   • *Partial Booking P&L:* ₹%.2f\n"
                                 + "   • *Runner P&L:* ₹%.2f\n"
                                 + "   • %s *Total Realized P&L:* *%s₹%.2f*\n\n"
@@ -544,12 +553,13 @@ public class TelegramService {
                                 + "⏰ *Exit Time:* %s IST",
                         pos.getTradeId(),
                         pos.getSymbol(),
-                        pos.getDirection(),
-                        pos.getEntryPrice(),
+                        pos.getOptionType(),
+                        pos.getAtmStrike(),
+                        pos.getEntryPremium(),
+                        pos.getRunnerExitPremium() != null
+                                ? pos.getRunnerExitPremium()
+                                : pos.getEntryPremium(),
                         pos.getTotalQuantity(),
-                        pos.getRunnerExitPrice() != null
-                                ? pos.getRunnerExitPrice()
-                                : pos.getEntryPrice(),
                         pos.getPartialPnl(),
                         pos.getRunnerPnl(),
                         pnlEmoji,
