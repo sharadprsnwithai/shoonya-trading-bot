@@ -274,7 +274,7 @@ class RsiCrossoverStrategyServiceTest {
     @Test
     void testHardStopLossExitForOptionSelling() {
         strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
-        strategyService.setStopLossPercent(5.0);
+        strategyService.setStopLossPercent(2.0);
 
         // Entry: Sell PE at Rs. 150
         OptionContract peEntry =
@@ -289,12 +289,12 @@ class RsiCrossoverStrategyServiceTest {
         strategyService.executeTrade("SELL", "PE", 22500.0, 55.0, 50.0, 48.0, 50.0);
         assertThat(strategyService.getOpenPosition()).isNotNull();
 
-        // 5% SL threshold for seller = 150 * 1.05 = 157.50. Quote jumps to 160
+        // 2% SL threshold for seller = 150 * 1.02 = 153.00. Quote jumps to 154
         OptionContract peRose =
                 new OptionContract(
                         "NIFTY24OCT22500PE", "20002", "PE", BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(160.0), 1000, 100, BigDecimal.valueOf(159.5),
-                        BigDecimal.valueOf(160.5), BigDecimal.valueOf(140.0));
+                        BigDecimal.valueOf(154.0), 1000, 100, BigDecimal.valueOf(153.5),
+                        BigDecimal.valueOf(154.5), BigDecimal.valueOf(140.0));
         OptionStrike strikeRose = new OptionStrike(BigDecimal.valueOf(22500), true, null, peRose);
         when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
                 .thenReturn(new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strikeRose)));
@@ -395,11 +395,11 @@ class RsiCrossoverStrategyServiceTest {
                         "20001",
                         "CE",
                         BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(135.0),
+                        BigDecimal.valueOf(139.0),
                         1000,
                         100,
-                        BigDecimal.valueOf(134.5),
-                        BigDecimal.valueOf(135.5),
+                        BigDecimal.valueOf(138.5),
+                        BigDecimal.valueOf(139.5),
                         BigDecimal.valueOf(130.0));
         OptionStrike exitStrike = new OptionStrike(BigDecimal.valueOf(22500), true, exitCe, null);
         when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
@@ -412,7 +412,7 @@ class RsiCrossoverStrategyServiceTest {
         RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.isClosed()).isTrue();
         assertThat(closed.getExitReason()).isEqualTo("RSI_REVERSAL_BEARISH");
-        assertThat(closed.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(135.0));
+        assertThat(closed.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(139.0));
 
         verify(telegramService).sendRsiCrossoverExitAlert(eq(closed), eq("RSI_REVERSAL_BEARISH"));
     }

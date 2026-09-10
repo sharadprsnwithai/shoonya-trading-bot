@@ -97,8 +97,8 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.adx-threshold:20.0}")
     private double adxThreshold = 20.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.stop-loss-percent:5.0}")
-    private double stopLossPercent = 5.0;
+    @Value("${trading-bot.strategy.rsi-crossover.stop-loss-percent:2.0}")
+    private double stopLossPercent = 2.0;
 
     @Value("${trading-bot.strategy.rsi-crossover.target-profit-percent:50.0}")
     private double targetProfitPercent = 50.0;
