@@ -33,11 +33,11 @@
 - Consumes: `TA_LIB.wma(...)` or weighted linear arithmetic
 - Produces: `public double[] calculateWmaSeries(double[] prices, int period)`
 
-- [ ] **Step 1: Write the failing unit test for 19-period WMA in `TechnicalAnalysisServiceTest.java`**
-- [ ] **Step 2: Run `./gradlew test --tests com.tradingbot.indicator.TechnicalAnalysisServiceTest` to confirm failure**
-- [ ] **Step 3: Implement `calculateWmaSeries(double[] prices, int period)` in `TechnicalAnalysisService.java`**
-- [ ] **Step 4: Run test to confirm it passes cleanly**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write the failing unit test for 19-period WMA in `TechnicalAnalysisServiceTest.java`**
+- [x] **Step 2: Run `./gradlew test --tests com.tradingbot.indicator.TechnicalAnalysisServiceTest` to confirm failure**
+- [x] **Step 3: Implement `calculateWmaSeries(double[] prices, int period)` in `TechnicalAnalysisService.java`**
+- [x] **Step 4: Run test to confirm it passes cleanly**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -52,11 +52,11 @@
 - Produces: `DailyWmaPosition` with fields: `tradeId`, `symbol`, `action`, `optionType`, `bias`, `entryDate`, `entrySpot`, `wma19AtEntry`, `expiryDate`, `shortSymbol`, `shortStrike`, `shortEntryPrice`, `shortDelta`, `quantity`, `hedgeSymbol`, `hedgeStrike`, `hedgeEntryPrice`, `hedgeQuantity`, `netCredit`, `stopLossPrice`, `isClosed`, `exitDate`, `exitSpot`, `shortExitPrice`, `hedgeExitPrice`, `realizedPnl`, `exitReason`.
 - Methods: `calculateSpreadPnl(shortLtp, hedgeLtp)`, `close(shortExitPrice, hedgeExitPrice, exitReason, exitTime, exitSpot)`.
 
-- [ ] **Step 1: Write failing unit tests for `DailyWmaPosition` in `DailyWmaPositionTest.java`**
-- [ ] **Step 2: Run test to verify failure**
-- [ ] **Step 3: Implement `DailyWmaPosition.java`**
-- [ ] **Step 4: Run test to verify it passes**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write failing unit tests for `DailyWmaPosition` in `DailyWmaPositionTest.java`**
+- [x] **Step 2: Run test to verify failure**
+- [x] **Step 3: Implement `DailyWmaPosition.java`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -73,10 +73,10 @@
   - `public void sendDailyWmaExitAlert(DailyWmaPosition pos, String reason)`
   - `public void sendDailyWmaStopLossAlert(DailyWmaPosition pos, double currentLtp)`
 
-- [ ] **Step 1: Write unit tests for Daily WMA Telegram alerts in `TelegramServiceTest.java`**
-- [ ] **Step 2: Implement alert formatting methods in `TelegramService.java`**
-- [ ] **Step 3: Run `./gradlew test --tests com.tradingbot.telegram.TelegramServiceTest`**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write unit tests for Daily WMA Telegram alerts in `TelegramServiceTest.java`**
+- [x] **Step 2: Implement alert formatting methods in `TelegramService.java`**
+- [x] **Step 3: Run `./gradlew test --tests com.tradingbot.telegram.TelegramServiceTest`**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -96,10 +96,10 @@
   - `public DailyWmaPosition getOpenPosition()`
   - `public List<DailyWmaPosition> getTradeHistory()`
 
-- [ ] **Step 1: Write unit tests covering bullish entry, bearish entry, $\le ₹105$ filtering, dynamic expiry routing, 2% OTM hedge execution, trend reversal exit, and state persistence in `DailyWmaStrategyServiceTest.java`**
-- [ ] **Step 2: Implement `DailyWmaStrategyService.java`**
-- [ ] **Step 3: Run `./gradlew test --tests com.tradingbot.service.DailyWmaStrategyServiceTest`**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write unit tests covering bullish entry, bearish entry, $\le ₹105$ filtering, dynamic expiry routing, 2% OTM hedge execution, trend reversal exit, and state persistence in `DailyWmaStrategyServiceTest.java`**
+- [x] **Step 2: Implement `DailyWmaStrategyService.java`**
+- [x] **Step 3: Run `./gradlew test --tests com.tradingbot.service.DailyWmaStrategyServiceTest`**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -116,10 +116,10 @@
   - `@Scheduled(cron = "${trading-bot.strategy.daily-wma.sl-monitor-cron:10 */5 9-15 * * MON-FRI}", zone = "Asia/Kolkata") public void monitorStopLoss()`
   - `@Scheduled(cron = "${trading-bot.strategy.daily-wma.squareoff-cron:10 15 15 * * MON-FRI}", zone = "Asia/Kolkata") public void checkExpirySquareOff()`
 
-- [ ] **Step 1: Write unit test in `DailyWmaSchedulerTest.java`**
-- [ ] **Step 2: Implement `DailyWmaScheduler.java`**
-- [ ] **Step 3: Run `./gradlew test --tests com.tradingbot.scheduler.DailyWmaSchedulerTest`**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write unit test in `DailyWmaSchedulerTest.java`**
+- [x] **Step 2: Implement `DailyWmaScheduler.java`**
+- [x] **Step 3: Run `./gradlew test --tests com.tradingbot.scheduler.DailyWmaSchedulerTest`**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -130,9 +130,9 @@
 - Modify: `.env.example`
 - Modify: `.env`
 
-- [ ] **Step 1: Add `trading-bot.strategy.daily-wma.*` properties in `application.properties`**
-- [ ] **Step 2: Update `.env.example` and `.env` with environment variable mappings**
-- [ ] **Step 3: Commit changes**
+- [x] **Step 1: Add `trading-bot.strategy.daily-wma.*` properties in `application.properties`**
+- [x] **Step 2: Update `.env.example` and `.env` with environment variable mappings**
+- [x] **Step 3: Commit changes**
 
 ---
 
@@ -142,10 +142,10 @@
 - Create: `src/main/java/com/tradingbot/backtest/DailyWmaBacktestService.java`
 - Create: `src/test/java/com/tradingbot/backtest/DailyWmaBacktestServiceTest.java`
 
-- [ ] **Step 1: Write unit test in `DailyWmaBacktestServiceTest.java`**
-- [ ] **Step 2: Implement `DailyWmaBacktestService.java`**
-- [ ] **Step 3: Run `./gradlew test --tests com.tradingbot.backtest.DailyWmaBacktestServiceTest`**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write unit test in `DailyWmaBacktestServiceTest.java`**
+- [x] **Step 2: Implement `DailyWmaBacktestService.java`**
+- [x] **Step 3: Run `./gradlew test --tests com.tradingbot.backtest.DailyWmaBacktestServiceTest`**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -162,16 +162,16 @@
 - `POST /api/strategy/daily-wma/close`: Forces square-off of open position.
 - `POST /api/strategy/daily-wma/backtest`: Triggers backtest over specified days.
 
-- [ ] **Step 1: Write unit tests in `DailyWmaStrategyControllerTest.java`**
-- [ ] **Step 2: Implement `DailyWmaStrategyController.java`**
-- [ ] **Step 3: Run `./gradlew test --tests com.tradingbot.controller.DailyWmaStrategyControllerTest`**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write unit tests in `DailyWmaStrategyControllerTest.java`**
+- [x] **Step 2: Implement `DailyWmaStrategyController.java`**
+- [x] **Step 3: Run `./gradlew test --tests com.tradingbot.controller.DailyWmaStrategyControllerTest`**
+- [x] **Step 4: Commit changes**
 
 ---
 
 ### Task 9: Full Verification, Docker Container Build & Deployment
 
-- [ ] **Step 1: Run full test suite: `./gradlew test --rerun-tasks`**
-- [ ] **Step 2: Package JAR: `./gradlew bootJar`**
-- [ ] **Step 3: Build & Push Docker image: `docker build -t sharadprsn/shoonya-trading-bot:latest .` and `docker push sharadprsn/shoonya-trading-bot:latest`**
-- [ ] **Step 4: Final verification summary**
+- [x] **Step 1: Run full test suite: `./gradlew test --rerun-tasks`**
+- [x] **Step 2: Package JAR: `./gradlew bootJar`**
+- [x] **Step 3: Build & Push Docker image: `docker build -t sharadprsn/shoonya-trading-bot:latest .` and `docker push sharadprsn/shoonya-trading-bot:latest`**
+- [x] **Step 4: Final verification summary**
