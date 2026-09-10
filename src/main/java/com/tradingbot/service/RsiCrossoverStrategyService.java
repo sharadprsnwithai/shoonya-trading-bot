@@ -80,6 +80,18 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.rsi-period:14}")
     private int rsiPeriod = 14;
 
+    @Value("${trading-bot.strategy.rsi-crossover.adx-filter-enabled:true}")
+    private boolean adxFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.adx-threshold:20.0}")
+    private double adxThreshold = 20.0;
+
+    @Value("${trading-bot.strategy.rsi-crossover.stop-loss-percent:20.0}")
+    private double stopLossPercent = 20.0;
+
+    @Value("${trading-bot.strategy.rsi-crossover.target-profit-percent:50.0}")
+    private double targetProfitPercent = 50.0;
+
     @Value("${trading-bot.strategy.rsi-crossover.telegram-alerts:true}")
     private boolean telegramAlerts = true;
 
@@ -93,6 +105,7 @@ public class RsiCrossoverStrategyService {
     private volatile double latestRsi15m = Double.NaN;
     private volatile double prevRsi5m = Double.NaN;
     private volatile double prevRsi15m = Double.NaN;
+    private volatile double latestAdx15m = Double.NaN;
     private volatile double latestNiftyLtp = Double.NaN;
 
     @Autowired
@@ -150,7 +163,10 @@ public class RsiCrossoverStrategyService {
         double[] rsi5mSeries = taService.calculateRsiSeries(close5m, rsiPeriod);
 
         double[] close15m = fifteenMinCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
+        double[] high15m = fifteenMinCandles.stream().mapToDouble(c -> c.high().doubleValue()).toArray();
+        double[] low15m = fifteenMinCandles.stream().mapToDouble(c -> c.low().doubleValue()).toArray();
         double[] rsi15mSeries = taService.calculateRsiSeries(close15m, rsiPeriod);
+        double[] adx15mSeries = taService.calculateAdxSeries(high15m, low15m, close15m, rsiPeriod);
 
         int len5 = rsi5mSeries.length;
         int len15 = rsi15mSeries.length;
@@ -163,6 +179,7 @@ public class RsiCrossoverStrategyService {
         double rsi5Prev = rsi5mSeries[len5 - 2];
         double rsi15Curr = rsi15mSeries[len15 - 1];
         double rsi15Prev = rsi15mSeries[len15 - 2];
+        double adx15mCurr = (adx15mSeries.length > 0) ? adx15mSeries[adx15mSeries.length - 1] : Double.NaN;
 
         if (Double.isNaN(rsi5Curr) || Double.isNaN(rsi5Prev) || Double.isNaN(rsi15Curr) || Double.isNaN(rsi15Prev)) {
             log.warn("[RSI-STRATEGY] One or more RSI values evaluated to NaN: 5m=[{}, {}], 15m=[{}, {}]", rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr);
@@ -176,16 +193,17 @@ public class RsiCrossoverStrategyService {
         this.prevRsi5m = rsi5Prev;
         this.latestRsi15m = rsi15Curr;
         this.prevRsi15m = rsi15Prev;
+        this.latestAdx15m = adx15mCurr;
         this.latestNiftyLtp = spotPrice;
 
         log.info(
-                "[RSI-STRATEGY] NIFTY: ₹{} | 5m RSI: {:.2f} (prev: {:.2f}) | 15m RSI: {:.2f} (prev: {:.2f})",
-                spotPrice, rsi5Curr, rsi5Prev, rsi15Curr, rsi15Prev);
+                "[RSI-STRATEGY] NIFTY: ₹{} | 5m RSI: {:.2f} (prev: {:.2f}) | 15m RSI: {:.2f} (prev: {:.2f}) | 15m ADX: {:.2f}",
+                spotPrice, rsi5Curr, rsi5Prev, rsi15Curr, rsi15Prev, adx15mCurr);
 
-        // 1. Manage Active Open Position (Exit on Crossover Reversal)
+        // 1. Manage Active Open Position (Check SL, Target, or Crossover Reversal)
         RsiCrossoverPosition current = openPosition.get();
         if (current != null && !current.isClosed()) {
-            evaluateExitOnReversal(current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr);
+            evaluatePositionExit(current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, spotPrice);
             return;
         }
 
@@ -195,33 +213,97 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
-        evaluateEntry(rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, spotPrice);
+        evaluateEntry(rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, adx15mCurr, spotPrice);
     }
 
-    /** Evaluates crossover entry condition. */
+    /** Evaluates crossover entry condition with optional ADX momentum filter. */
     public void evaluateEntry(
-            double rsi5Prev, double rsi5Curr, double rsi15Prev, double rsi15Curr, double spotPrice) {
+            double rsi5Prev,
+            double rsi5Curr,
+            double rsi15Prev,
+            double rsi15Curr,
+            double adx15mCurr,
+            double spotPrice) {
         // Bullish Crossover: 5m RSI crosses above 15m RSI
         boolean bullishCrossover = (rsi5Prev <= rsi15Prev) && (rsi5Curr > rsi15Curr);
 
         // Bearish Crossover: 5m RSI crosses below 15m RSI
         boolean bearishCrossover = (rsi5Prev >= rsi15Prev) && (rsi5Curr < rsi15Curr);
 
-        if (bullishCrossover) {
-            log.info(
-                    "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER DETECTED: 5m ({:.2f}) crossed ABOVE 15m ({:.2f})! Entering ATM CE Buy...",
-                    rsi5Curr, rsi15Curr);
-            executeOptionBuy("CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
-        } else if (bearishCrossover) {
-            log.info(
-                    "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER DETECTED: 5m ({:.2f}) crossed BELOW 15m ({:.2f})! Entering ATM PE Buy...",
-                    rsi5Curr, rsi15Curr);
-            executeOptionBuy("PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
-        } else {
+        if (!bullishCrossover && !bearishCrossover) {
             log.debug(
                     "[RSI-STRATEGY] No crossover detected. (5m: {:.2f}, 15m: {:.2f})",
                     rsi5Curr, rsi15Curr);
+            return;
         }
+
+        // ADX Trend Strength Filter
+        if (adxFilterEnabled && !Double.isNaN(adx15mCurr) && adx15mCurr < adxThreshold) {
+            log.info(
+                    "[RSI-STRATEGY] ⚠️ Crossover detected but 15m ADX ({:.2f}) < threshold ({:.2f}). Skipping low-momentum entry.",
+                    adx15mCurr, adxThreshold);
+            return;
+        }
+
+        if (bullishCrossover) {
+            log.info(
+                    "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER DETECTED: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Entering ATM CE Buy...",
+                    rsi5Curr, rsi15Curr, adx15mCurr);
+            executeOptionBuy("CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+        } else {
+            log.info(
+                    "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER DETECTED: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Entering ATM PE Buy...",
+                    rsi5Curr, rsi15Curr, adx15mCurr);
+            executeOptionBuy("PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+        }
+    }
+
+    /** Evaluates exit condition for an active open position (Stop Loss, Target, or RSI Reversal). */
+    public void evaluatePositionExit(
+            RsiCrossoverPosition current,
+            double rsi5Prev,
+            double rsi5Curr,
+            double rsi15Prev,
+            double rsi15Curr,
+            double currentSpotPrice) {
+        BigDecimal currentPremium = fetchOptionPremium(current.getStrike(), current.getOptionType());
+        if (currentPremium == null || currentPremium.compareTo(BigDecimal.ZERO) <= 0) {
+            // Estimate via delta 0.50 if quote fetch fails
+            double spotDiff = "CE".equalsIgnoreCase(current.getOptionType())
+                    ? currentSpotPrice - current.getStrike().doubleValue()
+                    : current.getStrike().doubleValue() - currentSpotPrice;
+            currentPremium = current.getEntryPrice().add(BigDecimal.valueOf(spotDiff * 0.50));
+        }
+
+        BigDecimal entryPrice = current.getEntryPrice();
+        if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
+            // Hard Stop Loss check
+            if (stopLossPercent > 0.0) {
+                BigDecimal slThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
+                if (currentPremium.compareTo(slThreshold) <= 0) {
+                    log.info(
+                            "[RSI-STRATEGY] 🛑 HARD STOP-LOSS HIT for {}: Current ₹{} <= SL ₹{} ({}%)",
+                            current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
+                    executeExit("HARD_SL_HIT");
+                    return;
+                }
+            }
+
+            // Target Profit check
+            if (targetProfitPercent > 0.0) {
+                BigDecimal tpThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
+                if (currentPremium.compareTo(tpThreshold) >= 0) {
+                    log.info(
+                            "[RSI-STRATEGY] 🎯 TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
+                            current.getSymbol(), currentPremium, tpThreshold, targetProfitPercent);
+                    executeExit("TARGET_PROFIT_HIT");
+                    return;
+                }
+            }
+        }
+
+        // Crossover Reversal check
+        evaluateExitOnReversal(current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr);
     }
 
     /** Evaluates reversal exit condition for an active open position. */
@@ -441,6 +523,42 @@ public class RsiCrossoverStrategyService {
 
     public void setLotSize(int lotSize) {
         this.lotSize = lotSize;
+    }
+
+    public double getLatestAdx15m() {
+        return latestAdx15m;
+    }
+
+    public boolean isAdxFilterEnabled() {
+        return adxFilterEnabled;
+    }
+
+    public void setAdxFilterEnabled(boolean adxFilterEnabled) {
+        this.adxFilterEnabled = adxFilterEnabled;
+    }
+
+    public double getAdxThreshold() {
+        return adxThreshold;
+    }
+
+    public void setAdxThreshold(double adxThreshold) {
+        this.adxThreshold = adxThreshold;
+    }
+
+    public double getStopLossPercent() {
+        return stopLossPercent;
+    }
+
+    public void setStopLossPercent(double stopLossPercent) {
+        this.stopLossPercent = stopLossPercent;
+    }
+
+    public double getTargetProfitPercent() {
+        return targetProfitPercent;
+    }
+
+    public void setTargetProfitPercent(double targetProfitPercent) {
+        this.targetProfitPercent = targetProfitPercent;
     }
 
     public void setAutoExecute(boolean autoExecute) {

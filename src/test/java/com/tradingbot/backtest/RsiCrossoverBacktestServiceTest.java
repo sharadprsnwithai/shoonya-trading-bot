@@ -72,7 +72,27 @@ class RsiCrossoverBacktestServiceTest {
         allCandles.addAll(generateMockDayCandles(day3, 24050.0, 2.0));
         allCandles.addAll(generateMockDayCandles(day4, 24200.0, -1.5));
 
-        BacktestResult result = backtestService.evaluateCandles("NIFTY 50", allCandles, 1, 14);
+        BacktestResult result = backtestService.evaluateCandles("NIFTY 50", allCandles, 1, 14, false, 0.0, 20.0, 50.0);
+
+        assertThat(result.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
+        assertThat(result.symbol()).isEqualTo("NIFTY 50");
+        assertThat(result.daysTested()).isEqualTo(4);
+    }
+
+    @Test
+    void testEvaluationWithAdxFilterAndStopLoss() {
+        List<Candle> allCandles = new ArrayList<>();
+        LocalDate day1 = LocalDate.of(2026, 9, 7);
+        LocalDate day2 = LocalDate.of(2026, 9, 8);
+        LocalDate day3 = LocalDate.of(2026, 9, 9);
+        LocalDate day4 = LocalDate.of(2026, 9, 10);
+
+        allCandles.addAll(generateMockDayCandles(day1, 24000.0, 1.5));
+        allCandles.addAll(generateMockDayCandles(day2, 24100.0, -1.5));
+        allCandles.addAll(generateMockDayCandles(day3, 24050.0, 2.0));
+        allCandles.addAll(generateMockDayCandles(day4, 24200.0, -2.0));
+
+        BacktestResult result = backtestService.evaluateCandles("NIFTY 50", allCandles, 1, 14, true, 15.0, 20.0, 50.0);
 
         assertThat(result.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
         assertThat(result.symbol()).isEqualTo("NIFTY 50");

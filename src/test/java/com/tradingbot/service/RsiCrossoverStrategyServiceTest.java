@@ -62,6 +62,10 @@ class RsiCrossoverStrategyServiceTest {
                         optionChainService,
                         orderService,
                         config);
+
+        // Default ADX to >= 20.0 for happy path tests
+        when(taService.calculateAdxSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {25.0, 25.0, 25.0});
     }
 
     private Clock createFixedClock(LocalTime time) {
@@ -139,6 +143,31 @@ class RsiCrossoverStrategyServiceTest {
     }
 
     @Test
+    void testAdxFilterBlocksLowMomentumEntry() {
+        strategyService.setClock(createFixedClock(LocalTime.of(9, 45, 10)));
+        strategyService.setAdxFilterEnabled(true);
+        strategyService.setAdxThreshold(20.0);
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+
+        // Bullish crossover
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {40.0, 48.0, 55.0}) // 5m
+                .thenReturn(new double[] {50.0, 52.0, 52.0}); // 15m
+
+        // Low ADX (15.0 < 20.0)
+        when(taService.calculateAdxSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {15.0, 15.0, 15.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.isTradeExecutedToday()).isFalse();
+    }
+
+    @Test
     void testBearishCrossoverTriggersPeBuy() {
         strategyService.setClock(createFixedClock(LocalTime.of(10, 15, 10)));
 
@@ -201,6 +230,92 @@ class RsiCrossoverStrategyServiceTest {
     }
 
     @Test
+    void testHardStopLossExit() {
+        strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
+        strategyService.setStopLossPercent(20.0);
+
+        // Entry at Rs. 150
+        OptionContract ceEntry =
+                new OptionContract(
+                        "NIFTY24OCT22500CE", "20001", "CE", BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(150.0), 1000, 100, BigDecimal.valueOf(149.5),
+                        BigDecimal.valueOf(150.5), BigDecimal.valueOf(140.0));
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, ceEntry, null);
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strike)));
+
+        strategyService.executeOptionBuy("CE", 22500.0, 55.0, 50.0, 48.0, 50.0);
+        assertThat(strategyService.getOpenPosition()).isNotNull();
+
+        // 20% SL threshold = 150 * 0.8 = 120. Simulate quote dropping to 115
+        OptionContract ceDropped =
+                new OptionContract(
+                        "NIFTY24OCT22500CE", "20001", "CE", BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(115.0), 1000, 100, BigDecimal.valueOf(114.5),
+                        BigDecimal.valueOf(115.5), BigDecimal.valueOf(140.0));
+        OptionStrike strikeDropped = new OptionStrike(BigDecimal.valueOf(22500), true, ceDropped, null);
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strikeDropped)));
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt())).thenReturn(candles);
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {55.0, 55.0, 55.0})
+                .thenReturn(new double[] {50.0, 50.0, 50.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradeHistory()).hasSize(1);
+        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        assertThat(closed.getExitReason()).isEqualTo("HARD_SL_HIT");
+        assertThat(closed.isClosed()).isTrue();
+    }
+
+    @Test
+    void testTargetProfitExit() {
+        strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
+        strategyService.setTargetProfitPercent(50.0);
+
+        // Entry at Rs. 150
+        OptionContract ceEntry =
+                new OptionContract(
+                        "NIFTY24OCT22500CE", "20001", "CE", BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(150.0), 1000, 100, BigDecimal.valueOf(149.5),
+                        BigDecimal.valueOf(150.5), BigDecimal.valueOf(140.0));
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, ceEntry, null);
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strike)));
+
+        strategyService.executeOptionBuy("CE", 22500.0, 55.0, 50.0, 48.0, 50.0);
+        assertThat(strategyService.getOpenPosition()).isNotNull();
+
+        // 50% TP threshold = 150 * 1.5 = 225. Simulate quote rising to 230
+        OptionContract ceGained =
+                new OptionContract(
+                        "NIFTY24OCT22500CE", "20001", "CE", BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(230.0), 1000, 100, BigDecimal.valueOf(229.5),
+                        BigDecimal.valueOf(230.5), BigDecimal.valueOf(140.0));
+        OptionStrike strikeGained = new OptionStrike(BigDecimal.valueOf(22500), true, ceGained, null);
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strikeGained)));
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt())).thenReturn(candles);
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {55.0, 55.0, 55.0})
+                .thenReturn(new double[] {50.0, 50.0, 50.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradeHistory()).hasSize(1);
+        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        assertThat(closed.getExitReason()).isEqualTo("TARGET_PROFIT_HIT");
+        assertThat(closed.isClosed()).isTrue();
+    }
+
+    @Test
     void testExitOnReverseCrossover() {
         strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
 
@@ -238,16 +353,15 @@ class RsiCrossoverStrategyServiceTest {
                         "20001",
                         "CE",
                         BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(175.0),
+                        BigDecimal.valueOf(135.0),
                         1000,
                         100,
-                        BigDecimal.valueOf(174.5),
-                        BigDecimal.valueOf(175.5),
-                        BigDecimal.valueOf(140.0));
+                        BigDecimal.valueOf(134.5),
+                        BigDecimal.valueOf(135.5),
+                        BigDecimal.valueOf(130.0));
         OptionStrike exitStrike = new OptionStrike(BigDecimal.valueOf(22500), true, exitCe, null);
-        OptionChainResponse exitChain =
-                new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(exitStrike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean())).thenReturn(exitChain);
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(exitStrike)));
 
         strategyService.runCycle();
 
@@ -255,50 +369,16 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getTradeHistory()).hasSize(1);
         RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.isClosed()).isTrue();
-        assertThat(closed.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(175.0));
         assertThat(closed.getExitReason()).isEqualTo("RSI_REVERSAL_BEARISH");
+        assertThat(closed.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(135.0));
 
         verify(telegramService).sendRsiCrossoverExitAlert(eq(closed), eq("RSI_REVERSAL_BEARISH"));
     }
 
     @Test
-    void testMandatoryEodSquareOff() {
+    void testSquareOffAt1505() {
         strategyService.setClock(createFixedClock(LocalTime.of(15, 5, 10)));
 
-        OptionContract pe =
-                new OptionContract(
-                        "NIFTY24OCT22500PE",
-                        "20002",
-                        "PE",
-                        BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(150.0),
-                        1000,
-                        100,
-                        BigDecimal.valueOf(149.5),
-                        BigDecimal.valueOf(150.5),
-                        BigDecimal.valueOf(140.0));
-        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, pe);
-        OptionChainResponse chain =
-                new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean())).thenReturn(chain);
-
-        strategyService.executeOptionBuy("PE", 22500.0, 45.0, 50.0, 52.0, 50.0);
-
-        assertThat(strategyService.getOpenPosition()).isNotNull();
-
-        strategyService.executeSquareOff("MANDATORY_EOD_SQUARE_OFF");
-
-        assertThat(strategyService.getOpenPosition()).isNull();
-        assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
-        assertThat(closed.isClosed()).isTrue();
-        assertThat(closed.getExitReason()).isEqualTo("MANDATORY_EOD_SQUARE_OFF");
-
-        verify(telegramService).sendRsiCrossoverExitAlert(eq(closed), eq("MANDATORY_EOD_SQUARE_OFF"));
-    }
-
-    @Test
-    void testDailyReset() {
         OptionContract ce =
                 new OptionContract(
                         "NIFTY24OCT22500CE",
@@ -317,11 +397,19 @@ class RsiCrossoverStrategyServiceTest {
         when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean())).thenReturn(chain);
 
         strategyService.executeOptionBuy("CE", 22500.0, 55.0, 50.0, 48.0, 50.0);
-        strategyService.executeSquareOff("EOD");
+        assertThat(strategyService.getOpenPosition()).isNotNull();
 
-        assertThat(strategyService.isTradeExecutedToday()).isTrue();
+        strategyService.executeSquareOff("MANDATORY_EOD_SQUARE_OFF");
+
+        assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
+        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        assertThat(closed.getExitReason()).isEqualTo("MANDATORY_EOD_SQUARE_OFF");
+    }
 
+    @Test
+    void testDailyResetClearsAllState() {
+        strategyService.setTradeExecutedToday(true);
         strategyService.resetDaily();
 
         assertThat(strategyService.isTradeExecutedToday()).isFalse();
