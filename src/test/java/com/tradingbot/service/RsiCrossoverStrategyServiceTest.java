@@ -274,7 +274,7 @@ class RsiCrossoverStrategyServiceTest {
     @Test
     void testHardStopLossExitForOptionSelling() {
         strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
-        strategyService.setStopLossPercent(20.0);
+        strategyService.setStopLossPercent(5.0);
 
         // Entry: Sell PE at Rs. 150
         OptionContract peEntry =
@@ -289,12 +289,12 @@ class RsiCrossoverStrategyServiceTest {
         strategyService.executeTrade("SELL", "PE", 22500.0, 55.0, 50.0, 48.0, 50.0);
         assertThat(strategyService.getOpenPosition()).isNotNull();
 
-        // 20% SL threshold for seller = 150 * 1.2 = 180. Quote jumps to 185
+        // 5% SL threshold for seller = 150 * 1.05 = 157.50. Quote jumps to 160
         OptionContract peRose =
                 new OptionContract(
                         "NIFTY24OCT22500PE", "20002", "PE", BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(185.0), 1000, 100, BigDecimal.valueOf(184.5),
-                        BigDecimal.valueOf(185.5), BigDecimal.valueOf(140.0));
+                        BigDecimal.valueOf(160.0), 1000, 100, BigDecimal.valueOf(159.5),
+                        BigDecimal.valueOf(160.5), BigDecimal.valueOf(140.0));
         OptionStrike strikeRose = new OptionStrike(BigDecimal.valueOf(22500), true, null, peRose);
         when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
                 .thenReturn(new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strikeRose)));
