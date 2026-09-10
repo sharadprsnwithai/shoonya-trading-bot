@@ -32,14 +32,22 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Automated Intraday Option Buying Strategy: NIFTY 5m vs 15m RSI(14) Crossover.
+ * Automated Intraday NIFTY 5m vs 15m RSI(14) Crossover Strategy.
+ *
+ * <p>Modes Supported:
+ * 1. OPTION_SELLING (Default / Recommended):
+ *    - 5m RSI(14) crosses above 15m RSI(14) -> SELL ATM PE (Bullish credit).
+ *    - 5m RSI(14) crosses below 15m RSI(14) -> SELL ATM CE (Bearish credit).
+ * 2. OPTION_BUYING:
+ *    - 5m RSI(14) crosses above 15m RSI(14) -> BUY ATM CE.
+ *    - 5m RSI(14) crosses below 15m RSI(14) -> BUY ATM PE.
  *
  * <p>Rules:
  * 1. Monitored on NIFTY 50 index (NSE:10576).
  * 2. Active evaluation starts at 09:45:10 IST and runs every 5 minutes until 15:00:10 IST.
- * 3. 5m RSI(14) crosses above 15m RSI(14) -> Buy ATM CE (Current Weekly Expiry).
- * 4. 5m RSI(14) crosses below 15m RSI(14) -> Buy ATM PE (Current Weekly Expiry).
- * 5. Strict 1 trade per day limit.
+ * 3. Trend strength verified using 15m ADX(14) >= threshold (default 20.0).
+ * 4. Strict 1 trade per day limit.
+ * 5. Hard Stop-Loss and Target Profit protection on option premium.
  * 6. Exit on reverse crossover or mandatory 15:05:10 IST EOD square-off.
  */
 @Service
@@ -67,6 +75,9 @@ public class RsiCrossoverStrategyService {
 
     @Value("${trading-bot.strategy.rsi-crossover.enabled:true}")
     private boolean enabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.mode:OPTION_SELLING}")
+    private String mode = "OPTION_SELLING";
 
     @Value("${trading-bot.strategy.rsi-crossover.auto-execute:false}")
     private boolean autoExecute = false;
@@ -143,7 +154,7 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
-        log.info("[RSI-STRATEGY] Running 5-min RSI Crossover cycle at {} IST...", nowTime);
+        log.info("[RSI-STRATEGY] Running 5-min RSI Crossover cycle [{}] at {} IST...", mode, nowTime);
 
         // Fetch 5-day 5-min historical candles (guarantees >= 350 bars for warm RSI)
         List<Candle> fiveMinCandles = marketDataService.fetchHistoricalCandles(NIFTY_EXCHANGE, NIFTY_TOKEN, NIFTY_SYMBOL, "5", 5);
@@ -197,8 +208,8 @@ public class RsiCrossoverStrategyService {
         this.latestNiftyLtp = spotPrice;
 
         log.info(
-                "[RSI-STRATEGY] NIFTY: ₹{} | 5m RSI: {:.2f} (prev: {:.2f}) | 15m RSI: {:.2f} (prev: {:.2f}) | 15m ADX: {:.2f}",
-                spotPrice, rsi5Curr, rsi5Prev, rsi15Curr, rsi15Prev, adx15mCurr);
+                "[RSI-STRATEGY] [{}] NIFTY: ₹{} | 5m RSI: {:.2f} (prev: {:.2f}) | 15m RSI: {:.2f} (prev: {:.2f}) | 15m ADX: {:.2f}",
+                mode, spotPrice, rsi5Curr, rsi5Prev, rsi15Curr, rsi15Prev, adx15mCurr);
 
         // 1. Manage Active Open Position (Check SL, Target, or Crossover Reversal)
         RsiCrossoverPosition current = openPosition.get();
@@ -245,16 +256,32 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
+        boolean isOptionSelling = "OPTION_SELLING".equalsIgnoreCase(mode);
+
         if (bullishCrossover) {
-            log.info(
-                    "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER DETECTED: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Entering ATM CE Buy...",
-                    rsi5Curr, rsi15Curr, adx15mCurr);
-            executeOptionBuy("CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+            if (isOptionSelling) {
+                log.info(
+                        "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM PE SELL...",
+                        rsi5Curr, rsi15Curr, adx15mCurr);
+                executeTrade("SELL", "PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+            } else {
+                log.info(
+                        "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM CE BUY...",
+                        rsi5Curr, rsi15Curr, adx15mCurr);
+                executeTrade("BUY", "CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+            }
         } else {
-            log.info(
-                    "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER DETECTED: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Entering ATM PE Buy...",
-                    rsi5Curr, rsi15Curr, adx15mCurr);
-            executeOptionBuy("PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+            if (isOptionSelling) {
+                log.info(
+                        "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM CE SELL...",
+                        rsi5Curr, rsi15Curr, adx15mCurr);
+                executeTrade("SELL", "CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+            } else {
+                log.info(
+                        "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM PE BUY...",
+                        rsi5Curr, rsi15Curr, adx15mCurr);
+                executeTrade("BUY", "PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+            }
         }
     }
 
@@ -273,31 +300,60 @@ public class RsiCrossoverStrategyService {
                     ? currentSpotPrice - current.getStrike().doubleValue()
                     : current.getStrike().doubleValue() - currentSpotPrice;
             currentPremium = current.getEntryPrice().add(BigDecimal.valueOf(spotDiff * 0.50));
+            if (currentPremium.compareTo(BigDecimal.ZERO) < 0) {
+                currentPremium = BigDecimal.valueOf(0.05);
+            }
         }
 
         BigDecimal entryPrice = current.getEntryPrice();
-        if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
-            // Hard Stop Loss check
-            if (stopLossPercent > 0.0) {
-                BigDecimal slThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
-                if (currentPremium.compareTo(slThreshold) <= 0) {
-                    log.info(
-                            "[RSI-STRATEGY] 🛑 HARD STOP-LOSS HIT for {}: Current ₹{} <= SL ₹{} ({}%)",
-                            current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
-                    executeExit("HARD_SL_HIT");
-                    return;
-                }
-            }
+        boolean isShortPosition = "SELL".equalsIgnoreCase(current.getAction());
 
-            // Target Profit check
-            if (targetProfitPercent > 0.0) {
-                BigDecimal tpThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
-                if (currentPremium.compareTo(tpThreshold) >= 0) {
-                    log.info(
-                            "[RSI-STRATEGY] 🎯 TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
-                            current.getSymbol(), currentPremium, tpThreshold, targetProfitPercent);
-                    executeExit("TARGET_PROFIT_HIT");
-                    return;
+        if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
+            if (isShortPosition) {
+                // For Option Selling: SL is hit when premium rises; TP is hit when premium decays
+                if (stopLossPercent > 0.0) {
+                    BigDecimal slThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 + (stopLossPercent / 100.0)));
+                    if (currentPremium.compareTo(slThreshold) >= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🛑 SHORT STOP-LOSS HIT for {}: Current ₹{} >= SL ₹{} (+{}%)",
+                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
+                        executeExit("HARD_SL_HIT");
+                        return;
+                    }
+                }
+
+                if (targetProfitPercent > 0.0) {
+                    BigDecimal tpThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 - (targetProfitPercent / 100.0)));
+                    if (currentPremium.compareTo(tpThreshold) <= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🎯 SHORT TARGET PROFIT HIT for {}: Current ₹{} <= TP ₹{} (-{}%)",
+                                current.getSymbol(), currentPremium, tpThreshold, targetProfitPercent);
+                        executeExit("TARGET_PROFIT_HIT");
+                        return;
+                    }
+                }
+            } else {
+                // For Option Buying: SL is hit when premium drops; TP is hit when premium rises
+                if (stopLossPercent > 0.0) {
+                    BigDecimal slThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
+                    if (currentPremium.compareTo(slThreshold) <= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🛑 LONG STOP-LOSS HIT for {}: Current ₹{} <= SL ₹{} (-{}%)",
+                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
+                        executeExit("HARD_SL_HIT");
+                        return;
+                    }
+                }
+
+                if (targetProfitPercent > 0.0) {
+                    BigDecimal tpThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
+                    if (currentPremium.compareTo(tpThreshold) >= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🎯 LONG TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
+                                current.getSymbol(), currentPremium, tpThreshold, targetProfitPercent);
+                        executeExit("TARGET_PROFIT_HIT");
+                        return;
+                    }
                 }
             }
         }
@@ -313,29 +369,34 @@ public class RsiCrossoverStrategyService {
             double rsi5Curr,
             double rsi15Prev,
             double rsi15Curr) {
+        String action = current.getAction() != null ? current.getAction().toUpperCase() : "BUY";
         String optionType = current.getOptionType();
 
-        if ("CE".equalsIgnoreCase(optionType)) {
-            // Holding CE: Exit when 5m RSI crosses below 15m RSI
+        boolean isBullishPosition = ("BUY".equals(action) && "CE".equalsIgnoreCase(optionType))
+                || ("SELL".equals(action) && "PE".equalsIgnoreCase(optionType));
+
+        if (isBullishPosition) {
+            // Holding Bullish trade (Buy CE or Sell PE): Exit when 5m RSI drops below 15m RSI
             if (rsi5Curr < rsi15Curr) {
                 log.info(
-                        "[RSI-STRATEGY] 🏁 CE Exit Reversal Triggered: 5m RSI ({:.2f}) < 15m RSI ({:.2f})",
+                        "[RSI-STRATEGY] 🏁 Bullish Position Exit Reversal Triggered: 5m RSI ({:.2f}) < 15m RSI ({:.2f})",
                         rsi5Curr, rsi15Curr);
                 executeExit("RSI_REVERSAL_BEARISH");
             }
-        } else if ("PE".equalsIgnoreCase(optionType)) {
-            // Holding PE: Exit when 5m RSI crosses above 15m RSI
+        } else {
+            // Holding Bearish trade (Buy PE or Sell CE): Exit when 5m RSI rises above 15m RSI
             if (rsi5Curr > rsi15Curr) {
                 log.info(
-                        "[RSI-STRATEGY] 🏁 PE Exit Reversal Triggered: 5m RSI ({:.2f}) > 15m RSI ({:.2f})",
+                        "[RSI-STRATEGY] 🏁 Bearish Position Exit Reversal Triggered: 5m RSI ({:.2f}) > 15m RSI ({:.2f})",
                         rsi5Curr, rsi15Curr);
                 executeExit("RSI_REVERSAL_BULLISH");
             }
         }
     }
 
-    /** Executes Option Buy Entry (Paper or Live). */
-    public synchronized void executeOptionBuy(
+    /** Executes Option Trade Entry (Buy or Sell). */
+    public synchronized void executeTrade(
+            String action,
             String optionType,
             double spotPrice,
             double rsi5Curr,
@@ -362,6 +423,7 @@ public class RsiCrossoverStrategyService {
                 new RsiCrossoverPosition(
                         tradeId,
                         optionSymbol,
+                        action,
                         optionType,
                         atmStrike,
                         entryPremium,
@@ -371,9 +433,10 @@ public class RsiCrossoverStrategyService {
         // If Live Auto-Execution is enabled
         if (autoExecute && config.isEnabled()) {
             try {
-                OrderRequest orderReq = OrderRequest.market(optionSymbol, "NFO", TransactionType.BUY, totalQuantity, tradeId);
+                TransactionType txType = "SELL".equalsIgnoreCase(action) ? TransactionType.SELL : TransactionType.BUY;
+                OrderRequest orderReq = OrderRequest.market(optionSymbol, "NFO", txType, totalQuantity, tradeId);
                 orderService.placeOrder(orderReq);
-                log.info("[RSI-STRATEGY] [LIVE] Placed Buy Order for {} Qty {}", totalQuantity, optionSymbol);
+                log.info("[RSI-STRATEGY] [LIVE] Placed {} Order for {} Qty {}", action, totalQuantity, optionSymbol);
             } catch (Exception e) {
                 log.error("[RSI-STRATEGY] Live order placement failed: {}", e.getMessage(), e);
             }
@@ -383,13 +446,24 @@ public class RsiCrossoverStrategyService {
         this.tradeExecutedToday.set(true);
 
         log.info(
-                "[RSI-STRATEGY] OPTION BUY FILLED: {} | {} Strike ₹{} @ ₹{} | Qty: {}",
-                tradeId, optionSymbol, atmStrike, entryPremium, totalQuantity);
+                "[RSI-STRATEGY] OPTION {} FILLED: {} | {} Strike ₹{} @ ₹{} | Qty: {}",
+                action, tradeId, optionSymbol, atmStrike, entryPremium, totalQuantity);
 
         if (telegramAlerts) {
             telegramService.sendRsiCrossoverEntryAlert(
                     position, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
         }
+    }
+
+    /** Compatibility helper for Option Buy entry. */
+    public synchronized void executeOptionBuy(
+            String optionType,
+            double spotPrice,
+            double rsi5Curr,
+            double rsi15Curr,
+            double rsi5Prev,
+            double rsi15Prev) {
+        executeTrade("BUY", optionType, spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
     }
 
     /** Closes open position with specified reason. */
@@ -404,12 +478,13 @@ public class RsiCrossoverStrategyService {
             exitPremium = current.getEntryPrice(); // Fallback to breakeven if quote unavailable
         }
 
-        // If Live Auto-Execution is enabled, place Sell exit order
+        // If Live Auto-Execution is enabled, place opposing order to close
         if (autoExecute && config.isEnabled()) {
             try {
-                OrderRequest exitReq = OrderRequest.market(current.getSymbol(), "NFO", TransactionType.SELL, current.getQuantity(), current.getTradeId() + "_EXIT");
+                TransactionType exitTxType = "SELL".equalsIgnoreCase(current.getAction()) ? TransactionType.BUY : TransactionType.SELL;
+                OrderRequest exitReq = OrderRequest.market(current.getSymbol(), "NFO", exitTxType, current.getQuantity(), current.getTradeId() + "_EXIT");
                 orderService.placeOrder(exitReq);
-                log.info("[RSI-STRATEGY] [LIVE] Placed Sell Exit Order for {} Qty {}", current.getQuantity(), current.getSymbol());
+                log.info("[RSI-STRATEGY] [LIVE] Placed {} Exit Order for {} Qty {}", exitTxType, current.getQuantity(), current.getSymbol());
             } catch (Exception e) {
                 log.error("[RSI-STRATEGY] Live exit order placement failed: {}", e.getMessage(), e);
             }
@@ -420,8 +495,8 @@ public class RsiCrossoverStrategyService {
         openPosition.set(null);
 
         log.info(
-                "[RSI-STRATEGY] POSITION EXITED: {} | Entry: ₹{} | Exit: ₹{} | P&L: ₹{} | Reason: {}",
-                current.getSymbol(), current.getEntryPrice(), exitPremium, current.getPnl(), reason);
+                "[RSI-STRATEGY] POSITION EXITED: {} {} | Entry: ₹{} | Exit: ₹{} | P&L: ₹{} | Reason: {}",
+                current.getAction(), current.getSymbol(), current.getEntryPrice(), exitPremium, current.getPnl(), reason);
 
         if (telegramAlerts) {
             telegramService.sendRsiCrossoverExitAlert(current, reason);
@@ -509,24 +584,76 @@ public class RsiCrossoverStrategyService {
         return tradeHistory;
     }
 
-    public void setClock(Clock clock) {
-        this.clock = clock;
+    public double getLatestRsi5m() {
+        return latestRsi5m;
+    }
+
+    public double getLatestRsi15m() {
+        return latestRsi15m;
+    }
+
+    public double getPrevRsi5m() {
+        return prevRsi5m;
+    }
+
+    public double getPrevRsi15m() {
+        return prevRsi15m;
+    }
+
+    public double getLatestAdx15m() {
+        return latestAdx15m;
+    }
+
+    public double getLatestNiftyLtp() {
+        return latestNiftyLtp;
+    }
+
+    public String getMode() {
+        return mode;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
     }
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
 
+    public boolean isAutoExecute() {
+        return autoExecute;
+    }
+
+    public void setAutoExecute(boolean autoExecute) {
+        this.autoExecute = autoExecute;
+    }
+
+    public int getLots() {
+        return lots;
+    }
+
     public void setLots(int lots) {
         this.lots = lots;
+    }
+
+    public int getLotSize() {
+        return lotSize;
     }
 
     public void setLotSize(int lotSize) {
         this.lotSize = lotSize;
     }
 
-    public double getLatestAdx15m() {
-        return latestAdx15m;
+    public int getRsiPeriod() {
+        return rsiPeriod;
+    }
+
+    public void setRsiPeriod(int rsiPeriod) {
+        this.rsiPeriod = rsiPeriod;
     }
 
     public boolean isAdxFilterEnabled() {
@@ -561,19 +688,19 @@ public class RsiCrossoverStrategyService {
         this.targetProfitPercent = targetProfitPercent;
     }
 
-    public void setAutoExecute(boolean autoExecute) {
-        this.autoExecute = autoExecute;
+    public boolean isTelegramAlerts() {
+        return telegramAlerts;
     }
 
-    public double getLatestRsi5m() {
-        return latestRsi5m;
+    public void setTelegramAlerts(boolean telegramAlerts) {
+        this.telegramAlerts = telegramAlerts;
     }
 
-    public double getLatestRsi15m() {
-        return latestRsi15m;
+    public Clock getClock() {
+        return clock;
     }
 
-    public double getLatestNiftyLtp() {
-        return latestNiftyLtp;
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 }

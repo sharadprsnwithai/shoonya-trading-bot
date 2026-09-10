@@ -686,7 +686,7 @@ public class TelegramService {
     }
 
     /**
-     * Sends an alert when an RSI Crossover option buy trade is executed.
+     * Sends an alert when an RSI Crossover option trade is executed.
      */
     public void sendRsiCrossoverEntryAlert(
             com.tradingbot.model.strategy.RsiCrossoverPosition position,
@@ -700,19 +700,27 @@ public class TelegramService {
             return;
         }
 
-        String direction = "CE".equalsIgnoreCase(position.getOptionType()) ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
+        String action = position.getAction() != null ? position.getAction().toUpperCase() : "BUY";
+        boolean isBullish = ("BUY".equals(action) && "CE".equalsIgnoreCase(position.getOptionType()))
+                || ("SELL".equals(action) && "PE".equalsIgnoreCase(position.getOptionType()));
+        String direction = isBullish ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
+        String headerAction = "SELL".equals(action) ? "OPTION SELL" : "OPTION BUY";
 
         String message =
                 String.format(
-                        "🚀 *[NIFTY RSI CROSSOVER: OPTION BUY]* 🚀\n\n"
+                        "🚀 *[NIFTY RSI CROSSOVER: %s]* 🚀\n\n"
                                 + "🧭 *Direction:* %s\n"
+                                + "⚡ *Action:* `%s %s`\n"
                                 + "🎯 *Instrument:* `%s`\n"
                                 + "💰 *Entry Premium:* ₹%.2f\n"
                                 + "📦 *Quantity:* %d units\n"
                                 + "📈 *Current RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
                                 + "📉 *Previous RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
                                 + "🕒 *Time:* %s IST",
+                        headerAction,
                         direction,
+                        action,
+                        position.getOptionType(),
                         position.getSymbol(),
                         position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
                         position.getQuantity(),
@@ -726,7 +734,7 @@ public class TelegramService {
     }
 
     /**
-     * Sends an alert when an RSI Crossover option buy trade is exited (Reversal or EOD).
+     * Sends an alert when an RSI Crossover option trade is exited (Reversal or EOD).
      */
     public void sendRsiCrossoverExitAlert(
             com.tradingbot.model.strategy.RsiCrossoverPosition position,

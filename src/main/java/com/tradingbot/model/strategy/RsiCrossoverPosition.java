@@ -4,11 +4,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 
-/** Represents an active or closed option buy position in the RSI Crossover strategy. */
+/** Represents an active or closed option position (Buy or Sell) in the RSI Crossover strategy. */
 public class RsiCrossoverPosition {
 
     private final String tradeId;
     private final String symbol;
+    private final String action; // BUY or SELL
     private final String optionType; // CE or PE
     private final BigDecimal strike;
     private final BigDecimal entryPrice;
@@ -24,6 +25,7 @@ public class RsiCrossoverPosition {
     public RsiCrossoverPosition(
             String tradeId,
             String symbol,
+            String action,
             String optionType,
             BigDecimal strike,
             BigDecimal entryPrice,
@@ -31,6 +33,7 @@ public class RsiCrossoverPosition {
             Instant entryTime) {
         this.tradeId = tradeId;
         this.symbol = symbol;
+        this.action = action != null ? action.toUpperCase() : "BUY";
         this.optionType = optionType;
         this.strike = strike;
         this.entryPrice = entryPrice;
@@ -39,14 +42,34 @@ public class RsiCrossoverPosition {
         this.closed = false;
     }
 
+    public RsiCrossoverPosition(
+            String tradeId,
+            String symbol,
+            String optionType,
+            BigDecimal strike,
+            BigDecimal entryPrice,
+            int quantity,
+            Instant entryTime) {
+        this(tradeId, symbol, "BUY", optionType, strike, entryPrice, quantity, entryTime);
+    }
+
     public BigDecimal calculatePnl(BigDecimal currentPrice) {
         if (currentPrice == null || entryPrice == null) {
             return BigDecimal.ZERO;
         }
-        return currentPrice
-                .subtract(entryPrice)
-                .multiply(BigDecimal.valueOf(quantity))
-                .setScale(2, RoundingMode.HALF_UP);
+        if ("SELL".equalsIgnoreCase(action)) {
+            // For short option: profit when price drops
+            return entryPrice
+                    .subtract(currentPrice)
+                    .multiply(BigDecimal.valueOf(quantity))
+                    .setScale(2, RoundingMode.HALF_UP);
+        } else {
+            // For long option: profit when price rises
+            return currentPrice
+                    .subtract(entryPrice)
+                    .multiply(BigDecimal.valueOf(quantity))
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
     }
 
     public void close(BigDecimal exitPrice, String exitReason, Instant exitTime) {
@@ -63,6 +86,10 @@ public class RsiCrossoverPosition {
 
     public String getSymbol() {
         return symbol;
+    }
+
+    public String getAction() {
+        return action;
     }
 
     public String getOptionType() {

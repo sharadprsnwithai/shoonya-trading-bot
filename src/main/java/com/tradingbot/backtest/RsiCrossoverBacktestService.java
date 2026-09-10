@@ -7,6 +7,7 @@ import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.util.CandleResamplingUtil;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -23,18 +24,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Historical Backtest Service for NIFTY 50 5m vs 15m RSI(14) Crossover Option Buying Strategy.
+ * Historical Backtest Service for NIFTY 50 5m vs 15m RSI(14) Crossover Strategy.
  *
- * <p>Simulates:
- * 1. 09:45:10 to 15:00:10 IST evaluation cycle on 5m NIFTY candles.
- * 2. 5m RSI(14) crosses above 15m RSI(14) -> Buy ATM CE.
- * 3. 5m RSI(14) crosses below 15m RSI(14) -> Buy ATM PE.
- * 4. ADX trend strength filter (default >= 20.0 on 15m).
+ * <p>Supports:
+ * 1. OPTION_SELLING Mode (Bullish: Sell ATM PE | Bearish: Sell ATM CE).
+ * 2. OPTION_BUYING Mode (Bullish: Buy ATM CE | Bearish: Buy ATM PE).
+ * 3. 09:45:10 to 15:00:10 IST evaluation cycle on 5m NIFTY candles.
+ * 4. 15m ADX trend strength filter (default >= 20.0).
  * 5. Strict 1 trade per day limit.
- * 6. Stop-Loss exit (default 20.0% / 20 pts) & Target Profit exit (default 50.0% / 75 pts).
- * 7. Reversal exit (holding CE exits when 5m < 15m RSI; holding PE exits when 5m > 15m RSI).
- * 8. Mandatory 15:05:10 IST EOD square-off.
- * 9. ATM Option Delta ~ 0.50 PnL simulation with lot sizing.
+ * 6. Hard Stop-Loss and Target Profit exits.
+ * 7. Reversal exit & Mandatory 15:05:10 IST EOD square-off.
+ * 8. Realistic Delta ~ 0.50 & Intraday Theta Decay modeling.
  */
 @Service
 public class RsiCrossoverBacktestService {
@@ -43,6 +43,7 @@ public class RsiCrossoverBacktestService {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     public static final String STRATEGY_ID = "NIFTY_RSI_5M_15M_CROSSOVER";
+    public static final String DEFAULT_MODE = "OPTION_SELLING";
     public static final int NIFTY_LOT_SIZE = 65;
     public static final int DEFAULT_LOTS = 1;
     public static final int DEFAULT_RSI_PERIOD = 14;
@@ -60,10 +61,11 @@ public class RsiCrossoverBacktestService {
         this.taService = taService;
     }
 
-    /** Runs backtest for NIFTY 50 over the specified days back using default parameters. */
+    /** Runs backtest for NIFTY 50 over the specified days back using default parameters (OPTION_SELLING). */
     public BacktestResult runBacktest(int daysBack) {
         return runBacktest(
                 daysBack,
+                DEFAULT_MODE,
                 DEFAULT_LOTS,
                 DEFAULT_RSI_PERIOD,
                 true,
@@ -75,6 +77,7 @@ public class RsiCrossoverBacktestService {
     /** Runs backtest for NIFTY 50 over the specified days back with full custom parameter tuning. */
     public BacktestResult runBacktest(
             int daysBack,
+            String mode,
             int lots,
             int rsiPeriod,
             boolean adxFilterEnabled,
@@ -82,11 +85,12 @@ public class RsiCrossoverBacktestService {
             double stopLossPercent,
             double targetProfitPercent) {
         int boundedDays = Math.max(1, Math.min(daysBack, 95));
-        log.info("[RSI-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:10576)", boundedDays);
+        log.info("[RSI-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:10576) [Mode: {}]", boundedDays, mode);
         List<Candle> candles = marketDataService.fetchHistoricalCandles("NSE", "10576", "NIFTY 50", "5", boundedDays);
         return evaluateCandles(
                 "NIFTY 50",
                 candles,
+                mode,
                 lots,
                 rsiPeriod,
                 adxFilterEnabled,
@@ -101,6 +105,7 @@ public class RsiCrossoverBacktestService {
         return evaluateCandles(
                 symbol,
                 candles,
+                DEFAULT_MODE,
                 lots,
                 rsiPeriod,
                 true,
@@ -109,11 +114,34 @@ public class RsiCrossoverBacktestService {
                 DEFAULT_TARGET_PROFIT_PERCENT);
     }
 
+    /** Overload of evaluateCandles without mode parameter (defaults to OPTION_SELLING). */
+    public BacktestResult evaluateCandles(
+            String symbol,
+            List<Candle> candles,
+            int lots,
+            int rsiPeriod,
+            boolean adxFilterEnabled,
+            double adxThreshold,
+            double stopLossPercent,
+            double targetProfitPercent) {
+        return evaluateCandles(
+                symbol,
+                candles,
+                DEFAULT_MODE,
+                lots,
+                rsiPeriod,
+                adxFilterEnabled,
+                adxThreshold,
+                stopLossPercent,
+                targetProfitPercent);
+    }
+
     /**
-     * Evaluates a chronological list of 5m candles through the RSI Crossover Option Buying strategy.
+     * Evaluates a chronological list of 5m candles through the RSI Crossover strategy.
      *
      * @param symbol display symbol
      * @param candles chronological 5m candles
+     * @param mode "OPTION_SELLING" or "OPTION_BUYING"
      * @param lots number of lots (1 lot = 65 qty)
      * @param rsiPeriod RSI lookback period (default 14)
      * @param adxFilterEnabled whether to filter entries by 15m ADX
@@ -125,6 +153,7 @@ public class RsiCrossoverBacktestService {
     public BacktestResult evaluateCandles(
             String symbol,
             List<Candle> candles,
+            String mode,
             int lots,
             int rsiPeriod,
             boolean adxFilterEnabled,
@@ -137,9 +166,11 @@ public class RsiCrossoverBacktestService {
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0.0, List.of());
         }
 
+        boolean isOptionSelling = !"OPTION_BUYING".equalsIgnoreCase(mode);
         int totalQuantity = Math.max(1, lots) * NIFTY_LOT_SIZE;
         double delta = 0.50; // Standard ATM option delta
         double assumedEntryPremium = 150.0;
+        double thetaPerHour = isOptionSelling ? 1.0 : -1.0; // In selling, theta works in favor
 
         // Partition candles chronologically by IST date
         Map<LocalDate, List<Candle>> candlesByDate = new TreeMap<>();
@@ -176,10 +207,14 @@ public class RsiCrossoverBacktestService {
                 // EOD Square-Off at 15:05 IST
                 if (time.isAfter(LocalTime.of(15, 0)) && openPosition != null) {
                     BigDecimal exitSpot = bar.close();
-                    double spotDiff = "CE".equalsIgnoreCase(openPosition.optionType)
+                    double spotDiff = openPosition.isBullish
                             ? exitSpot.subtract(openPosition.entrySpot).doubleValue()
                             : openPosition.entrySpot.subtract(exitSpot).doubleValue();
-                    double optionPoints = Math.round(spotDiff * delta * 100.0) / 100.0;
+
+                    double holdHours = Duration.between(openPosition.entryTime, bar.timestamp()).toSeconds() / 3600.0;
+                    double thetaPts = holdHours * thetaPerHour;
+                    double optionPoints = Math.round(((spotDiff * delta) + thetaPts) * 100.0) / 100.0;
+
                     BigDecimal pnlAmount = BigDecimal.valueOf(optionPoints * totalQuantity).setScale(2, RoundingMode.HALF_UP);
                     boolean isWin = pnlAmount.compareTo(BigDecimal.ZERO) > 0;
 
@@ -188,7 +223,7 @@ public class RsiCrossoverBacktestService {
                                     tradeIdCounter++,
                                     day.format(DATE_FMT),
                                     symbol,
-                                    SignalAction.BUY,
+                                    openPosition.action,
                                     openPosition.entryTime,
                                     openPosition.entrySpot,
                                     bar.timestamp(),
@@ -239,18 +274,21 @@ public class RsiCrossoverBacktestService {
                 // 1. Manage active open position (Stop Loss, Target Profit, or Reversal Exit)
                 if (openPosition != null) {
                     BigDecimal exitSpot = bar.close();
-                    double spotDiff = "CE".equalsIgnoreCase(openPosition.optionType)
+                    double spotDiff = openPosition.isBullish
                             ? exitSpot.subtract(openPosition.entrySpot).doubleValue()
                             : openPosition.entrySpot.subtract(exitSpot).doubleValue();
-                    double optionPoints = Math.round(spotDiff * delta * 100.0) / 100.0;
+
+                    double holdHours = Duration.between(openPosition.entryTime, bar.timestamp()).toSeconds() / 3600.0;
+                    double thetaPts = holdHours * thetaPerHour;
+                    double optionPoints = Math.round(((spotDiff * delta) + thetaPts) * 100.0) / 100.0;
 
                     double slThresholdPoints = -(assumedEntryPremium * (stopLossPercent / 100.0));
                     double tpThresholdPoints = assumedEntryPremium * (targetProfitPercent / 100.0);
 
                     boolean isSlHit = stopLossPercent > 0.0 && optionPoints <= slThresholdPoints;
                     boolean isTpHit = targetProfitPercent > 0.0 && optionPoints >= tpThresholdPoints;
-                    boolean isReversal = ("CE".equalsIgnoreCase(openPosition.optionType) && rsi5Curr < rsi15Curr)
-                            || ("PE".equalsIgnoreCase(openPosition.optionType) && rsi5Curr > rsi15Curr);
+                    boolean isReversal = (openPosition.isBullish && rsi5Curr < rsi15Curr)
+                            || (!openPosition.isBullish && rsi5Curr > rsi15Curr);
 
                     if (isSlHit || isTpHit || isReversal) {
                         String reason;
@@ -259,7 +297,7 @@ public class RsiCrossoverBacktestService {
                         } else if (isTpHit) {
                             reason = "TARGET_PROFIT_HIT (" + optionPoints + " pts)";
                         } else {
-                            reason = "CE".equalsIgnoreCase(openPosition.optionType) ? "RSI_REVERSAL_BEARISH" : "RSI_REVERSAL_BULLISH";
+                            reason = openPosition.isBullish ? "RSI_REVERSAL_BEARISH" : "RSI_REVERSAL_BULLISH";
                         }
 
                         BigDecimal pnlAmount = BigDecimal.valueOf(optionPoints * totalQuantity).setScale(2, RoundingMode.HALF_UP);
@@ -270,7 +308,7 @@ public class RsiCrossoverBacktestService {
                                         tradeIdCounter++,
                                         day.format(DATE_FMT),
                                         symbol,
-                                        SignalAction.BUY,
+                                        openPosition.action,
                                         openPosition.entryTime,
                                         openPosition.entrySpot,
                                         bar.timestamp(),
@@ -284,38 +322,49 @@ public class RsiCrossoverBacktestService {
                     continue;
                 }
 
-                // 2. Check Entry Signal (Strict 1 trade per day limit)
-                if (!tradeExecutedToday && !time.isAfter(LocalTime.of(15, 0))) {
-                    boolean bullish = (rsi5Prev <= rsi15Prev) && (rsi5Curr > rsi15Curr);
-                    boolean bearish = (rsi5Prev >= rsi15Prev) && (rsi5Curr < rsi15Curr);
+                // 2. Evaluate entry (strictly 1 trade per day limit)
+                if (!tradeExecutedToday && time.isBefore(LocalTime.of(15, 0))) {
+                    boolean bullishCrossover = (rsi5Prev <= rsi15Prev) && (rsi5Curr > rsi15Curr);
+                    boolean bearishCrossover = (rsi5Prev >= rsi15Prev) && (rsi5Curr < rsi15Curr);
 
-                    if (!bullish && !bearish) {
+                    if (!bullishCrossover && !bearishCrossover) {
                         continue;
                     }
 
-                    // ADX trend momentum filter
                     if (adxFilterEnabled && !Double.isNaN(adx15Curr) && adx15Curr < adxThreshold) {
                         continue;
                     }
 
-                    if (bullish) {
-                        openPosition = new SimulatedPosition("CE", bar.close(), bar.timestamp());
+                    if (bullishCrossover) {
+                        if (isOptionSelling) {
+                            openPosition = new SimulatedPosition(SignalAction.SELL, "PE", true, bar.timestamp(), bar.close());
+                        } else {
+                            openPosition = new SimulatedPosition(SignalAction.BUY, "CE", true, bar.timestamp(), bar.close());
+                        }
                         tradeExecutedToday = true;
                     } else {
-                        openPosition = new SimulatedPosition("PE", bar.close(), bar.timestamp());
+                        if (isOptionSelling) {
+                            openPosition = new SimulatedPosition(SignalAction.SELL, "CE", false, bar.timestamp(), bar.close());
+                        } else {
+                            openPosition = new SimulatedPosition(SignalAction.BUY, "PE", false, bar.timestamp(), bar.close());
+                        }
                         tradeExecutedToday = true;
                     }
                 }
             }
 
-            // Close leftover position at day end if any
-            if (openPosition != null && !dayBars.isEmpty()) {
+            // Fallback close at final candle of the day
+            if (openPosition != null) {
                 Candle lastBar = dayBars.get(dayBars.size() - 1);
                 BigDecimal exitSpot = lastBar.close();
-                double spotDiff = "CE".equalsIgnoreCase(openPosition.optionType)
+                double spotDiff = openPosition.isBullish
                         ? exitSpot.subtract(openPosition.entrySpot).doubleValue()
                         : openPosition.entrySpot.subtract(exitSpot).doubleValue();
-                double optionPoints = Math.round(spotDiff * delta * 100.0) / 100.0;
+
+                double holdHours = Duration.between(openPosition.entryTime, lastBar.timestamp()).toSeconds() / 3600.0;
+                double thetaPts = holdHours * thetaPerHour;
+                double optionPoints = Math.round(((spotDiff * delta) + thetaPts) * 100.0) / 100.0;
+
                 BigDecimal pnlAmount = BigDecimal.valueOf(optionPoints * totalQuantity).setScale(2, RoundingMode.HALF_UP);
                 boolean isWin = pnlAmount.compareTo(BigDecimal.ZERO) > 0;
 
@@ -324,74 +373,93 @@ public class RsiCrossoverBacktestService {
                                 tradeIdCounter++,
                                 day.format(DATE_FMT),
                                 symbol,
-                                SignalAction.BUY,
+                                openPosition.action,
                                 openPosition.entryTime,
                                 openPosition.entrySpot,
                                 lastBar.timestamp(),
                                 exitSpot,
                                 optionPoints,
                                 pnlAmount,
-                                "EOD_CLOSE",
+                                "DAY_END_CLOSE",
                                 isWin));
                 openPosition = null;
             }
         }
 
-        // Aggregate Performance Metrics
-        int totalTrades = executedTrades.size();
-        int wins = 0;
-        int losses = 0;
+        return aggregateResults(symbol, sortedDates.size(), executedTrades);
+    }
+
+    private BacktestResult aggregateResults(
+            String symbol, int daysTested, List<BacktestTrade> trades) {
+        int totalTrades = trades.size();
+        int winningTrades = 0;
+        int losingTrades = 0;
         double totalPoints = 0.0;
         BigDecimal grossProfit = BigDecimal.ZERO;
         BigDecimal grossLoss = BigDecimal.ZERO;
-        BigDecimal netPnl = BigDecimal.ZERO;
+
+        BigDecimal cumulativePnl = BigDecimal.ZERO;
         BigDecimal peakPnl = BigDecimal.ZERO;
         BigDecimal maxDrawdown = BigDecimal.ZERO;
-        BigDecimal runningPnl = BigDecimal.ZERO;
 
-        for (BacktestTrade t : executedTrades) {
+        for (BacktestTrade t : trades) {
             totalPoints += t.pnlPoints();
-            netPnl = netPnl.add(t.pnlAmount());
-            runningPnl = runningPnl.add(t.pnlAmount());
+            BigDecimal tradePnl = t.pnlAmount();
+            cumulativePnl = cumulativePnl.add(tradePnl);
+
+            if (cumulativePnl.compareTo(peakPnl) > 0) {
+                peakPnl = cumulativePnl;
+            }
+            BigDecimal currentDrawdown = peakPnl.subtract(cumulativePnl);
+            if (currentDrawdown.compareTo(maxDrawdown) > 0) {
+                maxDrawdown = currentDrawdown;
+            }
 
             if (t.isWin()) {
-                wins++;
-                grossProfit = grossProfit.add(t.pnlAmount());
+                winningTrades++;
+                grossProfit = grossProfit.add(tradePnl);
             } else {
-                losses++;
-                grossLoss = grossLoss.add(t.pnlAmount().abs());
-            }
-
-            if (runningPnl.compareTo(peakPnl) > 0) {
-                peakPnl = runningPnl;
-            }
-            BigDecimal dd = peakPnl.subtract(runningPnl);
-            if (dd.compareTo(maxDrawdown) > 0) {
-                maxDrawdown = dd;
+                losingTrades++;
+                grossLoss = grossLoss.add(tradePnl.abs());
             }
         }
 
-        double winRate = totalTrades > 0 ? (wins * 100.0) / totalTrades : 0.0;
+        BigDecimal netPnl = grossProfit.subtract(grossLoss);
+        double winRate = totalTrades > 0 ? (double) winningTrades / totalTrades * 100.0 : 0.0;
         double profitFactor = grossLoss.compareTo(BigDecimal.ZERO) > 0
                 ? grossProfit.divide(grossLoss, 2, RoundingMode.HALF_UP).doubleValue()
-                : (grossProfit.compareTo(BigDecimal.ZERO) > 0 ? 99.99 : 0.0);
+                : 99.99;
 
         return new BacktestResult(
                 STRATEGY_ID,
                 symbol,
-                sortedDates.size(),
+                daysTested,
                 totalTrades,
-                wins,
-                losses,
-                Math.round(winRate * 10.0) / 10.0,
-                Math.round(totalPoints * 100.0) / 100.0,
-                grossProfit.setScale(2, RoundingMode.HALF_UP),
-                grossLoss.setScale(2, RoundingMode.HALF_UP),
-                netPnl.setScale(2, RoundingMode.HALF_UP),
-                maxDrawdown.setScale(2, RoundingMode.HALF_UP),
+                winningTrades,
+                losingTrades,
+                winRate,
+                totalPoints,
+                grossProfit,
+                grossLoss,
+                netPnl,
+                maxDrawdown,
                 profitFactor,
-                executedTrades);
+                trades);
     }
 
-    private record SimulatedPosition(String optionType, BigDecimal entrySpot, Instant entryTime) {}
+    private static class SimulatedPosition {
+        final SignalAction action;
+        final String optionType;
+        final boolean isBullish;
+        final Instant entryTime;
+        final BigDecimal entrySpot;
+
+        SimulatedPosition(SignalAction action, String optionType, boolean isBullish, Instant entryTime, BigDecimal entrySpot) {
+            this.action = action;
+            this.optionType = optionType;
+            this.isBullish = isBullish;
+            this.entryTime = entryTime;
+            this.entrySpot = entrySpot;
+        }
+    }
 }

@@ -44,4 +44,31 @@ class RsiCrossoverPositionTest {
         assertThat(pos.getExitTime()).isEqualTo(exitTime);
         assertThat(pos.getPnl()).isEqualByComparingTo(BigDecimal.valueOf(1950.0));
     }
+
+    @Test
+    void testOptionSellingPositionPnl() {
+        Instant now = Instant.now();
+        RsiCrossoverPosition pos =
+                new RsiCrossoverPosition(
+                        "TRD_002",
+                        "NIFTY24OCT22500PE",
+                        "SELL",
+                        "PE",
+                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(150.0),
+                        65,
+                        now);
+
+        assertThat(pos.isClosed()).isFalse();
+        assertThat(pos.getAction()).isEqualTo("SELL");
+        assertThat(pos.getOptionType()).isEqualTo("PE");
+
+        // Premium decayed from 150 to 100 -> Seller profit is (150 - 100) * 65 = +3250
+        assertThat(pos.calculatePnl(BigDecimal.valueOf(100.0)))
+                .isEqualByComparingTo(BigDecimal.valueOf(3250.0));
+
+        // Premium jumped to 180 -> Seller loss is (150 - 180) * 65 = -1950
+        assertThat(pos.calculatePnl(BigDecimal.valueOf(180.0)))
+                .isEqualByComparingTo(BigDecimal.valueOf(-1950.0));
+    }
 }
