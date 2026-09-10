@@ -806,6 +806,122 @@ public class TelegramService {
         sendAsync(message);
     }
 
+    /**
+     * Sends an alert when a 19-period Daily WMA Positional Credit Spread is entered.
+     */
+    public void sendDailyWmaEntryAlert(
+            com.tradingbot.model.strategy.DailyWmaPosition position,
+            double spot,
+            double wma19) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String spreadType = "PE".equalsIgnoreCase(position.getOptionType()) ? "BULL PUT SPREAD" : "BEAR CALL SPREAD";
+        String dirEmoji = "BULLISH".equalsIgnoreCase(position.getBias()) ? "🟢" : "🔴";
+
+        String message =
+                String.format(
+                        "⚡ *[19 WMA POSITIONAL SPREAD ENTRY]* ⚡\n\n"
+                                + "🎯 *Strategy:* 19-Period Daily WMA Credit Spread\n"
+                                + "%s *Direction:* *%s* (Spot %.2f vs 19 WMA %.2f)\n"
+                                + "📦 *Structure:* *%s*\n"
+                                + "📅 *Expiry:* %s\n\n"
+                                + "🔴 *Short Leg:* `%s` @ ₹%.2f (Qty: %d, Delta: %.2f)\n"
+                                + "🟢 *Hedge Leg (2%% OTM):* `%s` @ ₹%.2f (Qty: %d)\n\n"
+                                + "💰 *Net Credit Collected:* *₹%.2f* / share (₹%.2f / lot)\n"
+                                + "🛡️ *Structural Stop Loss:* ₹%.2f (Short Leg)\n"
+                                + "🕒 *Entry Time:* %s IST",
+                        dirEmoji,
+                        position.getBias(),
+                        spot,
+                        wma19,
+                        spreadType,
+                        position.getExpiryDate(),
+                        position.getShortSymbol(),
+                        position.getShortEntryPrice() != null ? position.getShortEntryPrice().doubleValue() : 0.0,
+                        position.getQuantity(),
+                        position.getShortDelta() != null ? position.getShortDelta() : 0.22,
+                        position.getHedgeSymbol(),
+                        position.getHedgeEntryPrice() != null ? position.getHedgeEntryPrice().doubleValue() : 0.0,
+                        position.getHedgeQuantity(),
+                        position.getNetCredit() != null ? position.getNetCredit().doubleValue() : 0.0,
+                        position.getNetCredit() != null ? position.getNetCredit().doubleValue() * position.getQuantity() : 0.0,
+                        position.getStopLossPrice() != null ? position.getStopLossPrice().doubleValue() : 0.0,
+                        TIME_FMT.format(position.getEntryTime() != null ? position.getEntryTime() : Instant.now()));
+
+        sendAsync(message);
+    }
+
+    /**
+     * Sends an alert when a 19-period Daily WMA Positional Credit Spread is exited.
+     */
+    public void sendDailyWmaExitAlert(
+            com.tradingbot.model.strategy.DailyWmaPosition position,
+            String reason) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        BigDecimal realizedPnl = position.getRealizedPnl() != null ? position.getRealizedPnl() : BigDecimal.ZERO;
+        String pnlEmoji = realizedPnl.signum() >= 0 ? "🟢" : "🔴";
+        String pnlSign = realizedPnl.signum() >= 0 ? "+" : "";
+
+        String message =
+                String.format(
+                        "🏁 *[19 WMA POSITIONAL SPREAD EXIT]* 🏁\n\n"
+                                + "🎯 *Strategy:* 19-Period Daily WMA Credit Spread\n"
+                                + "ℹ️ *Exit Reason:* *%s*\n\n"
+                                + "📊 *Trade Breakdown:*\n"
+                                + "   • *Short Leg:* `%s` (₹%.2f ➔ ₹%.2f)\n"
+                                + "   • *Hedge Leg:* `%s` (₹%.2f ➔ ₹%.2f)\n\n"
+                                + "%s *Total Realized P&L:* *%s₹%.2f*\n"
+                                + "🕒 *Exit Time:* %s IST",
+                        reason,
+                        position.getShortSymbol(),
+                        position.getShortEntryPrice() != null ? position.getShortEntryPrice().doubleValue() : 0.0,
+                        position.getShortExitPrice() != null ? position.getShortExitPrice().doubleValue() : 0.0,
+                        position.getHedgeSymbol(),
+                        position.getHedgeEntryPrice() != null ? position.getHedgeEntryPrice().doubleValue() : 0.0,
+                        position.getHedgeExitPrice() != null ? position.getHedgeExitPrice().doubleValue() : 0.0,
+                        pnlEmoji,
+                        pnlSign,
+                        realizedPnl.doubleValue(),
+                        TIME_FMT.format(position.getExitTime() != null ? position.getExitTime() : Instant.now()));
+
+        sendAsync(message);
+    }
+
+    /**
+     * Sends a warning alert when Stop Loss is triggered on a Daily WMA spread.
+     */
+    public void sendDailyWmaStopLossAlert(
+            com.tradingbot.model.strategy.DailyWmaPosition position,
+            double currentLtp) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String message =
+                String.format(
+                        "🚨 *[19 WMA POSITIONAL: STOP LOSS TRIGGERED]* 🚨\n\n"
+                                + "⚠️ *Short Leg:* `%s` hit ₹%.2f (SL Threshold: ₹%.2f)\n"
+                                + "🔄 *Action:* Squaring off both legs and monitoring re-entry.\n"
+                                + "🕒 *Time:* %s IST",
+                        position.getShortSymbol(),
+                        currentLtp,
+                        position.getStopLossPrice() != null ? position.getStopLossPrice().doubleValue() : 0.0,
+                        TIME_FMT.format(Instant.now()));
+
+        sendAsync(message);
+    }
+
     /** Sends a raw message asynchronously to avoid blocking execution threads. */
     public void sendAsync(String text) {
         CompletableFuture.runAsync(
