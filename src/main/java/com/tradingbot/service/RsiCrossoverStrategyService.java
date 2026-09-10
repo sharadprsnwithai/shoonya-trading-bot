@@ -103,8 +103,8 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.target-profit-percent:50.0}")
     private double targetProfitPercent = 50.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.max-trades-per-day:2}")
-    private int maxTradesPerDay = 2;
+    @Value("${trading-bot.strategy.rsi-crossover.max-trades-per-day:1}")
+    private int maxTradesPerDay = 1;
 
     @Value("${trading-bot.strategy.rsi-crossover.telegram-alerts:true}")
     private boolean telegramAlerts = true;

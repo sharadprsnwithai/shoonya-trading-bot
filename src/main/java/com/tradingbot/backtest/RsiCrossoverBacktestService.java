@@ -47,7 +47,7 @@ public class RsiCrossoverBacktestService {
     public static final int NIFTY_LOT_SIZE = 65;
     public static final int DEFAULT_LOTS = 1;
     public static final int DEFAULT_RSI_PERIOD = 14;
-    public static final int DEFAULT_MAX_TRADES_PER_DAY = 2;
+    public static final int DEFAULT_MAX_TRADES_PER_DAY = 1;
     public static final double DEFAULT_ADX_THRESHOLD = 20.0;
     public static final double DEFAULT_STOP_LOSS_PERCENT = 2.0;
     public static final double DEFAULT_TARGET_PROFIT_PERCENT = 50.0;
