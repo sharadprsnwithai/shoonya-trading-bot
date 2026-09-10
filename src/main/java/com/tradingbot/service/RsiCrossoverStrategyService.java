@@ -103,10 +103,13 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.target-profit-percent:50.0}")
     private double targetProfitPercent = 50.0;
 
+    @Value("${trading-bot.strategy.rsi-crossover.max-trades-per-day:2}")
+    private int maxTradesPerDay = 2;
+
     @Value("${trading-bot.strategy.rsi-crossover.telegram-alerts:true}")
     private boolean telegramAlerts = true;
 
-    private final AtomicBoolean tradeExecutedToday = new AtomicBoolean(false);
+    private final AtomicInteger tradesExecutedToday = new AtomicInteger(0);
     private final AtomicReference<RsiCrossoverPosition> openPosition = new AtomicReference<>(null);
     private final List<RsiCrossoverPosition> tradeHistory = new CopyOnWriteArrayList<>();
     private final AtomicInteger tradeCounter = new AtomicInteger(1);
@@ -218,9 +221,10 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
-        // 2. If no position is open, check Entry (Strict 1 trade per day limit)
-        if (tradeExecutedToday.get()) {
-            log.debug("[RSI-STRATEGY] 1 Trade per day limit reached for today. Skipping new entries.");
+        // 2. If no position is open, check Entry (Max trades per day limit)
+        if (tradesExecutedToday.get() >= maxTradesPerDay) {
+            log.debug("[RSI-STRATEGY] Max {} trades per day limit reached for today ({}/{}). Skipping new entries.",
+                    maxTradesPerDay, tradesExecutedToday.get(), maxTradesPerDay);
             return;
         }
 
@@ -443,7 +447,7 @@ public class RsiCrossoverStrategyService {
         }
 
         this.openPosition.set(position);
-        this.tradeExecutedToday.set(true);
+        this.tradesExecutedToday.incrementAndGet();
 
         log.info(
                 "[RSI-STRATEGY] OPTION {} FILLED: {} | {} Strike ₹{} @ ₹{} | Qty: {}",
@@ -515,7 +519,7 @@ public class RsiCrossoverStrategyService {
     /** Resets the daily state for a new trading day (called at 09:15:00 IST). */
     public synchronized void resetDaily() {
         log.info("[RSI-STRATEGY] Daily reset invoked: Clearing open positions and daily trade limit.");
-        tradeExecutedToday.set(false);
+        tradesExecutedToday.set(0);
         openPosition.set(null);
         tradeHistory.clear();
         tradeCounter.set(1);
@@ -569,11 +573,27 @@ public class RsiCrossoverStrategyService {
     // --- Getters and Setters for Testing & Configuration ---
 
     public boolean isTradeExecutedToday() {
-        return tradeExecutedToday.get();
+        return tradesExecutedToday.get() >= maxTradesPerDay;
     }
 
     public void setTradeExecutedToday(boolean executed) {
-        this.tradeExecutedToday.set(executed);
+        this.tradesExecutedToday.set(executed ? maxTradesPerDay : 0);
+    }
+
+    public int getTradesExecutedToday() {
+        return tradesExecutedToday.get();
+    }
+
+    public void setTradesExecutedToday(int count) {
+        this.tradesExecutedToday.set(count);
+    }
+
+    public int getMaxTradesPerDay() {
+        return maxTradesPerDay;
+    }
+
+    public void setMaxTradesPerDay(int maxTradesPerDay) {
+        this.maxTradesPerDay = maxTradesPerDay;
     }
 
     public RsiCrossoverPosition getOpenPosition() {

@@ -139,7 +139,7 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(22500));
         assertThat(pos.getEntryPrice()).isEqualByComparingTo(BigDecimal.valueOf(145.0));
         assertThat(pos.getQuantity()).isEqualTo(65);
-        assertThat(strategyService.isTradeExecutedToday()).isTrue();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(1);
 
         verify(telegramService).sendRsiCrossoverEntryAlert(eq(pos), eq(55.0), eq(52.0), eq(48.0), eq(52.0));
     }
@@ -184,7 +184,7 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(pos.getOptionType()).isEqualTo("CE");
         assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(22500));
         assertThat(pos.getEntryPrice()).isEqualByComparingTo(BigDecimal.valueOf(160.0));
-        assertThat(strategyService.isTradeExecutedToday()).isTrue();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(1);
 
         verify(telegramService).sendRsiCrossoverEntryAlert(eq(pos), eq(46.0), eq(50.0), eq(54.0), eq(50.0));
     }
@@ -253,9 +253,10 @@ class RsiCrossoverStrategyServiceTest {
     }
 
     @Test
-    void testStrictOneTradePerDayLimit() {
+    void testMaxTradesPerDayLimit() {
         strategyService.setClock(createFixedClock(LocalTime.of(10, 0, 10)));
-        strategyService.setTradeExecutedToday(true);
+        strategyService.setMaxTradesPerDay(2);
+        strategyService.setTradesExecutedToday(2); // Already executed 2 trades
 
         List<Candle> candles = generateCandles(50, 22500.0);
         when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
@@ -269,6 +270,44 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         verify(telegramService, never()).sendRsiCrossoverEntryAlert(any(), anyDouble(), anyDouble(), anyDouble(), anyDouble());
+    }
+
+    @Test
+    void testAllowsSecondTradeWithinMaxTradesPerDay() {
+        strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
+        strategyService.setMaxTradesPerDay(2);
+        strategyService.setTradesExecutedToday(1); // 1 trade executed, 1 remaining
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(eq("NSE"), eq("10576"), eq("NIFTY 50"), eq("5"), eq(5)))
+                .thenReturn(candles);
+
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {40.0, 48.0, 55.0})
+                .thenReturn(new double[] {50.0, 52.0, 52.0});
+
+        OptionContract pe =
+                new OptionContract(
+                        "NIFTY24OCT22500PE",
+                        "20002",
+                        "PE",
+                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(145.0),
+                        1000,
+                        100,
+                        BigDecimal.valueOf(144.5),
+                        BigDecimal.valueOf(145.5),
+                        BigDecimal.valueOf(140.0));
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, pe);
+        OptionChainResponse chain =
+                new OptionChainResponse("NIFTY", BigDecimal.valueOf(22500), BigDecimal.valueOf(22500), "NIFTY", 1, 1000, 1000, 1.0, List.of(strike));
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean())).thenReturn(chain);
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNotNull();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(2);
+        assertThat(strategyService.isTradeExecutedToday()).isTrue();
     }
 
     @Test

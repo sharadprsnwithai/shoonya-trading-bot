@@ -47,6 +47,7 @@ public class RsiCrossoverBacktestService {
     public static final int NIFTY_LOT_SIZE = 65;
     public static final int DEFAULT_LOTS = 1;
     public static final int DEFAULT_RSI_PERIOD = 14;
+    public static final int DEFAULT_MAX_TRADES_PER_DAY = 2;
     public static final double DEFAULT_ADX_THRESHOLD = 20.0;
     public static final double DEFAULT_STOP_LOSS_PERCENT = 2.0;
     public static final double DEFAULT_TARGET_PROFIT_PERCENT = 50.0;
@@ -68,6 +69,7 @@ public class RsiCrossoverBacktestService {
                 DEFAULT_MODE,
                 DEFAULT_LOTS,
                 DEFAULT_RSI_PERIOD,
+                DEFAULT_MAX_TRADES_PER_DAY,
                 true,
                 DEFAULT_ADX_THRESHOLD,
                 DEFAULT_STOP_LOSS_PERCENT,
@@ -84,8 +86,32 @@ public class RsiCrossoverBacktestService {
             double adxThreshold,
             double stopLossPercent,
             double targetProfitPercent) {
+        return runBacktest(
+                daysBack,
+                mode,
+                lots,
+                rsiPeriod,
+                DEFAULT_MAX_TRADES_PER_DAY,
+                adxFilterEnabled,
+                adxThreshold,
+                stopLossPercent,
+                targetProfitPercent);
+    }
+
+    /** Runs backtest for NIFTY 50 over the specified days back with max trades per day. */
+    public BacktestResult runBacktest(
+            int daysBack,
+            String mode,
+            int lots,
+            int rsiPeriod,
+            int maxTradesPerDay,
+            boolean adxFilterEnabled,
+            double adxThreshold,
+            double stopLossPercent,
+            double targetProfitPercent) {
         int boundedDays = Math.max(1, Math.min(daysBack, 95));
-        log.info("[RSI-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:10576) [Mode: {}]", boundedDays, mode);
+        log.info("[RSI-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:10576) [Mode: {}, MaxTrades: {}]",
+                boundedDays, mode, maxTradesPerDay);
         List<Candle> candles = marketDataService.fetchHistoricalCandles("NSE", "10576", "NIFTY 50", "5", boundedDays);
         return evaluateCandles(
                 "NIFTY 50",
@@ -93,6 +119,7 @@ public class RsiCrossoverBacktestService {
                 mode,
                 lots,
                 rsiPeriod,
+                maxTradesPerDay,
                 adxFilterEnabled,
                 adxThreshold,
                 stopLossPercent,
@@ -136,19 +163,31 @@ public class RsiCrossoverBacktestService {
                 targetProfitPercent);
     }
 
+    public BacktestResult evaluateCandles(
+            String symbol,
+            List<Candle> candles,
+            String mode,
+            int lots,
+            int rsiPeriod,
+            boolean adxFilterEnabled,
+            double adxThreshold,
+            double stopLossPercent,
+            double targetProfitPercent) {
+        return evaluateCandles(
+                symbol,
+                candles,
+                mode,
+                lots,
+                rsiPeriod,
+                DEFAULT_MAX_TRADES_PER_DAY,
+                adxFilterEnabled,
+                adxThreshold,
+                stopLossPercent,
+                targetProfitPercent);
+    }
+
     /**
      * Evaluates a chronological list of 5m candles through the RSI Crossover strategy.
-     *
-     * @param symbol display symbol
-     * @param candles chronological 5m candles
-     * @param mode "OPTION_SELLING" or "OPTION_BUYING"
-     * @param lots number of lots (1 lot = 65 qty)
-     * @param rsiPeriod RSI lookback period (default 14)
-     * @param adxFilterEnabled whether to filter entries by 15m ADX
-     * @param adxThreshold minimum 15m ADX required for entry
-     * @param stopLossPercent stop-loss percentage on option premium (e.g. 20.0%)
-     * @param targetProfitPercent target profit percentage on option premium (e.g. 50.0%)
-     * @return BacktestResult summary with trade log and performance metrics
      */
     public BacktestResult evaluateCandles(
             String symbol,
@@ -156,6 +195,7 @@ public class RsiCrossoverBacktestService {
             String mode,
             int lots,
             int rsiPeriod,
+            int maxTradesPerDay,
             boolean adxFilterEnabled,
             double adxThreshold,
             double stopLossPercent,
@@ -195,7 +235,7 @@ public class RsiCrossoverBacktestService {
                 warmHistory.addAll(candlesByDate.get(sortedDates.get(p)));
             }
 
-            boolean tradeExecutedToday = false;
+            int tradesTodayCount = 0;
             SimulatedPosition openPosition = null;
 
             List<Candle> currentDayBars = new ArrayList<>();
@@ -322,8 +362,8 @@ public class RsiCrossoverBacktestService {
                     continue;
                 }
 
-                // 2. Evaluate entry (strictly 1 trade per day limit)
-                if (!tradeExecutedToday && time.isBefore(LocalTime.of(15, 0))) {
+                // 2. Evaluate entry (max trades per day limit)
+                if (tradesTodayCount < maxTradesPerDay && time.isBefore(LocalTime.of(15, 0))) {
                     boolean bullishCrossover = (rsi5Prev <= rsi15Prev) && (rsi5Curr > rsi15Curr);
                     boolean bearishCrossover = (rsi5Prev >= rsi15Prev) && (rsi5Curr < rsi15Curr);
 
@@ -341,14 +381,14 @@ public class RsiCrossoverBacktestService {
                         } else {
                             openPosition = new SimulatedPosition(SignalAction.BUY, "CE", true, bar.timestamp(), bar.close());
                         }
-                        tradeExecutedToday = true;
+                        tradesTodayCount++;
                     } else {
                         if (isOptionSelling) {
                             openPosition = new SimulatedPosition(SignalAction.SELL, "CE", false, bar.timestamp(), bar.close());
                         } else {
                             openPosition = new SimulatedPosition(SignalAction.BUY, "PE", false, bar.timestamp(), bar.close());
                         }
-                        tradeExecutedToday = true;
+                        tradesTodayCount++;
                     }
                 }
             }

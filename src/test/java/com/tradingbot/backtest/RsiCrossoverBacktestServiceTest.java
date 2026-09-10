@@ -92,8 +92,8 @@ class RsiCrossoverBacktestServiceTest {
         allCandles.addAll(generateMockDayCandles(day3, 24050.0, 2.0));
         allCandles.addAll(generateMockDayCandles(day4, 24200.0, -2.0));
 
-        BacktestResult sellResult = backtestService.evaluateCandles("NIFTY 50", allCandles, "OPTION_SELLING", 1, 14, true, 15.0, 20.0, 50.0);
-        BacktestResult buyResult = backtestService.evaluateCandles("NIFTY 50", allCandles, "OPTION_BUYING", 1, 14, true, 15.0, 20.0, 50.0);
+        BacktestResult sellResult = backtestService.evaluateCandles("NIFTY 50", allCandles, "OPTION_SELLING", 1, 14, 2, true, 15.0, 20.0, 50.0);
+        BacktestResult buyResult = backtestService.evaluateCandles("NIFTY 50", allCandles, "OPTION_BUYING", 1, 14, 2, true, 15.0, 20.0, 50.0);
 
         assertThat(sellResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
         assertThat(buyResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
