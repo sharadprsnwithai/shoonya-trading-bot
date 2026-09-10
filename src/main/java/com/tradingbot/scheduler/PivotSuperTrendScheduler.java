@@ -85,10 +85,10 @@ public class PivotSuperTrendScheduler {
     }
 
     /**
-     * Evaluates newly completed 5-minute candle at 5 seconds past every 5-minute mark. Active
-     * window: 09:20:05 IST to 15:10:05 IST (Monday through Friday).
+     * Evaluates newly completed 5-minute candle at 10 seconds past every 5-minute mark. Active
+     * window: 09:20:10 IST to 15:10:10 IST (Monday through Friday).
      */
-    @Scheduled(cron = "5 */5 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "10 */5 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduleCandleEvaluation() {
         if (!schedulerEnabled) {
             return;

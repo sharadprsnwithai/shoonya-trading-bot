@@ -37,11 +37,11 @@ public class HourlyMtfScannerScheduler {
     /**
      * Scheduled hourly scan running during active trading weekdays (Monday through Friday).
      *
-     * <p>Default schedule triggers at 15 minutes past each hour (10:15, 11:15, 12:15, 13:15, 14:15,
-     * 15:15 IST), perfectly aligned with closed NSE 1-hour candles.
+     * <p>Default schedule triggers at 15 minutes and 10 seconds past each hour (10:15:10, 11:15:10, 12:15:10, 13:15:10, 14:15:10,
+     * 15:15:10 IST), perfectly aligned with closed NSE 1-hour candles with a 10s safety buffer for data availability.
      */
     @Scheduled(
-            cron = "${trading-bot.strategy.mtf-scanner.cron:0 15 10-15 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.mtf-scanner.cron:10 15 10-15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public List<MtfTrendStatus> runScheduledScan() {
         if (!enabled) {

@@ -39,12 +39,12 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
-     * Morning Universe Scan at 09:25 IST every trading weekday. Identifies Top 10 Gainers & Losers
+     * Morning Universe Scan at 09:25:10 IST every trading weekday. Identifies Top 10 Gainers & Losers
      * from the F&O universe, fixes this list for the day, seeds initial setups, and dispatches the
      * daily Telegram report once.
      */
     @Scheduled(
-            cron = "${trading-bot.strategy.lowest-volume.scanner-cron:0 25 9 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.lowest-volume.scanner-cron:10 25 9 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void scheduledMorningUniverseScan() {
         if (!schedulerEnabled) {
@@ -64,9 +64,9 @@ public class LowestVolumeReversalScheduler {
         }
     }
 
-    /** Runs every 5 minutes from 09:25 to 15:05 IST on trading weekdays. */
+    /** Runs every 5 minutes from 09:25:10 to 15:05:10 IST on trading weekdays. (10s offset for broker latency) */
     @Scheduled(
-            cron = "${trading-bot.strategy.lowest-volume.cron:0 */5 9-15 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void scheduledCandleCycle() {
         if (!schedulerEnabled) {
