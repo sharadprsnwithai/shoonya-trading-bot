@@ -685,6 +685,82 @@ public class TelegramService {
         sendAsync(sb.toString());
     }
 
+    /**
+     * Sends an alert when an RSI Crossover option buy trade is executed.
+     */
+    public void sendRsiCrossoverEntryAlert(
+            com.tradingbot.model.strategy.RsiCrossoverPosition position,
+            double rsi5,
+            double rsi15,
+            double prevRsi5,
+            double prevRsi15) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String direction = "CE".equalsIgnoreCase(position.getOptionType()) ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
+
+        String message =
+                String.format(
+                        "🚀 *[NIFTY RSI CROSSOVER: OPTION BUY]* 🚀\n\n"
+                                + "🧭 *Direction:* %s\n"
+                                + "🎯 *Instrument:* `%s`\n"
+                                + "💰 *Entry Premium:* ₹%.2f\n"
+                                + "📦 *Quantity:* %d units\n"
+                                + "📈 *Current RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
+                                + "📉 *Previous RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
+                                + "🕒 *Time:* %s IST",
+                        direction,
+                        position.getSymbol(),
+                        position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
+                        position.getQuantity(),
+                        rsi5,
+                        rsi15,
+                        prevRsi5,
+                        prevRsi15,
+                        TIME_FMT.format(position.getEntryTime() != null ? position.getEntryTime() : Instant.now()));
+
+        sendAsync(message);
+    }
+
+    /**
+     * Sends an alert when an RSI Crossover option buy trade is exited (Reversal or EOD).
+     */
+    public void sendRsiCrossoverExitAlert(
+            com.tradingbot.model.strategy.RsiCrossoverPosition position,
+            String reason) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        BigDecimal pnl = position.getPnl() != null ? position.getPnl() : BigDecimal.ZERO;
+        String pnlEmoji = pnl.signum() >= 0 ? "🟢" : "🔴";
+        String pnlSign = pnl.signum() >= 0 ? "+" : "";
+
+        String message =
+                String.format(
+                        "🏁 *[NIFTY RSI CROSSOVER: TRADE EXITED]* 🏁\n\n"
+                                + "ℹ️ *Reason:* %s\n"
+                                + "🎯 *Instrument:* `%s`\n"
+                                + "💰 *Entry:* ₹%.2f | *Exit:* ₹%.2f\n"
+                                + "%s *Realized P&L:* *%s₹%.2f*\n"
+                                + "🕒 *Exit Time:* %s IST",
+                        reason,
+                        position.getSymbol(),
+                        position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
+                        position.getExitPrice() != null ? position.getExitPrice().doubleValue() : 0.0,
+                        pnlEmoji,
+                        pnlSign,
+                        pnl.doubleValue(),
+                        TIME_FMT.format(position.getExitTime() != null ? position.getExitTime() : Instant.now()));
+
+        sendAsync(message);
+    }
+
     /** Sends a raw message asynchronously to avoid blocking execution threads. */
     public void sendAsync(String text) {
         CompletableFuture.runAsync(
