@@ -123,4 +123,22 @@ class TechnicalAnalysisServiceTest {
         assertThat(Double.isNaN(latestAdx)).isFalse();
         assertThat(latestAdx).isGreaterThan(20.0); // Strong trending series
     }
+
+    @Test
+    void testWmaCalculation() {
+        double[] prices = new double[25];
+        for (int i = 0; i < 25; i++) {
+            prices[i] = 100.0 + i;
+        }
+
+        double[] wma19 = taService.calculateWmaSeries(prices, 19);
+        assertThat(wma19).hasSize(25);
+        for (int i = 0; i < 18; i++) {
+            assertThat(wma19[i]).isNaN();
+        }
+        // At index 18 (19th element: 100..118):
+        // Expected = 100 + 12 = 112.0
+        assertThat(wma19[18]).isEqualTo(112.0);
+        assertThat(wma19[24]).isEqualTo(118.0);
+    }
 }
