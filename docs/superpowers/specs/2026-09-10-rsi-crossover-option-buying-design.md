@@ -5,6 +5,8 @@ The **NIFTY 5m vs 15m RSI Crossover Strategy** is an automated intraday option b
 
 When a crossover occurs, the bot enters an At-The-Money (ATM) Option Buy (CE or PE) for the current weekly expiry. The trade is held until an opposing RSI crossover occurs or until the 15:05 IST auto-square-off time. A strict limit of **1 trade per day** is enforced.
 
+To guarantee that RSI(14) is accurate, warm, and ready on both 5m and 15m timeframes right at the 09:45:10 IST trigger, historical candle lookback of 5 trading days ($\ge 350$ five-minute candles) is fetched and resampled.
+
 ---
 
 ## 2. Core Rules & Parameters
@@ -13,12 +15,13 @@ When a crossover occurs, the bot enters an At-The-Money (ATM) Option Buy (CE or 
 - **Underlying**: NIFTY 50 Index (`NSE`, Token: `10576`).
 - **Timeframes**: 5-Minute and 15-Minute candles.
 - **Indicator**: RSI(14) calculated on Close prices.
+- **Warmup Data**: 5 days of historical data ensuring $\ge 350$ 5-min candles and $\ge 115$ 15-min candles.
 
 ### 2.2 Schedule & Timing (Asia/Kolkata)
 - **09:15:00 IST**: Daily strategy state reset (trade count cleared, open position cleared).
-- **09:46:10 IST**: Strategy begins active evaluation (first candle check after 09:45 candle close).
-- **09:46:10 to 15:00:10 IST**: Evaluates every 5 minutes on candle close (at 10s offset past boundary: 09:46, 09:50, 09:55, 10:00 ... 15:00).
-- **15:05:10 IST**: Intraday Auto-Square-Off for any open position.
+- **09:45:10 IST**: Strategy begins active evaluation (first candle check when both the 09:15–09:45 15m candle and 09:40–09:45 5m candle have closed).
+- **09:45:10 to 15:00:10 IST**: Evaluates every 5 minutes on candle close with 10s offset (09:45:10, 09:50:10, 09:55:10, 10:00:10 ... 15:00:10).
+- **15:05:10 IST**: Intraday Auto-Square-Off for any active position.
 - **After 15:05 IST**: No new positions or evaluations.
 
 ### 2.3 Crossover Definitions (Candle-Close Confirmed)
@@ -46,14 +49,15 @@ Let $RSI_{5m}[t]$ and $RSI_{15m}[t]$ be the latest completed candle values, and 
 +-------------------------------------------------------------+
 |                RsiCrossoverScheduler                        |
 |  - 09:15 Daily Reset                                       |
-|  - 09:46 - 15:00 Every 5-min evaluation                     |
-|  - 15:05 EOD Auto Square-off                                |
+|  - 09:45:10 - 15:00:10 Every 5-min evaluation               |
+|  - 15:05:10 EOD Auto Square-off                             |
 +------------------------------+------------------------------+
                                |
                                v
 +-------------------------------------------------------------+
 |              RsiCrossoverStrategyService                    |
-|  - Fetches 5m & 15m Candles via ShoonyaMarketDataService    |
+|  - Fetches 5m Candles (5 days) via ShoonyaMarketDataService |
+|  - Resamples 15m candles from 5m candles                    |
 |  - Calculates RSI(14) series via TechnicalAnalysisService   |
 |  - Detects Strict Crossover                                 |
 |  - State: Idle / In_Position / Done_For_Day                 |
@@ -78,7 +82,7 @@ Let $RSI_{5m}[t]$ and $RSI_{15m}[t]$ be the latest completed candle values, and 
 - Annotated with `@Component` / `@Service` and `@Scheduled`.
 - Triggers:
   1. `cron = "0 15 9 ? * MON-FRI"`: invokes `service.resetDaily()`.
-  2. `cron = "10 46,50,55 9 ? * MON-FRI"`: morning 09:46 - 09:55 window.
+  2. `cron = "10 45,50,55 9 ? * MON-FRI"`: morning 09:45 - 09:55 window.
   3. `cron = "10 */5 10-14 ? * MON-FRI"`: 10:00 to 14:55 window.
   4. `cron = "10 0 15 ? * MON-FRI"`: final 15:00 evaluation.
   5. `cron = "10 5 15 ? * MON-FRI"`: 15:05 EOD auto-square-off.
@@ -125,7 +129,7 @@ trading-bot.strategy.rsi-crossover.telegram-alerts=${RSI_CROSSOVER_TELEGRAM_ALER
    • Entry Premium: ₹142.50
    • 5m RSI: 58.4 (Prev: 46.2) | 15m RSI: 51.2 (Prev: 50.8)
    • Lots: 1 (65 Qty)
-   • Time: 09:46 IST
+   • Time: 09:45 IST
    ```
 
 2. **Reversal Exit Alert**:
@@ -157,4 +161,4 @@ trading-bot.strategy.rsi-crossover.telegram-alerts=${RSI_CROSSOVER_TELEGRAM_ALER
   - Test 15:05 EOD square-off.
   - Test No-trade if no crossover occurred.
 - **Scheduler Test (`RsiCrossoverSchedulerTest`)**:
-  - Test scheduler wiring and execution boundaries.
+  - Test scheduler wiring, cron triggers, and execution boundaries.
