@@ -71,4 +71,48 @@ class RsiCrossoverPositionTest {
         assertThat(pos.calculatePnl(BigDecimal.valueOf(180.0)))
                 .isEqualByComparingTo(BigDecimal.valueOf(-1950.0));
     }
+
+    @Test
+    void testHedgedCreditSpreadPositionLifecycle() {
+        Instant now = Instant.now();
+        // Bull Put Spread: Sell 22500 PE @ 150, Buy 22050 PE @ 12 (2% OTM Hedge)
+        RsiCrossoverPosition pos =
+                new RsiCrossoverPosition(
+                        "TRD_HEDGE_001",
+                        "NIFTY24OCT22500PE",
+                        "SELL",
+                        "PE",
+                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(150.0),
+                        65,
+                        now,
+                        true,
+                        "NIFTY24OCT22050PE",
+                        BigDecimal.valueOf(22050),
+                        BigDecimal.valueOf(12.0),
+                        65);
+
+        assertThat(pos.isHedgeEnabled()).isTrue();
+        assertThat(pos.getHedgeSymbol()).isEqualTo("NIFTY24OCT22050PE");
+        assertThat(pos.getHedgeStrike()).isEqualByComparingTo(BigDecimal.valueOf(22050));
+        assertThat(pos.getHedgeEntryPrice()).isEqualByComparingTo(BigDecimal.valueOf(12.0));
+        assertThat(pos.getNetCredit()).isEqualByComparingTo(BigDecimal.valueOf(138.0)); // 150 - 12
+
+        // Main leg decays to 50, Hedge decays to 2
+        // Main PnL = (150 - 50) * 65 = +6500
+        // Hedge PnL = (2 - 12) * 65 = -650
+        // Total PnL = +5850
+        assertThat(pos.calculatePnl(BigDecimal.valueOf(50.0))).isEqualByComparingTo(BigDecimal.valueOf(6500.0));
+        assertThat(pos.calculateHedgePnl(BigDecimal.valueOf(2.0))).isEqualByComparingTo(BigDecimal.valueOf(-650.0));
+        assertThat(pos.calculateTotalPnl(BigDecimal.valueOf(50.0), BigDecimal.valueOf(2.0)))
+                .isEqualByComparingTo(BigDecimal.valueOf(5850.0));
+
+        Instant exitTime = now.plusSeconds(3600);
+        pos.close(BigDecimal.valueOf(50.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", exitTime);
+
+        assertThat(pos.isClosed()).isTrue();
+        assertThat(pos.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(50.0));
+        assertThat(pos.getHedgeExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(2.0));
+        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo(BigDecimal.valueOf(5850.0));
+    }
 }

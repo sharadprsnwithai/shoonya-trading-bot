@@ -40,4 +40,28 @@ class TelegramServiceTest {
         pos.close(BigDecimal.valueOf(180.0), "RSI_REVERSAL", Instant.now());
         telegramService.sendRsiCrossoverExitAlert(pos, "RSI_REVERSAL");
     }
+
+    @Test
+    void testSendRsiCrossoverHedgedAlertsDisabled() {
+        RsiCrossoverPosition hedgedPos =
+                new RsiCrossoverPosition(
+                        "TRD_HEDGE_1",
+                        "NIFTY24OCT22500PE",
+                        "SELL",
+                        "PE",
+                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(150.0),
+                        65,
+                        Instant.now(),
+                        true,
+                        "NIFTY24OCT22050PE",
+                        BigDecimal.valueOf(22050),
+                        BigDecimal.valueOf(12.0),
+                        65);
+
+        telegramService.sendRsiCrossoverEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
+
+        hedgedPos.close(BigDecimal.valueOf(60.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", Instant.now());
+        telegramService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
+    }
 }

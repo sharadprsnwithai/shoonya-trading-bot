@@ -103,6 +103,12 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.target-profit-percent:50.0}")
     private double targetProfitPercent = 50.0;
 
+    @Value("${trading-bot.strategy.rsi-crossover.hedge-enabled:true}")
+    private boolean hedgeEnabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.hedge-otm-percent:2.0}")
+    private double hedgeOtmPercent = 2.0;
+
     @Value("${trading-bot.strategy.rsi-crossover.max-trades-per-day:1}")
     private int maxTradesPerDay = 1;
 
@@ -313,8 +319,41 @@ public class RsiCrossoverStrategyService {
         boolean isShortPosition = "SELL".equalsIgnoreCase(current.getAction());
 
         if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
-            if (isShortPosition) {
-                // For Option Selling: SL is hit when premium rises; TP is hit when premium decays
+            if (isShortPosition && current.isHedgeEnabled()) {
+                // Hedged Credit Spread Evaluation
+                BigDecimal hedgePremium = fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
+                if (hedgePremium == null || hedgePremium.compareTo(BigDecimal.ZERO) <= 0) {
+                    hedgePremium = current.getHedgeEntryPrice();
+                }
+
+                double mainPoints = entryPrice.doubleValue() - currentPremium.doubleValue();
+                double hedgePoints = hedgePremium.doubleValue() - current.getHedgeEntryPrice().doubleValue();
+                double netPoints = mainPoints + hedgePoints;
+                double netCredit = current.getNetCredit().doubleValue();
+
+                if (stopLossPercent > 0.0) {
+                    double slThresholdPoints = -(netCredit * (stopLossPercent / 100.0));
+                    if (netPoints <= slThresholdPoints) {
+                        log.info(
+                                "[RSI-STRATEGY] 🛑 HEDGED SPREAD STOP-LOSS HIT for {}: Net Points {:.2f} <= SL {:.2f} (-{}%)",
+                                current.getSymbol(), netPoints, slThresholdPoints, stopLossPercent);
+                        executeExit("HARD_SL_HIT");
+                        return;
+                    }
+                }
+
+                if (targetProfitPercent > 0.0) {
+                    double tpThresholdPoints = netCredit * (targetProfitPercent / 100.0);
+                    if (netPoints >= tpThresholdPoints) {
+                        log.info(
+                                "[RSI-STRATEGY] 🎯 HEDGED SPREAD TARGET PROFIT HIT for {}: Net Points {:.2f} >= TP {:.2f} (+{}%)",
+                                current.getSymbol(), netPoints, tpThresholdPoints, targetProfitPercent);
+                        executeExit("TARGET_PROFIT_HIT");
+                        return;
+                    }
+                }
+            } else if (isShortPosition) {
+                // For Naked Option Selling: SL is hit when premium rises; TP is hit when premium decays
                 if (stopLossPercent > 0.0) {
                     BigDecimal slThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 + (stopLossPercent / 100.0)));
                     if (currentPremium.compareTo(slThreshold) >= 0) {
@@ -398,7 +437,7 @@ public class RsiCrossoverStrategyService {
         }
     }
 
-    /** Executes Option Trade Entry (Buy or Sell). */
+    /** Executes Option Trade Entry (Buy, Sell, or 2% OTM Hedged Credit Spread). */
     public synchronized void executeTrade(
             String action,
             String optionType,
@@ -416,11 +455,29 @@ public class RsiCrossoverStrategyService {
         int totalQuantity = lots * lotSize;
         String tradeId = "RSI_TRD_" + tradeCounter.getAndIncrement();
 
-        // Resolve Option Symbol and Premium
+        // Resolve Option Symbol and Premium for ATM Leg
         String optionSymbol = resolveOptionSymbol(atmStrike, optionType);
         BigDecimal entryPremium = fetchOptionPremium(atmStrike, optionType);
         if (entryPremium == null || entryPremium.compareTo(BigDecimal.ZERO) <= 0) {
             entryPremium = BigDecimal.valueOf(150.0); // Safe simulated fallback
+        }
+
+        boolean applyHedge = hedgeEnabled && "SELL".equalsIgnoreCase(action);
+        String hedgeSymbol = null;
+        BigDecimal hedgeStrike = null;
+        BigDecimal hedgeEntryPremium = BigDecimal.ZERO;
+
+        if (applyHedge) {
+            // Calculate 2% OTM Strike (PE lower, CE higher)
+            double rawHedge = "PE".equalsIgnoreCase(optionType)
+                    ? spotPrice * (1.0 - hedgeOtmPercent / 100.0)
+                    : spotPrice * (1.0 + hedgeOtmPercent / 100.0);
+            hedgeStrike = BigDecimal.valueOf(Math.round(rawHedge / 50.0) * 50);
+            hedgeSymbol = resolveOptionSymbol(hedgeStrike, optionType);
+            hedgeEntryPremium = fetchOptionPremium(hedgeStrike, optionType);
+            if (hedgeEntryPremium == null || hedgeEntryPremium.compareTo(BigDecimal.ZERO) <= 0) {
+                hedgeEntryPremium = BigDecimal.valueOf(12.0); // Safe simulated fallback
+            }
         }
 
         RsiCrossoverPosition position =
@@ -432,17 +489,45 @@ public class RsiCrossoverStrategyService {
                         atmStrike,
                         entryPremium,
                         totalQuantity,
-                        Instant.now(clock));
+                        Instant.now(clock),
+                        applyHedge,
+                        hedgeSymbol,
+                        hedgeStrike,
+                        hedgeEntryPremium,
+                        applyHedge ? totalQuantity : 0);
 
         // If Live Auto-Execution is enabled
         if (autoExecute && config.isEnabled()) {
-            try {
-                TransactionType txType = "SELL".equalsIgnoreCase(action) ? TransactionType.SELL : TransactionType.BUY;
-                OrderRequest orderReq = OrderRequest.market(optionSymbol, "NFO", txType, totalQuantity, tradeId);
-                orderService.placeOrder(orderReq);
-                log.info("[RSI-STRATEGY] [LIVE] Placed {} Order for {} Qty {}", action, totalQuantity, optionSymbol);
-            } catch (Exception e) {
-                log.error("[RSI-STRATEGY] Live order placement failed: {}", e.getMessage(), e);
+            if (applyHedge) {
+                // Leg 1: BUY Hedge first (margin benefit)
+                try {
+                    OrderRequest hedgeReq = OrderRequest.market(hedgeSymbol, "NFO", TransactionType.BUY, totalQuantity, tradeId + "_HEDGE");
+                    orderService.placeOrder(hedgeReq);
+                    log.info("[RSI-STRATEGY] [LIVE] Placed BUY Hedge Order for {} Qty {}", totalQuantity, hedgeSymbol);
+
+                    // Leg 2: SELL ATM Leg
+                    try {
+                        OrderRequest mainReq = OrderRequest.market(optionSymbol, "NFO", TransactionType.SELL, totalQuantity, tradeId);
+                        orderService.placeOrder(mainReq);
+                        log.info("[RSI-STRATEGY] [LIVE] Placed SELL ATM Order for {} Qty {}", totalQuantity, optionSymbol);
+                    } catch (Exception e) {
+                        log.error("[RSI-STRATEGY] [LIVE] Failed to place ATM Sell order after hedge fill. Rolling back hedge leg: {}", e.getMessage(), e);
+                        orderService.placeOrder(OrderRequest.market(hedgeSymbol, "NFO", TransactionType.SELL, totalQuantity, tradeId + "_ROLLBACK"));
+                        return;
+                    }
+                } catch (Exception e) {
+                    log.error("[RSI-STRATEGY] [LIVE] Hedge buy placement failed. Aborting trade entry: {}", e.getMessage(), e);
+                    return;
+                }
+            } else {
+                try {
+                    TransactionType txType = "SELL".equalsIgnoreCase(action) ? TransactionType.SELL : TransactionType.BUY;
+                    OrderRequest orderReq = OrderRequest.market(optionSymbol, "NFO", txType, totalQuantity, tradeId);
+                    orderService.placeOrder(orderReq);
+                    log.info("[RSI-STRATEGY] [LIVE] Placed {} Order for {} Qty {}", action, totalQuantity, optionSymbol);
+                } catch (Exception e) {
+                    log.error("[RSI-STRATEGY] Live order placement failed: {}", e.getMessage(), e);
+                }
             }
         }
 
@@ -450,8 +535,16 @@ public class RsiCrossoverStrategyService {
         this.tradesExecutedToday.incrementAndGet();
 
         log.info(
-                "[RSI-STRATEGY] OPTION {} FILLED: {} | {} Strike ₹{} @ ₹{} | Qty: {}",
-                action, tradeId, optionSymbol, atmStrike, entryPremium, totalQuantity);
+                "[RSI-STRATEGY] {} FILLED: {} | {} Strike ₹{} @ ₹{} (Hedge: {} Strike ₹{} @ ₹{}) | Qty: {}",
+                applyHedge ? "HEDGED SPREAD" : "OPTION " + action,
+                tradeId,
+                optionSymbol,
+                atmStrike,
+                entryPremium,
+                applyHedge ? hedgeSymbol : "NONE",
+                applyHedge ? hedgeStrike : BigDecimal.ZERO,
+                applyHedge ? hedgeEntryPremium : BigDecimal.ZERO,
+                totalQuantity);
 
         if (telegramAlerts) {
             telegramService.sendRsiCrossoverEntryAlert(
@@ -482,25 +575,48 @@ public class RsiCrossoverStrategyService {
             exitPremium = current.getEntryPrice(); // Fallback to breakeven if quote unavailable
         }
 
-        // If Live Auto-Execution is enabled, place opposing order to close
+        BigDecimal hedgeExitPremium = BigDecimal.ZERO;
+        if (current.isHedgeEnabled()) {
+            hedgeExitPremium = fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
+            if (hedgeExitPremium == null || hedgeExitPremium.compareTo(BigDecimal.ZERO) <= 0) {
+                hedgeExitPremium = current.getHedgeEntryPrice();
+            }
+        }
+
+        // If Live Auto-Execution is enabled, place opposing order(s) to close
         if (autoExecute && config.isEnabled()) {
             try {
+                // Leg 1: Close main leg
                 TransactionType exitTxType = "SELL".equalsIgnoreCase(current.getAction()) ? TransactionType.BUY : TransactionType.SELL;
                 OrderRequest exitReq = OrderRequest.market(current.getSymbol(), "NFO", exitTxType, current.getQuantity(), current.getTradeId() + "_EXIT");
                 orderService.placeOrder(exitReq);
                 log.info("[RSI-STRATEGY] [LIVE] Placed {} Exit Order for {} Qty {}", exitTxType, current.getQuantity(), current.getSymbol());
+
+                // Leg 2: Close hedge leg if applicable
+                if (current.isHedgeEnabled() && current.getHedgeSymbol() != null) {
+                    OrderRequest hedgeExitReq = OrderRequest.market(current.getHedgeSymbol(), "NFO", TransactionType.SELL, current.getHedgeQuantity(), current.getTradeId() + "_HEDGE_EXIT");
+                    orderService.placeOrder(hedgeExitReq);
+                    log.info("[RSI-STRATEGY] [LIVE] Placed SELL Hedge Exit Order for {} Qty {}", current.getHedgeQuantity(), current.getHedgeSymbol());
+                }
             } catch (Exception e) {
                 log.error("[RSI-STRATEGY] Live exit order placement failed: {}", e.getMessage(), e);
             }
         }
 
-        current.close(exitPremium, reason, Instant.now(clock));
+        current.close(exitPremium, hedgeExitPremium, reason, Instant.now(clock));
         tradeHistory.add(current);
         openPosition.set(null);
 
         log.info(
-                "[RSI-STRATEGY] POSITION EXITED: {} {} | Entry: ₹{} | Exit: ₹{} | P&L: ₹{} | Reason: {}",
-                current.getAction(), current.getSymbol(), current.getEntryPrice(), exitPremium, current.getPnl(), reason);
+                "[RSI-STRATEGY] POSITION EXITED: {} {} | Main Entry/Exit: ₹{}/₹{} | Hedge Entry/Exit: ₹{}/₹{} | Total P&L: ₹{} | Reason: {}",
+                current.getAction(),
+                current.getSymbol(),
+                current.getEntryPrice(),
+                exitPremium,
+                current.getHedgeEntryPrice(),
+                hedgeExitPremium,
+                current.getTotalRealizedPnl(),
+                reason);
 
         if (telegramAlerts) {
             telegramService.sendRsiCrossoverExitAlert(current, reason);
@@ -586,6 +702,22 @@ public class RsiCrossoverStrategyService {
 
     public void setTradesExecutedToday(int count) {
         this.tradesExecutedToday.set(count);
+    }
+
+    public boolean isHedgeEnabled() {
+        return hedgeEnabled;
+    }
+
+    public void setHedgeEnabled(boolean hedgeEnabled) {
+        this.hedgeEnabled = hedgeEnabled;
+    }
+
+    public double getHedgeOtmPercent() {
+        return hedgeOtmPercent;
+    }
+
+    public void setHedgeOtmPercent(double hedgeOtmPercent) {
+        this.hedgeOtmPercent = hedgeOtmPercent;
     }
 
     public int getMaxTradesPerDay() {

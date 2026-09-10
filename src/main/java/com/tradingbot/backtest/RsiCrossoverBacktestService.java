@@ -48,6 +48,8 @@ public class RsiCrossoverBacktestService {
     public static final int DEFAULT_LOTS = 1;
     public static final int DEFAULT_RSI_PERIOD = 14;
     public static final int DEFAULT_MAX_TRADES_PER_DAY = 1;
+    public static final boolean DEFAULT_HEDGE_ENABLED = true;
+    public static final double DEFAULT_HEDGE_OTM_PERCENT = 2.0;
     public static final double DEFAULT_ADX_THRESHOLD = 20.0;
     public static final double DEFAULT_STOP_LOSS_PERCENT = 2.0;
     public static final double DEFAULT_TARGET_PROFIT_PERCENT = 50.0;
@@ -62,7 +64,7 @@ public class RsiCrossoverBacktestService {
         this.taService = taService;
     }
 
-    /** Runs backtest for NIFTY 50 over the specified days back using default parameters (OPTION_SELLING). */
+    /** Runs backtest for NIFTY 50 over the specified days back using default parameters (OPTION_SELLING with 2% OTM Hedge). */
     public BacktestResult runBacktest(int daysBack) {
         return runBacktest(
                 daysBack,
@@ -70,6 +72,8 @@ public class RsiCrossoverBacktestService {
                 DEFAULT_LOTS,
                 DEFAULT_RSI_PERIOD,
                 DEFAULT_MAX_TRADES_PER_DAY,
+                DEFAULT_HEDGE_ENABLED,
+                DEFAULT_HEDGE_OTM_PERCENT,
                 true,
                 DEFAULT_ADX_THRESHOLD,
                 DEFAULT_STOP_LOSS_PERCENT,
@@ -92,6 +96,8 @@ public class RsiCrossoverBacktestService {
                 lots,
                 rsiPeriod,
                 DEFAULT_MAX_TRADES_PER_DAY,
+                DEFAULT_HEDGE_ENABLED,
+                DEFAULT_HEDGE_OTM_PERCENT,
                 adxFilterEnabled,
                 adxThreshold,
                 stopLossPercent,
@@ -109,9 +115,36 @@ public class RsiCrossoverBacktestService {
             double adxThreshold,
             double stopLossPercent,
             double targetProfitPercent) {
+        return runBacktest(
+                daysBack,
+                mode,
+                lots,
+                rsiPeriod,
+                maxTradesPerDay,
+                DEFAULT_HEDGE_ENABLED,
+                DEFAULT_HEDGE_OTM_PERCENT,
+                adxFilterEnabled,
+                adxThreshold,
+                stopLossPercent,
+                targetProfitPercent);
+    }
+
+    /** Runs backtest with full parameter control including hedging. */
+    public BacktestResult runBacktest(
+            int daysBack,
+            String mode,
+            int lots,
+            int rsiPeriod,
+            int maxTradesPerDay,
+            boolean hedgeEnabled,
+            double hedgeOtmPercent,
+            boolean adxFilterEnabled,
+            double adxThreshold,
+            double stopLossPercent,
+            double targetProfitPercent) {
         int boundedDays = Math.max(1, Math.min(daysBack, 95));
-        log.info("[RSI-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:10576) [Mode: {}, MaxTrades: {}]",
-                boundedDays, mode, maxTradesPerDay);
+        log.info("[RSI-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:10576) [Mode: {}, Hedged: {}]",
+                boundedDays, mode, hedgeEnabled);
         List<Candle> candles = marketDataService.fetchHistoricalCandles("NSE", "10576", "NIFTY 50", "5", boundedDays);
         return evaluateCandles(
                 "NIFTY 50",
@@ -120,6 +153,8 @@ public class RsiCrossoverBacktestService {
                 lots,
                 rsiPeriod,
                 maxTradesPerDay,
+                hedgeEnabled,
+                hedgeOtmPercent,
                 adxFilterEnabled,
                 adxThreshold,
                 stopLossPercent,
@@ -200,6 +235,37 @@ public class RsiCrossoverBacktestService {
             double adxThreshold,
             double stopLossPercent,
             double targetProfitPercent) {
+        return evaluateCandles(
+                symbol,
+                candles,
+                mode,
+                lots,
+                rsiPeriod,
+                maxTradesPerDay,
+                DEFAULT_HEDGE_ENABLED,
+                DEFAULT_HEDGE_OTM_PERCENT,
+                adxFilterEnabled,
+                adxThreshold,
+                stopLossPercent,
+                targetProfitPercent);
+    }
+
+    /**
+     * Evaluates a chronological list of 5m candles through the RSI Crossover strategy.
+     */
+    public BacktestResult evaluateCandles(
+            String symbol,
+            List<Candle> candles,
+            String mode,
+            int lots,
+            int rsiPeriod,
+            int maxTradesPerDay,
+            boolean hedgeEnabled,
+            double hedgeOtmPercent,
+            boolean adxFilterEnabled,
+            double adxThreshold,
+            double stopLossPercent,
+            double targetProfitPercent) {
         if (candles == null || candles.isEmpty()) {
             return new BacktestResult(
                     STRATEGY_ID, symbol, 0, 0, 0, 0, 0.0, 0.0,
@@ -207,10 +273,17 @@ public class RsiCrossoverBacktestService {
         }
 
         boolean isOptionSelling = !"OPTION_BUYING".equalsIgnoreCase(mode);
+        boolean applyHedge = isOptionSelling && hedgeEnabled;
         int totalQuantity = Math.max(1, lots) * NIFTY_LOT_SIZE;
         double delta = 0.50; // Standard ATM option delta
         double assumedEntryPremium = 150.0;
         double thetaPerHour = isOptionSelling ? 1.0 : -1.0; // In selling, theta works in favor
+
+        // 2% OTM Hedge properties
+        double hedgeEntryPremium = 12.0;
+        double hedgeDelta = 0.10;
+        double hedgeThetaPerHour = -0.20;
+        double netCredit = assumedEntryPremium - (applyHedge ? hedgeEntryPremium : 0.0);
 
         // Partition candles chronologically by IST date
         Map<LocalDate, List<Candle>> candlesByDate = new TreeMap<>();
@@ -252,8 +325,9 @@ public class RsiCrossoverBacktestService {
                             : openPosition.entrySpot.subtract(exitSpot).doubleValue();
 
                     double holdHours = Duration.between(openPosition.entryTime, bar.timestamp()).toSeconds() / 3600.0;
-                    double thetaPts = holdHours * thetaPerHour;
-                    double optionPoints = Math.round(((spotDiff * delta) + thetaPts) * 100.0) / 100.0;
+                    double atmPts = (spotDiff * delta) + (holdHours * thetaPerHour);
+                    double hedgePts = applyHedge ? ((-spotDiff * hedgeDelta) + (holdHours * hedgeThetaPerHour)) : 0.0;
+                    double optionPoints = Math.round((atmPts + hedgePts) * 100.0) / 100.0;
 
                     BigDecimal pnlAmount = BigDecimal.valueOf(optionPoints * totalQuantity).setScale(2, RoundingMode.HALF_UP);
                     boolean isWin = pnlAmount.compareTo(BigDecimal.ZERO) > 0;
@@ -319,11 +393,12 @@ public class RsiCrossoverBacktestService {
                             : openPosition.entrySpot.subtract(exitSpot).doubleValue();
 
                     double holdHours = Duration.between(openPosition.entryTime, bar.timestamp()).toSeconds() / 3600.0;
-                    double thetaPts = holdHours * thetaPerHour;
-                    double optionPoints = Math.round(((spotDiff * delta) + thetaPts) * 100.0) / 100.0;
+                    double atmPts = (spotDiff * delta) + (holdHours * thetaPerHour);
+                    double hedgePts = applyHedge ? ((-spotDiff * hedgeDelta) + (holdHours * hedgeThetaPerHour)) : 0.0;
+                    double optionPoints = Math.round((atmPts + hedgePts) * 100.0) / 100.0;
 
-                    double slThresholdPoints = -(assumedEntryPremium * (stopLossPercent / 100.0));
-                    double tpThresholdPoints = assumedEntryPremium * (targetProfitPercent / 100.0);
+                    double slThresholdPoints = -(netCredit * (stopLossPercent / 100.0));
+                    double tpThresholdPoints = netCredit * (targetProfitPercent / 100.0);
 
                     boolean isSlHit = stopLossPercent > 0.0 && optionPoints <= slThresholdPoints;
                     boolean isTpHit = targetProfitPercent > 0.0 && optionPoints >= tpThresholdPoints;
@@ -402,8 +477,9 @@ public class RsiCrossoverBacktestService {
                         : openPosition.entrySpot.subtract(exitSpot).doubleValue();
 
                 double holdHours = Duration.between(openPosition.entryTime, lastBar.timestamp()).toSeconds() / 3600.0;
-                double thetaPts = holdHours * thetaPerHour;
-                double optionPoints = Math.round(((spotDiff * delta) + thetaPts) * 100.0) / 100.0;
+                double atmPts = (spotDiff * delta) + (holdHours * thetaPerHour);
+                double hedgePts = applyHedge ? ((-spotDiff * hedgeDelta) + (holdHours * hedgeThetaPerHour)) : 0.0;
+                double optionPoints = Math.round((atmPts + hedgePts) * 100.0) / 100.0;
 
                 BigDecimal pnlAmount = BigDecimal.valueOf(optionPoints * totalQuantity).setScale(2, RoundingMode.HALF_UP);
                 boolean isWin = pnlAmount.compareTo(BigDecimal.ZERO) > 0;

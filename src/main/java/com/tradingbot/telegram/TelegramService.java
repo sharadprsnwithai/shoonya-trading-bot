@@ -686,7 +686,7 @@ public class TelegramService {
     }
 
     /**
-     * Sends an alert when an RSI Crossover option trade is executed.
+     * Sends an alert when an RSI Crossover option trade is executed (Single Leg or Hedged Spread).
      */
     public void sendRsiCrossoverEntryAlert(
             com.tradingbot.model.strategy.RsiCrossoverPosition position,
@@ -703,27 +703,48 @@ public class TelegramService {
         String action = position.getAction() != null ? position.getAction().toUpperCase() : "BUY";
         boolean isBullish = ("BUY".equals(action) && "CE".equalsIgnoreCase(position.getOptionType()))
                 || ("SELL".equals(action) && "PE".equalsIgnoreCase(position.getOptionType()));
-        String direction = isBullish ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
-        String headerAction = "SELL".equals(action) ? "OPTION SELL" : "OPTION BUY";
+
+        String header;
+        String direction;
+        StringBuilder details = new StringBuilder();
+
+        if (position.isHedgeEnabled()) {
+            header = isBullish ? "BULL PUT SPREAD (2% OTM HEDGE)" : "BEAR CALL SPREAD (2% OTM HEDGE)";
+            direction = isBullish ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
+            
+            BigDecimal netCredit = position.getNetCredit();
+            BigDecimal strikeDiff = position.getHedgeStrike() != null && position.getStrike() != null
+                    ? position.getStrike().subtract(position.getHedgeStrike()).abs()
+                    : BigDecimal.ZERO;
+            BigDecimal maxRiskPerShare = strikeDiff.subtract(netCredit).max(BigDecimal.ZERO);
+
+            details.append(String.format("   • *Sell Leg (ATM):* `SELL %s` @ ₹%.2f\n", position.getSymbol(), position.getEntryPrice().doubleValue()));
+            details.append(String.format("   • *Hedge Leg (2%% OTM):* `BUY %s` @ ₹%.2f\n", position.getHedgeSymbol(), position.getHedgeEntryPrice().doubleValue()));
+            details.append(String.format("   • *Net Credit:* ₹%.2f / share\n", netCredit.doubleValue()));
+            details.append(String.format("   • *Defined Max Risk:* ₹%.2f / share\n", maxRiskPerShare.doubleValue()));
+        } else {
+            header = "SELL".equals(action) ? "OPTION SELL" : "OPTION BUY";
+            direction = isBullish ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
+            details.append(String.format("   • *Instrument:* `%s`\n", position.getSymbol()));
+            details.append(String.format("   • *Entry Premium:* ₹%.2f\n", position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0));
+        }
 
         String message =
                 String.format(
                         "🚀 *[NIFTY RSI CROSSOVER: %s]* 🚀\n\n"
                                 + "🧭 *Direction:* %s\n"
                                 + "⚡ *Action:* `%s %s`\n"
-                                + "🎯 *Instrument:* `%s`\n"
-                                + "💰 *Entry Premium:* ₹%.2f\n"
-                                + "📦 *Quantity:* %d units\n"
+                                + "📦 *Quantity:* %d units\n\n"
+                                + "📊 *Execution Details:*\n%s\n"
                                 + "📈 *Current RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
                                 + "📉 *Previous RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
                                 + "🕒 *Time:* %s IST",
-                        headerAction,
+                        header,
                         direction,
                         action,
                         position.getOptionType(),
-                        position.getSymbol(),
-                        position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
                         position.getQuantity(),
+                        details.toString(),
                         rsi5,
                         rsi15,
                         prevRsi5,
@@ -734,7 +755,7 @@ public class TelegramService {
     }
 
     /**
-     * Sends an alert when an RSI Crossover option trade is exited (Reversal or EOD).
+     * Sends an alert when an RSI Crossover option trade is exited (Reversal, SL, TP, or EOD).
      */
     public void sendRsiCrossoverExitAlert(
             com.tradingbot.model.strategy.RsiCrossoverPosition position,
@@ -745,25 +766,41 @@ public class TelegramService {
             return;
         }
 
-        BigDecimal pnl = position.getPnl() != null ? position.getPnl() : BigDecimal.ZERO;
-        String pnlEmoji = pnl.signum() >= 0 ? "🟢" : "🔴";
-        String pnlSign = pnl.signum() >= 0 ? "+" : "";
+        BigDecimal totalPnl = position.getTotalRealizedPnl();
+        String pnlEmoji = totalPnl.signum() >= 0 ? "🟢" : "🔴";
+        String pnlSign = totalPnl.signum() >= 0 ? "+" : "";
+
+        StringBuilder details = new StringBuilder();
+        if (position.isHedgeEnabled()) {
+            details.append(String.format("   • *Main Sell Leg:* `%s` | Entry: ₹%.2f ➔ Exit: ₹%.2f | P&L: ₹%.2f\n",
+                    position.getSymbol(),
+                    position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
+                    position.getExitPrice() != null ? position.getExitPrice().doubleValue() : 0.0,
+                    position.getPnl() != null ? position.getPnl().doubleValue() : 0.0));
+            details.append(String.format("   • *Hedge Buy Leg:* `%s` | Entry: ₹%.2f ➔ Exit: ₹%.2f | P&L: ₹%.2f\n",
+                    position.getHedgeSymbol(),
+                    position.getHedgeEntryPrice() != null ? position.getHedgeEntryPrice().doubleValue() : 0.0,
+                    position.getHedgeExitPrice() != null ? position.getHedgeExitPrice().doubleValue() : 0.0,
+                    position.getHedgePnl() != null ? position.getHedgePnl().doubleValue() : 0.0));
+        } else {
+            details.append(String.format("   • *Instrument:* `%s`\n", position.getSymbol()));
+            details.append(String.format("   • *Entry:* ₹%.2f | *Exit:* ₹%.2f\n",
+                    position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
+                    position.getExitPrice() != null ? position.getExitPrice().doubleValue() : 0.0));
+        }
 
         String message =
                 String.format(
                         "🏁 *[NIFTY RSI CROSSOVER: TRADE EXITED]* 🏁\n\n"
                                 + "ℹ️ *Reason:* %s\n"
-                                + "🎯 *Instrument:* `%s`\n"
-                                + "💰 *Entry:* ₹%.2f | *Exit:* ₹%.2f\n"
-                                + "%s *Realized P&L:* *%s₹%.2f*\n"
+                                + "📊 *Trade Breakdown:*\n%s\n"
+                                + "%s *Total Realized P&L:* *%s₹%.2f*\n"
                                 + "🕒 *Exit Time:* %s IST",
                         reason,
-                        position.getSymbol(),
-                        position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
-                        position.getExitPrice() != null ? position.getExitPrice().doubleValue() : 0.0,
+                        details.toString(),
                         pnlEmoji,
                         pnlSign,
-                        pnl.doubleValue(),
+                        totalPnl.doubleValue(),
                         TIME_FMT.format(position.getExitTime() != null ? position.getExitTime() : Instant.now()));
 
         sendAsync(message);
