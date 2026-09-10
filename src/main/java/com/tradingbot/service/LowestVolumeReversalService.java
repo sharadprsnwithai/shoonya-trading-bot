@@ -68,14 +68,14 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
     private boolean enabled = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.paper-capital:100000.0}")
-    private double paperCapital = 100000.0;
+    @Value("${trading-bot.strategy.lowest-volume.paper-capital:1000000.0}")
+    private double paperCapital = 1000000.0;
 
     @Value("${trading-bot.strategy.lowest-volume.risk-per-trade-percent:1.0}")
     private double riskPerTradePercent = 1.0;
 
-    @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:2}")
-    private int maxConcurrentTrades = 2;
+    @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
+    private int maxConcurrentTrades = 5;
 
     @Value("${trading-bot.strategy.lowest-volume.min-pct-change:1.0}")
     private double minPctChange = 1.0;
