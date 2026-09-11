@@ -17,9 +17,12 @@ import com.tradingbot.util.CandleResamplingUtil;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -473,6 +476,15 @@ public class RsiCrossoverStrategyService {
                     ? spotPrice * (1.0 - hedgeOtmPercent / 100.0)
                     : spotPrice * (1.0 + hedgeOtmPercent / 100.0);
             hedgeStrike = BigDecimal.valueOf(Math.round(rawHedge / 50.0) * 50);
+            if ("PE".equalsIgnoreCase(optionType)) {
+                if (hedgeStrike.compareTo(atmStrike) >= 0) {
+                    hedgeStrike = atmStrike.subtract(BigDecimal.valueOf(50));
+                }
+            } else {
+                if (hedgeStrike.compareTo(atmStrike) <= 0) {
+                    hedgeStrike = atmStrike.add(BigDecimal.valueOf(50));
+                }
+            }
             hedgeSymbol = resolveOptionSymbol(hedgeStrike, optionType);
             hedgeEntryPremium = fetchOptionPremium(hedgeStrike, optionType);
             if (hedgeEntryPremium == null || hedgeEntryPremium.compareTo(BigDecimal.ZERO) <= 0) {
@@ -674,7 +686,7 @@ public class RsiCrossoverStrategyService {
                 for (OptionStrike os : chain.strikes()) {
                     if (os.strikePrice().compareTo(strike) == 0) {
                         OptionContract contract = "CE".equalsIgnoreCase(optionType) ? os.call() : os.put();
-                        if (contract != null && contract.symbol() != null) {
+                        if (contract != null && contract.symbol() != null && !contract.symbol().isBlank()) {
                             return contract.symbol();
                         }
                     }
@@ -683,7 +695,19 @@ public class RsiCrossoverStrategyService {
         } catch (Exception e) {
             log.debug("[RSI-STRATEGY] Symbol resolution error: {}", e.getMessage());
         }
-        return "NIFTY_ATM_" + strike.intValue() + "_" + optionType;
+        return formatNiftyOptionSymbol(strike, optionType);
+    }
+
+    private String formatNiftyOptionSymbol(BigDecimal strike, String optionType) {
+        LocalDate today = LocalDate.now(clock);
+        LocalDate expiry = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.THURSDAY));
+        String year = String.valueOf(expiry.getYear()).substring(2);
+        String month = expiry.getMonth().name().substring(0, 3).toUpperCase();
+        LocalDate lastThursdayOfMonth = today.with(TemporalAdjusters.lastDayOfMonth()).with(TemporalAdjusters.previousOrSame(DayOfWeek.THURSDAY));
+        if (expiry.isEqual(lastThursdayOfMonth)) {
+            return String.format("NIFTY%s%s%d%s", year, month, strike.intValue(), optionType.toUpperCase());
+        }
+        return String.format("NIFTY%s%s%02d%d%s", year, month, expiry.getDayOfMonth(), strike.intValue(), optionType.toUpperCase());
     }
 
     // --- Getters and Setters for Testing & Configuration ---

@@ -562,6 +562,26 @@ class RsiCrossoverStrategyServiceTest {
     }
 
     @Test
+    void testFallbackOptionSymbolFormattingWhenOptionChainUnavailable() {
+        strategyService.setClock(createFixedClock(LocalTime.of(10, 0, 10)));
+        strategyService.setMode("OPTION_SELLING");
+        strategyService.setHedgeEnabled(true);
+
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean())).thenReturn(null);
+
+        strategyService.executeTrade("SELL", "PE", 24850.0, 55.0, 50.0, 48.0, 50.0);
+
+        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        assertThat(pos).isNotNull();
+        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(24850));
+        assertThat(pos.getSymbol()).startsWith("NIFTY").endsWith("24850PE");
+        assertThat(pos.getSymbol()).doesNotContain("NIFTY_ATM");
+        assertThat(pos.getHedgeStrike()).isEqualByComparingTo(BigDecimal.valueOf(24350));
+        assertThat(pos.getHedgeSymbol()).startsWith("NIFTY").endsWith("24350PE");
+        assertThat(pos.getHedgeSymbol()).doesNotContain("NIFTY_ATM");
+    }
+
+    @Test
     void testDailyResetClearsAllState() {
         strategyService.setTradeExecutedToday(true);
         strategyService.resetDaily();

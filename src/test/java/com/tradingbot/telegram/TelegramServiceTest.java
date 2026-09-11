@@ -1,5 +1,6 @@
 package com.tradingbot.telegram;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +64,56 @@ class TelegramServiceTest {
 
         hedgedPos.close(BigDecimal.valueOf(60.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", Instant.now());
         telegramService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
+    }
+
+    @Test
+    void testSendRsiCrossoverHedgedAlertsEnabledMessageFormat() {
+        ShoonyaConfig activeConfig = mock(ShoonyaConfig.class);
+        when(activeConfig.isTelegramEnabled()).thenReturn(true);
+        when(activeConfig.getTelegramBotToken()).thenReturn("dummy-token");
+        when(activeConfig.getTelegramChatId()).thenReturn("dummy-chat");
+
+        java.util.List<String> messages = new java.util.ArrayList<>();
+        TelegramService capturingService =
+                new TelegramService(activeConfig) {
+                    @Override
+                    public void sendAsync(String text) {
+                        messages.add(text);
+                    }
+                };
+
+        RsiCrossoverPosition hedgedPos =
+                new RsiCrossoverPosition(
+                        "TRD_HEDGE_1",
+                        "NIFTY24OCT24850PE",
+                        "SELL",
+                        "PE",
+                        BigDecimal.valueOf(24850),
+                        BigDecimal.valueOf(150.0),
+                        65,
+                        Instant.now(),
+                        true,
+                        "NIFTY24OCT24350PE",
+                        BigDecimal.valueOf(24350),
+                        BigDecimal.valueOf(12.0),
+                        65);
+
+        capturingService.sendRsiCrossoverEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
+
+        assertThat(messages).hasSize(1);
+        String entryMsg = messages.get(0);
+        assertThat(entryMsg).contains("SELL *NIFTY 24850 PE* (`NIFTY24OCT24850PE`) @ ₹150.00");
+        assertThat(entryMsg).contains("BUY *NIFTY 24350 PE* (`NIFTY24OCT24350PE`) @ ₹12.00");
+        assertThat(entryMsg).contains("BULL PUT SPREAD (2% OTM HEDGE)");
+
+        hedgedPos.close(BigDecimal.valueOf(60.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", Instant.now());
+        capturingService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
+
+        assertThat(messages).hasSize(2);
+        String exitMsg = messages.get(1);
+        assertThat(exitMsg).contains("Main Sell Leg (NIFTY 24850 PE)");
+        assertThat(exitMsg).contains("Hedge Buy Leg (NIFTY 24350 PE)");
+        assertThat(exitMsg).contains("TARGET_PROFIT_HIT");
     }
 
     @Test

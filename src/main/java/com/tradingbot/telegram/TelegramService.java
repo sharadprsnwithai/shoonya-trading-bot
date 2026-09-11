@@ -720,14 +720,27 @@ public class TelegramService {
                     : BigDecimal.ZERO;
             BigDecimal maxRiskPerShare = strikeDiff.subtract(netCredit).max(BigDecimal.ZERO);
 
-            details.append(String.format("   • *Sell Leg (ATM):* `SELL %s` @ ₹%.2f\n", position.getSymbol(), position.getEntryPrice().doubleValue()));
-            details.append(String.format("   • *Hedge Leg (2%% OTM):* `BUY %s` @ ₹%.2f\n", position.getHedgeSymbol(), position.getHedgeEntryPrice().doubleValue()));
-            details.append(String.format("   • *Net Credit:* ₹%.2f / share\n", netCredit.doubleValue()));
+            String mainStrikeLabel = position.getStrike() != null
+                    ? String.format("NIFTY %.0f %s", position.getStrike().doubleValue(), position.getOptionType())
+                    : position.getOptionType();
+            String hedgeStrikeLabel = position.getHedgeStrike() != null
+                    ? String.format("NIFTY %.0f %s", position.getHedgeStrike().doubleValue(), position.getOptionType())
+                    : position.getOptionType();
+
+            details.append(String.format("   • *Sell Leg (ATM):* SELL *%s* (`%s`) @ ₹%.2f\n",
+                    mainStrikeLabel, position.getSymbol(), position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0));
+            details.append(String.format("   • *Hedge Leg (2%% OTM):* BUY *%s* (`%s`) @ ₹%.2f\n",
+                    hedgeStrikeLabel, position.getHedgeSymbol(), position.getHedgeEntryPrice() != null ? position.getHedgeEntryPrice().doubleValue() : 0.0));
+            details.append(String.format("   • *Net Credit:* ₹%.2f / share\n", netCredit != null ? netCredit.doubleValue() : 0.0));
             details.append(String.format("   • *Defined Max Risk:* ₹%.2f / share\n", maxRiskPerShare.doubleValue()));
         } else {
             header = "SELL".equals(action) ? "OPTION SELL" : "OPTION BUY";
             direction = isBullish ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
-            details.append(String.format("   • *Instrument:* `%s`\n", position.getSymbol()));
+            String strikeLabel = position.getStrike() != null
+                    ? String.format("NIFTY %.0f %s", position.getStrike().doubleValue(), position.getOptionType())
+                    : position.getOptionType();
+            details.append(String.format("   • *Strike / Leg:* %s *%s* (`%s`)\n",
+                    action, strikeLabel, position.getSymbol()));
             details.append(String.format("   • *Entry Premium:* ₹%.2f\n", position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0));
         }
 
@@ -774,18 +787,30 @@ public class TelegramService {
 
         StringBuilder details = new StringBuilder();
         if (position.isHedgeEnabled()) {
-            details.append(String.format("   • *Main Sell Leg:* `%s` | Entry: ₹%.2f ➔ Exit: ₹%.2f | P&L: ₹%.2f\n",
+            String mainStrikeLabel = position.getStrike() != null
+                    ? String.format("NIFTY %.0f %s", position.getStrike().doubleValue(), position.getOptionType())
+                    : position.getOptionType();
+            String hedgeStrikeLabel = position.getHedgeStrike() != null
+                    ? String.format("NIFTY %.0f %s", position.getHedgeStrike().doubleValue(), position.getOptionType())
+                    : position.getOptionType();
+
+            details.append(String.format("   • *Main Sell Leg (%s):* `%s` | Entry: ₹%.2f ➔ Exit: ₹%.2f | P&L: ₹%.2f\n",
+                    mainStrikeLabel,
                     position.getSymbol(),
                     position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
                     position.getExitPrice() != null ? position.getExitPrice().doubleValue() : 0.0,
                     position.getPnl() != null ? position.getPnl().doubleValue() : 0.0));
-            details.append(String.format("   • *Hedge Buy Leg:* `%s` | Entry: ₹%.2f ➔ Exit: ₹%.2f | P&L: ₹%.2f\n",
+            details.append(String.format("   • *Hedge Buy Leg (%s):* `%s` | Entry: ₹%.2f ➔ Exit: ₹%.2f | P&L: ₹%.2f\n",
+                    hedgeStrikeLabel,
                     position.getHedgeSymbol(),
                     position.getHedgeEntryPrice() != null ? position.getHedgeEntryPrice().doubleValue() : 0.0,
                     position.getHedgeExitPrice() != null ? position.getHedgeExitPrice().doubleValue() : 0.0,
                     position.getHedgePnl() != null ? position.getHedgePnl().doubleValue() : 0.0));
         } else {
-            details.append(String.format("   • *Instrument:* `%s`\n", position.getSymbol()));
+            String strikeLabel = position.getStrike() != null
+                    ? String.format("NIFTY %.0f %s", position.getStrike().doubleValue(), position.getOptionType())
+                    : position.getOptionType();
+            details.append(String.format("   • *Strike (%s):* `%s`\n", strikeLabel, position.getSymbol()));
             details.append(String.format("   • *Entry:* ₹%.2f | *Exit:* ₹%.2f\n",
                     position.getEntryPrice() != null ? position.getEntryPrice().doubleValue() : 0.0,
                     position.getExitPrice() != null ? position.getExitPrice().doubleValue() : 0.0));
