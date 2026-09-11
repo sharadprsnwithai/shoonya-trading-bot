@@ -15,6 +15,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -415,6 +418,9 @@ public class ShoonyaOptionChainService {
         long totalCallOi = 0;
         long totalPutOi = 0;
 
+        // Generate standard NIFTY weekly expiry symbol (every Thursday)
+        String symbolPrefix = mockSymbolPrefix();
+
         for (int i = -count; i <= count; i++) {
             BigDecimal sp = atmStrike.add(strikeStep.multiply(BigDecimal.valueOf(i)));
             boolean isAtm = (i == 0);
@@ -429,7 +435,7 @@ public class ShoonyaOptionChainService {
 
             OptionContract call =
                     new OptionContract(
-                            underlying + "29SEP26C" + sp.intValue(),
+                            symbolPrefix + sp.intValue() + "CE",
                             "mock_c_" + sp,
                             "CE",
                             sp,
@@ -441,7 +447,7 @@ public class ShoonyaOptionChainService {
                             callLtp);
             OptionContract put =
                     new OptionContract(
-                            underlying + "29SEP26P" + sp.intValue(),
+                            symbolPrefix + sp.intValue() + "PE",
                             "mock_p_" + sp,
                             "PE",
                             sp,
@@ -466,6 +472,26 @@ public class ShoonyaOptionChainService {
                 totalPutOi,
                 Math.round(pcr * 100.0) / 100.0,
                 list);
+    }
+
+    /**
+     * Builds the standard NSE NIFTY option symbol prefix for the nearest weekly expiry (Thursday),
+     * rolling to next Thursday on/after expiry date with 1-DTE threshold.
+     *
+     * <p>NSE index option format: NIFTY{DD}{MON}{YY} e.g. NIFTY18SEP25.
+     */
+    public String mockSymbolPrefix() {
+        LocalDate today = LocalDate.now();
+
+        LocalDate expiry = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.THURSDAY));
+        long daysRemaining = java.time.temporal.ChronoUnit.DAYS.between(today, expiry);
+        if (daysRemaining <= 1) {
+            expiry = expiry.plusWeeks(1);
+        }
+
+        String year = String.valueOf(expiry.getYear()).substring(2);
+        String month = expiry.getMonth().name().substring(0, 3).toUpperCase();
+        return "NIFTY" + String.format("%02d", expiry.getDayOfMonth()) + month + year;
     }
 
     private static class OptionContractDraft {

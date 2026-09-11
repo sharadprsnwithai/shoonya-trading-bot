@@ -700,14 +700,13 @@ public class RsiCrossoverStrategyService {
 
     private String formatNiftyOptionSymbol(BigDecimal strike, String optionType) {
         LocalDate today = LocalDate.now(clock);
-        LocalDate expiry = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.THURSDAY));
+        LocalDate expiry = StockFnoRegistry.calculateWeeklyTargetExpiry(today, 1);
         String year = String.valueOf(expiry.getYear()).substring(2);
         String month = expiry.getMonth().name().substring(0, 3).toUpperCase();
-        LocalDate lastThursdayOfMonth = today.with(TemporalAdjusters.lastDayOfMonth()).with(TemporalAdjusters.previousOrSame(DayOfWeek.THURSDAY));
-        if (expiry.isEqual(lastThursdayOfMonth)) {
-            return String.format("NIFTY%s%s%d%s", year, month, strike.intValue(), optionType.toUpperCase());
-        }
-        return String.format("NIFTY%s%s%02d%d%s", year, month, expiry.getDayOfMonth(), strike.intValue(), optionType.toUpperCase());
+        int strikeInt = strike.intValue();
+        // NSE index option format (both weekly & monthly expiry):
+        // NIFTY{DD}{MMM}{YY}{STRIKE}{CE/PE} e.g. NIFTY18SEP2524850PE
+        return String.format("NIFTY%02d%s%s%d%s", expiry.getDayOfMonth(), month, year, strikeInt, optionType.toUpperCase());
     }
 
     // --- Getters and Setters for Testing & Configuration ---
