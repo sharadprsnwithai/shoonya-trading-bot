@@ -114,4 +114,37 @@ class TelegramServiceTest {
         // Should not throw when disabled
         telegramService.sendLvrSetupArmedAlert(setup, 4, BigDecimal.valueOf(1000));
     }
+
+    @Test
+    void testSendLvrTradeEntryAlertDisabled() {
+        com.tradingbot.model.strategy.LowestVolumeSetup setup =
+                new com.tradingbot.model.strategy.LowestVolumeSetup(
+                        "RELIANCE", com.tradingbot.model.strategy.LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                BigDecimal.valueOf(2500.0),
+                BigDecimal.valueOf(2490.0),
+                BigDecimal.valueOf(2520.0));
+
+        com.tradingbot.model.strategy.LowestVolumePaperPosition pos =
+                new com.tradingbot.model.strategy.LowestVolumePaperPosition(
+                        "LVR_1",
+                        "RELIANCE",
+                        "CE",
+                        "RELIANCE25OCT2500CE",
+                        BigDecimal.valueOf(2500),
+                        250,
+                        4,
+                        com.tradingbot.model.strategy.LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(45.0),
+                        BigDecimal.valueOf(2500.0),
+                        BigDecimal.valueOf(2490.0),
+                        BigDecimal.valueOf(2520.0),
+                        1000,
+                        BigDecimal.valueOf(1000),
+                        Instant.now());
+
+        // Should not throw when disabled
+        telegramService.sendLvrTradeEntryAlert(pos, setup);
+    }
 }

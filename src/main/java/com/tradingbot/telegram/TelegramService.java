@@ -433,21 +433,23 @@ public class TelegramService {
             return;
         }
 
+        boolean isLong = pos.getDirection() == LowestVolumeDirection.LONG;
         String dirEmoji =
-                pos.getDirection() == LowestVolumeDirection.LONG
-                        ? "🚀 *[PAPER TRADE: LONG ENTRY]* 🚀"
-                        : "🔻 *[PAPER TRADE: SHORT ENTRY]* 🔻";
+                isLong
+                        ? "🚀 🟢 *[TRADE SIGNAL: BUY CALL]* 🟢 🚀"
+                        : "🔻 🔴 *[TRADE SIGNAL: BUY PUT]* 🔴 🔻";
+        String actionLabel = isLong ? "BUY CALL (CE)" : "BUY PUT (PE)";
 
         String message =
                 String.format(
-                        "%s\n"
-                                + "📈 *Strategy:* Lowest Volume Reversal & Continuation\n"
+                        "%s\n\n"
+                                + "📈 *Strategy:* Lowest Volume Reversal (5m)\n"
+                                + "⚡ *ACTION:* *%s*\n"
                                 + "🏷️ *Trade ID:* `%s`\n"
                                 + "📌 *Symbol:* `%s`\n"
-                                + "🎯 *Option:* ATM %s (Strike: ₹%s)\n"
-                                + "👉 *Direction:* %s\n\n"
-                                + "📊 *Fill Details:*\n"
-                                + "   • *Entry Premium:* ₹%.2f\n"
+                                + "🎯 *Option Contract:* ATM `%s` (Strike: ₹%s)\n"
+                                + "💰 *Entry Premium:* ₹%.2f\n\n"
+                                + "📊 *Trade Levels:*\n"
                                 + "   • *Lots:* %d × %d = %d units\n"
                                 + "   • *Stock SL:* ₹%.2f\n"
                                 + "   • *Stock Target 1 (1:2 RR):* ₹%.2f\n"
@@ -457,11 +459,11 @@ public class TelegramService {
                                 + "   • Runner 50%%: Trailed via 5m SuperTrend(10, 3)\n"
                                 + "⏰ *Entry Time:* %s IST",
                         dirEmoji,
+                        actionLabel,
                         pos.getTradeId(),
                         pos.getSymbol(),
                         pos.getOptionType(),
                         pos.getAtmStrike(),
-                        pos.getDirection(),
                         pos.getEntryPremium(),
                         pos.getLots(),
                         pos.getLotSize(),

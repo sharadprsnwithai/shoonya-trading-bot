@@ -628,4 +628,46 @@ class LowestVolumeReversalServiceTest {
         // Active setups should not be populated with new items past cutoff
         assertThat(service.getActiveSetups()).isEmpty();
     }
+
+    @Test
+    void testTelegramArmedAlert_DisabledByDefault_DoesNotSendOnArmed() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("HDFCBANK", LowestVolumeDirection.LONG);
+        setup.transitionTo(LowestVolumeSetupState.LEG_CONFIRMED, "Leg confirmed");
+
+        double atr = 10.0;
+        Instant t0 = todayInstant(9, 25);
+        Candle c1 = makeCandle("HDFCBANK", t0, 1600, 1608, 1599, 1607, 80000);
+        Candle c2 = makeCandle("HDFCBANK", t0.plus(5, ChronoUnit.MINUTES), 1607, 1608, 1602, 1603, 10000);
+
+        // Default telegramArmedAlerts is false
+        assertThat(service.isTelegramArmedAlerts()).isFalse();
+
+        service.evaluatePullback(List.of(c1, c2), setup, atr);
+
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        // Armed alert should NOT be sent
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.never())
+                .sendLvrSetupArmedAlert(any(), anyInt(), any());
+    }
+
+    @Test
+    void testTelegramTradeEntryAlert_SentOnTradeExecution() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("1500.00"),
+                new BigDecimal("1490.00"),
+                new BigDecimal("1520.00"));
+
+        mockOptionPremium("BHARTIARTL", "CE", 45.0);
+
+        Instant t0 = todayInstant(9, 45);
+        Candle fillCandle = makeCandle("BHARTIARTL", t0, 1498, 1502, 1497, 1501, 50000);
+
+        service.evaluateArmedTrigger(List.of(fillCandle), setup, LocalTime.of(9, 50));
+
+        // Trade entry alert MUST be dispatched when taking the trade
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
+                .sendLvrTradeEntryAlert(any(), any());
+    }
 }

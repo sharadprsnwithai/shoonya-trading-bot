@@ -86,6 +86,9 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.telegram-alerts:true}")
     private boolean telegramAlerts = true;
 
+    @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:false}")
+    private boolean telegramArmedAlerts = false;
+
     @Value("${trading-bot.strategy.lowest-volume.option-buying-enabled:true}")
     private boolean optionBuyingEnabled = true;
 
@@ -629,7 +632,7 @@ public class LowestVolumeReversalService {
                         lowestVolCandle.volume());
 
                 int minLots = getDefaultLots();
-                if (telegramAlerts) {
+                if (telegramAlerts && telegramArmedAlerts) {
                     telegramService.sendLvrSetupArmedAlert(
                             setup, minLots, BigDecimal.valueOf(getRiskPerTradeAmount()));
                 }
@@ -1494,6 +1497,22 @@ public class LowestVolumeReversalService {
 
     public void setDefaultLots(int defaultLots) {
         this.defaultLots = defaultLots;
+    }
+
+    public boolean isTelegramAlerts() {
+        return telegramAlerts;
+    }
+
+    public void setTelegramAlerts(boolean telegramAlerts) {
+        this.telegramAlerts = telegramAlerts;
+    }
+
+    public boolean isTelegramArmedAlerts() {
+        return telegramArmedAlerts;
+    }
+
+    public void setTelegramArmedAlerts(boolean telegramArmedAlerts) {
+        this.telegramArmedAlerts = telegramArmedAlerts;
     }
 
     public boolean isLiveBreachCheckEnabled() {
