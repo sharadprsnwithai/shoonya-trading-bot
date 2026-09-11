@@ -115,6 +115,50 @@ class ShoonyaOrderServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void testPlaceOrderRetriesOnHttp401SessionExpiryAndSucceeds() throws Exception {
+        ShoonyaConfig config = new ShoonyaConfig();
+        config.setEnabled(true);
+        config.setUserId("USER123");
+
+        HttpClient mockClient = mock(HttpClient.class);
+        HttpResponse<String> sessionExpiredResp = mock(HttpResponse.class);
+        when(sessionExpiredResp.statusCode()).thenReturn(401);
+        when(sessionExpiredResp.body())
+                .thenReturn("{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
+
+        HttpResponse<String> successResp = mock(HttpResponse.class);
+        when(successResp.statusCode()).thenReturn(200);
+        when(successResp.body())
+                .thenReturn("{\"stat\":\"Ok\",\"norenordno\":\"240909000456\"}");
+
+        when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(sessionExpiredResp, successResp);
+        when(authenticator.getOrAuthenticateToken()).thenReturn("token_stale", "token_fresh");
+
+        ShoonyaOrderService orderService =
+                new ShoonyaOrderService(config, authenticator, new ObjectMapper(), mockClient);
+
+        OrderRequest request =
+                new OrderRequest(
+                        "NIFTY29SEP26P24000",
+                        "NFO",
+                        TransactionType.SELL,
+                        OrderType.MKT,
+                        ProductType.MIS,
+                        65,
+                        BigDecimal.ZERO,
+                        null,
+                        "TEST_RETRY_401");
+
+        OrderResponse response = orderService.placeOrder(request);
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.orderId()).isEqualTo("240909000456");
+        verify(authenticator, times(1)).invalidateSession();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void testPlaceOrderFailsOnHttpNon200() throws Exception {
         ShoonyaConfig config = new ShoonyaConfig();
         config.setEnabled(true);

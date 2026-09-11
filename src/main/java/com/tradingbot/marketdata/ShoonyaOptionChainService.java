@@ -171,25 +171,25 @@ public class ShoonyaOptionChainService {
 
                 HttpResponse<String> resp =
                         httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                String respBody = resp.body();
+
+                if (isSessionExpired(resp.statusCode(), respBody)) {
+                    log.warn(
+                            "Shoonya session expired (HTTP {}) during GetOptionChain fetch for {}. Invalidating session and retrying (attempt {})...",
+                            resp.statusCode(),
+                            futSymbol,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "HTTP error {} fetching OptionChain for {}: {}",
                             resp.statusCode(),
                             futSymbol,
-                            resp.body());
+                            respBody);
                     return mockOptionChain(underlying, atmStrike, count);
-                }
-
-                String respBody = resp.body();
-                if (respBody != null
-                        && (respBody.contains("Session Expired")
-                                || respBody.contains("Invalid Session Key")
-                                || respBody.contains("NOT_LOGGED_IN"))) {
-                    log.warn(
-                            "Shoonya session expired during GetOptionChain fetch. Invalidating session and retrying (attempt {})...",
-                            attempt);
-                    authenticator.invalidateSession();
-                    continue;
                 }
 
                 JsonNode root = objectMapper.readTree(respBody);
@@ -392,6 +392,20 @@ public class ShoonyaOptionChainService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private boolean isSessionExpired(int statusCode, String body) {
+        if (statusCode == 401 || statusCode == 403) {
+            return true;
+        }
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        return body.contains("Session Expired")
+                || body.contains("Invalid Session Key")
+                || body.contains("NOT_LOGGED_IN")
+                || body.contains("Invalid Token")
+                || body.contains("INVALID_SESSION");
     }
 
     private OptionChainResponse mockOptionChain(

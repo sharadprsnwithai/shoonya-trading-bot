@@ -120,22 +120,24 @@ public class ShoonyaOrderService {
 
                 HttpResponse<String> resp =
                         httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                String body = resp.body();
+
+                if (isSessionExpired(resp.statusCode(), body)) {
+                    log.warn(
+                            "[SHOONYA-ORDER] Session expired (HTTP {}) during PlaceOrder (attempt {}). Invalidating session and retrying...",
+                            resp.statusCode(),
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "[SHOONYA-ORDER] HTTP error {} placing order: {}",
                             resp.statusCode(),
-                            resp.body());
+                            body);
                     return OrderResponse.failure(
-                            request, "HTTP " + resp.statusCode() + ": " + resp.body());
-                }
-
-                String body = resp.body();
-                if (isSessionExpired(body)) {
-                    log.warn(
-                            "[SHOONYA-ORDER] Session expired during PlaceOrder (attempt {}). Invalidating session and retrying...",
-                            attempt);
-                    authenticator.invalidateSession();
-                    continue;
+                            request, "HTTP " + resp.statusCode() + ": " + body);
                 }
 
                 JsonNode root = objectMapper.readTree(body);
@@ -224,24 +226,26 @@ public class ShoonyaOrderService {
 
                 HttpResponse<String> resp =
                         httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                String body = resp.body();
+
+                if (isSessionExpired(resp.statusCode(), body)) {
+                    log.warn(
+                            "[SHOONYA-ORDER] Session expired (HTTP {}) during ModifyOrder for {} (attempt {}). Invalidating session and retrying...",
+                            resp.statusCode(),
+                            orderId,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "[SHOONYA-ORDER] HTTP error {} modifying order {}: {}",
                             resp.statusCode(),
                             orderId,
-                            resp.body());
+                            body);
                     return OrderResponse.failure(
-                            null, "HTTP " + resp.statusCode() + ": " + resp.body());
-                }
-
-                String body = resp.body();
-                if (isSessionExpired(body)) {
-                    log.warn(
-                            "[SHOONYA-ORDER] Session expired during ModifyOrder for {} (attempt {}). Invalidating session and retrying...",
-                            orderId,
-                            attempt);
-                    authenticator.invalidateSession();
-                    continue;
+                            null, "HTTP " + resp.statusCode() + ": " + body);
                 }
 
                 JsonNode root = objectMapper.readTree(body);
@@ -304,24 +308,26 @@ public class ShoonyaOrderService {
 
                 HttpResponse<String> resp =
                         httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                String body = resp.body();
+
+                if (isSessionExpired(resp.statusCode(), body)) {
+                    log.warn(
+                            "[SHOONYA-ORDER] Session expired (HTTP {}) during CancelOrder for {} (attempt {}). Invalidating session and retrying...",
+                            resp.statusCode(),
+                            orderId,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "[SHOONYA-ORDER] HTTP error {} cancelling order {}: {}",
                             resp.statusCode(),
                             orderId,
-                            resp.body());
+                            body);
                     return OrderResponse.failure(
-                            null, "HTTP " + resp.statusCode() + ": " + resp.body());
-                }
-
-                String body = resp.body();
-                if (isSessionExpired(body)) {
-                    log.warn(
-                            "[SHOONYA-ORDER] Session expired during CancelOrder for {} (attempt {}). Invalidating session and retrying...",
-                            orderId,
-                            attempt);
-                    authenticator.invalidateSession();
-                    continue;
+                            null, "HTTP " + resp.statusCode() + ": " + body);
                 }
 
                 JsonNode root = objectMapper.readTree(body);
@@ -395,23 +401,25 @@ public class ShoonyaOrderService {
 
                 HttpResponse<String> resp =
                         httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                String body = resp.body();
+
+                if (isSessionExpired(resp.statusCode(), body)) {
+                    log.warn(
+                            "Session expired (HTTP {}) querying {} (attempt {}). Invalidating session...",
+                            resp.statusCode(),
+                            endpoint,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "HTTP error {} querying Shoonya endpoint {}: {}",
                             resp.statusCode(),
                             endpoint,
-                            resp.body());
+                            body);
                     return objectMapper.createArrayNode();
-                }
-
-                String body = resp.body();
-                if (isSessionExpired(body)) {
-                    log.warn(
-                            "Session expired querying {} (attempt {}). Invalidating session...",
-                            endpoint,
-                            attempt);
-                    authenticator.invalidateSession();
-                    continue;
                 }
 
                 return objectMapper.readTree(body);
@@ -427,13 +435,17 @@ public class ShoonyaOrderService {
         return objectMapper.createArrayNode();
     }
 
-    private boolean isSessionExpired(String body) {
+    private boolean isSessionExpired(int statusCode, String body) {
+        if (statusCode == 401 || statusCode == 403) {
+            return true;
+        }
         if (body == null || body.isBlank()) {
             return false;
         }
         return body.contains("Session Expired")
                 || body.contains("Invalid Session Key")
                 || body.contains("NOT_LOGGED_IN")
-                || body.contains("Invalid Token");
+                || body.contains("Invalid Token")
+                || body.contains("INVALID_SESSION");
     }
 }

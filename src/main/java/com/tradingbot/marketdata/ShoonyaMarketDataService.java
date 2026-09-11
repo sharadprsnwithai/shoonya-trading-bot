@@ -227,23 +227,24 @@ public class ShoonyaMarketDataService {
 
                 HttpResponse<String> resp =
                         httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                String respBody = resp.body();
+
+                if (isSessionExpired(resp.statusCode(), respBody)) {
+                    log.warn(
+                            "Shoonya session expired (HTTP {}) during GetQuotes fetch (attempt {}). Invalidating session and retrying...",
+                            resp.statusCode(),
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "[QUOTE] HTTP error {} fetching quote for token {}: {}",
                             resp.statusCode(),
                             token,
-                            resp.body());
+                            respBody);
                     return null;
-                }
-                String respBody = resp.body();
-                if (respBody != null
-                        && (respBody.contains("Session Expired")
-                                || respBody.contains("Invalid Session Key")
-                                || respBody.contains("NOT_LOGGED_IN"))) {
-                    log.warn(
-                            "Shoonya session expired during GetQuotes fetch. Invalidating session...");
-                    authenticator.invalidateSession();
-                    continue;
                 }
                 return objectMapper.readTree(respBody);
             } catch (Exception e) {
@@ -262,42 +263,56 @@ public class ShoonyaMarketDataService {
         if (!config.isEnabled()) {
             return null;
         }
-        try {
-            String sessionToken = authenticator.getOrAuthenticateToken();
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("uid", config.getUserId());
-            payload.put("exch", exchange != null ? exchange : "NSE");
-            payload.put("stext", searchText);
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String sessionToken = authenticator.getOrAuthenticateToken();
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("uid", config.getUserId());
+                payload.put("exch", exchange != null ? exchange : "NSE");
+                payload.put("stext", searchText);
 
-            String jDataStr = objectMapper.writeValueAsString(payload);
-            String formBody = "jData=" + jDataStr + "&jKey=" + sessionToken;
+                String jDataStr = objectMapper.writeValueAsString(payload);
+                String formBody = "jData=" + jDataStr + "&jKey=" + sessionToken;
 
-            HttpRequest request =
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/SearchScrip"))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("X-Forwarded-For", config.resolvePublicIp())
-                            .POST(
-                                    HttpRequest.BodyPublishers.ofString(
-                                            formBody, StandardCharsets.UTF_8))
-                            .build();
+                HttpRequest request =
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/SearchScrip"))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-For", config.resolvePublicIp())
+                                .POST(
+                                        HttpRequest.BodyPublishers.ofString(
+                                                formBody, StandardCharsets.UTF_8))
+                                .build();
 
-            HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                log.error(
-                        "[SEARCH-SCRIP] HTTP error {} searching for {}: {}",
-                        response.statusCode(),
-                        searchText,
-                        response.body());
-                return null;
+                HttpResponse<String> response =
+                        httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                String body = response.body();
+
+                if (isSessionExpired(response.statusCode(), body)) {
+                    log.warn(
+                            "[SEARCH-SCRIP] Shoonya session expired (HTTP {}) searching for {}. Invalidating session and retrying (attempt {})...",
+                            response.statusCode(),
+                            searchText,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
+                if (response.statusCode() != 200) {
+                    log.error(
+                            "[SEARCH-SCRIP] HTTP error {} searching for {}: {}",
+                            response.statusCode(),
+                            searchText,
+                            body);
+                    return null;
+                }
+                JsonNode root = objectMapper.readTree(body);
+                if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
+                    return root.path("values");
+                }
+            } catch (Exception e) {
+                log.warn("[SEARCH-SCRIP] Error searching for scrip {} (attempt {}): {}", searchText, attempt, e.getMessage());
             }
-            JsonNode root = objectMapper.readTree(response.body());
-            if ("Ok".equalsIgnoreCase(root.path("stat").asText())) {
-                return root.path("values");
-            }
-        } catch (Exception e) {
-            log.warn("[SEARCH-SCRIP] Error searching for scrip {}: {}", searchText, e.getMessage());
         }
         return null;
     }
@@ -363,25 +378,25 @@ public class ShoonyaMarketDataService {
 
                 HttpResponse<String> response =
                         httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                String body = response.body();
+
+                if (isSessionExpired(response.statusCode(), body)) {
+                    log.warn(
+                            "Shoonya session expired (HTTP {}) during TPSeries fetch for {}. Invalidating session and retrying (attempt {})...",
+                            response.statusCode(),
+                            symbol,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
                 if (response.statusCode() != 200) {
                     log.error(
                             "HTTP error {} fetching TPSeries for {}: {}",
                             response.statusCode(),
                             symbol,
-                            response.body());
+                            body);
                     return Collections.emptyList();
-                }
-                String body = response.body();
-
-                if (body != null
-                        && (body.contains("Session Expired")
-                                || body.contains("Invalid Session Key")
-                                || body.contains("NOT_LOGGED_IN"))) {
-                    log.warn(
-                            "Shoonya session expired during TPSeries fetch. Invalidating session and retrying (attempt {})...",
-                            attempt);
-                    authenticator.invalidateSession();
-                    continue;
                 }
 
                 return parseShoonyaCandles(body, symbol, timeframe);
@@ -437,6 +452,20 @@ public class ShoonyaMarketDataService {
 
         candles.sort(Comparator.comparing(Candle::timestamp));
         return candles;
+    }
+
+    private boolean isSessionExpired(int statusCode, String body) {
+        if (statusCode == 401 || statusCode == 403) {
+            return true;
+        }
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        return body.contains("Session Expired")
+                || body.contains("Invalid Session Key")
+                || body.contains("NOT_LOGGED_IN")
+                || body.contains("Invalid Token")
+                || body.contains("INVALID_SESSION");
     }
 
     private Instant parseTimestamp(JsonNode node) {
