@@ -548,4 +548,84 @@ class LowestVolumeReversalServiceTest {
         assertThat(pos.getExitReason()).contains("STOP_LOSS_HIT_LIVE");
         assertThat(pos.isPartialBooked()).isFalse();
     }
+
+    @Test
+    void testPullbackLowestVolumeFromStartOfDay_Beyond10Bars() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("TATAMOTORS", LowestVolumeDirection.LONG);
+        setup.transitionTo(LowestVolumeSetupState.LEG_CONFIRMED, "Leg confirmed");
+
+        double atr = 10.0;
+        Instant t0 = todayInstant(9, 15);
+
+        List<Candle> todayCandles = new java.util.ArrayList<>();
+        // Candle 0 (09:15): Green
+        todayCandles.add(makeCandle("TATAMOTORS", t0, 950, 955, 948, 954, 80000));
+        // Candle 1 (09:20): Red with lowest volume of the entire day (12,000)
+        Candle earlyLowestRed =
+                makeCandle(
+                        "TATAMOTORS", t0.plus(5, ChronoUnit.MINUTES), 954, 955, 950, 951, 12000);
+        todayCandles.add(earlyLowestRed);
+
+        // Candles 2..11 (09:25 .. 10:10): 10 consecutive green candles (strong rally)
+        for (int i = 2; i <= 11; i++) {
+            todayCandles.add(
+                    makeCandle(
+                            "TATAMOTORS",
+                            t0.plus(i * 5L, ChronoUnit.MINUTES),
+                            950 + i * 2,
+                            955 + i * 2,
+                            949 + i * 2,
+                            954 + i * 2,
+                            60000));
+        }
+
+        // Candle 12 (10:15): Red with higher volume (35,000)
+        todayCandles.add(
+                makeCandle(
+                        "TATAMOTORS", t0.plus(60, ChronoUnit.MINUTES), 978, 979, 974, 975, 35000));
+        // Candle 13 (10:20): Red with 25,000 volume (> 12,000)
+        todayCandles.add(
+                makeCandle(
+                        "TATAMOTORS", t0.plus(65, ChronoUnit.MINUTES), 975, 976, 972, 973, 25000));
+
+        // Evaluate pullback with all 14 candles
+        service.evaluatePullback(todayCandles, setup, atr);
+
+        // Must pick earlyLowestRed (volume 12000) from start of day, NOT candle 13 (25000) from rolling 10
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(setup.getTriggerCandle()).isEqualTo(earlyLowestRed);
+        assertThat(setup.getTriggerCandleVolume()).isEqualTo(12000L);
+    }
+
+    @Test
+    void testEntryCutoffAt11AM_CancelsArmedTrigger() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("2500.00"),
+                new BigDecimal("2490.00"),
+                new BigDecimal("2520.00"));
+
+        Instant t0 = todayInstant(11, 5);
+        Candle candle = makeCandle("RELIANCE", t0, 2498, 2505, 2497, 2502, 50000);
+
+        // Evaluation at 11:01 AM (after 11:00 cutoff)
+        service.evaluateArmedTrigger(List.of(candle), setup, LocalTime.of(11, 1));
+
+        // Setup must be dropped to SCANNING due to 11:00 AM cutoff
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(service.getOpenPositions()).doesNotContainKey("RELIANCE");
+    }
+
+    @Test
+    void testRunCycle_Past11AM_DoesNotScanNewSetups() {
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(11, 5).atZone(IST).toInstant(), IST));
+
+        service.runCycle();
+
+        // Active setups should not be populated with new items past cutoff
+        assertThat(service.getActiveSetups()).isEmpty();
+    }
 }

@@ -399,7 +399,7 @@ public class TelegramService {
                                 + "   • *Trigger Price:* ₹%.2f\n"
                                 + "   • *Stop-Loss (SL):* ₹%.2f (%s)\n"
                                 + "   • *Target 1 (1:2 RR):* ₹%.2f\n"
-                                + "   • *Trigger Candle Vol:* %,d (Lowest in 10-bar window)\n"
+                                + "   • *Trigger Candle Vol:* %,d (Lowest from start of day)\n"
                                 + "   • *5m ATR(14):* ₹%.2f\n\n"
                                 + "💼 *Option Execution:*\n"
                                 + "   • *Instrument:* ATM %s, strike fixed at entry\n"

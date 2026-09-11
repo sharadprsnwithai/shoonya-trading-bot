@@ -12,8 +12,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * 5-Minute Candle Scheduler for the Lowest Volume Reversal & Continuation Strategy. Runs every 5
- * minutes on candle close (09:25 - 15:05 IST) to evaluate setups, arm orders, manage paper
- * positions, and execute the 15:00 hard square-off.
+ * minutes on candle close (09:25 - 11:05 IST) to evaluate setups, arm orders, manage paper
+ * positions, and track trailing exits.
  */
 @Service
 public class LowestVolumeReversalScheduler {
@@ -64,9 +64,9 @@ public class LowestVolumeReversalScheduler {
         }
     }
 
-    /** Runs every 5 minutes from 09:25:10 to 15:05:10 IST on trading weekdays. (10s offset for broker latency) */
+    /** Runs every 5 minutes from 09:25:10 to 11:05:10 IST on trading weekdays. (10s offset for broker latency) */
     @Scheduled(
-            cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-15 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-11 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void scheduledCandleCycle() {
         if (!schedulerEnabled) {
@@ -75,8 +75,8 @@ public class LowestVolumeReversalScheduler {
         }
 
         LocalTime now = LocalTime.now(IST);
-        // Do not trade before 09:25 or after 15:05
-        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 5))) {
+        // Do not scan or evaluate after 11:05
+        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(11, 5))) {
             return;
         }
 

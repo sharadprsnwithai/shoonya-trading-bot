@@ -53,7 +53,7 @@ public class LowestVolumeReversalService {
 
     public static final LocalTime TIME_SESSION_START = LocalTime.of(9, 15);
     public static final LocalTime TIME_SCANNER_START = LocalTime.of(9, 25);
-    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(14, 45);
+    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(11, 0);
     public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
 
     private final ShoonyaMarketDataService marketDataService;
@@ -156,6 +156,13 @@ public class LowestVolumeReversalService {
         if (nowTime.isBefore(TIME_SCANNER_START)) {
             log.info(
                     "[LVR] 09:15 - 09:25 IST: Pre-scanner data collection window. Setups start at 09:25.");
+            return;
+        }
+
+        // Past 11:00 AM cutoff: No new setups, manage open positions only
+        if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
+            log.info("[LVR] Past 11:00 AM cutoff. Skipping new setups; managing open positions only.");
+            evaluateOpenPositions(nowTime);
             return;
         }
 
@@ -533,7 +540,7 @@ public class LowestVolumeReversalService {
 
     /**
      * Evaluates Pullback & Lowest Volume Trigger Candle (§3.2, §3.3): Checks opposite-color candles
-     * in rolling 10-bar window and applies the Range filter.
+     * since start of day (09:15) and applies the Range filter.
      */
     public void evaluatePullback(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
         if (todayCandles.isEmpty()) {
@@ -549,15 +556,11 @@ public class LowestVolumeReversalService {
                     LowestVolumeSetupState.PULLBACK_TRACKING,
                     "Opposite candle printed in pullback");
 
-            // Look back up to 10 preceding candles to identify the lowest volume candle
-            int windowSize = Math.min(10, todayCandles.size());
-            List<Candle> window =
-                    todayCandles.subList(todayCandles.size() - windowSize, todayCandles.size());
-
+            // Look back across all candles since start of day to identify the lowest volume opposite candle
             Candle lowestVolCandle = null;
             long minVolume = Long.MAX_VALUE;
 
-            for (Candle c : window) {
+            for (Candle c : todayCandles) {
                 if (isOppositeColor(c, dir)) {
                     // Tie-break: if equal volume, the more recent candle takes precedence
                     if (c.volume() <= minVolume) {
@@ -651,9 +654,9 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        // Check entry cutoff (14:45)
+        // Check entry cutoff (11:00)
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-            log.info("[LVR] [{}] After 14:45 cutoff. Armed setup cancelled.", setup.getSymbol());
+            log.info("[LVR] [{}] After 11:00 cutoff. Armed setup cancelled.", setup.getSymbol());
             setup.resetToScanning();
             return;
         }
@@ -723,6 +726,11 @@ public class LowestVolumeReversalService {
 
         LocalTime nowTime = LocalTime.now(clock);
         if (nowTime.isBefore(TIME_SCANNER_START) || nowTime.isAfter(TIME_HARD_EXIT)) {
+            return;
+        }
+
+        // If past entry cutoff and no open positions, skip polling
+        if (nowTime.isAfter(TIME_ENTRY_CUTOFF) && openPositions.isEmpty()) {
             return;
         }
 

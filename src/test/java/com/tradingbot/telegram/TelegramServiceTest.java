@@ -98,4 +98,20 @@ class TelegramServiceTest {
         pos.close(BigDecimal.valueOf(20.0), BigDecimal.valueOf(2.0), "EXPIRY_SQUARE_OFF", Instant.now(), java.time.LocalDate.of(2026, 9, 24), BigDecimal.valueOf(25200));
         telegramService.sendDailyWmaExitAlert(pos, "EXPIRY_SQUARE_OFF");
     }
+
+    @Test
+    void testSendLvrSetupArmedAlertDisabled() {
+        com.tradingbot.model.strategy.LowestVolumeSetup setup =
+                new com.tradingbot.model.strategy.LowestVolumeSetup(
+                        "RELIANCE", com.tradingbot.model.strategy.LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                BigDecimal.valueOf(2500.0),
+                BigDecimal.valueOf(2490.0),
+                BigDecimal.valueOf(2520.0));
+        setup.setAtr14(12.5);
+
+        // Should not throw when disabled
+        telegramService.sendLvrSetupArmedAlert(setup, 4, BigDecimal.valueOf(1000));
+    }
 }
