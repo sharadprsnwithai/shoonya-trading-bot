@@ -39,7 +39,7 @@ public class ExecutionManager {
     private static final Logger log = LoggerFactory.getLogger(ExecutionManager.class);
     public static final int DEFAULT_HEDGE_STRIKE_OFFSET = 150; // 150 pts OTM credit spread hedge
 
-    @Value("${trading-bot.strategy.pivot-supertrend.hedge-distance:150}")
+    @Value("${trading-bot.execution.hedge-strike-offset:150}")
     private int hedgeStrikeOffset = DEFAULT_HEDGE_STRIKE_OFFSET;
 
     public static final double SL_MULTIPLIER = 1.40; // +40% premium hard stop loss

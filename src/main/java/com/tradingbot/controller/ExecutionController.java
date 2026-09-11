@@ -57,7 +57,7 @@ public class ExecutionController {
      */
     @PostMapping("/trade")
     public ResponseEntity<ActiveSpreadPosition> executeOptionSellingTrade(
-            @RequestParam(defaultValue = "PIVOT_SUPERTREND_OPTION_SELLING") String strategyId,
+            @RequestParam(defaultValue = "DIRECTIONAL_OPTION_SELLING") String strategyId,
             @RequestParam(defaultValue = "NIFTY") String underlying,
             @RequestParam String optionType, // "PE" or "CE"
             @RequestParam BigDecimal strikePrice,

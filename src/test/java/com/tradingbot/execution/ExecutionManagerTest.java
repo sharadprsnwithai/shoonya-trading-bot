@@ -87,7 +87,7 @@ class ExecutionManagerTest {
 
         ActiveSpreadPosition pos =
                 executionManager.executeDirectionalOptionSelling(
-                        "PIVOT_SUPERTREND", "NIFTY", "PE", atm, 65, true);
+                        "TEST_STRATEGY", "NIFTY", "PE", atm, 65, true);
 
         assertThat(pos).isNotNull();
         assertThat(pos.optionType()).isEqualTo("PE");
@@ -132,7 +132,7 @@ class ExecutionManagerTest {
 
         ActiveSpreadPosition pos =
                 executionManager.executeDirectionalOptionSelling(
-                        "PIVOT_SUPERTREND", "NIFTY", "PE", atm, 65, true);
+                        "TEST_STRATEGY", "NIFTY", "PE", atm, 65, true);
 
         assertThat(pos).isNull();
         assertThat(executionManager.getOpenPositions()).isEmpty();
@@ -159,7 +159,7 @@ class ExecutionManagerTest {
 
         ActiveSpreadPosition pos =
                 executionManager.executeDirectionalOptionSelling(
-                        "PIVOT_SUPERTREND", "NIFTY", "PE", atm, 65, true);
+                        "TEST_STRATEGY", "NIFTY", "PE", atm, 65, true);
 
         assertThat(pos).isNull();
         assertThat(executionManager.getOpenPositions()).isEmpty();
