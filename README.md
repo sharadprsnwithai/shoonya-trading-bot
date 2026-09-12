@@ -59,6 +59,16 @@ Intraday RSI(14) crossover on **5‑minute vs 15‑minute resampled candles** of
 3. **Strikes:** ATM weekly options with standard NSE symbols (e.g. `NIFTY18SEP2524850PE`), hedge strike ≥ 50 points from ATM.
 4. **Execution:** Multi-leg `ExecutionManager` flow (buy hedge first for margin relief, rollback on failure).
 
+### NIFTY 100 OHL-VWAP (Open=High/Low + VWAP Crossover)
+
+Intraday **paper-trading** strategy across the NIFTY 100 F&O stock universe:
+
+1. **Daily Scan (09:31:10 IST):** Fetches the first 15-minute candle (09:15–09:30) for all 100 stocks; qualifies a stock if `open ≈ high` (within 0.1%) → **PE setup** or `open ≈ low` → **CE setup**. The first 1-min bar (09:15–09:16) volume must exceed **3× SMA20 of the prior day's last 20 one-minute volumes**. Only **F&O-eligible** stocks (verified at runtime via NFO SearchScrip) are admitted. All qualifying symbols are broadcast to Telegram.
+2. **5-Minute Monitoring (09:35→14:55 IST):** Invalidates any stock whose 5-min candle breaks the marked high (PE) or marked low (CE). Computes session-anchored **VWAP** on 5-min candles. Enters when the latest candle **straddles VWAP** — high ≥ VWAP, low ≤ VWAP, close on the signal side (PE: close below; CE: close above).
+3. **Paper Entry:** Opens a paper ATM option position via SearchScrip NFO (option premium fetched live). Telegram entry alert includes the ATM strike and lot size.
+4. **Exits:** A 5-min candle closing on the **opposite side of VWAP** (PE exits above VWAP; CE exits below VWAP), or **mandatory square-off at 15:00:10 IST**.
+5. **Token Correctness:** All NSE equity tokens are resolved at runtime via Shoonya SearchScrip (the `resolveToken` fallback path). Verified tokens in `StockFnoRegistry` are used as seeds; new listings (ENRIN, TMCV, TMPV, LTM, etc.) are resolved automatically. Unresolved symbols are skipped and logged.
+
 ---
 
 ## Execution Modes

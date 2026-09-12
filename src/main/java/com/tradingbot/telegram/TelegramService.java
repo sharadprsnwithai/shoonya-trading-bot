@@ -6,6 +6,9 @@ import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
+import com.tradingbot.model.strategy.OhlvDirection;
+import com.tradingbot.model.strategy.OhlvPaperPosition;
+import com.tradingbot.model.strategy.OhlvSetup;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -425,8 +428,7 @@ public class TelegramService {
         sendAsync(message);
     }
 
-    /** Sends an alert when a Paper Trade Entry is filled for Lowest Volume Reversal. */
-    public void sendLvrTradeEntryAlert(LowestVolumePaperPosition pos, LowestVolumeSetup setup) {
+    /** Sends an alert when a Paper Trade Entry is filled for Lowest Volume Reversal. */    public void sendLvrTradeEntryAlert(LowestVolumePaperPosition pos, LowestVolumeSetup setup) {
         if (!config.isTelegramEnabled()
                 || config.getTelegramBotToken().isBlank()
                 || config.getTelegramChatId().isBlank()) {
@@ -873,5 +875,98 @@ public class TelegramService {
                     }
                 },
                 asyncExecutor);
+    }
+
+    /**
+     * Sends the 09:31 AM IST watchlist broadcast for the NIFTY 100 OHL-VWAP strategy. Lists each
+     * qualifying setup with its direction (open=high → PE, open=low → CE) and marked levels.
+     */
+    public void sendOhlvWatchlistAlert(List<OhlvSetup> watchlist) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        if (watchlist == null || watchlist.isEmpty()) {
+            sendAsync("📡 *OHL-VWAP: 09:31 AM WATCHLIST*\n\nNo qualifying setups today.");
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("📡 *OHL-VWAP: 09:31 AM WATCHLIST*\n\n");
+        for (OhlvSetup s : watchlist) {
+            String dir =
+                    s.getDirection() == OhlvDirection.BULLISH
+                            ? "🟢 open=low → CE"
+                            : "🔴 open=high → PE";
+            sb.append(String.format("• `%s` %s (H ₹%s / L ₹%s)\n",
+                    s.getSymbol(), dir, s.getMarkedHigh(), s.getMarkedLow()));
+        }
+        sendAsync(sb.toString());
+    }
+
+    /** Sends the paper entry alert with ATM strike, option type, lot size and entry premium. */
+    public void sendOhlvEntryAlert(OhlvPaperPosition pos) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        boolean bullish = pos.getDirection() == OhlvDirection.BULLISH;
+        String dirEmoji = bullish ? "🚀 🟢 *[OHL-VWAP: BUY CALL]* 🟢 🚀" : "🔻 🔴 *[OHL-VWAP: BUY PUT]* 🔴 🔻";
+        String message =
+                String.format(
+                        "%s\n\n"
+                                + "📈 *Strategy:* NIFTY 100 OHL-VWAP (Paper)\n"
+                                + "⚡ *ACTION:* BUY ATM %s\n"
+                                + "🏷️ *Trade ID:* `%s`\n"
+                                + "📌 *Symbol:* `%s`\n"
+                                + "🎯 *Strike:* ₹%s (%s)\n"
+                                + "🔢 *Lot Size:* %d\n"
+                                + "💰 *Entry Premium:* ₹%.2f\n\n"
+                                + "⏰ *Entry Time:* %s IST",
+                        dirEmoji,
+                        pos.getOptionType(),
+                        pos.getTradeId(),
+                        pos.getSymbol(),
+                        pos.getAtmStrike(),
+                        bullish ? "BULLISH" : "BEARISH",
+                        pos.getLotSize(),
+                        pos.getEntryPremium(),
+                        TIME_FMT.format(Instant.now()));
+
+        sendAsync(message);
+    }
+
+    /** Sends the exit alert (VWAP opposite close or mandatory EOD square-off) with realized P&L. */
+    public void sendOhlvExitAlert(OhlvPaperPosition pos, String reason) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        BigDecimal pnl = pos.getRealizedPnl();
+        String pnlEmoji = pnl.signum() >= 0 ? "🟢" : "🔴";
+        String message =
+                String.format(
+                        "*[OHL-VWAP: EXIT]* %s\n\n"
+                                + "📌 *Symbol:* `%s` %s\n"
+                                + "🏷️ *Trade ID:* `%s`\n"
+                                + "📊 *P&L (Paper):* %s ₹%.2f\n"
+                                + "📤 *Reason:* %s\n"
+                                + "⏰ *Exit Time:* %s IST",
+                        pnlEmoji,
+                        pos.getSymbol(),
+                        pos.getOptionType(),
+                        pos.getTradeId(),
+                        pnlEmoji,
+                        pnl,
+                        reason,
+                        TIME_FMT.format(Instant.now()));
+
+        sendAsync(message);
     }
 }

@@ -5,6 +5,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.tradingbot.config.ShoonyaConfig;
+import com.tradingbot.model.strategy.OhlvDirection;
+import com.tradingbot.model.strategy.OhlvPaperPosition;
+import com.tradingbot.model.strategy.OhlvSetup;
 import com.tradingbot.model.strategy.RsiCrossoverPosition;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -163,5 +166,160 @@ class TelegramServiceTest {
 
         // Should not throw when disabled
         telegramService.sendLvrTradeEntryAlert(pos, setup);
+    }
+
+    @Test
+    void testSendOhlvAlertsDisabled_ShouldNotThrow() {
+        OhlvSetup setup =
+                new OhlvSetup(
+                        "RELIANCE",
+                        OhlvDirection.BEARISH,
+                        BigDecimal.valueOf(2520.0),
+                        BigDecimal.valueOf(2490.0),
+                        150000L,
+                        50000.0);
+
+        OhlvPaperPosition pos =
+                new OhlvPaperPosition(
+                        "OHLV_1",
+                        "RELIANCE",
+                        OhlvDirection.BEARISH,
+                        BigDecimal.valueOf(2500),
+                        250,
+                        BigDecimal.valueOf(42.5),
+                        Instant.now());
+
+        telegramService.sendOhlvWatchlistAlert(java.util.List.of(setup));
+        telegramService.sendOhlvEntryAlert(pos);
+
+        pos.close(BigDecimal.valueOf(55.0), "VWAP_OPPOSITE_CLOSE", Instant.now());
+        telegramService.sendOhlvExitAlert(pos, "VWAP_OPPOSITE_CLOSE");
+    }
+
+    @Test
+    void testSendOhlvEntryAlertEnabled_ContainsAtmStrikeAndDirection() {
+        ShoonyaConfig activeConfig = mock(ShoonyaConfig.class);
+        when(activeConfig.isTelegramEnabled()).thenReturn(true);
+        when(activeConfig.getTelegramBotToken()).thenReturn("dummy-token");
+        when(activeConfig.getTelegramChatId()).thenReturn("dummy-chat");
+
+        java.util.List<String> messages = new java.util.ArrayList<>();
+        TelegramService capturingService =
+                new TelegramService(activeConfig) {
+                    @Override
+                    public void sendAsync(String text) {
+                        messages.add(text);
+                    }
+                };
+
+        OhlvPaperPosition bullish =
+                new OhlvPaperPosition(
+                        "OHLV_BULL",
+                        "RELIANCE",
+                        OhlvDirection.BULLISH,
+                        BigDecimal.valueOf(2800),
+                        250,
+                        BigDecimal.valueOf(38.0),
+                        Instant.now());
+        OhlvPaperPosition bearish =
+                new OhlvPaperPosition(
+                        "OHLV_BEAR",
+                        "TATASTEEL",
+                        OhlvDirection.BEARISH,
+                        BigDecimal.valueOf(160),
+                        4170,
+                        BigDecimal.valueOf(6.5),
+                        Instant.now());
+
+        capturingService.sendOhlvEntryAlert(bullish);
+        capturingService.sendOhlvEntryAlert(bearish);
+
+        assertThat(messages).hasSize(2);
+        assertThat(messages.get(0))
+                .contains("RELIANCE")
+                .contains("BUY ATM CE")
+                .contains("₹2800 (BULLISH)");
+        assertThat(messages.get(1))
+                .contains("TATASTEEL")
+                .contains("BUY ATM PE")
+                .contains("₹160 (BEARISH)");
+    }
+
+    @Test
+    void testSendOhlvWatchlistAlertEnabled_ContainsSymbolsAndDirections() {
+        ShoonyaConfig activeConfig = mock(ShoonyaConfig.class);
+        when(activeConfig.isTelegramEnabled()).thenReturn(true);
+        when(activeConfig.getTelegramBotToken()).thenReturn("dummy-token");
+        when(activeConfig.getTelegramChatId()).thenReturn("dummy-chat");
+
+        java.util.List<String> messages = new java.util.ArrayList<>();
+        TelegramService capturingService =
+                new TelegramService(activeConfig) {
+                    @Override
+                    public void sendAsync(String text) {
+                        messages.add(text);
+                    }
+                };
+
+        OhlvSetup bullish =
+                new OhlvSetup(
+                        "HDFCBANK",
+                        OhlvDirection.BULLISH,
+                        BigDecimal.valueOf(1700.0),
+                        BigDecimal.valueOf(1685.0),
+                        200000L,
+                        60000.0);
+        OhlvSetup bearish =
+                new OhlvSetup(
+                        "RELIANCE",
+                        OhlvDirection.BEARISH,
+                        BigDecimal.valueOf(2850.0),
+                        BigDecimal.valueOf(2800.0),
+                        300000L,
+                        90000.0);
+
+        capturingService.sendOhlvWatchlistAlert(java.util.List.of(bullish, bearish));
+
+        assertThat(messages).hasSize(1);
+        String msg = messages.get(0);
+        assertThat(msg).contains("HDFCBANK").contains("open=low → CE");
+        assertThat(msg).contains("RELIANCE").contains("open=high → PE");
+        assertThat(msg).contains("OHL-VWAP: 09:31 AM WATCHLIST");
+    }
+
+    @Test
+    void testSendOhlvExitAlertEnabled_ContainsPnl() {
+        ShoonyaConfig activeConfig = mock(ShoonyaConfig.class);
+        when(activeConfig.isTelegramEnabled()).thenReturn(true);
+        when(activeConfig.getTelegramBotToken()).thenReturn("dummy-token");
+        when(activeConfig.getTelegramChatId()).thenReturn("dummy-chat");
+
+        java.util.List<String> messages = new java.util.ArrayList<>();
+        TelegramService capturingService =
+                new TelegramService(activeConfig) {
+                    @Override
+                    public void sendAsync(String text) {
+                        messages.add(text);
+                    }
+                };
+
+        OhlvPaperPosition pos =
+                new OhlvPaperPosition(
+                        "OHLV_EXIT",
+                        "SBIN",
+                        OhlvDirection.BULLISH,
+                        BigDecimal.valueOf(850),
+                        1970,
+                        BigDecimal.valueOf(10.0),
+                        Instant.now());
+        pos.close(BigDecimal.valueOf(15.0), "MANDATORY_15_00_SQUARE_OFF", Instant.now());
+
+        capturingService.sendOhlvExitAlert(pos, "MANDATORY_15_00_SQUARE_OFF");
+
+        assertThat(messages).hasSize(1);
+        assertThat(messages.get(0))
+                .contains("SBIN")
+                .contains("MANDATORY_15_00_SQUARE_OFF")
+                .contains("₹9850.00"); // 1970 x (15-10) = +9850
     }
 }
