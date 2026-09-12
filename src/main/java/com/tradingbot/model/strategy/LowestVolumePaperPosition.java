@@ -87,7 +87,7 @@ public class LowestVolumePaperPosition {
     }
 
     /**
-     * Executes partial profit booking at Target 1 (1:2 RR). Books 50% of the position and moves SL
+     * Executes partial profit booking at Target 1 (1:4 RR). Books 50% of the position and moves SL
      * on the remainder to Breakeven (entry premium).
      */
     public synchronized void executePartialBook(BigDecimal exitPremium, Instant timestamp) {

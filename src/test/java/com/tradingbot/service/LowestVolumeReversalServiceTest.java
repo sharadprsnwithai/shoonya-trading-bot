@@ -158,8 +158,8 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getTriggerPrice()).isEqualByComparingTo(new BigDecimal("1610.05"));
         // SL price = Low - 0.05 = 1604.95
         assertThat(setup.getStopLossPrice()).isEqualByComparingTo(new BigDecimal("1604.95"));
-        // Target 1 = 1610.05 + 2 * (1610.05 - 1604.95) = 1610.05 + 10.20 = 1620.25
-        assertThat(setup.getTarget1Price()).isEqualByComparingTo(new BigDecimal("1620.25"));
+        // Target 1 = 1610.05 + 4 * (1610.05 - 1604.95) = 1610.05 + 20.40 = 1630.45
+        assertThat(setup.getTarget1Price()).isEqualByComparingTo(new BigDecimal("1630.45"));
     }
 
     @Test
@@ -208,7 +208,7 @@ class LowestVolumeReversalServiceTest {
                 null,
                 new BigDecimal("1500.00"),
                 new BigDecimal("1490.00"),
-                new BigDecimal("1520.00")); // Target 1 = 1520 (1:2 RR)
+                new BigDecimal("1540.00")); // Target 1 = 1540 (1:4 RR)
 
         // Mock option premium for ATM CE
         mockOptionPremium("BHARTIARTL", "CE", 45.0);
@@ -232,15 +232,15 @@ class LowestVolumeReversalServiceTest {
         assertThat(pos.getLots()).isGreaterThan(0);
         assertThat(pos.getTotalQuantity()).isEqualTo(pos.getLots() * pos.getLotSize());
 
-        // Now test Target 1 hit: High reaches 1521 >= 1520
+        // Now test Target 1 hit: High reaches 1542 >= 1540
         Candle targetCandle =
                 makeCandle(
                         "BHARTIARTL",
                         t0.plus(5, ChronoUnit.MINUTES),
-                        1515,
-                        1522,
-                        1514,
-                        1521,
+                        1530,
+                        1542,
+                        1528,
+                        1540,
                         60000);
         when(marketDataService.fetch5MinCandles(anyString(), anyInt()))
                 .thenReturn(List.of(fillCandle, targetCandle));

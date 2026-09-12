@@ -72,7 +72,7 @@ Exact mirror of §3 with colors and directions inverted: initial leg = red candl
   - `max_qty_by_liquidity` = a fraction (e.g. 1%) of the **real-time best 5-depth ask size** (long) / bid size (short) pulled from **Shoonya's market depth/quote endpoint** at signal time — a live order-book read, not the trigger candle's historical volume. This is a tighter, more realistic cap since it reflects what's actually resting on the book right now rather than volume that already traded.
   - `max_qty_by_margin` = available MIS margin (from Shoonya's margin/limits API) ÷ trigger price.
   - This closes the original's gap where a very tight SL could imply an unrealistically large share quantity relative to the stock's actual liquidity.
-- Target 1 = 1:2 RR, book 50% of position, move SL on remainder to breakeven (cost).
+- Target 1 = 1:4 RR, book 50% of position, move SL on remainder to breakeven (cost).
 - **[DECISION] Runner management (undefined in original):** trail the remaining 50% using a 5-min Supertrend(10,3) — exit runner fully on a Supertrend flip against the position, or at the 15:00 hard close, whichever comes first. (Matches your existing Supertrend-based exit logic used elsewhere — reuse rather than inventing a new trailing method.)
 - Hard exit: flatten all open positions at 15:00, market order, no discretion.
 
@@ -99,7 +99,7 @@ TRIGGER_ARMED
   → SCANNING            [6-candle timeout elapses without fill, §3.4]
   → PULLBACK_TRACKING   [a new, lower-volume opposite-color candle re-anchors before trigger fires]
 IN_POSITION
-  → PARTIAL_BOOKED      [price hits 1:2 RR — book 50%, SL to breakeven on remainder]
+  → PARTIAL_BOOKED      [price hits 1:4 RR — book 50%, SL to breakeven on remainder]
   → CLOSED_SL           [SL hit before target]
   → CLOSED_TIMEOUT      [15:00 hard exit]
 PARTIAL_BOOKED

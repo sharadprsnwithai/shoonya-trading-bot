@@ -605,7 +605,7 @@ public class LowestVolumeReversalService {
                     BigDecimal slDistance = triggerPrc.subtract(slPrc);
                     target1Prc =
                             triggerPrc
-                                    .add(slDistance.multiply(BigDecimal.valueOf(2)))
+                                    .add(slDistance.multiply(BigDecimal.valueOf(4)))
                                     .setScale(2, RoundingMode.HALF_UP);
                 } else {
                     triggerPrc =
@@ -617,7 +617,7 @@ public class LowestVolumeReversalService {
                     BigDecimal slDistance = slPrc.subtract(triggerPrc);
                     target1Prc =
                             triggerPrc
-                                    .subtract(slDistance.multiply(BigDecimal.valueOf(2)))
+                                    .subtract(slDistance.multiply(BigDecimal.valueOf(4)))
                                     .setScale(2, RoundingMode.HALF_UP);
                 }
 

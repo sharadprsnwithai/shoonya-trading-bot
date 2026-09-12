@@ -105,7 +105,7 @@ Where `slPremium` is derived from the stock's trigger candle SL mapped to an opt
 
 - **SL** = low of lowest volume candle (LONG) / high of lowest volume candle (SHORT) — **unchanged from current logic**
 - **Trailing exit** = SuperTrend(10,3) flip — **unchanged**
-- **Target 1** = stock price hits 1:2 RR level — **unchanged**
+- **Target 1** = stock price hits 1:4 RR level — **changed from 1:2**
 
 When a stock-level trigger fires (SL hit, Target 1 hit, SuperTrend flip), close the option position and fetch the **current option premium** at that moment to compute P&L.
 
@@ -237,7 +237,7 @@ All LVR telegram methods need updating to show option details:
 📊 *Entry Premium:* ₹45.30
 📦 *Lots:* 2 × 250 = 500 units
 🛑 *SL Premium:* ₹31.71 (30% decay)
-🎯 *Target 1 (1:2 RR):* ₹58.88
+🎯 *Target 1 (1:4 RR):* ₹58.88
 ```
 
 **Partial Book Alert:**
@@ -282,7 +282,7 @@ trading-bot.strategy.lowest-volume.expiry-type=monthly
 - **State machine** (SCANNING → LEG_FORMING → LEG_CONFIRMED → PULLBACK_TRACKING → TRIGGER_ARMED → IN_POSITION) — unchanged
 - **Signal detection logic** (initial leg, pullback, lowest volume candle, range filter, exhaustion) — unchanged, all based on stock candles
 - **SL logic** — low of lowest volume candle (LONG) / high (SHORT) — unchanged, checked on stock price
-- **Target 1 logic** — 1:2 RR on stock price — unchanged
+- **Target 1 logic** — 1:4 RR on stock price — changed from 1:2
 - **SuperTrend runner exit** — unchanged, signal is on stock price
 - **Session timing** (09:15 start, 14:45 cutoff, 15:00 hard exit) — unchanged
 - **Morning universe scan** — unchanged
