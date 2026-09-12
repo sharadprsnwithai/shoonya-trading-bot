@@ -11,7 +11,6 @@
 2. [Active Strategies](#active-strategies)
    - [Lowest Volume Reversal (LVR)](#lowest-volume-reversal-lvr)
    - [NIFTY RSI Crossover (5m vs 15m)](#nifty-rsi-crossover-5m-vs-15m)
-   - [19-Period Daily WMA Positional Hedged Option Selling](#19-period-daily-wma-positional-hedged-option-selling)
 3. [Execution Modes](#execution-modes)
 4. [Environment Configuration (.env)](#environment-configuration-env)
 5. [Docker & Deployment Commands](#docker--deployment-commands)
@@ -60,15 +59,6 @@ Intraday RSI(14) crossover on **5‑minute vs 15‑minute resampled candles** of
 3. **Strikes:** ATM weekly options with standard NSE symbols (e.g. `NIFTY18SEP2524850PE`), hedge strike ≥ 50 points from ATM.
 4. **Execution:** Multi-leg `ExecutionManager` flow (buy hedge first for margin relief, rollback on failure).
 
-### 19-Period Daily WMA Positional Hedged Option Selling
-
-Multi-day positional credit spread on the **daily expiry cycle** of NIFTY 50 (`NSE:10576`):
-
-1. **Signal:** Evaluated daily at 09:30:10 IST — **Bullish** (`Spot > 19 WMA`) → Sell OTM PE + Buy 2% OTM PE hedge; **Bearish** (`Spot < 19 WMA`) → Sell OTM CE + Buy 2% OTM CE hedge.
-2. **Strike Selection:** Delta target ~0.20–0.25 (default 0.22) with a strict entry premium cap of **≤ ₹105.00**.
-3. **Expiry Routing:** Day ≤ 15 → current month expiry; day > 15 → next month expiry (avoids gamma/pin risk).
-4. **Risk:** Structural stop at **2.0× entry premium**; hedge bought first for margin relief (~₹35k/lot); position state persisted to `data/wma_positional_state.json` across restarts.
-
 ---
 
 ## Execution Modes
@@ -111,7 +101,6 @@ cp .env.example .env
 | `LVR_PAPER_CAPITAL` | `1000000.0` | LVR paper-trading capital. |
 | `LVR_MAX_CONCURRENT_TRADES` | `5` | Max simultaneous LVR positions. |
 | `RSI_*` | — | NIFTY RSI Crossover schedule / trade-limit settings. |
-| `WMA_*` | — | 19-period Daily WMA positional strategy settings (entry premium cap ₹105, expiry routing). |
 
 ---
 
@@ -241,7 +230,6 @@ xdg-open build/reports/spotbugs/main.html # Linux
 | `GET` | `/api/v1/optionchain/nifty50` | Fetches live NIFTY option chain (strikes, OI, LTP). |
 | `GET` | `/api/v1/orders/*` | Broker order listing / status via Shoonya. |
 | `GET/POST` | `/api/v1/execution/*` | Execution mode switch, directional spread trades, close, positions. |
-| `GET/POST` | `/api/strategy/daily-wma/*` | 19-period Daily WMA status, history, trigger, close, backtest. |
 | `GET/POST` | `/api/strategy/lowest-volume/*` | LVR scan, morning-scan, notify, status, setups, positions, history, reset, toggle. |
 
 ---
