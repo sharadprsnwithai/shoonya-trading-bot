@@ -39,7 +39,7 @@ public class ExecutionManager {
     private static final Logger log = LoggerFactory.getLogger(ExecutionManager.class);
     public static final int DEFAULT_HEDGE_STRIKE_OFFSET = 150; // 150 pts OTM credit spread hedge
 
-    @Value("${trading-bot.strategy.pivot-supertrend.hedge-distance:150}")
+    @Value("${trading-bot.execution.hedge-strike-offset:150}")
     private int hedgeStrikeOffset = DEFAULT_HEDGE_STRIKE_OFFSET;
 
     public static final double SL_MULTIPLIER = 1.40; // +40% premium hard stop loss
@@ -147,8 +147,16 @@ public class ExecutionManager {
                                 null,
                                 "HEDGE_" + tradeId);
                 OrderResponse hedgeResp = orderService.placeOrder(hedgeReq);
-                if (hedgeResp.success()) {
+                if (hedgeResp != null && hedgeResp.success()) {
                     hedgeOrderId = hedgeResp.orderId();
+                    log.info("[LIVE-ORDER] Hedge leg placed successfully: {}", hedgeOrderId);
+                } else {
+                    String err = hedgeResp != null ? hedgeResp.message() : "Unknown error";
+                    log.error(
+                            "[LIVE-ORDER] Hedge leg order failed: {}. Aborting trade {} to prevent unprotected short.",
+                            err,
+                            tradeId);
+                    return null;
                 }
             }
 
@@ -165,8 +173,34 @@ public class ExecutionManager {
                             null,
                             "SHORT_" + tradeId);
             OrderResponse shortResp = orderService.placeOrder(shortReq);
-            if (shortResp.success()) {
+            if (shortResp != null && shortResp.success()) {
                 shortOrderId = shortResp.orderId();
+                log.info("[LIVE-ORDER] Short leg placed successfully: {}", shortOrderId);
+            } else {
+                String err = shortResp != null ? shortResp.message() : "Unknown error";
+                log.error(
+                        "[LIVE-ORDER] Short leg order failed: {}. Rolling back any active hedge leg for trade {}.",
+                        err,
+                        tradeId);
+                if (buyHedge && !hedgeOrderId.equals("NONE") && !hedgeOrderId.startsWith("ORD_")) {
+                    OrderRequest rollbackHedgeReq =
+                            new OrderRequest(
+                                    hedgeSymbol,
+                                    "NFO",
+                                    TransactionType.SELL,
+                                    OrderType.MKT,
+                                    ProductType.MIS,
+                                    quantity,
+                                    BigDecimal.ZERO,
+                                    null,
+                                    "ROLLBACK_HEDGE_" + tradeId);
+                    OrderResponse rollbackResp = orderService.placeOrder(rollbackHedgeReq);
+                    log.info(
+                            "[LIVE-ORDER] Hedge rollback result for {}: {}",
+                            tradeId,
+                            rollbackResp != null ? rollbackResp.message() : "null");
+                }
+                return null;
             }
 
             // Step C: Place Instant Broker-Level SL-L Order for the Short Option Leg
@@ -182,13 +216,28 @@ public class ExecutionManager {
                             slTriggerPrice,
                             "SL_LMT_" + tradeId);
             OrderResponse slResp = orderService.placeOrder(slReq);
-            if (slResp.success()) {
+            if (slResp != null && slResp.success()) {
                 slOrderId = slResp.orderId();
                 log.info(
                         "[LIVE-SL-L] Broker SL-L Order Placed! OrderId: {} | Trigger: {} | Limit: {}",
                         slOrderId,
                         slTriggerPrice,
                         slLimitPrice);
+            } else {
+                log.warn(
+                        "[LIVE-SL-L] SL-L Order placement failed on attempt 1. Retrying once...");
+                slResp = orderService.placeOrder(slReq);
+                if (slResp != null && slResp.success()) {
+                    slOrderId = slResp.orderId();
+                    log.info(
+                            "[LIVE-SL-L] Broker SL-L Order Placed on retry! OrderId: {}",
+                            slOrderId);
+                } else {
+                    log.error(
+                            "[LIVE-SL-L] CRITICAL ALERT: SL-L order placement failed on retry: {}. Position {} is UNPROTECTED at broker level!",
+                            slResp != null ? slResp.message() : "null",
+                            tradeId);
+                }
             }
 
         } else {
@@ -258,8 +307,11 @@ public class ExecutionManager {
         if (executionMode == ExecutionMode.LIVE) {
             // 1. Cancel Open Broker SL-L Order
             if (pos.slOrderId() != null && !pos.slOrderId().startsWith("ORD_")) {
-                orderService.cancelOrder(pos.slOrderId());
-                log.info("[LIVE-CANCEL] Cancelled open SL-L order {}", pos.slOrderId());
+                OrderResponse cancelResp = orderService.cancelOrder(pos.slOrderId());
+                log.info(
+                        "[LIVE-CANCEL] Cancelled open SL-L order {}: {}",
+                        pos.slOrderId(),
+                        cancelResp != null ? cancelResp.message() : "done");
             }
 
             // 2. Buy back Short Option Leg
@@ -274,7 +326,14 @@ public class ExecutionManager {
                             BigDecimal.ZERO,
                             null,
                             "EXIT_SHORT_" + tradeId);
-            orderService.placeOrder(closeShortReq);
+            OrderResponse closeShortResp = orderService.placeOrder(closeShortReq);
+            if (closeShortResp == null || !closeShortResp.success()) {
+                log.error(
+                        "[LIVE-EXIT] CRITICAL: Failed to buy back short leg {} for trade {}: {}",
+                        pos.shortSymbol(),
+                        tradeId,
+                        closeShortResp != null ? closeShortResp.message() : "null");
+            }
 
             // 3. Sell Hedge Option Leg (if active)
             if (pos.hedgeSymbol() != null) {
@@ -289,7 +348,14 @@ public class ExecutionManager {
                                 BigDecimal.ZERO,
                                 null,
                                 "EXIT_HEDGE_" + tradeId);
-                orderService.placeOrder(closeHedgeReq);
+                OrderResponse closeHedgeResp = orderService.placeOrder(closeHedgeReq);
+                if (closeHedgeResp == null || !closeHedgeResp.success()) {
+                    log.error(
+                            "[LIVE-EXIT] Failed to sell hedge leg {} for trade {}: {}",
+                            pos.hedgeSymbol(),
+                            tradeId,
+                            closeHedgeResp != null ? closeHedgeResp.message() : "null");
+                }
             }
         }
 

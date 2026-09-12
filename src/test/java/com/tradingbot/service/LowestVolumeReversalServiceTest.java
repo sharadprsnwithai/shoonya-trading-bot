@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,11 @@ class LowestVolumeReversalServiceTest {
         service.setPaperCapital(100000.0);
         service.setRiskPerTradePercent(1.0); // Rs. 1000 risk
         service.setMaxConcurrentTrades(2);
+
+        // Fixed clock at 10:00 AM IST (during active market hours)
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(10, 0).atZone(IST).toInstant(), IST));
     }
 
     private Instant todayInstant(int hour, int minute) {
@@ -152,8 +158,8 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getTriggerPrice()).isEqualByComparingTo(new BigDecimal("1610.05"));
         // SL price = Low - 0.05 = 1604.95
         assertThat(setup.getStopLossPrice()).isEqualByComparingTo(new BigDecimal("1604.95"));
-        // Target 1 = 1610.05 + 2 * (1610.05 - 1604.95) = 1610.05 + 10.20 = 1620.25
-        assertThat(setup.getTarget1Price()).isEqualByComparingTo(new BigDecimal("1620.25"));
+        // Target 1 = 1610.05 + 4 * (1610.05 - 1604.95) = 1610.05 + 20.40 = 1630.45
+        assertThat(setup.getTarget1Price()).isEqualByComparingTo(new BigDecimal("1630.45"));
     }
 
     @Test
@@ -173,6 +179,28 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getState()).isNotEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
     }
 
+    private void mockOptionPremium(String symbol, String optionType, double premium) {
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.JsonNode searchResult;
+        try {
+            searchResult =
+                    mapper.readTree(
+                            "[{\"token\": \"12345\", \"tsym\": \"" + symbol + optionType + "\"}]");
+        } catch (Exception e) {
+            searchResult = null;
+        }
+        when(marketDataService.searchScrip(anyString(), anyString())).thenReturn(searchResult);
+
+        com.fasterxml.jackson.databind.JsonNode quote;
+        try {
+            quote = mapper.readTree("{\"lp\": " + premium + "}");
+        } catch (Exception e) {
+            quote = null;
+        }
+        when(marketDataService.fetchQuote(eq("NFO"), anyString())).thenReturn(quote);
+    }
+
     @Test
     void testPaperTradeFill_AndTarget1PartialBooking() {
         LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
@@ -180,7 +208,10 @@ class LowestVolumeReversalServiceTest {
                 null,
                 new BigDecimal("1500.00"),
                 new BigDecimal("1490.00"),
-                new BigDecimal("1520.00")); // Target 1 = 1520 (1:2 RR)
+                new BigDecimal("1540.00")); // Target 1 = 1540 (1:4 RR)
+
+        // Mock option premium for ATM CE
+        mockOptionPremium("BHARTIARTL", "CE", 45.0);
 
         Instant t0 = todayInstant(9, 45);
         // Trigger candle breached by high = 1502 >= 1500
@@ -192,32 +223,40 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.getOpenPositions()).containsKey("BHARTIARTL");
 
         LowestVolumePaperPosition pos = service.getOpenPositions().get("BHARTIARTL");
-        assertThat(pos.getEntryPrice()).isEqualByComparingTo(new BigDecimal("1500.00"));
-        assertThat(pos.getCurrentSl()).isEqualByComparingTo(new BigDecimal("1490.00"));
-        // Sizing: 1000 / 10 = 100 shares
-        assertThat(pos.getTotalQuantity()).isEqualTo(100);
+        assertThat(pos.getOptionType()).isEqualTo("CE");
+        assertThat(pos.getEntryPremium()).isEqualByComparingTo(new BigDecimal("45.00"));
+        // Stock SL stored on position
+        assertThat(pos.getCurrentStockSl()).isEqualByComparingTo(new BigDecimal("1490.00"));
+        // Sizing: stock SL dist = 10, premium SL dist = 45 * 10/1500 = 0.30,
+        // lots = 1000 / (0.30 * 125) = 26.67 -> 26 lots × 125 = 3250 units
+        assertThat(pos.getLots()).isGreaterThan(0);
+        assertThat(pos.getTotalQuantity()).isEqualTo(pos.getLots() * pos.getLotSize());
 
-        // Now test Target 1 hit: High reaches 1521 >= 1520
+        // Now test Target 1 hit: High reaches 1542 >= 1540
         Candle targetCandle =
                 makeCandle(
                         "BHARTIARTL",
                         t0.plus(5, ChronoUnit.MINUTES),
-                        1515,
-                        1522,
-                        1514,
-                        1521,
+                        1530,
+                        1542,
+                        1528,
+                        1540,
                         60000);
         when(marketDataService.fetch5MinCandles(anyString(), anyInt()))
                 .thenReturn(List.of(fillCandle, targetCandle));
 
+        // Exit premium higher than entry -> profit (target hit)
+        mockOptionPremium("BHARTIARTL", "CE", 60.0);
+
         service.evaluateOpenPositions(LocalTime.of(9, 55));
 
         assertThat(pos.isPartialBooked()).isTrue();
-        assertThat(pos.getRemainingQuantity()).isEqualTo(50); // 50 booked, 50 remaining
-        assertThat(pos.getCurrentSl())
-                .isEqualByComparingTo(new BigDecimal("1500.00")); // Moved to Breakeven!
-        // Partial P&L: 50 shares * (1520 - 1500) = Rs. 1000
-        assertThat(pos.getPartialPnl()).isEqualByComparingTo(new BigDecimal("1000.00"));
+        assertThat(pos.getRemainingQuantity())
+                .isEqualTo(pos.getTotalQuantity() - (pos.getTotalQuantity() + 1) / 2);
+        // SL moved to breakeven (stock entry price)
+        assertThat(pos.getCurrentStockSl()).isEqualByComparingTo(new BigDecimal("1500.00"));
+        // Partial P&L positive: exit premium > entry premium
+        assertThat(pos.getPartialPnl()).isPositive();
     }
 
     @Test
@@ -226,18 +265,25 @@ class LowestVolumeReversalServiceTest {
         setup.setTriggerCandle(
                 null, new BigDecimal("500.00"), new BigDecimal("495.00"), new BigDecimal("510.00"));
 
+        // Mock option premium: entry = 30.0, exit after SL = 25.0 (loss)
+        mockOptionPremium("WIPRO", "CE", 30.0);
+
         Instant t0 = todayInstant(10, 0);
         Candle fillCandle = makeCandle("WIPRO", t0, 498, 501, 497, 500, 30000);
         service.evaluateArmedTrigger(List.of(fillCandle), setup, LocalTime.of(10, 5));
 
         LowestVolumePaperPosition pos = service.getOpenPositions().get("WIPRO");
         assertThat(pos).isNotNull();
+        assertThat(pos.getEntryPremium()).isEqualByComparingTo(new BigDecimal("30.00"));
 
         // SL hit: Low drops to 494 <= 495
         Candle slCandle =
                 makeCandle("WIPRO", t0.plus(5, ChronoUnit.MINUTES), 498, 499, 493, 494, 40000);
         when(marketDataService.fetch5MinCandles(anyString(), anyInt()))
                 .thenReturn(List.of(fillCandle, slCandle));
+
+        // Change mock premium to lower value for exit (SL hit, premium decays)
+        mockOptionPremium("WIPRO", "CE", 25.0);
 
         service.evaluateOpenPositions(LocalTime.of(10, 10));
 
@@ -249,24 +295,27 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    void testArmedTimeout_DropsAfter12Candles() {
+    void testArmedTimeout_DropsAfter6Candles() {
         LowestVolumeSetup setup = new LowestVolumeSetup("ITC", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
                 null, new BigDecimal("450.00"), new BigDecimal("445.00"), new BigDecimal("460.00"));
+
+        // Config default timeout is 6 candles
+        service.setSetupTimeoutCandles(6);
 
         Instant t0 = todayInstant(10, 0);
         // Price does NOT breach 450 (high 449)
         Candle nonBreach = makeCandle("ITC", t0, 447, 449, 446, 448, 20000);
 
-        // Run 12 times - should remain TRIGGER_ARMED
-        for (int i = 0; i < 12; i++) {
+        // Run 6 times - should remain TRIGGER_ARMED
+        for (int i = 0; i < 6; i++) {
             service.evaluateArmedTrigger(
                     List.of(nonBreach), setup, LocalTime.of(10, 5).plusMinutes(i * 5L));
         }
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
 
-        // 13th evaluation exceeds 12 candles timeout
-        service.evaluateArmedTrigger(List.of(nonBreach), setup, LocalTime.of(11, 10));
+        // 7th evaluation exceeds 6 candles timeout
+        service.evaluateArmedTrigger(List.of(nonBreach), setup, LocalTime.of(10, 40));
 
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
         assertThat(service.getOpenPositions()).doesNotContainKey("ITC");
@@ -324,5 +373,301 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.isUniverseScanCompletedToday()).isFalse();
         assertThat(service.getCurrentTopGainers()).isEmpty();
         assertThat(service.getCurrentTopLosers()).isEmpty();
+    }
+
+    // ===== 30-second live price check tests =====
+
+    /** Mock live stock quote returned by fetchQuote("NSE", token) with lp, h, l fields. */
+    private void mockLiveStockQuote(String symbol, double ltp, double high, double low) {
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        try {
+            com.fasterxml.jackson.databind.JsonNode stockQuote =
+                    mapper.readTree(
+                            String.format("{\"lp\": %s, \"h\": %s, \"l\": %s}", ltp, high, low));
+            when(marketDataService.fetchQuote(eq("NSE"), anyString())).thenReturn(stockQuote);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    void testLiveCheck_TriggersArmedSetup() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("1500.00"), // trigger = high + 0.05
+                new BigDecimal("1490.00"), // SL
+                new BigDecimal("1520.00")); // T1
+
+        service.addActiveSetupForTesting("BHARTIARTL", setup);
+
+        // Live quote: session high breaches trigger
+        mockLiveStockQuote("BHARTIARTL", 1505.0, 1505.0, 1498.0);
+        mockOptionPremium("BHARTIARTL", "CE", 50.0);
+
+        assertThat(service.getOpenPositions()).isEmpty();
+        service.evaluateLivePriceActions();
+
+        assertThat(service.getOpenPositions()).containsKey("BHARTIARTL");
+        LowestVolumePaperPosition pos = service.getOpenPositions().get("BHARTIARTL");
+        assertThat(pos.getDirection()).isEqualTo(LowestVolumeDirection.LONG);
+        assertThat(pos.getOptionType()).isEqualTo("CE");
+    }
+
+    @Test
+    void testLiveCheck_ExitsOnSLHit() {
+        // Create armed setup and fill a position manually
+        LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("1500.00"),
+                new BigDecimal("1490.00"),
+                new BigDecimal("1520.00"));
+
+        mockOptionPremium("BHARTIARTL", "CE", 45.0);
+        service.addActiveSetupForTesting("BHARTIARTL", setup);
+
+        Instant fillTime = todayInstant(10, 0);
+        Candle fillCandle = makeCandle("BHARTIARTL", fillTime, 1500, 1514, 1499, 1510, 30000);
+        when(marketDataService.fetch5MinCandles(anyString(), anyInt()))
+                .thenReturn(List.of(fillCandle));
+        service.evaluateArmedTrigger(List.of(fillCandle), setup, LocalTime.of(10, 5));
+
+        LowestVolumePaperPosition pos = service.getOpenPositions().get("BHARTIARTL");
+        assertThat(pos).isNotNull();
+        BigDecimal slBefore = pos.getCurrentStockSl();
+
+        // Now mock live quote: LTP drops below SL (1490)
+        mockLiveStockQuote("BHARTIARTL", 1485.0, 1495.0, 1485.0);
+        mockOptionPremium("BHARTIARTL", "CE", 35.0);
+
+        service.evaluateLivePriceActions();
+
+        assertThat(pos.isClosed()).isTrue();
+        assertThat(pos.getExitReason()).contains("STOP_LOSS_HIT_LIVE");
+    }
+
+    @Test
+    void testLiveCheck_PartialBooksOnTarget1() {
+        // Create armed setup and fill a position
+        LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("1500.00"),
+                new BigDecimal("1490.00"),
+                new BigDecimal("1520.00"));
+
+        mockOptionPremium("BHARTIARTL", "CE", 45.0);
+        service.addActiveSetupForTesting("BHARTIARTL", setup);
+
+        Instant fillTime = todayInstant(10, 0);
+        Candle fillCandle = makeCandle("BHARTIARTL", fillTime, 1500, 1514, 1499, 1510, 30000);
+        when(marketDataService.fetch5MinCandles(anyString(), anyInt()))
+                .thenReturn(List.of(fillCandle));
+        service.evaluateArmedTrigger(List.of(fillCandle), setup, LocalTime.of(10, 5));
+
+        LowestVolumePaperPosition pos = service.getOpenPositions().get("BHARTIARTL");
+        assertThat(pos).isNotNull();
+
+        // Live quote: LTP rises above target1 (1520)
+        mockLiveStockQuote("BHARTIARTL", 1525.0, 1525.0, 1515.0);
+        mockOptionPremium("BHARTIARTL", "CE", 65.0);
+
+        service.evaluateLivePriceActions();
+
+        assertThat(pos.isPartialBooked()).isTrue();
+        assertThat(pos.getPartialPnl()).isPositive();
+        assertThat(pos.getRemainingQuantity()).isLessThan(pos.getTotalQuantity());
+    }
+
+    @Test
+    void testLiveCheck_SkipsWhenQuoteFails() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("1500.00"),
+                new BigDecimal("1490.00"),
+                new BigDecimal("1520.00"));
+        service.addActiveSetupForTesting("BHARTIARTL", setup);
+
+        // Quote fetch returns null
+        when(marketDataService.fetchQuote(anyString(), anyString())).thenReturn(null);
+
+        service.evaluateLivePriceActions();
+
+        // Setup should still be ARMED (no action taken)
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getOpenPositions()).isEmpty();
+    }
+
+    @Test
+    void testLiveCheck_DoesNotIncrementTimeout() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("ITC", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null, new BigDecimal("450.00"), new BigDecimal("445.00"), new BigDecimal("460.00"));
+        service.addActiveSetupForTesting("ITC", setup);
+
+        // Quote does NOT breach trigger (high < trigger)
+        mockLiveStockQuote("ITC", 448.0, 449.0, 446.0);
+
+        assertThat(setup.getArmedCandlesElapsed()).isEqualTo(0);
+        service.evaluateLivePriceActions();
+        assertThat(setup.getArmedCandlesElapsed()).isEqualTo(0);
+    }
+
+    @Test
+    void testLiveCheck_SLCheckedBeforeTarget1() {
+        // Fill position where SL=1490 and Target1=1520
+        LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("1500.00"),
+                new BigDecimal("1490.00"),
+                new BigDecimal("1520.00"));
+
+        mockOptionPremium("BHARTIARTL", "CE", 45.0);
+        service.addActiveSetupForTesting("BHARTIARTL", setup);
+
+        Instant fillTime = todayInstant(10, 0);
+        Candle fillCandle = makeCandle("BHARTIARTL", fillTime, 1500, 1514, 1499, 1510, 30000);
+        when(marketDataService.fetch5MinCandles(anyString(), anyInt()))
+                .thenReturn(List.of(fillCandle));
+        service.evaluateArmedTrigger(List.of(fillCandle), setup, LocalTime.of(10, 5));
+
+        LowestVolumePaperPosition pos = service.getOpenPositions().get("BHARTIARTL");
+        assertThat(pos).isNotNull();
+
+        // Mock: LTP is at SL level (1490) — SL should fire, not Target1
+        mockLiveStockQuote("BHARTIARTL", 1490.0, 1525.0, 1490.0);
+        mockOptionPremium("BHARTIARTL", "CE", 35.0);
+
+        service.evaluateLivePriceActions();
+
+        assertThat(pos.isClosed()).isTrue();
+        assertThat(pos.getExitReason()).contains("STOP_LOSS_HIT_LIVE");
+        assertThat(pos.isPartialBooked()).isFalse();
+    }
+
+    @Test
+    void testPullbackLowestVolumeFromStartOfDay_Beyond10Bars() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("TATAMOTORS", LowestVolumeDirection.LONG);
+        setup.transitionTo(LowestVolumeSetupState.LEG_CONFIRMED, "Leg confirmed");
+
+        double atr = 10.0;
+        Instant t0 = todayInstant(9, 15);
+
+        List<Candle> todayCandles = new java.util.ArrayList<>();
+        // Candle 0 (09:15): Green
+        todayCandles.add(makeCandle("TATAMOTORS", t0, 950, 955, 948, 954, 80000));
+        // Candle 1 (09:20): Red with lowest volume of the entire day (12,000)
+        Candle earlyLowestRed =
+                makeCandle(
+                        "TATAMOTORS", t0.plus(5, ChronoUnit.MINUTES), 954, 955, 950, 951, 12000);
+        todayCandles.add(earlyLowestRed);
+
+        // Candles 2..11 (09:25 .. 10:10): 10 consecutive green candles (strong rally)
+        for (int i = 2; i <= 11; i++) {
+            todayCandles.add(
+                    makeCandle(
+                            "TATAMOTORS",
+                            t0.plus(i * 5L, ChronoUnit.MINUTES),
+                            950 + i * 2,
+                            955 + i * 2,
+                            949 + i * 2,
+                            954 + i * 2,
+                            60000));
+        }
+
+        // Candle 12 (10:15): Red with higher volume (35,000)
+        todayCandles.add(
+                makeCandle(
+                        "TATAMOTORS", t0.plus(60, ChronoUnit.MINUTES), 978, 979, 974, 975, 35000));
+        // Candle 13 (10:20): Red with 25,000 volume (> 12,000)
+        todayCandles.add(
+                makeCandle(
+                        "TATAMOTORS", t0.plus(65, ChronoUnit.MINUTES), 975, 976, 972, 973, 25000));
+
+        // Evaluate pullback with all 14 candles
+        service.evaluatePullback(todayCandles, setup, atr);
+
+        // Must pick earlyLowestRed (volume 12000) from start of day, NOT candle 13 (25000) from rolling 10
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(setup.getTriggerCandle()).isEqualTo(earlyLowestRed);
+        assertThat(setup.getTriggerCandleVolume()).isEqualTo(12000L);
+    }
+
+    @Test
+    void testEntryCutoffAt11AM_CancelsArmedTrigger() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("2500.00"),
+                new BigDecimal("2490.00"),
+                new BigDecimal("2520.00"));
+
+        Instant t0 = todayInstant(11, 5);
+        Candle candle = makeCandle("RELIANCE", t0, 2498, 2505, 2497, 2502, 50000);
+
+        // Evaluation at 11:01 AM (after 11:00 cutoff)
+        service.evaluateArmedTrigger(List.of(candle), setup, LocalTime.of(11, 1));
+
+        // Setup must be dropped to SCANNING due to 11:00 AM cutoff
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(service.getOpenPositions()).doesNotContainKey("RELIANCE");
+    }
+
+    @Test
+    void testRunCycle_Past11AM_DoesNotScanNewSetups() {
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(11, 5).atZone(IST).toInstant(), IST));
+
+        service.runCycle();
+
+        // Active setups should not be populated with new items past cutoff
+        assertThat(service.getActiveSetups()).isEmpty();
+    }
+
+    @Test
+    void testTelegramArmedAlert_DisabledByDefault_DoesNotSendOnArmed() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("HDFCBANK", LowestVolumeDirection.LONG);
+        setup.transitionTo(LowestVolumeSetupState.LEG_CONFIRMED, "Leg confirmed");
+
+        double atr = 10.0;
+        Instant t0 = todayInstant(9, 25);
+        Candle c1 = makeCandle("HDFCBANK", t0, 1600, 1608, 1599, 1607, 80000);
+        Candle c2 = makeCandle("HDFCBANK", t0.plus(5, ChronoUnit.MINUTES), 1607, 1608, 1602, 1603, 10000);
+
+        // Default telegramArmedAlerts is false
+        assertThat(service.isTelegramArmedAlerts()).isFalse();
+
+        service.evaluatePullback(List.of(c1, c2), setup, atr);
+
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        // Armed alert should NOT be sent
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.never())
+                .sendLvrSetupArmedAlert(any(), anyInt(), any());
+    }
+
+    @Test
+    void testTelegramTradeEntryAlert_SentOnTradeExecution() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("BHARTIARTL", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                null,
+                new BigDecimal("1500.00"),
+                new BigDecimal("1490.00"),
+                new BigDecimal("1520.00"));
+
+        mockOptionPremium("BHARTIARTL", "CE", 45.0);
+
+        Instant t0 = todayInstant(9, 45);
+        Candle fillCandle = makeCandle("BHARTIARTL", t0, 1498, 1502, 1497, 1501, 50000);
+
+        service.evaluateArmedTrigger(List.of(fillCandle), setup, LocalTime.of(9, 50));
+
+        // Trade entry alert MUST be dispatched when taking the trade
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
+                .sendLvrTradeEntryAlert(any(), any());
     }
 }

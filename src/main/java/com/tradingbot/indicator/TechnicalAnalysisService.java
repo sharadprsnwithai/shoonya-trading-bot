@@ -377,4 +377,39 @@ public class TechnicalAnalysisService {
         }
         return (double) sum / period;
     }
+
+    /** Calculates Weighted Moving Average (WMA) using TA-Lib across all bars. */
+    public double[] calculateWmaSeries(double[] close, int period) {
+        int len = close != null ? close.length : 0;
+        double[] result = new double[len];
+        Arrays.fill(result, Double.NaN);
+
+        if (close == null || len < period || period <= 0) {
+            return result;
+        }
+
+        MInteger outBegIdx = new MInteger();
+        MInteger outNBElement = new MInteger();
+        double[] output = new double[len];
+
+        RetCode retCode = TA_LIB.wma(0, len - 1, close, period, outBegIdx, outNBElement, output);
+        if (retCode == RetCode.Success && outNBElement.value > 0) {
+            int start = outBegIdx.value;
+            for (int i = 0; i < outNBElement.value; i++) {
+                result[start + i] = output[i];
+            }
+        }
+        return result;
+    }
+
+    /** Calculates Weighted Moving Average (WMA) for the latest bar. */
+    public double calculateLatestWma(double[] close, int period) {
+        double[] series = calculateWmaSeries(close, period);
+        for (int i = series.length - 1; i >= 0; i--) {
+            if (!Double.isNaN(series[i])) {
+                return series[i];
+            }
+        }
+        return Double.NaN;
+    }
 }

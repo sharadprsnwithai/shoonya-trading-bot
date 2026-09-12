@@ -2,10 +2,20 @@ package com.tradingbot.marketdata;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.model.Candle;
 import java.math.BigDecimal;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -73,5 +83,53 @@ class ShoonyaMarketDataServiceTest {
                 service.parseShoonyaCandles(
                         "{\"stat\":\"Not_Ok\",\"emsg\":\"No Data\"}", "NSE:NIFTY50", "5");
         assertThat(errorCandles).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testFetchHistoricalCandlesRetriesOnHttp401SessionExpiry() throws Exception {
+        ShoonyaConfig config = new ShoonyaConfig();
+        config.setEnabled(true);
+        config.setUserId("USER123");
+
+        ShoonyaAuthenticator mockAuth = mock(ShoonyaAuthenticator.class);
+        when(mockAuth.getOrAuthenticateToken()).thenReturn("token_stale", "token_fresh");
+
+        HttpClient mockClient = mock(HttpClient.class);
+        HttpResponse<String> sessionExpiredResp = mock(HttpResponse.class);
+        when(sessionExpiredResp.statusCode()).thenReturn(401);
+        when(sessionExpiredResp.body())
+                .thenReturn("{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
+
+        HttpResponse<String> successResp = mock(HttpResponse.class);
+        when(successResp.statusCode()).thenReturn(200);
+        when(successResp.body())
+                .thenReturn(
+                        """
+                        [
+                          {
+                            "stat": "Ok",
+                            "time": "04/09/2025 09:15:00",
+                            "ssboe": "1757043900",
+                            "into": "24500.50",
+                            "inth": "24550.00",
+                            "intl": "24480.25",
+                            "intc": "24520.10",
+                            "v": "15000"
+                          }
+                        ]
+                        """);
+
+        when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(sessionExpiredResp, successResp);
+
+        ShoonyaMarketDataService service =
+                new ShoonyaMarketDataService(config, mockAuth, new ObjectMapper(), mockClient);
+
+        List<Candle> candles =
+                service.fetchHistoricalCandles("NSE", "2885", "NSE:RELIANCE", "5", 5);
+
+        assertThat(candles).hasSize(1);
+        verify(mockAuth, times(1)).invalidateSession();
     }
 }

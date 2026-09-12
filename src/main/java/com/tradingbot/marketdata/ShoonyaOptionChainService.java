@@ -15,6 +15,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -113,196 +116,256 @@ public class ShoonyaOptionChainService {
                     count);
         }
 
-        try {
-            String sessionToken = authenticator.getOrAuthenticateToken();
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String sessionToken = authenticator.getOrAuthenticateToken();
 
-            // 1. Determine Underlying Price & ATM Strike
-            BigDecimal underlyingPrice = BigDecimal.ZERO;
-            if (futToken != null && !futToken.isBlank()) {
-                JsonNode quote = fetchQuote(sessionToken, "NFO", futToken);
-                if (quote != null) {
-                    underlyingPrice =
-                            new BigDecimal(
-                                    quote.path("lp").asText(quote.path("sptprc").asText("24000")));
+                // 1. Determine Underlying Price & ATM Strike
+                BigDecimal underlyingPrice = BigDecimal.ZERO;
+                if (futToken != null && !futToken.isBlank()) {
+                    JsonNode quote = fetchQuote(sessionToken, "NFO", futToken);
+                    if (quote != null) {
+                        underlyingPrice =
+                                new BigDecimal(
+                                        quote.path("lp")
+                                                .asText(quote.path("sptprc").asText("24000")));
+                    }
                 }
-            }
 
-            BigDecimal atmStrike;
-            if (explicitStrike != null && explicitStrike.compareTo(BigDecimal.ZERO) > 0) {
-                atmStrike = explicitStrike;
-            } else if (underlyingPrice.compareTo(BigDecimal.ZERO) > 0) {
-                // Round to nearest 50 strike
-                atmStrike =
-                        underlyingPrice
-                                .divide(BigDecimal.valueOf(50), 0, RoundingMode.HALF_UP)
-                                .multiply(BigDecimal.valueOf(50));
-            } else {
-                atmStrike = new BigDecimal("24000");
-            }
-
-            // 2. Call GetOptionChain API
-            Map<String, Object> ocPayload = new LinkedHashMap<>();
-            ocPayload.put("uid", config.getUserId());
-            ocPayload.put("exch", "NFO");
-            ocPayload.put("tsym", futSymbol);
-            ocPayload.put("strprc", atmStrike.stripTrailingZeros().toPlainString());
-            ocPayload.put("cnt", String.valueOf(count));
-
-            String formBody =
-                    "jData=" + objectMapper.writeValueAsString(ocPayload) + "&jKey=" + sessionToken;
-
-            HttpRequest req =
-                    HttpRequest.newBuilder()
-                            .uri(
-                                    URI.create(
-                                            config.getBaseUrl()
-                                                    + "/NorenWClientAPI/GetOptionChain"))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("X-Forwarded-For", config.resolvePublicIp())
-                            .POST(
-                                    HttpRequest.BodyPublishers.ofString(
-                                            formBody, StandardCharsets.UTF_8))
-                            .build();
-
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            JsonNode root = objectMapper.readTree(resp.body());
-
-            if (!"Ok".equalsIgnoreCase(root.path("stat").asText())) {
-                log.warn(
-                        "GetOptionChain API returned non-Ok for {}: {}",
-                        futSymbol,
-                        root.path("emsg").asText(resp.body()));
-                return mockOptionChain(underlying, atmStrike, count);
-            }
-
-            JsonNode values = root.path("values");
-            if (!values.isArray() || values.isEmpty()) {
-                return new OptionChainResponse(
-                        underlying, underlyingPrice, atmStrike, futSymbol, 0, 0, 0, 0.0, List.of());
-            }
-
-            // 3. Group by strike
-            Map<BigDecimal, OptionContractDraft> strikeMap = new HashMap<>();
-            List<OptionContractDraft> allContracts = new ArrayList<>();
-
-            for (JsonNode item : values) {
-                BigDecimal strikePrice = new BigDecimal(item.path("strprc").asText("0"));
-                String optType = item.path("optt").asText("");
-                String token = item.path("token").asText("");
-                String tsym = item.path("tsym").asText("");
-
-                OptionContractDraft draft =
-                        new OptionContractDraft(tsym, token, optType, strikePrice);
-                allContracts.add(draft);
-
-                OptionContractDraft existing = strikeMap.get(strikePrice);
-                if (existing == null) {
-                    existing = new OptionContractDraft(null, null, null, strikePrice);
-                    strikeMap.put(strikePrice, existing);
+                BigDecimal atmStrike;
+                if (explicitStrike != null && explicitStrike.compareTo(BigDecimal.ZERO) > 0) {
+                    atmStrike = explicitStrike;
+                } else if (underlyingPrice.compareTo(BigDecimal.ZERO) > 0) {
+                    // Round to nearest 50 strike
+                    atmStrike =
+                            underlyingPrice
+                                    .divide(BigDecimal.valueOf(50), 0, RoundingMode.HALF_UP)
+                                    .multiply(BigDecimal.valueOf(50));
+                } else {
+                    atmStrike = new BigDecimal("24000");
                 }
-                if ("CE".equalsIgnoreCase(optType)) {
-                    existing.callDraft = draft;
-                } else if ("PE".equalsIgnoreCase(optType)) {
-                    existing.putDraft = draft;
-                }
-            }
 
-            // 4. Optionally fetch quotes for all option contracts concurrently
-            if (fetchQuotes) {
-                List<CompletableFuture<Void>> futures =
-                        allContracts.stream()
-                                .map(
-                                        draft ->
-                                                CompletableFuture.runAsync(
-                                                        () -> {
-                                                            try {
-                                                                JsonNode q =
-                                                                        fetchQuote(
-                                                                                sessionToken,
-                                                                                "NFO",
-                                                                                draft.token);
-                                                                if (q != null
-                                                                        && "Ok"
-                                                                                .equalsIgnoreCase(
-                                                                                        q.path(
-                                                                                                        "stat")
+                // 2. Call GetOptionChain API
+                Map<String, Object> ocPayload = new LinkedHashMap<>();
+                ocPayload.put("uid", config.getUserId());
+                ocPayload.put("exch", "NFO");
+                ocPayload.put("tsym", futSymbol);
+                ocPayload.put("strprc", atmStrike.stripTrailingZeros().toPlainString());
+                ocPayload.put("cnt", String.valueOf(count));
+
+                String formBody =
+                        "jData="
+                                + objectMapper.writeValueAsString(ocPayload)
+                                + "&jKey="
+                                + sessionToken;
+
+                HttpRequest req =
+                        HttpRequest.newBuilder()
+                                .uri(
+                                        URI.create(
+                                                config.getBaseUrl()
+                                                        + "/NorenWClientAPI/GetOptionChain"))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-For", config.resolvePublicIp())
+                                .POST(
+                                        HttpRequest.BodyPublishers.ofString(
+                                                formBody, StandardCharsets.UTF_8))
+                                .build();
+
+                HttpResponse<String> resp =
+                        httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                String respBody = resp.body();
+
+                if (isSessionExpired(resp.statusCode(), respBody)) {
+                    log.warn(
+                            "Shoonya session expired (HTTP {}) during GetOptionChain fetch for {}. Invalidating session and retrying (attempt {})...",
+                            resp.statusCode(),
+                            futSymbol,
+                            attempt);
+                    authenticator.invalidateSession();
+                    continue;
+                }
+
+                if (resp.statusCode() != 200) {
+                    log.error(
+                            "HTTP error {} fetching OptionChain for {}: {}",
+                            resp.statusCode(),
+                            futSymbol,
+                            respBody);
+                    return mockOptionChain(underlying, atmStrike, count);
+                }
+
+                JsonNode root = objectMapper.readTree(respBody);
+
+                if (!"Ok".equalsIgnoreCase(root.path("stat").asText())) {
+                    log.warn(
+                            "GetOptionChain API returned non-Ok for {}: {}",
+                            futSymbol,
+                            root.path("emsg").asText(resp.body()));
+                    return mockOptionChain(underlying, atmStrike, count);
+                }
+
+                JsonNode values = root.path("values");
+                if (!values.isArray() || values.isEmpty()) {
+                    return new OptionChainResponse(
+                            underlying,
+                            underlyingPrice,
+                            atmStrike,
+                            futSymbol,
+                            0,
+                            0,
+                            0,
+                            0.0,
+                            List.of());
+                }
+
+                // 3. Group by strike
+                Map<BigDecimal, OptionContractDraft> strikeMap = new HashMap<>();
+                List<OptionContractDraft> allContracts = new ArrayList<>();
+
+                for (JsonNode item : values) {
+                    BigDecimal strikePrice = new BigDecimal(item.path("strprc").asText("0"));
+                    String optType = item.path("optt").asText("");
+                    String token = item.path("token").asText("");
+                    String tsym = item.path("tsym").asText("");
+
+                    OptionContractDraft draft =
+                            new OptionContractDraft(tsym, token, optType, strikePrice);
+                    allContracts.add(draft);
+
+                    OptionContractDraft existing = strikeMap.get(strikePrice);
+                    if (existing == null) {
+                        existing = new OptionContractDraft(null, null, null, strikePrice);
+                        strikeMap.put(strikePrice, existing);
+                    }
+                    if ("CE".equalsIgnoreCase(optType)) {
+                        existing.callDraft = draft;
+                    } else if ("PE".equalsIgnoreCase(optType)) {
+                        existing.putDraft = draft;
+                    }
+                }
+
+                // 4. Optionally fetch quotes for all option contracts concurrently
+                if (fetchQuotes) {
+                    List<CompletableFuture<Void>> futures =
+                            allContracts.stream()
+                                    .map(
+                                            draft ->
+                                                    CompletableFuture.runAsync(
+                                                            () -> {
+                                                                try {
+                                                                    JsonNode q =
+                                                                            fetchQuote(
+                                                                                    sessionToken,
+                                                                                    "NFO",
+                                                                                    draft.token);
+                                                                    if (q != null
+                                                                            && "Ok"
+                                                                                    .equalsIgnoreCase(
+                                                                                            q.path(
+                                                                                                            "stat")
+                                                                                                    .asText(
+                                                                                                            "Ok"))) {
+                                                                        draft.ltp =
+                                                                                new BigDecimal(
+                                                                                        q.path("lp")
                                                                                                 .asText(
-                                                                                                        "Ok"))) {
-                                                                    draft.ltp =
-                                                                            new BigDecimal(
-                                                                                    q.path("lp")
-                                                                                            .asText(
-                                                                                                    "0"));
-                                                                    draft.openInterest =
-                                                                            q.path("oi").asLong(0);
-                                                                    draft.volume =
-                                                                            q.path("v").asLong(0);
-                                                                    draft.bidPrice =
-                                                                            new BigDecimal(
-                                                                                    q.path("bp1")
-                                                                                            .asText(
-                                                                                                    "0"));
-                                                                    draft.askPrice =
-                                                                            new BigDecimal(
-                                                                                    q.path("sp1")
-                                                                                            .asText(
-                                                                                                    "0"));
-                                                                    draft.previousClose =
-                                                                            new BigDecimal(
-                                                                                    q.path("c")
-                                                                                            .asText(
-                                                                                                    "0"));
+                                                                                                        "0"));
+                                                                        draft.openInterest =
+                                                                                q.path("oi")
+                                                                                        .asLong(0);
+                                                                        draft.volume =
+                                                                                q.path("v")
+                                                                                        .asLong(0);
+                                                                        draft.bidPrice =
+                                                                                new BigDecimal(
+                                                                                        q.path(
+                                                                                                        "bp1")
+                                                                                                .asText(
+                                                                                                        "0"));
+                                                                        draft.askPrice =
+                                                                                new BigDecimal(
+                                                                                        q.path(
+                                                                                                        "sp1")
+                                                                                                .asText(
+                                                                                                        "0"));
+                                                                        draft.previousClose =
+                                                                                new BigDecimal(
+                                                                                        q.path("c")
+                                                                                                .asText(
+                                                                                                        "0"));
+                                                                    }
+                                                                } catch (Exception e) {
+                                                                    log.debug(
+                                                                            "Quote fetch failed for token {}: {}",
+                                                                            draft.token,
+                                                                            e.getMessage());
                                                                 }
-                                                            } catch (Exception e) {
-                                                                log.debug(
-                                                                        "Quote fetch failed for token {}: {}",
-                                                                        draft.token,
-                                                                        e.getMessage());
-                                                            }
-                                                        },
-                                                        executor))
-                                .toList();
+                                                            },
+                                                            executor))
+                                    .toList();
 
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                    try {
+                        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                                .get(10, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (Exception e) {
+                        log.warn(
+                                "Option chain quote batch fetch timed out or interrupted: {}",
+                                e.getMessage());
+                    }
+                }
+
+                // 5. Construct sorted OptionStrike list and calculate aggregate OI
+                List<BigDecimal> sortedStrikes = new ArrayList<>(strikeMap.keySet());
+                Collections.sort(sortedStrikes);
+
+                long totalCallOi = 0;
+                long totalPutOi = 0;
+                List<OptionStrike> strikeList = new ArrayList<>();
+
+                for (BigDecimal sp : sortedStrikes) {
+                    OptionContractDraft draft = strikeMap.get(sp);
+                    OptionContract call =
+                            draft.callDraft != null ? draft.callDraft.toContract() : null;
+                    OptionContract put =
+                            draft.putDraft != null ? draft.putDraft.toContract() : null;
+
+                    if (call != null) totalCallOi += call.openInterest();
+                    if (put != null) totalPutOi += put.openInterest();
+
+                    boolean isAtm = sp.compareTo(atmStrike) == 0;
+                    strikeList.add(new OptionStrike(sp, isAtm, call, put));
+                }
+
+                double pcr = totalCallOi > 0 ? (double) totalPutOi / totalCallOi : 0.0;
+
+                return new OptionChainResponse(
+                        underlying,
+                        underlyingPrice,
+                        atmStrike,
+                        futSymbol,
+                        strikeList.size(),
+                        totalCallOi,
+                        totalPutOi,
+                        Math.round(pcr * 100.0) / 100.0,
+                        strikeList);
+
+            } catch (Exception e) {
+                log.warn(
+                        "Attempt {} failed to fetch option chain for {}: {}",
+                        attempt,
+                        underlying,
+                        e.getMessage());
+                if (attempt == 2) {
+                    log.error(
+                            "Failed to fetch option chain for {} after 2 attempts",
+                            underlying,
+                            e);
+                    throw new RuntimeException("Option chain fetch failure: " + e.getMessage(), e);
+                }
             }
-
-            // 5. Construct sorted OptionStrike list and calculate aggregate OI
-            List<BigDecimal> sortedStrikes = new ArrayList<>(strikeMap.keySet());
-            Collections.sort(sortedStrikes);
-
-            long totalCallOi = 0;
-            long totalPutOi = 0;
-            List<OptionStrike> strikeList = new ArrayList<>();
-
-            for (BigDecimal sp : sortedStrikes) {
-                OptionContractDraft draft = strikeMap.get(sp);
-                OptionContract call = draft.callDraft != null ? draft.callDraft.toContract() : null;
-                OptionContract put = draft.putDraft != null ? draft.putDraft.toContract() : null;
-
-                if (call != null) totalCallOi += call.openInterest();
-                if (put != null) totalPutOi += put.openInterest();
-
-                boolean isAtm = sp.compareTo(atmStrike) == 0;
-                strikeList.add(new OptionStrike(sp, isAtm, call, put));
-            }
-
-            double pcr = totalCallOi > 0 ? (double) totalPutOi / totalCallOi : 0.0;
-
-            return new OptionChainResponse(
-                    underlying,
-                    underlyingPrice,
-                    atmStrike,
-                    futSymbol,
-                    strikeList.size(),
-                    totalCallOi,
-                    totalPutOi,
-                    Math.round(pcr * 100.0) / 100.0,
-                    strikeList);
-
-        } catch (Exception e) {
-            log.error("Failed to fetch option chain for {}: {}", underlying, e.getMessage(), e);
-            throw new RuntimeException("Option chain fetch failure: " + e.getMessage(), e);
         }
+        return mockOptionChain(underlying, explicitStrike != null ? explicitStrike : new BigDecimal("24000"), count);
     }
 
     private JsonNode fetchQuote(String sessionToken, String exchange, String token) {
@@ -324,10 +387,28 @@ public class ShoonyaOptionChainService {
                             .build();
 
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                log.debug("GetQuotes returned status {} for token {}", resp.statusCode(), token);
+                return null;
+            }
             return objectMapper.readTree(resp.body());
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private boolean isSessionExpired(int statusCode, String body) {
+        if (statusCode == 401 || statusCode == 403) {
+            return true;
+        }
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        return body.contains("Session Expired")
+                || body.contains("Invalid Session Key")
+                || body.contains("NOT_LOGGED_IN")
+                || body.contains("Invalid Token")
+                || body.contains("INVALID_SESSION");
     }
 
     private OptionChainResponse mockOptionChain(
@@ -336,6 +417,9 @@ public class ShoonyaOptionChainService {
         BigDecimal strikeStep = BigDecimal.valueOf(50);
         long totalCallOi = 0;
         long totalPutOi = 0;
+
+        // Generate standard NIFTY weekly expiry symbol (every Thursday)
+        String symbolPrefix = mockSymbolPrefix();
 
         for (int i = -count; i <= count; i++) {
             BigDecimal sp = atmStrike.add(strikeStep.multiply(BigDecimal.valueOf(i)));
@@ -351,7 +435,7 @@ public class ShoonyaOptionChainService {
 
             OptionContract call =
                     new OptionContract(
-                            underlying + "29SEP26C" + sp.intValue(),
+                            symbolPrefix + sp.intValue() + "CE",
                             "mock_c_" + sp,
                             "CE",
                             sp,
@@ -363,7 +447,7 @@ public class ShoonyaOptionChainService {
                             callLtp);
             OptionContract put =
                     new OptionContract(
-                            underlying + "29SEP26P" + sp.intValue(),
+                            symbolPrefix + sp.intValue() + "PE",
                             "mock_p_" + sp,
                             "PE",
                             sp,
@@ -388,6 +472,26 @@ public class ShoonyaOptionChainService {
                 totalPutOi,
                 Math.round(pcr * 100.0) / 100.0,
                 list);
+    }
+
+    /**
+     * Builds the standard NSE NIFTY option symbol prefix for the nearest weekly expiry (Thursday),
+     * rolling to next Thursday on/after expiry date with 1-DTE threshold.
+     *
+     * <p>NSE index option format: NIFTY{DD}{MON}{YY} e.g. NIFTY18SEP25.
+     */
+    public String mockSymbolPrefix() {
+        LocalDate today = LocalDate.now();
+
+        LocalDate expiry = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.THURSDAY));
+        long daysRemaining = java.time.temporal.ChronoUnit.DAYS.between(today, expiry);
+        if (daysRemaining <= 1) {
+            expiry = expiry.plusWeeks(1);
+        }
+
+        String year = String.valueOf(expiry.getYear()).substring(2);
+        String month = expiry.getMonth().name().substring(0, 3).toUpperCase();
+        return "NIFTY" + String.format("%02d", expiry.getDayOfMonth()) + month + year;
     }
 
     private static class OptionContractDraft {

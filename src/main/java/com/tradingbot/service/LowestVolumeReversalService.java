@@ -16,13 +16,18 @@ import com.tradingbot.util.Nifty200Registry;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -48,7 +53,7 @@ public class LowestVolumeReversalService {
 
     public static final LocalTime TIME_SESSION_START = LocalTime.of(9, 15);
     public static final LocalTime TIME_SCANNER_START = LocalTime.of(9, 25);
-    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(14, 45);
+    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(11, 0);
     public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
 
     private final ShoonyaMarketDataService marketDataService;
@@ -56,19 +61,21 @@ public class LowestVolumeReversalService {
     private final TelegramService telegramService;
     private final ShoonyaConfig config;
 
+    private java.time.Clock clock = java.time.Clock.system(IST);
+
     private final ExecutorService executor = Executors.newFixedThreadPool(8);
 
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
     private boolean enabled = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.paper-capital:100000.0}")
-    private double paperCapital = 100000.0;
+    @Value("${trading-bot.strategy.lowest-volume.paper-capital:1000000.0}")
+    private double paperCapital = 1000000.0;
 
     @Value("${trading-bot.strategy.lowest-volume.risk-per-trade-percent:1.0}")
     private double riskPerTradePercent = 1.0;
 
-    @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:2}")
-    private int maxConcurrentTrades = 2;
+    @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
+    private int maxConcurrentTrades = 5;
 
     @Value("${trading-bot.strategy.lowest-volume.min-pct-change:1.0}")
     private double minPctChange = 1.0;
@@ -79,8 +86,20 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.telegram-alerts:true}")
     private boolean telegramAlerts = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.setup-timeout-candles:12}")
-    private int setupTimeoutCandles = 12;
+    @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:false}")
+    private boolean telegramArmedAlerts = false;
+
+    @Value("${trading-bot.strategy.lowest-volume.option-buying-enabled:true}")
+    private boolean optionBuyingEnabled = true;
+
+    @Value("${trading-bot.strategy.lowest-volume.lots:1}")
+    private int defaultLots = 1;
+
+    @Value("${trading-bot.strategy.lowest-volume.setup-timeout-candles:6}")
+    private int setupTimeoutCandles = 6;
+
+    @Value("${trading-bot.strategy.lowest-volume.live-breach-check-enabled:true}")
+    private boolean liveBreachCheckEnabled = true;
 
     // Active state maps
     private final Map<String, LowestVolumeSetup> activeSetups = new ConcurrentHashMap<>();
@@ -122,7 +141,7 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        LocalTime nowTime = LocalTime.now(IST);
+        LocalTime nowTime = LocalTime.now(clock);
 
         // 1. Session Timing Checks
         if (nowTime.isBefore(TIME_SESSION_START)) {
@@ -140,6 +159,13 @@ public class LowestVolumeReversalService {
         if (nowTime.isBefore(TIME_SCANNER_START)) {
             log.info(
                     "[LVR] 09:15 - 09:25 IST: Pre-scanner data collection window. Setups start at 09:25.");
+            return;
+        }
+
+        // Past 11:00 AM cutoff: No new setups, manage open positions only
+        if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
+            log.info("[LVR] Past 11:00 AM cutoff. Skipping new setups; managing open positions only.");
+            evaluateOpenPositions(nowTime);
             return;
         }
 
@@ -259,12 +285,21 @@ public class LowestVolumeReversalService {
             futures.add(CompletableFuture.supplyAsync(() -> fetchStockSnapshot(sym), executor));
         }
 
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(15, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("[LVR] Universe scan snapshot batch timed out or interrupted: {}", e.getMessage());
+        }
+
         List<StockQuoteSnapshot> snapshots = new ArrayList<>();
         for (CompletableFuture<StockQuoteSnapshot> f : futures) {
             try {
-                StockQuoteSnapshot s = f.join();
-                if (s != null && s.ltp() > 0 && s.prevClose() > 0) {
-                    snapshots.add(s);
+                if (f.isDone() && !f.isCompletedExceptionally()) {
+                    StockQuoteSnapshot s = f.join();
+                    if (s != null && s.ltp() > 0 && s.prevClose() > 0) {
+                        snapshots.add(s);
+                    }
                 }
             } catch (Exception e) {
                 log.debug("[LVR] Snapshot fetch error: {}", e.getMessage());
@@ -508,7 +543,7 @@ public class LowestVolumeReversalService {
 
     /**
      * Evaluates Pullback & Lowest Volume Trigger Candle (§3.2, §3.3): Checks opposite-color candles
-     * in rolling 10-bar window and applies the Range filter.
+     * since start of day (09:15) and applies the Range filter.
      */
     public void evaluatePullback(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
         if (todayCandles.isEmpty()) {
@@ -524,15 +559,11 @@ public class LowestVolumeReversalService {
                     LowestVolumeSetupState.PULLBACK_TRACKING,
                     "Opposite candle printed in pullback");
 
-            // Look back up to 10 preceding candles to identify the lowest volume candle
-            int windowSize = Math.min(10, todayCandles.size());
-            List<Candle> window =
-                    todayCandles.subList(todayCandles.size() - windowSize, todayCandles.size());
-
+            // Look back across all candles since start of day to identify the lowest volume opposite candle
             Candle lowestVolCandle = null;
             long minVolume = Long.MAX_VALUE;
 
-            for (Candle c : window) {
+            for (Candle c : todayCandles) {
                 if (isOppositeColor(c, dir)) {
                     // Tie-break: if equal volume, the more recent candle takes precedence
                     if (c.volume() <= minVolume) {
@@ -574,7 +605,7 @@ public class LowestVolumeReversalService {
                     BigDecimal slDistance = triggerPrc.subtract(slPrc);
                     target1Prc =
                             triggerPrc
-                                    .add(slDistance.multiply(BigDecimal.valueOf(2)))
+                                    .add(slDistance.multiply(BigDecimal.valueOf(4)))
                                     .setScale(2, RoundingMode.HALF_UP);
                 } else {
                     triggerPrc =
@@ -586,7 +617,7 @@ public class LowestVolumeReversalService {
                     BigDecimal slDistance = slPrc.subtract(triggerPrc);
                     target1Prc =
                             triggerPrc
-                                    .subtract(slDistance.multiply(BigDecimal.valueOf(2)))
+                                    .subtract(slDistance.multiply(BigDecimal.valueOf(4)))
                                     .setScale(2, RoundingMode.HALF_UP);
                 }
 
@@ -600,10 +631,10 @@ public class LowestVolumeReversalService {
                         target1Prc,
                         lowestVolCandle.volume());
 
-                int potentialQty = calculatePositionSize(triggerPrc, slPrc);
-                if (telegramAlerts) {
+                int minLots = getDefaultLots();
+                if (telegramAlerts && telegramArmedAlerts) {
                     telegramService.sendLvrSetupArmedAlert(
-                            setup, potentialQty, BigDecimal.valueOf(getRiskPerTradeAmount()));
+                            setup, minLots, BigDecimal.valueOf(getRiskPerTradeAmount()));
                 }
             }
         } else if (isDirectional(latestCandle, dir)) {
@@ -626,14 +657,14 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        // Check entry cutoff (14:45)
+        // Check entry cutoff (11:00)
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-            log.info("[LVR] [{}] After 14:45 cutoff. Armed setup cancelled.", setup.getSymbol());
+            log.info("[LVR] [{}] After 11:00 cutoff. Armed setup cancelled.", setup.getSymbol());
             setup.resetToScanning();
             return;
         }
 
-        // Setup Timeout check: configurable (default 12 candles / 60 min)
+        // Setup Timeout check: configurable (default 6 candles / 30 min)
         setup.incrementArmedTimeout();
         if (setup.getArmedCandlesElapsed() > setupTimeoutCandles) {
             log.info(
@@ -685,36 +716,285 @@ public class LowestVolumeReversalService {
         }
     }
 
-    /** Executes paper trade entry and creates an active paper position. */
+    /**
+     * 30-second live price check for armed triggers and open position SL/Target1. Runs via
+     * fixed-rate scheduler, uses live stock quotes instead of candle data. Does NOT increment armed
+     * timeout counter (handled by the 5-min cycle). Fallback: the 5-min cycle still catches
+     * breaches at candle close if this check misses them.
+     */
+    public void evaluateLivePriceActions() {
+        if (!enabled || !liveBreachCheckEnabled) {
+            return;
+        }
+
+        LocalTime nowTime = LocalTime.now(clock);
+        if (nowTime.isBefore(TIME_SCANNER_START) || nowTime.isAfter(TIME_HARD_EXIT)) {
+            return;
+        }
+
+        // If past entry cutoff and no open positions, skip polling
+        if (nowTime.isAfter(TIME_ENTRY_CUTOFF) && openPositions.isEmpty()) {
+            return;
+        }
+
+        // Collect unique symbols: armed setups + open positions
+        Set<String> symbols = ConcurrentHashMap.newKeySet();
+        for (var e : activeSetups.entrySet()) {
+            if (e.getValue().getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
+                symbols.add(e.getKey());
+            }
+        }
+        for (var e : openPositions.entrySet()) {
+            if (!e.getValue().isClosed()) {
+                symbols.add(e.getKey());
+            }
+        }
+
+        if (symbols.isEmpty()) {
+            return;
+        }
+
+        // Fetch live quotes concurrently
+        Map<String, LiveStockQuote> liveQuotes = new ConcurrentHashMap<>();
+        List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
+        for (String sym : symbols) {
+            futures.add(
+                    CompletableFuture.runAsync(
+                            () -> {
+                                try {
+                                    String token = StockFnoRegistry.getToken(sym);
+                                    JsonNode quote = marketDataService.fetchQuote("NSE", token);
+                                    if (quote != null && quote.has("lp")) {
+                                        double lp = quote.path("lp").asDouble(0.0);
+                                        double high = quote.path("h").asDouble(0.0);
+                                        double low = quote.path("l").asDouble(0.0);
+                                        if (lp > 0) {
+                                            liveQuotes.put(
+                                                    sym,
+                                                    new LiveStockQuote(
+                                                            BigDecimal.valueOf(lp),
+                                                            BigDecimal.valueOf(high),
+                                                            BigDecimal.valueOf(low)));
+                                        }
+                                    }
+                                } catch (Exception ex) {
+                                    log.debug(
+                                            "[LVR-LIVE] Quote fetch failed for {}: {}",
+                                            sym,
+                                            ex.getMessage());
+                                }
+                            },
+                            executor));
+        }
+        try {
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                    .get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("[LVR-LIVE] Live quote batch timed out or interrupted: {}", e.getMessage());
+        }
+
+        if (liveQuotes.isEmpty()) {
+            return;
+        }
+
+        log.debug("[LVR-LIVE] Checked {} armed/position symbols at {}", liveQuotes.size(), nowTime);
+
+        // --- Armed trigger check ---
+        for (var e : activeSetups.entrySet()) {
+            String sym = e.getKey();
+            LowestVolumeSetup setup = e.getValue();
+            LiveStockQuote lq = liveQuotes.get(sym);
+            if (lq == null || setup.getState() != LowestVolumeSetupState.TRIGGER_ARMED) {
+                continue;
+            }
+
+            LowestVolumeDirection dir = setup.getDirection();
+            BigDecimal triggerPrc = setup.getTriggerPrice();
+            BigDecimal slPrc = setup.getStopLossPrice();
+            boolean triggered = false;
+            BigDecimal fillPrice = triggerPrc;
+
+            if (dir == LowestVolumeDirection.LONG) {
+                if (lq.high().compareTo(triggerPrc) >= 0) {
+                    triggered = true;
+                    BigDecimal maxSlippage = triggerPrc.multiply(BigDecimal.valueOf(1.0015));
+                    fillPrice = lq.high().compareTo(maxSlippage) > 0 ? maxSlippage : triggerPrc;
+                }
+            } else {
+                if (lq.low().compareTo(triggerPrc) <= 0) {
+                    triggered = true;
+                    BigDecimal maxSlippage = triggerPrc.multiply(BigDecimal.valueOf(0.9985));
+                    fillPrice = lq.low().compareTo(maxSlippage) < 0 ? maxSlippage : triggerPrc;
+                }
+            }
+
+            if (triggered) {
+                log.info(
+                        "[LVR-LIVE] {} trigger breached on live quote! LTP: {}, trigger: {}",
+                        sym,
+                        lq.ltp(),
+                        triggerPrc);
+                executePaperTradeEntry(setup, fillPrice, slPrc);
+            }
+        }
+
+        // --- Open position SL / Target 1 check ---
+        for (var e : openPositions.entrySet()) {
+            String sym = e.getKey();
+            LowestVolumePaperPosition pos = e.getValue();
+            if (pos.isClosed()) {
+                continue;
+            }
+            LiveStockQuote lq = liveQuotes.get(sym);
+            if (lq == null) {
+                continue;
+            }
+
+            LowestVolumeDirection dir = pos.getDirection();
+            BigDecimal stockLtp = lq.ltp();
+
+            // SL check first (priority over Target 1)
+            if (pos.getCurrentStockSl() != null) {
+                boolean slHit =
+                        (dir == LowestVolumeDirection.LONG)
+                                ? stockLtp.compareTo(pos.getCurrentStockSl()) <= 0
+                                : stockLtp.compareTo(pos.getCurrentStockSl()) >= 0;
+                if (slHit) {
+                    log.info(
+                            "[LVR-LIVE] {} SL hit on live quote! LTP: {}, SL: {}",
+                            sym,
+                            stockLtp,
+                            pos.getCurrentStockSl());
+                    BigDecimal exitPremium =
+                            fetchOptionPremium(sym, pos.getAtmStrike(), pos.getOptionType());
+                    if (exitPremium == null) {
+                        exitPremium = pos.getEntryPremium(); // fallback
+                    }
+                    pos.close(exitPremium, "STOP_LOSS_HIT_LIVE", Instant.now());
+                    finalizeClosedPosition(sym, pos, "STOP_LOSS_HIT_LIVE");
+                    continue;
+                }
+            }
+
+            // Target 1 partial book
+            if (!pos.isPartialBooked() && pos.getTarget1StockPrice() != null) {
+                boolean t1Hit =
+                        (dir == LowestVolumeDirection.LONG)
+                                ? stockLtp.compareTo(pos.getTarget1StockPrice()) >= 0
+                                : stockLtp.compareTo(pos.getTarget1StockPrice()) <= 0;
+                if (t1Hit) {
+                    log.info(
+                            "[LVR-LIVE] {} Target 1 hit on live quote! LTP: {}, target: {}",
+                            sym,
+                            stockLtp,
+                            pos.getTarget1StockPrice());
+                    BigDecimal exitPremium =
+                            fetchOptionPremium(sym, pos.getAtmStrike(), pos.getOptionType());
+                    if (exitPremium != null && exitPremium.compareTo(BigDecimal.ZERO) > 0) {
+                        pos.executePartialBook(exitPremium, Instant.now());
+                        if (telegramAlerts) {
+                            telegramService.sendLvrPartialBookAlert(pos, pos.getPartialPnl());
+                        }
+                        log.info(
+                                "[LVR-LIVE] {} Partial booked at premium {} (lotSize={}, lots={},"
+                                        + " remaining={})",
+                                sym,
+                                exitPremium,
+                                pos.getLotSize(),
+                                pos.getLots(),
+                                pos.getRemainingQuantity());
+                    } else {
+                        log.warn(
+                                "[LVR-LIVE] {} Target 1 hit but option premium fetch failed."
+                                        + " Skipping partial book.",
+                                sym);
+                    }
+                }
+            }
+        }
+    }
+
+    private record LiveStockQuote(BigDecimal ltp, BigDecimal high, BigDecimal low) {}
+
+    /**
+     * Executes paper trade entry and creates an active paper position. Buys ATM CE (LONG) or ATM PE
+     * (SHORT) with monthly expiry.
+     */
     public synchronized void executePaperTradeEntry(
             LowestVolumeSetup setup, BigDecimal fillPrice, BigDecimal slPrc) {
+        String symbol = setup.getSymbol();
+        LowestVolumeDirection dir = setup.getDirection();
+        String optionType = (dir == LowestVolumeDirection.LONG) ? "CE" : "PE";
+
+        // Determine ATM strike and lot size from stock price
+        BigDecimal atmStrike = StockFnoRegistry.calculateAtmStrike(symbol, fillPrice);
+        int lotSize = StockFnoRegistry.getLotSize(symbol);
+
+        // Fetch ATM monthly option premium
+        BigDecimal entryPremium = fetchOptionPremium(symbol, atmStrike, optionType);
+        if (entryPremium == null || entryPremium.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn(
+                    "[LVR] [{}] Could not fetch ATM {} premium for strike {}. Skipping trade.",
+                    symbol,
+                    optionType,
+                    atmStrike);
+            return;
+        }
+
+        // Build monthly expiry option symbol
+        String expiry = resolveMonthlyExpiry(symbol);
+        String optionSymbol = symbol + expiry + atmStrike.intValue() + optionType;
+
+        // Position sizing: estimate premium SL distance from stock SL distance
+        BigDecimal stockSLDistance = setup.getTriggerPrice().subtract(slPrc).abs();
+        BigDecimal premiumSLDistance =
+                entryPremium.multiply(stockSLDistance).divide(fillPrice, 2, RoundingMode.HALF_UP);
+        if (premiumSLDistance.compareTo(BigDecimal.ZERO) <= 0) {
+            premiumSLDistance = entryPremium.multiply(BigDecimal.valueOf(0.3));
+        }
+        int lots =
+                Math.max(
+                        Math.max(1, defaultLots),
+                        (int)
+                                (getRiskPerTradeAmount()
+                                        / (premiumSLDistance.doubleValue() * lotSize)));
+        int totalQty = lots * lotSize;
+
         String tradeId = "LVR_TRD_" + tradeCounter.getAndIncrement();
-        int qty = calculatePositionSize(fillPrice, slPrc);
         BigDecimal rpt =
                 BigDecimal.valueOf(getRiskPerTradeAmount()).setScale(2, RoundingMode.HALF_UP);
 
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
                         tradeId,
-                        setup.getSymbol(),
-                        setup.getDirection(),
+                        symbol,
+                        optionType,
+                        optionSymbol,
+                        atmStrike,
+                        lotSize,
+                        lots,
+                        dir,
+                        entryPremium,
                         fillPrice,
                         slPrc,
                         setup.getTarget1Price(),
-                        qty,
+                        totalQty,
                         rpt,
                         Instant.now());
 
-        openPositions.put(setup.getSymbol(), pos);
-        setup.transitionTo(LowestVolumeSetupState.IN_POSITION, "Filled paper trade entry");
+        openPositions.put(symbol, pos);
+        setup.transitionTo(LowestVolumeSetupState.IN_POSITION, "Filled option buy entry");
 
         log.info(
-                "[LVR] [{}] PAPER TRADE FILLED! ID: {} | {} Qty: {} @ ₹{} | SL: ₹{} | Target1: ₹{}",
-                setup.getSymbol(),
+                "[LVR] [{}] OPTION BUY FILLED! ID: {} | {} {} @ ₹{} (premium) | Lots: {} × {} = {} units | Stock SL: ₹{} | Target1: ₹{}",
+                symbol,
                 tradeId,
-                setup.getDirection(),
-                qty,
-                fillPrice,
+                dir,
+                optionSymbol,
+                entryPremium,
+                lots,
+                lotSize,
+                totalQty,
                 slPrc,
                 setup.getTarget1Price());
 
@@ -745,28 +1025,43 @@ public class LowestVolumeReversalService {
                 Candle latest = candles.get(candles.size() - 1);
                 LowestVolumeDirection dir = pos.getDirection();
 
-                // 1. Check Stop Loss Hit
+                // 1. Check Stop Loss Hit (on STOCK PRICE)
                 if (dir == LowestVolumeDirection.LONG
-                        && latest.low().compareTo(pos.getCurrentSl()) <= 0) {
-                    pos.close(pos.getCurrentSl(), "STOP_LOSS_HIT", Instant.now());
+                        && latest.low().compareTo(pos.getCurrentStockSl()) <= 0) {
+                    BigDecimal exitPremium =
+                            fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
+                    if (exitPremium == null) {
+                        exitPremium = pos.getEntryPremium(); // fallback
+                    }
+                    pos.close(exitPremium, "STOP_LOSS_HIT", Instant.now());
                     finalizeClosedPosition(symbol, pos, "STOP_LOSS_HIT");
                     continue;
                 } else if (dir == LowestVolumeDirection.SHORT
-                        && latest.high().compareTo(pos.getCurrentSl()) >= 0) {
-                    pos.close(pos.getCurrentSl(), "STOP_LOSS_HIT", Instant.now());
+                        && latest.high().compareTo(pos.getCurrentStockSl()) >= 0) {
+                    BigDecimal exitPremium =
+                            fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
+                    if (exitPremium == null) {
+                        exitPremium = pos.getEntryPremium(); // fallback
+                    }
+                    pos.close(exitPremium, "STOP_LOSS_HIT", Instant.now());
                     finalizeClosedPosition(symbol, pos, "STOP_LOSS_HIT");
                     continue;
                 }
 
-                // 2. Check Target 1 (1:2 RR) Partial Booking
+                // 2. Check Target 1 (1:2 RR) Partial Booking (on STOCK PRICE)
                 if (!pos.isPartialBooked()) {
                     boolean targetHit =
                             (dir == LowestVolumeDirection.LONG)
-                                    ? latest.high().compareTo(pos.getTarget1Price()) >= 0
-                                    : latest.low().compareTo(pos.getTarget1Price()) <= 0;
+                                    ? latest.high().compareTo(pos.getTarget1StockPrice()) >= 0
+                                    : latest.low().compareTo(pos.getTarget1StockPrice()) <= 0;
 
                     if (targetHit) {
-                        pos.executePartialBook(pos.getTarget1Price(), Instant.now());
+                        BigDecimal exitPremium =
+                                fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
+                        if (exitPremium == null) {
+                            exitPremium = pos.getEntryPremium(); // fallback
+                        }
+                        pos.executePartialBook(exitPremium, Instant.now());
                         LowestVolumeSetup setup = activeSetups.get(symbol);
                         if (setup != null) {
                             setup.transitionTo(
@@ -774,8 +1069,8 @@ public class LowestVolumeReversalService {
                                     "Target 1 Hit. 50% booked, SL to BE.");
                         }
                         log.info(
-                                "[LVR] [{}] Target 1 (1:2 RR) Hit! Booked 50%, SL moved to Breakeven ₹{}",
-                                symbol, pos.getEntryPrice());
+                                "[LVR] [{}] Target 1 (1:2 RR) Hit! Booked 50%% at premium ₹{}, SL moved to Breakeven ₹{}",
+                                symbol, exitPremium, pos.getEntryPremium());
                         if (telegramAlerts) {
                             telegramService.sendLvrPartialBookAlert(pos, pos.getPartialPnl());
                         }
@@ -826,12 +1121,17 @@ public class LowestVolumeReversalService {
                         (pos.getDirection() == LowestVolumeDirection.LONG)
                                 ? "SUPERTREND_10_3_FLIP_BEARISH"
                                 : "SUPERTREND_10_3_FLIP_BULLISH";
-                pos.close(latest.close(), reason, Instant.now());
+                BigDecimal exitPremium =
+                        fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
+                if (exitPremium == null) {
+                    exitPremium = pos.getEntryPremium(); // fallback
+                }
+                pos.close(exitPremium, reason, Instant.now());
                 finalizeClosedPosition(symbol, pos, reason);
                 log.info(
                         "[LVR] [{}] Runner exited on SuperTrend flip @ ₹{} (Reason: {})",
                         symbol,
-                        latest.close(),
+                        exitPremium,
                         reason);
             }
         }
@@ -852,7 +1152,7 @@ public class LowestVolumeReversalService {
         }
     }
 
-    /** Executes 15:00 IST Hard Exit: Closes all open positions at market price. */
+    /** Executes 15:00 IST Hard Exit: Closes all open positions at current option premium. */
     public synchronized void executeHardExit(LocalTime nowTime) {
         if (openPositions.isEmpty()) {
             return;
@@ -867,16 +1167,13 @@ public class LowestVolumeReversalService {
             String symbol = entry.getKey();
             LowestVolumePaperPosition pos = entry.getValue();
 
-            BigDecimal exitPrice = pos.getEntryPrice();
-            try {
-                List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 1);
-                if (candles != null && !candles.isEmpty()) {
-                    exitPrice = candles.get(candles.size() - 1).close();
-                }
-            } catch (Exception ignored) {
+            BigDecimal exitPremium =
+                    fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
+            if (exitPremium == null) {
+                exitPremium = pos.getEntryPremium(); // fallback
             }
 
-            pos.close(exitPrice, "15:00_HARD_EXIT", Instant.now());
+            pos.close(exitPremium, "15:00_HARD_EXIT", Instant.now());
             finalizeClosedPosition(symbol, pos, "15:00_HARD_EXIT");
         }
     }
@@ -998,6 +1295,84 @@ public class LowestVolumeReversalService {
         return Math.max(1, qty);
     }
 
+    /**
+     * Fetches option premium for a given underlying symbol, strike, and option type. Searches for
+     * the option contract on NFO and returns its last traded price.
+     */
+    private BigDecimal fetchOptionPremium(
+            String underlyingSymbol, BigDecimal strike, String optionType) {
+        try {
+            String expiry = resolveMonthlyExpiry(underlyingSymbol);
+            String optionSymbol = underlyingSymbol + expiry + strike.intValue() + optionType;
+
+            // Search for the option scrip on NFO
+            JsonNode searchResult = marketDataService.searchScrip("NFO", optionSymbol);
+            if (searchResult == null || !searchResult.isArray() || searchResult.isEmpty()) {
+                log.warn("[LVR] Option scrip not found for {} on NFO", optionSymbol);
+                return null;
+            }
+
+            // Use the first matching result to get the token
+            JsonNode firstMatch = searchResult.get(0);
+            String token = firstMatch.path("token").asText(null);
+            if (token == null || token.isBlank()) {
+                log.warn("[LVR] No token found for option {}", optionSymbol);
+                return null;
+            }
+
+            // Fetch quote to get LTP
+            JsonNode quote = marketDataService.fetchQuote("NFO", token);
+            if (quote != null) {
+                String ltpStr = quote.path("lp").asText(null);
+                if (ltpStr != null && !ltpStr.isBlank()) {
+                    BigDecimal ltp = new BigDecimal(ltpStr);
+                    if (ltp.compareTo(BigDecimal.ZERO) > 0) {
+                        return ltp;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[LVR] Failed to fetch option premium for {} {} {}: {}",
+                    underlyingSymbol,
+                    strike,
+                    optionType,
+                    e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Resolves the monthly expiry string for the given underlying symbol. Uses current month
+     * expiry; if today is past the last Thursday, uses next month. Returns format like "25JUL" per
+     * Shoonya convention.
+     */
+    private String resolveMonthlyExpiry(String symbol) {
+        LocalDate today = LocalDate.now(IST);
+        YearMonth currentMonth = YearMonth.from(today);
+
+        // Find last Thursday of the current month
+        LocalDate lastDay = currentMonth.atEndOfMonth();
+        LocalDate lastThursday = lastDay;
+        while (lastThursday.getDayOfWeek() != DayOfWeek.THURSDAY) {
+            lastThursday = lastThursday.minusDays(1);
+        }
+
+        // If today is past this month's expiry, use next month
+        if (today.isAfter(lastThursday)) {
+            currentMonth = currentMonth.plusMonths(1);
+        }
+
+        // Format: "25JUL" (YY + MMM uppercase)
+        int year = currentMonth.getYear() % 100;
+        String month =
+                currentMonth
+                        .getMonth()
+                        .getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+                        .toUpperCase(Locale.ENGLISH);
+        return String.format("%02d%s", year, month);
+    }
+
     public double getRiskPerTradeAmount() {
         return paperCapital * (riskPerTradePercent / 100.0);
     }
@@ -1011,6 +1386,14 @@ public class LowestVolumeReversalService {
     }
 
     // --- Getters & Setters ---
+
+    public void setClock(java.time.Clock clock) {
+        this.clock = clock;
+    }
+
+    public java.time.Clock getClock() {
+        return this.clock;
+    }
 
     public boolean isEnabled() {
         return enabled;
@@ -1098,5 +1481,50 @@ public class LowestVolumeReversalService {
 
     public void setUniverseScanCompletedToday(boolean universeScanCompletedToday) {
         this.universeScanCompletedToday = universeScanCompletedToday;
+    }
+
+    public boolean isOptionBuyingEnabled() {
+        return optionBuyingEnabled;
+    }
+
+    public void setOptionBuyingEnabled(boolean optionBuyingEnabled) {
+        this.optionBuyingEnabled = optionBuyingEnabled;
+    }
+
+    public int getDefaultLots() {
+        return defaultLots;
+    }
+
+    public void setDefaultLots(int defaultLots) {
+        this.defaultLots = defaultLots;
+    }
+
+    public boolean isTelegramAlerts() {
+        return telegramAlerts;
+    }
+
+    public void setTelegramAlerts(boolean telegramAlerts) {
+        this.telegramAlerts = telegramAlerts;
+    }
+
+    public boolean isTelegramArmedAlerts() {
+        return telegramArmedAlerts;
+    }
+
+    public void setTelegramArmedAlerts(boolean telegramArmedAlerts) {
+        this.telegramArmedAlerts = telegramArmedAlerts;
+    }
+
+    public boolean isLiveBreachCheckEnabled() {
+        return liveBreachCheckEnabled;
+    }
+
+    public void setLiveBreachCheckEnabled(boolean liveBreachCheckEnabled) {
+        this.liveBreachCheckEnabled = liveBreachCheckEnabled;
+    }
+
+    /** Test-only helper to inject a setup into the active set. */
+    public void addActiveSetupForTesting(String symbol, LowestVolumeSetup setup) {
+        activeSetups.put(symbol, setup);
     }
 }

@@ -21,9 +21,11 @@ Every ambiguity in the original has been resolved below as an explicit, stated d
 | Time | Action |
 |---|---|
 | 09:15–09:25 | No trading. Data collection only (candles still logged for volume history). |
-| 09:26 onward | Scanner active, setups may begin forming. |
-| 09:26–15:00 | Trading window. |
-| 15:00 | Hard exit: close all open positions at market. **[DECISION]** No new entries accepted after 14:45 (15-min buffer before hard close) even if a valid trigger fires — a fresh position with only 15 min of runway defeats the RR structure. |
+| 09:25 | Morning universe scan locks Top 10 Gainers / Losers watchlist. |
+| 09:25–11:00 | Active setup evaluation & entry trading window. |
+| 11:00 | Entry cutoff: No new setups armed or filled after 11:00 AM IST. |
+| 11:00–15:00 | Position management window: Open trades trailed to Target/SL or 15:00 hard exit. |
+| 15:00 | Hard exit: close all remaining open positions at market. |
 
 ## 3. Setup Definition (Long — mirror for Short)
 
@@ -35,10 +37,10 @@ Every ambiguity in the original has been resolved below as an explicit, stated d
 This replaces the vague "strong upward momentum" with a measurable, tunable threshold.
 
 ### 3.2 Pullback / Lowest-Volume Candle Tracking
-**[DECISION]** Volume comparison window = **rolling, not cumulative-since-open**. Compare each pullback candle's volume against the **preceding 10 candles** (or all candles since 09:26 if fewer than 10 have printed). This fixes the original's cumulative-vs-day contradiction and removes the time-of-day bias where afternoon setups could never qualify.
+**[DECISION]** Volume comparison window = **start of day (all candles since 09:15 market open)**. Compare each pullback candle's volume against all preceding candles of the session.
 
 - Once the initial leg completes, watch for a red (opposite) candle.
-- **[DECISION]** If the pullback runs multiple red candles before a breakout, re-anchor dynamically: the "trigger candle" is *whichever* red candle currently holds the lowest volume among the tracked window, updated on every new candle close, until either (a) price breaks its high, or (b) the setup is invalidated (§3.4).
+- **[DECISION]** If the pullback runs multiple red candles before a breakout, re-anchor dynamically: the "trigger candle" is *whichever* opposite-color candle holds the lowest volume among all session candles since open, updated on every new candle close, until either (a) price breaks its high, or (b) the setup is invalidated (§3.4).
 - **[DECISION]** Tie-break rule: if two candles have equal volume, the **most recent** one becomes the trigger candle (keeps the SL tighter to current price action).
 
 ### 3.3 Range Filter (new — not in original)
@@ -70,7 +72,7 @@ Exact mirror of §3 with colors and directions inverted: initial leg = red candl
   - `max_qty_by_liquidity` = a fraction (e.g. 1%) of the **real-time best 5-depth ask size** (long) / bid size (short) pulled from **Shoonya's market depth/quote endpoint** at signal time — a live order-book read, not the trigger candle's historical volume. This is a tighter, more realistic cap since it reflects what's actually resting on the book right now rather than volume that already traded.
   - `max_qty_by_margin` = available MIS margin (from Shoonya's margin/limits API) ÷ trigger price.
   - This closes the original's gap where a very tight SL could imply an unrealistically large share quantity relative to the stock's actual liquidity.
-- Target 1 = 1:2 RR, book 50% of position, move SL on remainder to breakeven (cost).
+- Target 1 = 1:4 RR, book 50% of position, move SL on remainder to breakeven (cost).
 - **[DECISION] Runner management (undefined in original):** trail the remaining 50% using a 5-min Supertrend(10,3) — exit runner fully on a Supertrend flip against the position, or at the 15:00 hard close, whichever comes first. (Matches your existing Supertrend-based exit logic used elsewhere — reuse rather than inventing a new trailing method.)
 - Hard exit: flatten all open positions at 15:00, market order, no discretion.
 
@@ -97,7 +99,7 @@ TRIGGER_ARMED
   → SCANNING            [6-candle timeout elapses without fill, §3.4]
   → PULLBACK_TRACKING   [a new, lower-volume opposite-color candle re-anchors before trigger fires]
 IN_POSITION
-  → PARTIAL_BOOKED      [price hits 1:2 RR — book 50%, SL to breakeven on remainder]
+  → PARTIAL_BOOKED      [price hits 1:4 RR — book 50%, SL to breakeven on remainder]
   → CLOSED_SL           [SL hit before target]
   → CLOSED_TIMEOUT      [15:00 hard exit]
 PARTIAL_BOOKED

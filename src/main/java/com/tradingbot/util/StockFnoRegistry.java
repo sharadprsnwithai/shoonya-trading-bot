@@ -144,39 +144,6 @@ public final class StockFnoRegistry {
         return spotPrice.divide(step, 0, RoundingMode.HALF_UP).multiply(step);
     }
 
-    private static final List<String> CURATED_SYMBOLS =
-            new java.util.concurrent.CopyOnWriteArrayList<>(
-                    List.of(
-                            "IDEA",
-                            "BSE",
-                            "VEDL",
-                            "COFORGE",
-                            "GLENMARK",
-                            "AUBANK",
-                            "SHREECEM",
-                            "RECLTD",
-                            "PFC",
-                            "BHARTIARTL"));
-
-    /**
-     * Returns top trending, high-liquidity curated symbols dynamically selected on the 1st of every
-     * month.
-     */
-    public static List<String> getCuratedSymbols() {
-        return List.copyOf(CURATED_SYMBOLS);
-    }
-
-    /**
-     * Updates the active curated symbols (called automatically by MonthlyBasketRebalanceScheduler
-     * on the 1st of month).
-     */
-    public static void setCuratedSymbols(List<String> newCurated) {
-        if (newCurated != null && !newCurated.isEmpty()) {
-            CURATED_SYMBOLS.clear();
-            CURATED_SYMBOLS.addAll(newCurated);
-        }
-    }
-
     /**
      * Calculates OTM strike for hedging (Credit Spread leg). For Call (CE): OTM strike = atmStrike
      * + (strikeStep * offsetSteps) For Put (PE): OTM strike = atmStrike - (strikeStep *

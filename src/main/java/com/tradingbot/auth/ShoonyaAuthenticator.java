@@ -73,20 +73,58 @@ public class ShoonyaAuthenticator {
 
         String cachedToken = loadFreshDiskSession();
         if (cachedToken != null) {
-            log.info("Using cached Shoonya session from {}", SESSION_FILE.getPath());
-            sessionToken.set(cachedToken);
-            return cachedToken;
+            log.info("Found cached Shoonya session in {}. Validating session key...", SESSION_FILE.getPath());
+            if (validateSessionToken(cachedToken)) {
+                log.info("Shoonya cached session is valid and active.");
+                sessionToken.set(cachedToken);
+                return cachedToken;
+            } else {
+                log.warn(
+                        "Shoonya cached session in {} is expired or rejected by Shoonya. Invalidating and re-authenticating...",
+                        SESSION_FILE.getPath());
+                invalidateSession();
+            }
         }
 
         return executeHeadlessLogin();
     }
 
+    /**
+     * Validates whether a given session token (jKey) is accepted by Shoonya API by probing UserDetails.
+     */
+    public boolean validateSessionToken(String token) {
+        if (token == null || token.isBlank() || !config.isEnabled()) {
+            return false;
+        }
+        try {
+            Map<String, Object> payload = Map.of("uid", config.getUserId());
+            String formBody = "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + token;
+
+            HttpRequest req =
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/UserDetails"))
+                            .header("Content-Type", "application/x-www-form-urlencoded")
+                            .header("X-Forwarded-For", config.resolvePublicIp())
+                            .POST(HttpRequest.BodyPublishers.ofString(formBody, StandardCharsets.UTF_8))
+                            .build();
+
+            HttpResponse<String> resp =
+                    httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                log.debug("Shoonya session validation returned HTTP {}", resp.statusCode());
+                return false;
+            }
+            JsonNode root = objectMapper.readTree(resp.body());
+            return "Ok".equalsIgnoreCase(root.path("stat").asText());
+        } catch (Exception e) {
+            log.warn("Shoonya session validation probe failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
     /** Executes the QuickAuth -> GenAcsTok OAuth flow. */
     public synchronized String executeHeadlessLogin() {
-        String existingToken = sessionToken.get();
-        if (existingToken != null && !existingToken.isBlank()) {
-            return existingToken;
-        }
+        sessionToken.set(null);
         log.info("Initiating automated headless login for Shoonya user: {}", config.getUserId());
         try {
             String publicIp = config.resolvePublicIp();
