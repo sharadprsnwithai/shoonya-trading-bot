@@ -164,7 +164,8 @@ public class LowestVolumeReversalService {
 
         // Past 11:00 AM cutoff: No new setups, manage open positions only
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-            log.info("[LVR] Past 11:00 AM cutoff. Skipping new setups; managing open positions only.");
+            log.info(
+                    "[LVR] Past 11:00 AM cutoff. Skipping new setups; managing open positions only.");
             evaluateOpenPositions(nowTime);
             return;
         }
@@ -289,7 +290,9 @@ public class LowestVolumeReversalService {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .get(15, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            log.warn("[LVR] Universe scan snapshot batch timed out or interrupted: {}", e.getMessage());
+            log.warn(
+                    "[LVR] Universe scan snapshot batch timed out or interrupted: {}",
+                    e.getMessage());
         }
 
         List<StockQuoteSnapshot> snapshots = new ArrayList<>();
@@ -559,7 +562,8 @@ public class LowestVolumeReversalService {
                     LowestVolumeSetupState.PULLBACK_TRACKING,
                     "Opposite candle printed in pullback");
 
-            // Look back across all candles since start of day to identify the lowest volume opposite candle
+            // Look back across all candles since start of day to identify the lowest volume
+            // opposite candle
             Candle lowestVolCandle = null;
             long minVolume = Long.MAX_VALUE;
 

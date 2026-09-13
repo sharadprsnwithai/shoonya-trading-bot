@@ -1,7 +1,6 @@
 package com.tradingbot.marketdata;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -99,7 +98,8 @@ class ShoonyaMarketDataServiceTest {
         HttpResponse<String> sessionExpiredResp = mock(HttpResponse.class);
         when(sessionExpiredResp.statusCode()).thenReturn(401);
         when(sessionExpiredResp.body())
-                .thenReturn("{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
+                .thenReturn(
+                        "{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
 
         HttpResponse<String> successResp = mock(HttpResponse.class);
         when(successResp.statusCode()).thenReturn(200);

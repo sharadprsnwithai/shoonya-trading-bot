@@ -39,9 +39,9 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
-     * Morning Universe Scan at 09:25:10 IST every trading weekday. Identifies Top 10 Gainers & Losers
-     * from the F&O universe, fixes this list for the day, seeds initial setups, and dispatches the
-     * daily Telegram report once.
+     * Morning Universe Scan at 09:25:10 IST every trading weekday. Identifies Top 10 Gainers &
+     * Losers from the F&O universe, fixes this list for the day, seeds initial setups, and
+     * dispatches the daily Telegram report once.
      */
     @Scheduled(
             cron = "${trading-bot.strategy.lowest-volume.scanner-cron:10 25 9 ? * MON-FRI}",
@@ -64,7 +64,10 @@ public class LowestVolumeReversalScheduler {
         }
     }
 
-    /** Runs every 5 minutes from 09:25:10 to 11:05:10 IST on trading weekdays. (10s offset for broker latency) */
+    /**
+     * Runs every 5 minutes from 09:25:10 to 11:05:10 IST on trading weekdays. (10s offset for
+     * broker latency)
+     */
     @Scheduled(
             cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-11 ? * MON-FRI}",
             zone = "Asia/Kolkata")

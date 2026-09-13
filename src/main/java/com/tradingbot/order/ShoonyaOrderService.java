@@ -110,7 +110,8 @@ public class ShoonyaOrderService {
                         HttpRequest.newBuilder()
                                 .uri(
                                         URI.create(
-                                                config.getBaseUrl() + "/NorenWClientAPI/PlaceOrder"))
+                                                config.getBaseUrl()
+                                                        + "/NorenWClientAPI/PlaceOrder"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
                                 .POST(
@@ -244,8 +245,7 @@ public class ShoonyaOrderService {
                             resp.statusCode(),
                             orderId,
                             body);
-                    return OrderResponse.failure(
-                            null, "HTTP " + resp.statusCode() + ": " + body);
+                    return OrderResponse.failure(null, "HTTP " + resp.statusCode() + ": " + body);
                 }
 
                 JsonNode root = objectMapper.readTree(body);
@@ -254,8 +254,7 @@ public class ShoonyaOrderService {
                     return OrderResponse.success(orderId, null, "Order modified successfully");
                 } else {
                     String emsg = root.path("emsg").asText(body);
-                    log.error(
-                            "[SHOONYA-ORDER] Modify order {} rejected: {}", orderId, emsg);
+                    log.error("[SHOONYA-ORDER] Modify order {} rejected: {}", orderId, emsg);
                     return OrderResponse.failure(null, emsg);
                 }
 
@@ -326,8 +325,7 @@ public class ShoonyaOrderService {
                             resp.statusCode(),
                             orderId,
                             body);
-                    return OrderResponse.failure(
-                            null, "HTTP " + resp.statusCode() + ": " + body);
+                    return OrderResponse.failure(null, "HTTP " + resp.statusCode() + ": " + body);
                 }
 
                 JsonNode root = objectMapper.readTree(body);
@@ -342,8 +340,7 @@ public class ShoonyaOrderService {
                             java.time.Instant.now());
                 } else {
                     String emsg = root.path("emsg").asText(body);
-                    log.error(
-                            "[SHOONYA-ORDER] Cancel order {} rejected: {}", orderId, emsg);
+                    log.error("[SHOONYA-ORDER] Cancel order {} rejected: {}", orderId, emsg);
                     return OrderResponse.failure(null, emsg);
                 }
 

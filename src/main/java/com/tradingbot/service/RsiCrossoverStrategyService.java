@@ -17,15 +17,12 @@ import com.tradingbot.util.CandleResamplingUtil;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
@@ -37,21 +34,16 @@ import org.springframework.stereotype.Service;
 /**
  * Automated Intraday NIFTY 5m vs 15m RSI(14) Crossover Strategy.
  *
- * <p>Modes Supported:
- * 1. OPTION_SELLING (Default / Recommended):
- *    - 5m RSI(14) crosses above 15m RSI(14) -> SELL ATM PE (Bullish credit).
- *    - 5m RSI(14) crosses below 15m RSI(14) -> SELL ATM CE (Bearish credit).
- * 2. OPTION_BUYING:
- *    - 5m RSI(14) crosses above 15m RSI(14) -> BUY ATM CE.
- *    - 5m RSI(14) crosses below 15m RSI(14) -> BUY ATM PE.
+ * <p>Modes Supported: 1. OPTION_SELLING (Default / Recommended): - 5m RSI(14) crosses above 15m
+ * RSI(14) -> SELL ATM PE (Bullish credit). - 5m RSI(14) crosses below 15m RSI(14) -> SELL ATM CE
+ * (Bearish credit). 2. OPTION_BUYING: - 5m RSI(14) crosses above 15m RSI(14) -> BUY ATM CE. - 5m
+ * RSI(14) crosses below 15m RSI(14) -> BUY ATM PE.
  *
- * <p>Rules:
- * 1. Monitored on NIFTY 50 index (NSE:10576).
- * 2. Active evaluation starts at 09:45:10 IST and runs every 5 minutes until 15:00:10 IST.
- * 3. Trend strength verified using 15m ADX(14) >= threshold (default 20.0).
- * 4. Strict 1 trade per day limit.
- * 5. Hard Stop-Loss and Target Profit protection on option premium.
- * 6. Exit on reverse crossover or mandatory 15:05:10 IST EOD square-off.
+ * <p>Rules: 1. Monitored on NIFTY 50 index (NSE:10576). 2. Active evaluation starts at 09:45:10 IST
+ * and runs every 5 minutes until 15:00:10 IST. 3. Trend strength verified using 15m ADX(14) >=
+ * threshold (default 20.0). 4. Strict 1 trade per day limit. 5. Hard Stop-Loss and Target Profit
+ * protection on option premium. 6. Exit on reverse crossover or mandatory 15:05:10 IST EOD
+ * square-off.
  */
 @Service
 public class RsiCrossoverStrategyService {
@@ -157,37 +149,53 @@ public class RsiCrossoverStrategyService {
         LocalTime nowTime = LocalTime.now(clock);
 
         if (nowTime.isBefore(TIME_STRATEGY_START)) {
-            log.debug("[RSI-STRATEGY] Current time {} is before strategy start window (09:45 IST).", nowTime);
+            log.debug(
+                    "[RSI-STRATEGY] Current time {} is before strategy start window (09:45 IST).",
+                    nowTime);
             return;
         }
 
         if (nowTime.isAfter(TIME_SQUARE_OFF)) {
-            log.debug("[RSI-STRATEGY] Current time {} is past square-off time (15:05 IST).", nowTime);
+            log.debug(
+                    "[RSI-STRATEGY] Current time {} is past square-off time (15:05 IST).", nowTime);
             return;
         }
 
-        log.info("[RSI-STRATEGY] Running 5-min RSI Crossover cycle [{}] at {} IST...", mode, nowTime);
+        log.info(
+                "[RSI-STRATEGY] Running 5-min RSI Crossover cycle [{}] at {} IST...",
+                mode,
+                nowTime);
 
         // Fetch 5-day 5-min historical candles (guarantees >= 350 bars for warm RSI)
-        List<Candle> fiveMinCandles = marketDataService.fetchHistoricalCandles(NIFTY_EXCHANGE, NIFTY_TOKEN, NIFTY_SYMBOL, "5", 5);
+        List<Candle> fiveMinCandles =
+                marketDataService.fetchHistoricalCandles(
+                        NIFTY_EXCHANGE, NIFTY_TOKEN, NIFTY_SYMBOL, "5", 5);
         if (fiveMinCandles == null || fiveMinCandles.size() < (rsiPeriod + 10)) {
-            log.warn("[RSI-STRATEGY] Insufficient 5m candles retrieved: {}", (fiveMinCandles != null ? fiveMinCandles.size() : 0));
+            log.warn(
+                    "[RSI-STRATEGY] Insufficient 5m candles retrieved: {}",
+                    (fiveMinCandles != null ? fiveMinCandles.size() : 0));
             return;
         }
 
         List<Candle> fifteenMinCandles = CandleResamplingUtil.resample5MinTo15Min(fiveMinCandles);
         if (fifteenMinCandles == null || fifteenMinCandles.size() < (rsiPeriod + 5)) {
-            log.warn("[RSI-STRATEGY] Insufficient 15m resampled candles: {}", (fifteenMinCandles != null ? fifteenMinCandles.size() : 0));
+            log.warn(
+                    "[RSI-STRATEGY] Insufficient 15m resampled candles: {}",
+                    (fifteenMinCandles != null ? fifteenMinCandles.size() : 0));
             return;
         }
 
         // Calculate RSI(14) series
-        double[] close5m = fiveMinCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
+        double[] close5m =
+                fiveMinCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
         double[] rsi5mSeries = taService.calculateRsiSeries(close5m, rsiPeriod);
 
-        double[] close15m = fifteenMinCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
-        double[] high15m = fifteenMinCandles.stream().mapToDouble(c -> c.high().doubleValue()).toArray();
-        double[] low15m = fifteenMinCandles.stream().mapToDouble(c -> c.low().doubleValue()).toArray();
+        double[] close15m =
+                fifteenMinCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
+        double[] high15m =
+                fifteenMinCandles.stream().mapToDouble(c -> c.high().doubleValue()).toArray();
+        double[] low15m =
+                fifteenMinCandles.stream().mapToDouble(c -> c.low().doubleValue()).toArray();
         double[] rsi15mSeries = taService.calculateRsiSeries(close15m, rsiPeriod);
         double[] adx15mSeries = taService.calculateAdxSeries(high15m, low15m, close15m, rsiPeriod);
 
@@ -202,10 +210,19 @@ public class RsiCrossoverStrategyService {
         double rsi5Prev = rsi5mSeries[len5 - 2];
         double rsi15Curr = rsi15mSeries[len15 - 1];
         double rsi15Prev = rsi15mSeries[len15 - 2];
-        double adx15mCurr = (adx15mSeries.length > 0) ? adx15mSeries[adx15mSeries.length - 1] : Double.NaN;
+        double adx15mCurr =
+                (adx15mSeries.length > 0) ? adx15mSeries[adx15mSeries.length - 1] : Double.NaN;
 
-        if (Double.isNaN(rsi5Curr) || Double.isNaN(rsi5Prev) || Double.isNaN(rsi15Curr) || Double.isNaN(rsi15Prev)) {
-            log.warn("[RSI-STRATEGY] One or more RSI values evaluated to NaN: 5m=[{}, {}], 15m=[{}, {}]", rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr);
+        if (Double.isNaN(rsi5Curr)
+                || Double.isNaN(rsi5Prev)
+                || Double.isNaN(rsi15Curr)
+                || Double.isNaN(rsi15Prev)) {
+            log.warn(
+                    "[RSI-STRATEGY] One or more RSI values evaluated to NaN: 5m=[{}, {}], 15m=[{}, {}]",
+                    rsi5Prev,
+                    rsi5Curr,
+                    rsi15Prev,
+                    rsi15Curr);
             return;
         }
 
@@ -221,7 +238,13 @@ public class RsiCrossoverStrategyService {
 
         log.info(
                 "[RSI-STRATEGY] [{}] NIFTY: ₹{} | 5m RSI: {:.2f} (prev: {:.2f}) | 15m RSI: {:.2f} (prev: {:.2f}) | 15m ADX: {:.2f}",
-                mode, spotPrice, rsi5Curr, rsi5Prev, rsi15Curr, rsi15Prev, adx15mCurr);
+                mode,
+                spotPrice,
+                rsi5Curr,
+                rsi5Prev,
+                rsi15Curr,
+                rsi15Prev,
+                adx15mCurr);
 
         // 1. Manage Active Open Position (Check SL, Target, or Crossover Reversal)
         RsiCrossoverPosition current = openPosition.get();
@@ -232,8 +255,11 @@ public class RsiCrossoverStrategyService {
 
         // 2. If no position is open, check Entry (Max trades per day limit)
         if (tradesExecutedToday.get() >= maxTradesPerDay) {
-            log.debug("[RSI-STRATEGY] Max {} trades per day limit reached for today ({}/{}). Skipping new entries.",
-                    maxTradesPerDay, tradesExecutedToday.get(), maxTradesPerDay);
+            log.debug(
+                    "[RSI-STRATEGY] Max {} trades per day limit reached for today ({}/{}). Skipping new entries.",
+                    maxTradesPerDay,
+                    tradesExecutedToday.get(),
+                    maxTradesPerDay);
             return;
         }
 
@@ -257,7 +283,8 @@ public class RsiCrossoverStrategyService {
         if (!bullishCrossover && !bearishCrossover) {
             log.debug(
                     "[RSI-STRATEGY] No crossover detected. (5m: {:.2f}, 15m: {:.2f})",
-                    rsi5Curr, rsi15Curr);
+                    rsi5Curr,
+                    rsi15Curr);
             return;
         }
 
@@ -265,7 +292,8 @@ public class RsiCrossoverStrategyService {
         if (adxFilterEnabled && !Double.isNaN(adx15mCurr) && adx15mCurr < adxThreshold) {
             log.info(
                     "[RSI-STRATEGY] ⚠️ Crossover detected but 15m ADX ({:.2f}) < threshold ({:.2f}). Skipping low-momentum entry.",
-                    adx15mCurr, adxThreshold);
+                    adx15mCurr,
+                    adxThreshold);
             return;
         }
 
@@ -275,30 +303,40 @@ public class RsiCrossoverStrategyService {
             if (isOptionSelling) {
                 log.info(
                         "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM PE SELL...",
-                        rsi5Curr, rsi15Curr, adx15mCurr);
+                        rsi5Curr,
+                        rsi15Curr,
+                        adx15mCurr);
                 executeTrade("SELL", "PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             } else {
                 log.info(
                         "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM CE BUY...",
-                        rsi5Curr, rsi15Curr, adx15mCurr);
+                        rsi5Curr,
+                        rsi15Curr,
+                        adx15mCurr);
                 executeTrade("BUY", "CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             }
         } else {
             if (isOptionSelling) {
                 log.info(
                         "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM CE SELL...",
-                        rsi5Curr, rsi15Curr, adx15mCurr);
+                        rsi5Curr,
+                        rsi15Curr,
+                        adx15mCurr);
                 executeTrade("SELL", "CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             } else {
                 log.info(
                         "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM PE BUY...",
-                        rsi5Curr, rsi15Curr, adx15mCurr);
+                        rsi5Curr,
+                        rsi15Curr,
+                        adx15mCurr);
                 executeTrade("BUY", "PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             }
         }
     }
 
-    /** Evaluates exit condition for an active open position (Stop Loss, Target, or RSI Reversal). */
+    /**
+     * Evaluates exit condition for an active open position (Stop Loss, Target, or RSI Reversal).
+     */
     public void evaluatePositionExit(
             RsiCrossoverPosition current,
             double rsi5Prev,
@@ -306,12 +344,14 @@ public class RsiCrossoverStrategyService {
             double rsi15Prev,
             double rsi15Curr,
             double currentSpotPrice) {
-        BigDecimal currentPremium = fetchOptionPremium(current.getStrike(), current.getOptionType());
+        BigDecimal currentPremium =
+                fetchOptionPremium(current.getStrike(), current.getOptionType());
         if (currentPremium == null || currentPremium.compareTo(BigDecimal.ZERO) <= 0) {
             // Estimate via delta 0.50 if quote fetch fails
-            double spotDiff = "CE".equalsIgnoreCase(current.getOptionType())
-                    ? currentSpotPrice - current.getStrike().doubleValue()
-                    : current.getStrike().doubleValue() - currentSpotPrice;
+            double spotDiff =
+                    "CE".equalsIgnoreCase(current.getOptionType())
+                            ? currentSpotPrice - current.getStrike().doubleValue()
+                            : current.getStrike().doubleValue() - currentSpotPrice;
             currentPremium = current.getEntryPrice().add(BigDecimal.valueOf(spotDiff * 0.50));
             if (currentPremium.compareTo(BigDecimal.ZERO) < 0) {
                 currentPremium = BigDecimal.valueOf(0.05);
@@ -324,13 +364,15 @@ public class RsiCrossoverStrategyService {
         if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
             if (isShortPosition && current.isHedgeEnabled()) {
                 // Hedged Credit Spread Evaluation
-                BigDecimal hedgePremium = fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
+                BigDecimal hedgePremium =
+                        fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
                 if (hedgePremium == null || hedgePremium.compareTo(BigDecimal.ZERO) <= 0) {
                     hedgePremium = current.getHedgeEntryPrice();
                 }
 
                 double mainPoints = entryPrice.doubleValue() - currentPremium.doubleValue();
-                double hedgePoints = hedgePremium.doubleValue() - current.getHedgeEntryPrice().doubleValue();
+                double hedgePoints =
+                        hedgePremium.doubleValue() - current.getHedgeEntryPrice().doubleValue();
                 double netPoints = mainPoints + hedgePoints;
                 double netCredit = current.getNetCredit().doubleValue();
 
@@ -350,15 +392,21 @@ public class RsiCrossoverStrategyService {
                     if (netPoints >= tpThresholdPoints) {
                         log.info(
                                 "[RSI-STRATEGY] 🎯 HEDGED SPREAD TARGET PROFIT HIT for {}: Net Points {:.2f} >= TP {:.2f} (+{}%)",
-                                current.getSymbol(), netPoints, tpThresholdPoints, targetProfitPercent);
+                                current.getSymbol(),
+                                netPoints,
+                                tpThresholdPoints,
+                                targetProfitPercent);
                         executeExit("TARGET_PROFIT_HIT");
                         return;
                     }
                 }
             } else if (isShortPosition) {
-                // For Naked Option Selling: SL is hit when premium rises; TP is hit when premium decays
+                // For Naked Option Selling: SL is hit when premium rises; TP is hit when premium
+                // decays
                 if (stopLossPercent > 0.0) {
-                    BigDecimal slThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 + (stopLossPercent / 100.0)));
+                    BigDecimal slThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 + (stopLossPercent / 100.0)));
                     if (currentPremium.compareTo(slThreshold) >= 0) {
                         log.info(
                                 "[RSI-STRATEGY] 🛑 SHORT STOP-LOSS HIT for {}: Current ₹{} >= SL ₹{} (+{}%)",
@@ -369,11 +417,16 @@ public class RsiCrossoverStrategyService {
                 }
 
                 if (targetProfitPercent > 0.0) {
-                    BigDecimal tpThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 - (targetProfitPercent / 100.0)));
+                    BigDecimal tpThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 - (targetProfitPercent / 100.0)));
                     if (currentPremium.compareTo(tpThreshold) <= 0) {
                         log.info(
                                 "[RSI-STRATEGY] 🎯 SHORT TARGET PROFIT HIT for {}: Current ₹{} <= TP ₹{} (-{}%)",
-                                current.getSymbol(), currentPremium, tpThreshold, targetProfitPercent);
+                                current.getSymbol(),
+                                currentPremium,
+                                tpThreshold,
+                                targetProfitPercent);
                         executeExit("TARGET_PROFIT_HIT");
                         return;
                     }
@@ -381,7 +434,9 @@ public class RsiCrossoverStrategyService {
             } else {
                 // For Option Buying: SL is hit when premium drops; TP is hit when premium rises
                 if (stopLossPercent > 0.0) {
-                    BigDecimal slThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
+                    BigDecimal slThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
                     if (currentPremium.compareTo(slThreshold) <= 0) {
                         log.info(
                                 "[RSI-STRATEGY] 🛑 LONG STOP-LOSS HIT for {}: Current ₹{} <= SL ₹{} (-{}%)",
@@ -392,11 +447,16 @@ public class RsiCrossoverStrategyService {
                 }
 
                 if (targetProfitPercent > 0.0) {
-                    BigDecimal tpThreshold = entryPrice.multiply(BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
+                    BigDecimal tpThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
                     if (currentPremium.compareTo(tpThreshold) >= 0) {
                         log.info(
                                 "[RSI-STRATEGY] 🎯 LONG TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
-                                current.getSymbol(), currentPremium, tpThreshold, targetProfitPercent);
+                                current.getSymbol(),
+                                currentPremium,
+                                tpThreshold,
+                                targetProfitPercent);
                         executeExit("TARGET_PROFIT_HIT");
                         return;
                     }
@@ -418,15 +478,17 @@ public class RsiCrossoverStrategyService {
         String action = current.getAction() != null ? current.getAction().toUpperCase() : "BUY";
         String optionType = current.getOptionType();
 
-        boolean isBullishPosition = ("BUY".equals(action) && "CE".equalsIgnoreCase(optionType))
-                || ("SELL".equals(action) && "PE".equalsIgnoreCase(optionType));
+        boolean isBullishPosition =
+                ("BUY".equals(action) && "CE".equalsIgnoreCase(optionType))
+                        || ("SELL".equals(action) && "PE".equalsIgnoreCase(optionType));
 
         if (isBullishPosition) {
             // Holding Bullish trade (Buy CE or Sell PE): Exit when 5m RSI drops below 15m RSI
             if (rsi5Curr < rsi15Curr) {
                 log.info(
                         "[RSI-STRATEGY] 🏁 Bullish Position Exit Reversal Triggered: 5m RSI ({:.2f}) < 15m RSI ({:.2f})",
-                        rsi5Curr, rsi15Curr);
+                        rsi5Curr,
+                        rsi15Curr);
                 executeExit("RSI_REVERSAL_BEARISH");
             }
         } else {
@@ -434,7 +496,8 @@ public class RsiCrossoverStrategyService {
             if (rsi5Curr > rsi15Curr) {
                 log.info(
                         "[RSI-STRATEGY] 🏁 Bearish Position Exit Reversal Triggered: 5m RSI ({:.2f}) > 15m RSI ({:.2f})",
-                        rsi5Curr, rsi15Curr);
+                        rsi5Curr,
+                        rsi15Curr);
                 executeExit("RSI_REVERSAL_BULLISH");
             }
         }
@@ -450,7 +513,8 @@ public class RsiCrossoverStrategyService {
             double rsi5Prev,
             double rsi15Prev) {
         // Calculate ATM Strike
-        BigDecimal atmStrike = StockFnoRegistry.calculateAtmStrike("NIFTY50", BigDecimal.valueOf(spotPrice));
+        BigDecimal atmStrike =
+                StockFnoRegistry.calculateAtmStrike("NIFTY50", BigDecimal.valueOf(spotPrice));
         if (atmStrike == null || atmStrike.compareTo(BigDecimal.ZERO) <= 0) {
             atmStrike = BigDecimal.valueOf(Math.round(spotPrice / 50.0) * 50);
         }
@@ -472,9 +536,10 @@ public class RsiCrossoverStrategyService {
 
         if (applyHedge) {
             // Calculate 2% OTM Strike (PE lower, CE higher)
-            double rawHedge = "PE".equalsIgnoreCase(optionType)
-                    ? spotPrice * (1.0 - hedgeOtmPercent / 100.0)
-                    : spotPrice * (1.0 + hedgeOtmPercent / 100.0);
+            double rawHedge =
+                    "PE".equalsIgnoreCase(optionType)
+                            ? spotPrice * (1.0 - hedgeOtmPercent / 100.0)
+                            : spotPrice * (1.0 + hedgeOtmPercent / 100.0);
             hedgeStrike = BigDecimal.valueOf(Math.round(rawHedge / 50.0) * 50);
             if ("PE".equalsIgnoreCase(optionType)) {
                 if (hedgeStrike.compareTo(atmStrike) >= 0) {
@@ -513,30 +578,69 @@ public class RsiCrossoverStrategyService {
             if (applyHedge) {
                 // Leg 1: BUY Hedge first (margin benefit)
                 try {
-                    OrderRequest hedgeReq = OrderRequest.market(hedgeSymbol, "NFO", TransactionType.BUY, totalQuantity, tradeId + "_HEDGE");
+                    OrderRequest hedgeReq =
+                            OrderRequest.market(
+                                    hedgeSymbol,
+                                    "NFO",
+                                    TransactionType.BUY,
+                                    totalQuantity,
+                                    tradeId + "_HEDGE");
                     orderService.placeOrder(hedgeReq);
-                    log.info("[RSI-STRATEGY] [LIVE] Placed BUY Hedge Order for {} Qty {}", totalQuantity, hedgeSymbol);
+                    log.info(
+                            "[RSI-STRATEGY] [LIVE] Placed BUY Hedge Order for {} Qty {}",
+                            totalQuantity,
+                            hedgeSymbol);
 
                     // Leg 2: SELL ATM Leg
                     try {
-                        OrderRequest mainReq = OrderRequest.market(optionSymbol, "NFO", TransactionType.SELL, totalQuantity, tradeId);
+                        OrderRequest mainReq =
+                                OrderRequest.market(
+                                        optionSymbol,
+                                        "NFO",
+                                        TransactionType.SELL,
+                                        totalQuantity,
+                                        tradeId);
                         orderService.placeOrder(mainReq);
-                        log.info("[RSI-STRATEGY] [LIVE] Placed SELL ATM Order for {} Qty {}", totalQuantity, optionSymbol);
+                        log.info(
+                                "[RSI-STRATEGY] [LIVE] Placed SELL ATM Order for {} Qty {}",
+                                totalQuantity,
+                                optionSymbol);
                     } catch (Exception e) {
-                        log.error("[RSI-STRATEGY] [LIVE] Failed to place ATM Sell order after hedge fill. Rolling back hedge leg: {}", e.getMessage(), e);
-                        orderService.placeOrder(OrderRequest.market(hedgeSymbol, "NFO", TransactionType.SELL, totalQuantity, tradeId + "_ROLLBACK"));
+                        log.error(
+                                "[RSI-STRATEGY] [LIVE] Failed to place ATM Sell order after hedge fill. Rolling back hedge leg: {}",
+                                e.getMessage(),
+                                e);
+                        orderService.placeOrder(
+                                OrderRequest.market(
+                                        hedgeSymbol,
+                                        "NFO",
+                                        TransactionType.SELL,
+                                        totalQuantity,
+                                        tradeId + "_ROLLBACK"));
                         return;
                     }
                 } catch (Exception e) {
-                    log.error("[RSI-STRATEGY] [LIVE] Hedge buy placement failed. Aborting trade entry: {}", e.getMessage(), e);
+                    log.error(
+                            "[RSI-STRATEGY] [LIVE] Hedge buy placement failed. Aborting trade entry: {}",
+                            e.getMessage(),
+                            e);
                     return;
                 }
             } else {
                 try {
-                    TransactionType txType = "SELL".equalsIgnoreCase(action) ? TransactionType.SELL : TransactionType.BUY;
-                    OrderRequest orderReq = OrderRequest.market(optionSymbol, "NFO", txType, totalQuantity, tradeId);
+                    TransactionType txType =
+                            "SELL".equalsIgnoreCase(action)
+                                    ? TransactionType.SELL
+                                    : TransactionType.BUY;
+                    OrderRequest orderReq =
+                            OrderRequest.market(
+                                    optionSymbol, "NFO", txType, totalQuantity, tradeId);
                     orderService.placeOrder(orderReq);
-                    log.info("[RSI-STRATEGY] [LIVE] Placed {} Order for {} Qty {}", action, totalQuantity, optionSymbol);
+                    log.info(
+                            "[RSI-STRATEGY] [LIVE] Placed {} Order for {} Qty {}",
+                            action,
+                            totalQuantity,
+                            optionSymbol);
                 } catch (Exception e) {
                     log.error("[RSI-STRATEGY] Live order placement failed: {}", e.getMessage(), e);
                 }
@@ -589,7 +693,8 @@ public class RsiCrossoverStrategyService {
 
         BigDecimal hedgeExitPremium = BigDecimal.ZERO;
         if (current.isHedgeEnabled()) {
-            hedgeExitPremium = fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
+            hedgeExitPremium =
+                    fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
             if (hedgeExitPremium == null || hedgeExitPremium.compareTo(BigDecimal.ZERO) <= 0) {
                 hedgeExitPremium = current.getHedgeEntryPrice();
             }
@@ -599,16 +704,38 @@ public class RsiCrossoverStrategyService {
         if (autoExecute && config.isEnabled()) {
             try {
                 // Leg 1: Close main leg
-                TransactionType exitTxType = "SELL".equalsIgnoreCase(current.getAction()) ? TransactionType.BUY : TransactionType.SELL;
-                OrderRequest exitReq = OrderRequest.market(current.getSymbol(), "NFO", exitTxType, current.getQuantity(), current.getTradeId() + "_EXIT");
+                TransactionType exitTxType =
+                        "SELL".equalsIgnoreCase(current.getAction())
+                                ? TransactionType.BUY
+                                : TransactionType.SELL;
+                OrderRequest exitReq =
+                        OrderRequest.market(
+                                current.getSymbol(),
+                                "NFO",
+                                exitTxType,
+                                current.getQuantity(),
+                                current.getTradeId() + "_EXIT");
                 orderService.placeOrder(exitReq);
-                log.info("[RSI-STRATEGY] [LIVE] Placed {} Exit Order for {} Qty {}", exitTxType, current.getQuantity(), current.getSymbol());
+                log.info(
+                        "[RSI-STRATEGY] [LIVE] Placed {} Exit Order for {} Qty {}",
+                        exitTxType,
+                        current.getQuantity(),
+                        current.getSymbol());
 
                 // Leg 2: Close hedge leg if applicable
                 if (current.isHedgeEnabled() && current.getHedgeSymbol() != null) {
-                    OrderRequest hedgeExitReq = OrderRequest.market(current.getHedgeSymbol(), "NFO", TransactionType.SELL, current.getHedgeQuantity(), current.getTradeId() + "_HEDGE_EXIT");
+                    OrderRequest hedgeExitReq =
+                            OrderRequest.market(
+                                    current.getHedgeSymbol(),
+                                    "NFO",
+                                    TransactionType.SELL,
+                                    current.getHedgeQuantity(),
+                                    current.getTradeId() + "_HEDGE_EXIT");
                     orderService.placeOrder(hedgeExitReq);
-                    log.info("[RSI-STRATEGY] [LIVE] Placed SELL Hedge Exit Order for {} Qty {}", current.getHedgeQuantity(), current.getHedgeSymbol());
+                    log.info(
+                            "[RSI-STRATEGY] [LIVE] Placed SELL Hedge Exit Order for {} Qty {}",
+                            current.getHedgeQuantity(),
+                            current.getHedgeSymbol());
                 }
             } catch (Exception e) {
                 log.error("[RSI-STRATEGY] Live exit order placement failed: {}", e.getMessage(), e);
@@ -639,14 +766,17 @@ public class RsiCrossoverStrategyService {
     public synchronized void executeSquareOff(String reason) {
         RsiCrossoverPosition current = openPosition.get();
         if (current != null && !current.isClosed()) {
-            log.info("[RSI-STRATEGY] 15:05 Mandatory Square-Off triggered for {}", current.getSymbol());
+            log.info(
+                    "[RSI-STRATEGY] 15:05 Mandatory Square-Off triggered for {}",
+                    current.getSymbol());
             executeExit(reason);
         }
     }
 
     /** Resets the daily state for a new trading day (called at 09:15:00 IST). */
     public synchronized void resetDaily() {
-        log.info("[RSI-STRATEGY] Daily reset invoked: Clearing open positions and daily trade limit.");
+        log.info(
+                "[RSI-STRATEGY] Daily reset invoked: Clearing open positions and daily trade limit.");
         tradesExecutedToday.set(0);
         openPosition.set(null);
         tradeHistory.clear();
@@ -666,8 +796,11 @@ public class RsiCrossoverStrategyService {
             if (chain != null && chain.strikes() != null) {
                 for (OptionStrike os : chain.strikes()) {
                     if (os.strikePrice().compareTo(strike) == 0) {
-                        OptionContract contract = "CE".equalsIgnoreCase(optionType) ? os.call() : os.put();
-                        if (contract != null && contract.ltp() != null && contract.ltp().compareTo(BigDecimal.ZERO) > 0) {
+                        OptionContract contract =
+                                "CE".equalsIgnoreCase(optionType) ? os.call() : os.put();
+                        if (contract != null
+                                && contract.ltp() != null
+                                && contract.ltp().compareTo(BigDecimal.ZERO) > 0) {
                             return contract.ltp();
                         }
                     }
@@ -685,8 +818,11 @@ public class RsiCrossoverStrategyService {
             if (chain != null && chain.strikes() != null) {
                 for (OptionStrike os : chain.strikes()) {
                     if (os.strikePrice().compareTo(strike) == 0) {
-                        OptionContract contract = "CE".equalsIgnoreCase(optionType) ? os.call() : os.put();
-                        if (contract != null && contract.symbol() != null && !contract.symbol().isBlank()) {
+                        OptionContract contract =
+                                "CE".equalsIgnoreCase(optionType) ? os.call() : os.put();
+                        if (contract != null
+                                && contract.symbol() != null
+                                && !contract.symbol().isBlank()) {
                             return contract.symbol();
                         }
                     }
@@ -706,7 +842,9 @@ public class RsiCrossoverStrategyService {
         int strikeInt = strike.intValue();
         // NSE index option format (both weekly & monthly expiry):
         // NIFTY{DD}{MMM}{YY}{STRIKE}{CE/PE} e.g. NIFTY18SEP2524850PE
-        return String.format("NIFTY%02d%s%s%d%s", expiry.getDayOfMonth(), month, year, strikeInt, optionType.toUpperCase());
+        return String.format(
+                "NIFTY%02d%s%s%d%s",
+                expiry.getDayOfMonth(), month, year, strikeInt, optionType.toUpperCase());
     }
 
     // --- Getters and Setters for Testing & Configuration ---

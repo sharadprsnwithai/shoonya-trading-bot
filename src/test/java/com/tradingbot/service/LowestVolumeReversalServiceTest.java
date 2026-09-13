@@ -562,8 +562,7 @@ class LowestVolumeReversalServiceTest {
         todayCandles.add(makeCandle("TATAMOTORS", t0, 950, 955, 948, 954, 80000));
         // Candle 1 (09:20): Red with lowest volume of the entire day (12,000)
         Candle earlyLowestRed =
-                makeCandle(
-                        "TATAMOTORS", t0.plus(5, ChronoUnit.MINUTES), 954, 955, 950, 951, 12000);
+                makeCandle("TATAMOTORS", t0.plus(5, ChronoUnit.MINUTES), 954, 955, 950, 951, 12000);
         todayCandles.add(earlyLowestRed);
 
         // Candles 2..11 (09:25 .. 10:10): 10 consecutive green candles (strong rally)
@@ -591,7 +590,8 @@ class LowestVolumeReversalServiceTest {
         // Evaluate pullback with all 14 candles
         service.evaluatePullback(todayCandles, setup, atr);
 
-        // Must pick earlyLowestRed (volume 12000) from start of day, NOT candle 13 (25000) from rolling 10
+        // Must pick earlyLowestRed (volume 12000) from start of day, NOT candle 13 (25000) from
+        // rolling 10
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
         assertThat(setup.getTriggerCandle()).isEqualTo(earlyLowestRed);
         assertThat(setup.getTriggerCandleVolume()).isEqualTo(12000L);
@@ -637,7 +637,9 @@ class LowestVolumeReversalServiceTest {
         double atr = 10.0;
         Instant t0 = todayInstant(9, 25);
         Candle c1 = makeCandle("HDFCBANK", t0, 1600, 1608, 1599, 1607, 80000);
-        Candle c2 = makeCandle("HDFCBANK", t0.plus(5, ChronoUnit.MINUTES), 1607, 1608, 1602, 1603, 10000);
+        Candle c2 =
+                makeCandle(
+                        "HDFCBANK", t0.plus(5, ChronoUnit.MINUTES), 1607, 1608, 1602, 1603, 10000);
 
         // Default telegramArmedAlerts is false
         assertThat(service.isTelegramArmedAlerts()).isFalse();

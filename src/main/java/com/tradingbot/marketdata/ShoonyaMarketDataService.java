@@ -276,7 +276,10 @@ public class ShoonyaMarketDataService {
 
                 HttpRequest request =
                         HttpRequest.newBuilder()
-                                .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/SearchScrip"))
+                                .uri(
+                                        URI.create(
+                                                config.getBaseUrl()
+                                                        + "/NorenWClientAPI/SearchScrip"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
                                 .POST(
@@ -311,7 +314,11 @@ public class ShoonyaMarketDataService {
                     return root.path("values");
                 }
             } catch (Exception e) {
-                log.warn("[SEARCH-SCRIP] Error searching for scrip {} (attempt {}): {}", searchText, attempt, e.getMessage());
+                log.warn(
+                        "[SEARCH-SCRIP] Error searching for scrip {} (attempt {}): {}",
+                        searchText,
+                        attempt,
+                        e.getMessage());
             }
         }
         return null;

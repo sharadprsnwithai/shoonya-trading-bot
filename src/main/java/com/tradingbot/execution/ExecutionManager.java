@@ -224,8 +224,7 @@ public class ExecutionManager {
                         slTriggerPrice,
                         slLimitPrice);
             } else {
-                log.warn(
-                        "[LIVE-SL-L] SL-L Order placement failed on attempt 1. Retrying once...");
+                log.warn("[LIVE-SL-L] SL-L Order placement failed on attempt 1. Retrying once...");
                 slResp = orderService.placeOrder(slReq);
                 if (slResp != null && slResp.success()) {
                     slOrderId = slResp.orderId();

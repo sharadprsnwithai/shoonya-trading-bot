@@ -68,7 +68,8 @@ class ShoonyaAuthenticatorTest {
         when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
                 .thenReturn(okResp);
 
-        ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config, new ObjectMapper(), mockClient);
+        ShoonyaAuthenticator auth =
+                new ShoonyaAuthenticator(config, new ObjectMapper(), mockClient);
         boolean isValid = auth.validateSessionToken("test_valid_token");
 
         assertThat(isValid).isTrue();
@@ -89,7 +90,8 @@ class ShoonyaAuthenticatorTest {
         when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
                 .thenReturn(errResp);
 
-        ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config, new ObjectMapper(), mockClient);
+        ShoonyaAuthenticator auth =
+                new ShoonyaAuthenticator(config, new ObjectMapper(), mockClient);
         boolean isValid = auth.validateSessionToken("test_expired_token");
 
         assertThat(isValid).isFalse();

@@ -139,10 +139,46 @@ class CandleResamplingUtilTest {
         Instant t3 = today.atTime(9, 25).atZone(ist).toInstant();
         Instant t4 = today.atTime(9, 30).atZone(ist).toInstant();
 
-        Candle c1 = new Candle("NIFTY 50", "5", t1, BigDecimal.valueOf(100), BigDecimal.valueOf(105), BigDecimal.valueOf(98), BigDecimal.valueOf(102), 1000);
-        Candle c2 = new Candle("NIFTY 50", "5", t2, BigDecimal.valueOf(102), BigDecimal.valueOf(108), BigDecimal.valueOf(101), BigDecimal.valueOf(107), 1500);
-        Candle c3 = new Candle("NIFTY 50", "5", t3, BigDecimal.valueOf(107), BigDecimal.valueOf(110), BigDecimal.valueOf(104), BigDecimal.valueOf(106), 2000);
-        Candle c4 = new Candle("NIFTY 50", "5", t4, BigDecimal.valueOf(106), BigDecimal.valueOf(112), BigDecimal.valueOf(105), BigDecimal.valueOf(111), 1200);
+        Candle c1 =
+                new Candle(
+                        "NIFTY 50",
+                        "5",
+                        t1,
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(105),
+                        BigDecimal.valueOf(98),
+                        BigDecimal.valueOf(102),
+                        1000);
+        Candle c2 =
+                new Candle(
+                        "NIFTY 50",
+                        "5",
+                        t2,
+                        BigDecimal.valueOf(102),
+                        BigDecimal.valueOf(108),
+                        BigDecimal.valueOf(101),
+                        BigDecimal.valueOf(107),
+                        1500);
+        Candle c3 =
+                new Candle(
+                        "NIFTY 50",
+                        "5",
+                        t3,
+                        BigDecimal.valueOf(107),
+                        BigDecimal.valueOf(110),
+                        BigDecimal.valueOf(104),
+                        BigDecimal.valueOf(106),
+                        2000);
+        Candle c4 =
+                new Candle(
+                        "NIFTY 50",
+                        "5",
+                        t4,
+                        BigDecimal.valueOf(106),
+                        BigDecimal.valueOf(112),
+                        BigDecimal.valueOf(105),
+                        BigDecimal.valueOf(111),
+                        1200);
 
         List<Candle> resampled = CandleResamplingUtil.resample5MinTo15Min(List.of(c1, c2, c3, c4));
 

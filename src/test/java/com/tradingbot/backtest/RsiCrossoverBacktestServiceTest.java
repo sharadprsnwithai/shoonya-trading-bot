@@ -1,10 +1,7 @@
 package com.tradingbot.backtest;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
@@ -72,7 +69,9 @@ class RsiCrossoverBacktestServiceTest {
         allCandles.addAll(generateMockDayCandles(day3, 24050.0, 2.0));
         allCandles.addAll(generateMockDayCandles(day4, 24200.0, -1.5));
 
-        BacktestResult result = backtestService.evaluateCandles("NIFTY 50", allCandles, 1, 14, false, 0.0, 20.0, 50.0);
+        BacktestResult result =
+                backtestService.evaluateCandles(
+                        "NIFTY 50", allCandles, 1, 14, false, 0.0, 20.0, 50.0);
 
         assertThat(result.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
         assertThat(result.symbol()).isEqualTo("NIFTY 50");
@@ -92,8 +91,12 @@ class RsiCrossoverBacktestServiceTest {
         allCandles.addAll(generateMockDayCandles(day3, 24050.0, 2.0));
         allCandles.addAll(generateMockDayCandles(day4, 24200.0, -2.0));
 
-        BacktestResult sellResult = backtestService.evaluateCandles("NIFTY 50", allCandles, "OPTION_SELLING", 1, 14, 2, true, 15.0, 20.0, 50.0);
-        BacktestResult buyResult = backtestService.evaluateCandles("NIFTY 50", allCandles, "OPTION_BUYING", 1, 14, 2, true, 15.0, 20.0, 50.0);
+        BacktestResult sellResult =
+                backtestService.evaluateCandles(
+                        "NIFTY 50", allCandles, "OPTION_SELLING", 1, 14, 2, true, 15.0, 20.0, 50.0);
+        BacktestResult buyResult =
+                backtestService.evaluateCandles(
+                        "NIFTY 50", allCandles, "OPTION_BUYING", 1, 14, 2, true, 15.0, 20.0, 50.0);
 
         assertThat(sellResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
         assertThat(buyResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
@@ -114,8 +117,20 @@ class RsiCrossoverBacktestServiceTest {
         allCandles.addAll(generateMockDayCandles(day3, 24050.0, 2.0));
         allCandles.addAll(generateMockDayCandles(day4, 24200.0, -2.0));
 
-        BacktestResult hedgedResult = backtestService.evaluateCandles(
-                "NIFTY 50", allCandles, "OPTION_SELLING", 1, 14, 1, true, 2.0, true, 20.0, 2.0, 50.0);
+        BacktestResult hedgedResult =
+                backtestService.evaluateCandles(
+                        "NIFTY 50",
+                        allCandles,
+                        "OPTION_SELLING",
+                        1,
+                        14,
+                        1,
+                        true,
+                        2.0,
+                        true,
+                        20.0,
+                        2.0,
+                        50.0);
 
         assertThat(hedgedResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
         assertThat(hedgedResult.daysTested()).isEqualTo(4);

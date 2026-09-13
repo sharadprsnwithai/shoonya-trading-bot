@@ -5,8 +5,8 @@ import java.math.RoundingMode;
 import java.time.Instant;
 
 /**
- * Represents an active or closed option position in the RSI Crossover strategy.
- * Supports both standalone single-leg execution and 2% OTM Hedged Credit Spreads.
+ * Represents an active or closed option position in the RSI Crossover strategy. Supports both
+ * standalone single-leg execution and 2% OTM Hedged Credit Spreads.
  */
 public class RsiCrossoverPosition {
 
@@ -122,7 +122,10 @@ public class RsiCrossoverPosition {
 
     /** Calculates Hedge Leg P&L (Long Option) given current hedge price. */
     public BigDecimal calculateHedgePnl(BigDecimal currentHedgePrice) {
-        if (!hedgeEnabled || currentHedgePrice == null || hedgeEntryPrice == null || hedgeQuantity <= 0) {
+        if (!hedgeEnabled
+                || currentHedgePrice == null
+                || hedgeEntryPrice == null
+                || hedgeQuantity <= 0) {
             return BigDecimal.ZERO;
         }
         // Long hedge option: profit when hedge price rises
@@ -140,7 +143,8 @@ public class RsiCrossoverPosition {
     }
 
     /** Closes both main leg and hedge leg. */
-    public void close(BigDecimal exitPrice, BigDecimal hedgeExitPrice, String exitReason, Instant exitTime) {
+    public void close(
+            BigDecimal exitPrice, BigDecimal hedgeExitPrice, String exitReason, Instant exitTime) {
         this.exitPrice = exitPrice;
         this.hedgeExitPrice = hedgeExitPrice;
         this.exitReason = exitReason;

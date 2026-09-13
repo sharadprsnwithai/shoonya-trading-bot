@@ -14,8 +14,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
@@ -358,14 +358,15 @@ public class ShoonyaOptionChainService {
                         e.getMessage());
                 if (attempt == 2) {
                     log.error(
-                            "Failed to fetch option chain for {} after 2 attempts",
-                            underlying,
-                            e);
+                            "Failed to fetch option chain for {} after 2 attempts", underlying, e);
                     throw new RuntimeException("Option chain fetch failure: " + e.getMessage(), e);
                 }
             }
         }
-        return mockOptionChain(underlying, explicitStrike != null ? explicitStrike : new BigDecimal("24000"), count);
+        return mockOptionChain(
+                underlying,
+                explicitStrike != null ? explicitStrike : new BigDecimal("24000"),
+                count);
     }
 
     private JsonNode fetchQuote(String sessionToken, String exchange, String token) {

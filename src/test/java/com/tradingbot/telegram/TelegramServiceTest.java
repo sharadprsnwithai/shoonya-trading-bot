@@ -19,7 +19,8 @@ class TelegramServiceTest {
     @BeforeEach
     void setUp() {
         config = mock(ShoonyaConfig.class);
-        when(config.isTelegramEnabled()).thenReturn(false); // Do not send live network requests in unit tests
+        when(config.isTelegramEnabled())
+                .thenReturn(false); // Do not send live network requests in unit tests
         telegramService = new TelegramService(config);
     }
 
@@ -62,7 +63,11 @@ class TelegramServiceTest {
 
         telegramService.sendRsiCrossoverEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
 
-        hedgedPos.close(BigDecimal.valueOf(60.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", Instant.now());
+        hedgedPos.close(
+                BigDecimal.valueOf(60.0),
+                BigDecimal.valueOf(2.0),
+                "TARGET_PROFIT_HIT",
+                Instant.now());
         telegramService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
     }
 
@@ -106,7 +111,11 @@ class TelegramServiceTest {
         assertThat(entryMsg).contains("BUY *NIFTY 24350 PE* (`NIFTY24OCT24350PE`) @ ₹12.00");
         assertThat(entryMsg).contains("BULL PUT SPREAD (2% OTM HEDGE)");
 
-        hedgedPos.close(BigDecimal.valueOf(60.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", Instant.now());
+        hedgedPos.close(
+                BigDecimal.valueOf(60.0),
+                BigDecimal.valueOf(2.0),
+                "TARGET_PROFIT_HIT",
+                Instant.now());
         capturingService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
 
         assertThat(messages).hasSize(2);

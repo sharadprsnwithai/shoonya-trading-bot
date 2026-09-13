@@ -13,8 +13,9 @@ import org.springframework.stereotype.Service;
 /**
  * 5-Minute Scheduler for the NIFTY RSI Crossover Option Buying Strategy.
  *
- * <p>Executes every 5 minutes from 09:45:10 to 15:00:10 IST to evaluate entry/exit crossover conditions.
- * Executes mandatory auto-square-off at 15:05:10 IST and daily state reset at 09:15:00 IST.
+ * <p>Executes every 5 minutes from 09:45:10 to 15:00:10 IST to evaluate entry/exit crossover
+ * conditions. Executes mandatory auto-square-off at 15:05:10 IST and daily state reset at 09:15:00
+ * IST.
  */
 @Service
 public class RsiCrossoverScheduler {
@@ -40,8 +41,8 @@ public class RsiCrossoverScheduler {
     }
 
     /**
-     * Runs every 5 minutes from 09:45:10 to 15:00:10 IST on trading weekdays.
-     * Offset by +10s to ensure broker candle publishing latency is accounted for.
+     * Runs every 5 minutes from 09:45:10 to 15:00:10 IST on trading weekdays. Offset by +10s to
+     * ensure broker candle publishing latency is accounted for.
      */
     @Scheduled(
             cron = "${trading-bot.strategy.rsi-crossover.cron:10 */5 9-15 ? * MON-FRI}",
@@ -55,15 +56,22 @@ public class RsiCrossoverScheduler {
         LocalTime now = LocalTime.now(IST);
         // Only run within the active evaluation window: 09:45 to 15:00 IST
         if (now.isBefore(LocalTime.of(9, 45)) || now.isAfter(LocalTime.of(15, 0, 30))) {
-            log.debug("[RSI-SCHEDULER] Outside active evaluation window (09:45 - 15:00 IST). Skipping cycle at {}", now);
+            log.debug(
+                    "[RSI-SCHEDULER] Outside active evaluation window (09:45 - 15:00 IST). Skipping cycle at {}",
+                    now);
             return;
         }
 
         try {
-            log.info("[RSI-SCHEDULER] Executing 5-minute RSI Crossover evaluation cycle at {} IST...", now);
+            log.info(
+                    "[RSI-SCHEDULER] Executing 5-minute RSI Crossover evaluation cycle at {} IST...",
+                    now);
             strategyService.runCycle();
         } catch (Exception e) {
-            log.error("[RSI-SCHEDULER] Exception during RSI Crossover evaluation cycle: {}", e.getMessage(), e);
+            log.error(
+                    "[RSI-SCHEDULER] Exception during RSI Crossover evaluation cycle: {}",
+                    e.getMessage(),
+                    e);
         }
     }
 
@@ -77,10 +85,12 @@ public class RsiCrossoverScheduler {
         }
 
         try {
-            log.info("[RSI-SCHEDULER] 15:05:10 IST: Triggering mandatory EOD square-off for any open positions...");
+            log.info(
+                    "[RSI-SCHEDULER] 15:05:10 IST: Triggering mandatory EOD square-off for any open positions...");
             strategyService.executeSquareOff("MANDATORY_EOD_SQUARE_OFF");
         } catch (Exception e) {
-            log.error("[RSI-SCHEDULER] Exception during mandatory square-off: {}", e.getMessage(), e);
+            log.error(
+                    "[RSI-SCHEDULER] Exception during mandatory square-off: {}", e.getMessage(), e);
         }
     }
 
