@@ -90,11 +90,14 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.adx-filter-enabled:true}")
     private boolean adxFilterEnabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.adx-threshold:20.0}")
-    private double adxThreshold = 20.0;
+    @Value("${trading-bot.strategy.rsi-crossover.adx-threshold:22.0}")
+    private double adxThreshold = 22.0;
 
     @Value("${trading-bot.strategy.rsi-crossover.vwap-filter-enabled:true}")
     private boolean vwapFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.vwap-max-distance:35.0}")
+    private double vwapMaxDistance = 35.0;
 
     @Value("${trading-bot.strategy.rsi-crossover.supertrend-filter-enabled:true}")
     private boolean supertrendFilterEnabled = true;
@@ -110,6 +113,21 @@ public class RsiCrossoverStrategyService {
 
     @Value("${trading-bot.strategy.rsi-crossover.stop-loss-percent:2.0}")
     private double stopLossPercent = 2.0;
+
+    @Value("${trading-bot.strategy.rsi-crossover.trailing-sl-enabled:true}")
+    private boolean trailingSlEnabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.trail-step-1-trigger:12.0}")
+    private double trailStep1Trigger = 12.0;
+
+    @Value("${trading-bot.strategy.rsi-crossover.trail-step-1-lock:2.0}")
+    private double trailStep1Lock = 2.0;
+
+    @Value("${trading-bot.strategy.rsi-crossover.trail-step-2-trigger:25.0}")
+    private double trailStep2Trigger = 25.0;
+
+    @Value("${trading-bot.strategy.rsi-crossover.trail-step-2-lock:15.0}")
+    private double trailStep2Lock = 15.0;
 
     @Value("${trading-bot.strategy.rsi-crossover.target-profit-percent:50.0}")
     private double targetProfitPercent = 50.0;
@@ -394,8 +412,21 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
-        // 2. Intraday VWAP Directional Filter
+        // 2. Intraday VWAP Directional Filter & No-Chasing Distance Gate
         if (vwapFilterEnabled && !Double.isNaN(vwap)) {
+            if (vwapMaxDistance > 0.0) {
+                double dist = Math.abs(spotPrice - vwap);
+                if (dist > vwapMaxDistance) {
+                    log.info(
+                            "[RSI-STRATEGY] ⚠️ Crossover rejected: Spot (₹{}) is too far from VWAP (₹{:.1f}, dist={:.1f} > max={:.1f}). Skipping chasing price.",
+                            spotPrice,
+                            vwap,
+                            dist,
+                            vwapMaxDistance);
+                    return;
+                }
+            }
+
             if (bullishCrossover && spotPrice < vwap) {
                 log.info(
                         "[RSI-STRATEGY] ⚠️ Bullish Crossover rejected: Spot (₹{}) < Intraday VWAP (₹{}). Market is in bearish regime.",
@@ -499,132 +530,20 @@ public class RsiCrossoverStrategyService {
             double rsi15Prev,
             double rsi15Curr,
             double currentSpotPrice) {
-        BigDecimal currentPremium =
-                fetchOptionPremium(current.getStrike(), current.getOptionType());
-        if (currentPremium == null || currentPremium.compareTo(BigDecimal.ZERO) <= 0) {
-            // Estimate via delta 0.50 if quote fetch fails
-            double spotDiff =
-                    "CE".equalsIgnoreCase(current.getOptionType())
-                            ? currentSpotPrice - current.getStrike().doubleValue()
-                            : current.getStrike().doubleValue() - currentSpotPrice;
-            currentPremium = current.getEntryPrice().add(BigDecimal.valueOf(spotDiff * 0.50));
-            if (currentPremium.compareTo(BigDecimal.ZERO) < 0) {
-                currentPremium = BigDecimal.valueOf(0.05);
-            }
-        }
-
-        BigDecimal entryPrice = current.getEntryPrice();
-        boolean isShortPosition = "SELL".equalsIgnoreCase(current.getAction());
-
-        if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
-            if (isShortPosition && current.isHedgeEnabled()) {
-                // Hedged Credit Spread Evaluation
-                BigDecimal hedgePremium =
-                        fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
-                if (hedgePremium == null || hedgePremium.compareTo(BigDecimal.ZERO) <= 0) {
-                    hedgePremium = current.getHedgeEntryPrice();
-                }
-
-                double mainPoints = entryPrice.doubleValue() - currentPremium.doubleValue();
-                double hedgePoints =
-                        hedgePremium.doubleValue() - current.getHedgeEntryPrice().doubleValue();
-                double netPoints = mainPoints + hedgePoints;
-                double netCredit = current.getNetCredit().doubleValue();
-
-                if (stopLossPercent > 0.0) {
-                    double slThresholdPoints = -(netCredit * (stopLossPercent / 100.0));
-                    if (netPoints <= slThresholdPoints) {
-                        log.info(
-                                "[RSI-STRATEGY] 🛑 HEDGED SPREAD STOP-LOSS HIT for {}: Net Points {:.2f} <= SL {:.2f} (-{}%)",
-                                current.getSymbol(), netPoints, slThresholdPoints, stopLossPercent);
-                        executeExit("HARD_SL_HIT");
-                        return;
-                    }
-                }
-
-                if (targetProfitPercent > 0.0) {
-                    double tpThresholdPoints = netCredit * (targetProfitPercent / 100.0);
-                    if (netPoints >= tpThresholdPoints) {
-                        log.info(
-                                "[RSI-STRATEGY] 🎯 HEDGED SPREAD TARGET PROFIT HIT for {}: Net Points {:.2f} >= TP {:.2f} (+{}%)",
-                                current.getSymbol(),
-                                netPoints,
-                                tpThresholdPoints,
-                                targetProfitPercent);
-                        executeExit("TARGET_PROFIT_HIT");
-                        return;
-                    }
-                }
-            } else if (isShortPosition) {
-                // For Naked Option Selling: SL is hit when premium rises; TP is hit when premium
-                // decays
-                if (stopLossPercent > 0.0) {
-                    BigDecimal slThreshold =
-                            entryPrice.multiply(
-                                    BigDecimal.valueOf(1.0 + (stopLossPercent / 100.0)));
-                    if (currentPremium.compareTo(slThreshold) >= 0) {
-                        log.info(
-                                "[RSI-STRATEGY] 🛑 SHORT STOP-LOSS HIT for {}: Current ₹{} >= SL ₹{} (+{}%)",
-                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
-                        executeExit("HARD_SL_HIT");
-                        return;
-                    }
-                }
-
-                if (targetProfitPercent > 0.0) {
-                    BigDecimal tpThreshold =
-                            entryPrice.multiply(
-                                    BigDecimal.valueOf(1.0 - (targetProfitPercent / 100.0)));
-                    if (currentPremium.compareTo(tpThreshold) <= 0) {
-                        log.info(
-                                "[RSI-STRATEGY] 🎯 SHORT TARGET PROFIT HIT for {}: Current ₹{} <= TP ₹{} (-{}%)",
-                                current.getSymbol(),
-                                currentPremium,
-                                tpThreshold,
-                                targetProfitPercent);
-                        executeExit("TARGET_PROFIT_HIT");
-                        return;
-                    }
-                }
-            } else {
-                // For Option Buying: SL is hit when premium drops; TP is hit when premium rises
-                if (stopLossPercent > 0.0) {
-                    BigDecimal slThreshold =
-                            entryPrice.multiply(
-                                    BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
-                    if (currentPremium.compareTo(slThreshold) <= 0) {
-                        log.info(
-                                "[RSI-STRATEGY] 🛑 LONG STOP-LOSS HIT for {}: Current ₹{} <= SL ₹{} (-{}%)",
-                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
-                        executeExit("HARD_SL_HIT");
-                        return;
-                    }
-                }
-
-                if (targetProfitPercent > 0.0) {
-                    BigDecimal tpThreshold =
-                            entryPrice.multiply(
-                                    BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
-                    if (currentPremium.compareTo(tpThreshold) >= 0) {
-                        log.info(
-                                "[RSI-STRATEGY] 🎯 LONG TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
-                                current.getSymbol(),
-                                currentPremium,
-                                tpThreshold,
-                                targetProfitPercent);
-                        executeExit("TARGET_PROFIT_HIT");
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Crossover / SuperTrend Reversal check
-        evaluateExitOnReversal(
-                current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, latestSupertrendBullish);
+        evaluatePositionExit(
+                current,
+                rsi5Prev,
+                rsi5Curr,
+                rsi15Prev,
+                rsi15Curr,
+                currentSpotPrice,
+                latestSupertrendBullish);
     }
 
-    /** Evaluates exit condition for an active open position with Supertrend awareness. */
+    /**
+     * Evaluates exit condition for an active open position with Supertrend awareness and Stepped
+     * Trailing Stop.
+     */
     public void evaluatePositionExit(
             RsiCrossoverPosition current,
             double rsi5Prev,
@@ -665,13 +584,32 @@ public class RsiCrossoverStrategyService {
                 double netPoints = mainPoints + hedgePoints;
                 double netCredit = current.getNetCredit().doubleValue();
 
-                if (stopLossPercent > 0.0) {
-                    double slThresholdPoints = -(netCredit * (stopLossPercent / 100.0));
-                    if (netPoints <= slThresholdPoints) {
+                current.updatePeakProfitPerQty(BigDecimal.valueOf(netPoints));
+                double peakPts = current.getPeakProfitPerQty().doubleValue();
+
+                double baseSlPoints = -(netCredit * (stopLossPercent / 100.0));
+                double effectiveSlPoints = baseSlPoints;
+
+                if (trailingSlEnabled) {
+                    if (peakPts >= trailStep2Trigger) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, trailStep2Lock);
+                    } else if (peakPts >= trailStep1Trigger) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, trailStep1Lock);
+                    }
+                }
+
+                if (stopLossPercent > 0.0 || trailingSlEnabled) {
+                    if (netPoints <= effectiveSlPoints) {
+                        String exitReason =
+                                effectiveSlPoints > baseSlPoints ? "TRAIL_SL_LOCK" : "HARD_SL_HIT";
                         log.info(
-                                "[RSI-STRATEGY] 🛑 HEDGED SPREAD STOP-LOSS HIT for {}: Net Points {:.2f} <= SL {:.2f} (-{}%)",
-                                current.getSymbol(), netPoints, slThresholdPoints, stopLossPercent);
-                        executeExit("HARD_SL_HIT");
+                                "[RSI-STRATEGY] 🛑 HEDGED SPREAD {} for {}: Net Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
+                                exitReason,
+                                current.getSymbol(),
+                                netPoints,
+                                effectiveSlPoints,
+                                peakPts);
+                        executeExit(exitReason);
                         return;
                     }
                 }
@@ -690,17 +628,34 @@ public class RsiCrossoverStrategyService {
                     }
                 }
             } else if (isShortPosition) {
-                // For Naked Option Selling: SL is hit when premium rises; TP is hit when premium
-                // decays
-                if (stopLossPercent > 0.0) {
-                    BigDecimal slThreshold =
-                            entryPrice.multiply(
-                                    BigDecimal.valueOf(1.0 + (stopLossPercent / 100.0)));
-                    if (currentPremium.compareTo(slThreshold) >= 0) {
+                // For Naked Option Selling
+                double profitPoints = entryPrice.doubleValue() - currentPremium.doubleValue();
+                current.updatePeakProfitPerQty(BigDecimal.valueOf(profitPoints));
+                double peakPts = current.getPeakProfitPerQty().doubleValue();
+
+                double baseSlPoints = -(entryPrice.doubleValue() * (stopLossPercent / 100.0));
+                double effectiveSlPoints = baseSlPoints;
+
+                if (trailingSlEnabled) {
+                    if (peakPts >= trailStep2Trigger) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, trailStep2Lock);
+                    } else if (peakPts >= trailStep1Trigger) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, trailStep1Lock);
+                    }
+                }
+
+                if (stopLossPercent > 0.0 || trailingSlEnabled) {
+                    if (profitPoints <= effectiveSlPoints) {
+                        String exitReason =
+                                effectiveSlPoints > baseSlPoints ? "TRAIL_SL_LOCK" : "HARD_SL_HIT";
                         log.info(
-                                "[RSI-STRATEGY] 🛑 SHORT STOP-LOSS HIT for {}: Current ₹{} >= SL ₹{} (+{}%)",
-                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
-                        executeExit("HARD_SL_HIT");
+                                "[RSI-STRATEGY] 🛑 SHORT {} for {}: Profit Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
+                                exitReason,
+                                current.getSymbol(),
+                                profitPoints,
+                                effectiveSlPoints,
+                                peakPts);
+                        executeExit(exitReason);
                         return;
                     }
                 }
@@ -721,16 +676,34 @@ public class RsiCrossoverStrategyService {
                     }
                 }
             } else {
-                // For Option Buying: SL is hit when premium drops; TP is hit when premium rises
-                if (stopLossPercent > 0.0) {
-                    BigDecimal slThreshold =
-                            entryPrice.multiply(
-                                    BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
-                    if (currentPremium.compareTo(slThreshold) <= 0) {
+                // For Option Buying
+                double profitPoints = currentPremium.doubleValue() - entryPrice.doubleValue();
+                current.updatePeakProfitPerQty(BigDecimal.valueOf(profitPoints));
+                double peakPts = current.getPeakProfitPerQty().doubleValue();
+
+                double baseSlPoints = -(entryPrice.doubleValue() * (stopLossPercent / 100.0));
+                double effectiveSlPoints = baseSlPoints;
+
+                if (trailingSlEnabled) {
+                    if (peakPts >= trailStep2Trigger) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, trailStep2Lock);
+                    } else if (peakPts >= trailStep1Trigger) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, trailStep1Lock);
+                    }
+                }
+
+                if (stopLossPercent > 0.0 || trailingSlEnabled) {
+                    if (profitPoints <= effectiveSlPoints) {
+                        String exitReason =
+                                effectiveSlPoints > baseSlPoints ? "TRAIL_SL_LOCK" : "HARD_SL_HIT";
                         log.info(
-                                "[RSI-STRATEGY] 🛑 LONG STOP-LOSS HIT for {}: Current ₹{} <= SL ₹{} (-{}%)",
-                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
-                        executeExit("HARD_SL_HIT");
+                                "[RSI-STRATEGY] 🛑 LONG {} for {}: Profit Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
+                                exitReason,
+                                current.getSymbol(),
+                                profitPoints,
+                                effectiveSlPoints,
+                                peakPts);
+                        executeExit(exitReason);
                         return;
                     }
                 }
@@ -1367,6 +1340,54 @@ public class RsiCrossoverStrategyService {
 
     public void setDiFilterEnabled(boolean diFilterEnabled) {
         this.diFilterEnabled = diFilterEnabled;
+    }
+
+    public double getVwapMaxDistance() {
+        return vwapMaxDistance;
+    }
+
+    public void setVwapMaxDistance(double vwapMaxDistance) {
+        this.vwapMaxDistance = vwapMaxDistance;
+    }
+
+    public boolean isTrailingSlEnabled() {
+        return trailingSlEnabled;
+    }
+
+    public void setTrailingSlEnabled(boolean trailingSlEnabled) {
+        this.trailingSlEnabled = trailingSlEnabled;
+    }
+
+    public double getTrailStep1Trigger() {
+        return trailStep1Trigger;
+    }
+
+    public void setTrailStep1Trigger(double trailStep1Trigger) {
+        this.trailStep1Trigger = trailStep1Trigger;
+    }
+
+    public double getTrailStep1Lock() {
+        return trailStep1Lock;
+    }
+
+    public void setTrailStep1Lock(double trailStep1Lock) {
+        this.trailStep1Lock = trailStep1Lock;
+    }
+
+    public double getTrailStep2Trigger() {
+        return trailStep2Trigger;
+    }
+
+    public void setTrailStep2Trigger(double trailStep2Trigger) {
+        this.trailStep2Trigger = trailStep2Trigger;
+    }
+
+    public double getTrailStep2Lock() {
+        return trailStep2Lock;
+    }
+
+    public void setTrailStep2Lock(double trailStep2Lock) {
+        this.trailStep2Lock = trailStep2Lock;
     }
 
     public double getLatestVwap() {

@@ -33,6 +33,7 @@ public class RsiCrossoverPosition {
     private BigDecimal pnl;
     private BigDecimal hedgePnl;
     private boolean closed;
+    private BigDecimal peakProfitPerQty = BigDecimal.ZERO;
 
     public RsiCrossoverPosition(
             String tradeId,
@@ -250,5 +251,17 @@ public class RsiCrossoverPosition {
 
     public boolean isClosed() {
         return closed;
+    }
+
+    public BigDecimal getPeakProfitPerQty() {
+        return peakProfitPerQty != null ? peakProfitPerQty : BigDecimal.ZERO;
+    }
+
+    public void updatePeakProfitPerQty(BigDecimal currentProfitPerQty) {
+        if (currentProfitPerQty != null
+                && (this.peakProfitPerQty == null
+                        || currentProfitPerQty.compareTo(this.peakProfitPerQty) > 0)) {
+            this.peakProfitPerQty = currentProfitPerQty;
+        }
     }
 }

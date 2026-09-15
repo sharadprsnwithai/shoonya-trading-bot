@@ -64,11 +64,11 @@ class RsiCrossoverStrategyServiceTest {
                         orderService,
                         config);
 
-        // Default ADX to >= 20.0 for happy path tests
+        // Default ADX to >= 22.0 for happy path tests
         when(taService.calculateAdxSeries(any(), any(), any(), anyInt()))
                 .thenReturn(new double[] {25.0, 25.0, 25.0});
         when(taService.calculateVwapSeries(any()))
-                .thenReturn(new double[] {22400.0, 22400.0, 22400.0});
+                .thenReturn(new double[] {22490.0, 22490.0, 22490.0});
         when(taService.calculateSuperTrendSeries(any(), any(), any(), anyInt(), anyDouble()))
                 .thenReturn(
                         new SuperTrendResult[] {
@@ -194,9 +194,9 @@ class RsiCrossoverStrategyServiceTest {
                         eq("NSE"), eq("10576"), eq("NIFTY 50"), eq("5"), eq(5)))
                 .thenReturn(candles);
 
-        // Bearish regime indicators: Spot (22500) < VWAP (22600), ST Bearish (false), -DI > +DI
+        // Bearish regime indicators: Spot (22500) < VWAP (22510), ST Bearish (false), -DI > +DI
         when(taService.calculateVwapSeries(any()))
-                .thenReturn(new double[] {22600.0, 22600.0, 22600.0});
+                .thenReturn(new double[] {22510.0, 22510.0, 22510.0});
         when(taService.calculateSuperTrendSeries(any(), any(), any(), anyInt(), anyDouble()))
                 .thenReturn(
                         new SuperTrendResult[] {
@@ -866,9 +866,9 @@ class RsiCrossoverStrategyServiceTest {
                 .thenReturn(new double[] {40.0, 48.0, 55.0})
                 .thenReturn(new double[] {50.0, 52.0, 52.0});
 
-        // Spot = 22500, VWAP = 22550 (Spot is BELOW VWAP)
+        // Spot = 22500, VWAP = 22520 (Spot is BELOW VWAP, diff = 20 <= 35)
         when(taService.calculateVwapSeries(any()))
-                .thenReturn(new double[] {22550.0, 22550.0, 22550.0});
+                .thenReturn(new double[] {22520.0, 22520.0, 22520.0});
 
         strategyService.runCycle();
 
@@ -918,9 +918,9 @@ class RsiCrossoverStrategyServiceTest {
                 .thenReturn(new double[] {55.0, 54.0, 46.0})
                 .thenReturn(new double[] {50.0, 50.0, 50.0});
 
-        // Spot = 22500, VWAP = 22400 (Spot is ABOVE VWAP)
+        // Spot = 22500, VWAP = 22480 (Spot is ABOVE VWAP, diff = 20 <= 35)
         when(taService.calculateVwapSeries(any()))
-                .thenReturn(new double[] {22400.0, 22400.0, 22400.0});
+                .thenReturn(new double[] {22480.0, 22480.0, 22480.0});
 
         strategyService.runCycle();
 
@@ -1010,5 +1010,144 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getTradeHistory()).hasSize(1);
         RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("ST_FLIP_BEARISH");
+    }
+
+    @Test
+    void testCrossoverRejectedWhenSpotTooFarFromVwap() {
+        strategyService.setClock(createFixedClock(LocalTime.of(9, 45, 10)));
+        strategyService.setVwapFilterEnabled(true);
+        strategyService.setVwapMaxDistance(35.0);
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+
+        // Bullish crossover
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {40.0, 48.0, 55.0})
+                .thenReturn(new double[] {50.0, 52.0, 52.0});
+
+        // Spot = 22500, VWAP = 22450 (Distance = 50 > max allowed 35)
+        when(taService.calculateVwapSeries(any()))
+                .thenReturn(new double[] {22450.0, 22450.0, 22450.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(0);
+    }
+
+    @Test
+    void testSteppedTrailingStopLossLocksGain() {
+        strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
+        strategyService.setMode("OPTION_SELLING");
+        strategyService.setHedgeEnabled(true);
+        strategyService.setTrailingSlEnabled(true);
+        strategyService.setTrailStep1Trigger(12.0);
+        strategyService.setTrailStep1Lock(2.0);
+        strategyService.setTrailStep2Trigger(25.0);
+        strategyService.setTrailStep2Lock(15.0);
+
+        // Entry: Sell 22500 PE @ 150, Buy 22050 PE @ 12. Net credit = 138.
+        OptionContract peMain =
+                new OptionContract(
+                        "NIFTY24OCT22500PE",
+                        "20002",
+                        "PE",
+                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(150.0),
+                        1000,
+                        100,
+                        BigDecimal.valueOf(149.5),
+                        BigDecimal.valueOf(150.5),
+                        BigDecimal.valueOf(140.0));
+        OptionContract peHedge =
+                new OptionContract(
+                        "NIFTY24OCT22050PE",
+                        "20003",
+                        "PE",
+                        BigDecimal.valueOf(22050),
+                        BigDecimal.valueOf(12.0),
+                        1000,
+                        100,
+                        BigDecimal.valueOf(11.5),
+                        BigDecimal.valueOf(12.5),
+                        BigDecimal.valueOf(10.0));
+
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(
+                        new OptionChainResponse(
+                                "NIFTY",
+                                BigDecimal.valueOf(22500),
+                                BigDecimal.valueOf(22500),
+                                "NIFTY",
+                                1,
+                                1000,
+                                1000,
+                                1.0,
+                                List.of(
+                                        new OptionStrike(
+                                                BigDecimal.valueOf(22500), true, null, peMain),
+                                        new OptionStrike(
+                                                BigDecimal.valueOf(22050), false, null, peHedge))));
+
+        strategyService.executeTrade("SELL", "PE", 22500.0, 55.0, 50.0, 48.0, 50.0);
+        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        assertThat(pos).isNotNull();
+
+        // Simulate position running up to +26 pts profit (Main drops to 124, Hedge drops to 12 ->
+        // +26 pts)
+        pos.updatePeakProfitPerQty(BigDecimal.valueOf(26.0));
+        assertThat(pos.getPeakProfitPerQty()).isEqualByComparingTo(BigDecimal.valueOf(26.0));
+
+        // Now market retraces: Main bounces to 137, Hedge stays at 12 -> netPoints =
+        // (150-137)+(12-12) = +13.0 pts
+        // Since peak was 26.0 (>= Step 2 Trigger 25.0), Effective SL is locked at +15.0 pts.
+        // Current profit (+13.0 pts) <= SL (+15.0 pts) -> Triggers TRAIL_SL_LOCK exit!
+        OptionContract peMainRetraced =
+                new OptionContract(
+                        "NIFTY24OCT22500PE",
+                        "20002",
+                        "PE",
+                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(137.0),
+                        1000,
+                        100,
+                        BigDecimal.valueOf(136.5),
+                        BigDecimal.valueOf(137.5),
+                        BigDecimal.valueOf(130.0));
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(
+                        new OptionChainResponse(
+                                "NIFTY",
+                                BigDecimal.valueOf(22500),
+                                BigDecimal.valueOf(22500),
+                                "NIFTY",
+                                1,
+                                1000,
+                                1000,
+                                1.0,
+                                List.of(
+                                        new OptionStrike(
+                                                BigDecimal.valueOf(22500),
+                                                true,
+                                                null,
+                                                peMainRetraced),
+                                        new OptionStrike(
+                                                BigDecimal.valueOf(22050), false, null, peHedge))));
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {55.0, 55.0, 55.0})
+                .thenReturn(new double[] {50.0, 50.0, 50.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradeHistory()).hasSize(1);
+        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        assertThat(closed.getExitReason()).isEqualTo("TRAIL_SL_LOCK");
     }
 }
