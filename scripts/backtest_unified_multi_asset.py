@@ -559,7 +559,7 @@ def run_stock_backtest(symbol, df_merged, trade_capital=200000.0, sl_pct=0.80, t
 
 def main():
     print("=" * 115)
-    print("UNIFIED MULTI-ASSET BACKTEST: 3 INDICES + 9 CHAMPION STOCKS (LAST 60 DAYS)")
+    print("UNIFIED MULTI-ASSET BACKTEST: 3 INDICES + 10 CHAMPION STOCKS (LAST 60 DAYS)")
     print("Strategy: 5m/15m RSI Crossover + 15m Supertrend(10,2) + VWAP Gate + ADX + DI + Stepped Trailing SL")
     print("=" * 115 + "\n")
 
@@ -567,7 +567,7 @@ def main():
     all_trade_dfs = []
 
     # 1. Backtest NIFTY 50 (10 lots = 650 qty)
-    print("1/12 Processing NIFTY 50 (^NSEI)...")
+    print("1/13 Processing NIFTY 50 (^NSEI)...")
     df_nifty = prepare_data('^NSEI')
     r_nifty = run_index_backtest(
         name='NIFTY 50',
@@ -586,7 +586,7 @@ def main():
     all_trade_dfs.append(r_nifty['trades_df'])
 
     # 2. Backtest BSE SENSEX (10 lots = 200 qty)
-    print("2/12 Processing BSE SENSEX (^BSESN)...")
+    print("2/13 Processing BSE SENSEX (^BSESN)...")
     df_sensex = prepare_data('^BSESN')
     r_sensex = run_index_backtest(
         name='BSE SENSEX',
@@ -605,7 +605,7 @@ def main():
     all_trade_dfs.append(r_sensex['trades_df'])
 
     # 3. Backtest BANK NIFTY (10 lots = 300 qty)
-    print("3/12 Processing BANK NIFTY (^NSEBANK)...")
+    print("3/13 Processing BANK NIFTY (^NSEBANK)...")
     df_bank = prepare_data('^NSEBANK')
     r_bank = run_index_backtest(
         name='BANK NIFTY',
@@ -623,7 +623,7 @@ def main():
     all_results.append(r_bank)
     all_trade_dfs.append(r_bank['trades_df'])
 
-    # 4. Backtest 9 Champion Stocks
+    # 4. Backtest 10 Champion Stocks
     stocks = [
         ('BSE', 'BSE.NS'),
         ('LAURUSLABS', 'LAURUSLABS.NS'),
@@ -631,13 +631,14 @@ def main():
         ('POLYCAB', 'POLYCAB.NS'),
         ('ADANIENSOL', 'ADANIENSOL.NS'),
         ('MCX', 'MCX.NS'),
+        ('ADANIGREEN', 'ADANIGREEN.NS'),
         ('TORNTPHARM', 'TORNTPHARM.NS'),
         ('BHEL', 'BHEL.NS'),
         ('HINDALCO', 'HINDALCO.NS')
     ]
 
     for idx, (s_name, s_ticker) in enumerate(stocks, 4):
-        print(f"{idx}/12 Processing Stock {s_name} ({s_ticker})...")
+        print(f"{idx}/13 Processing Stock {s_name} ({s_ticker})...")
         df_stock = prepare_data(s_ticker)
         r_stock = run_stock_backtest(
             symbol=s_name,

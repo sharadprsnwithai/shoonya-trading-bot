@@ -14,8 +14,8 @@ import java.util.Map;
 /**
  * Registry containing NSE and BSE F&O instrument specifications (Strike Intervals, Standard Lot
  * Sizes, Expiry rules, and Option Symbol generation) for major Indices (NIFTY, SENSEX, BANKNIFTY)
- * and high-liquidity stock underlyings (BSE, LAURUSLABS, SAIL, POLYCAB, ADANIENSOL, MCX,
- * TORNTPHARM, BHEL, HINDALCO, etc.).
+ * and the Top 10 Champion Stocks (BSE, LAURUSLABS, SAIL, POLYCAB, ADANIENSOL, MCX, ADANIGREEN,
+ * TORNTPHARM, BHEL, HINDALCO).
  */
 public final class StockFnoRegistry {
 
@@ -44,45 +44,17 @@ public final class StockFnoRegistry {
         register("FINNIFTY", "26037", 50.0, 65, "NSE", "NFO");
         register("MIDCPNIFTY", "26074", 25.0, 120, "NSE", "NFO");
 
-        // Top Champion & Momentum Stocks
+        // Top 10 Champion High-Beta Stocks (Ranked by Profit Factor & Positive Expectancy)
         register("BSE", "19585", 50.0, 250, "NSE", "NFO");
         register("LAURUSLABS", "19234", 5.0, 1100, "NSE", "NFO");
         register("SAIL", "2963", 2.5, 4700, "NSE", "NFO");
         register("POLYCAB", "9590", 50.0, 125, "NSE", "NFO");
         register("ADANIENSOL", "1023", 20.0, 675, "NSE", "NFO");
         register("MCX", "31181", 50.0, 125, "NSE", "NFO");
+        register("ADANIGREEN", "3563", 20.0, 500, "NSE", "NFO");
         register("TORNTPHARM", "3518", 50.0, 250, "NSE", "NFO");
         register("BHEL", "438", 5.0, 2625, "NSE", "NFO");
         register("HINDALCO", "1363", 10.0, 1400, "NSE", "NFO");
-
-        // Additional Liquid F&O Universe
-        register("ABB", "13", 100.0, 125, "NSE", "NFO");
-        register("ADANIGREEN", "3563", 20.0, 500, "NSE", "NFO");
-        register("ADANIPOWER", "17534", 10.0, 875, "NSE", "NFO");
-        register("ABCAPITAL", "21614", 5.0, 3100, "NSE", "NFO");
-        register("BHARATFORG", "422", 20.0, 500, "NSE", "NFO");
-        register("CGPOWER", "760", 10.0, 850, "NSE", "NFO");
-        register("CUMMINSIND", "1901", 50.0, 200, "NSE", "NFO");
-        register("FEDERALBNK", "1023", 2.5, 5000, "NSE", "NFO");
-        register("GVT&D", "10999", 50.0, 250, "NSE", "NFO");
-        register("GLENMARK", "7406", 20.0, 350, "NSE", "NFO");
-        register("POWERINDIA", "21690", 100.0, 50, "NSE", "NFO");
-        register("KEI", "11374", 50.0, 125, "NSE", "NFO");
-        register("LTF", "18043", 2.5, 4462, "NSE", "NFO");
-        register("NTPC", "11630", 5.0, 1500, "NSE", "NFO");
-        register("NATIONALUM", "6364", 2.5, 3750, "NSE", "NFO");
-        register("MOTHERSON", "4204", 2.5, 3100, "NSE", "NFO");
-        register("SHRIRAMFIN", "4306", 50.0, 150, "NSE", "NFO");
-        register("SOLARINDS", "13426", 100.0, 50, "NSE", "NFO");
-        register("TATASTEEL", "3499", 2.5, 5500, "NSE", "NFO");
-        register("VEDL", "3045", 10.0, 1150, "NSE", "NFO");
-        register("IDEA", "14366", 0.5, 40000, "NSE", "NFO");
-        register("COFORGE", "11536", 50.0, 75, "NSE", "NFO");
-        register("AUBANK", "21238", 10.0, 1000, "NSE", "NFO");
-        register("SHREECEM", "3103", 100.0, 25, "NSE", "NFO");
-        register("RECLTD", "15355", 5.0, 1500, "NSE", "NFO");
-        register("PFC", "14299", 5.0, 1300, "NSE", "NFO");
-        register("BHARTIARTL", "317", 10.0, 475, "NSE", "NFO");
     }
 
     private static void register(
@@ -105,39 +77,20 @@ public final class StockFnoRegistry {
 
     private StockFnoRegistry() {}
 
-    /** Returns immutable list of default subscribed symbols. */
+    /** Returns immutable list of default subscribed symbols (Indices + Top 10 Champion Stocks). */
     public static List<String> getAllSubscribedSymbols() {
         return List.of(
                 "NIFTY50",
-                "ABB",
-                "ADANIENSOL",
-                "ADANIGREEN",
-                "ADANIPOWER",
-                "ABCAPITAL",
                 "BSE",
-                "BHARATFORG",
-                "BHEL",
-                "CGPOWER",
-                "CUMMINSIND",
-                "FEDERALBNK",
-                "GVT&D",
-                "GLENMARK",
-                "HINDALCO",
-                "POWERINDIA",
-                "KEI",
-                "LTF",
                 "LAURUSLABS",
-                "MCX",
-                "NTPC",
-                "NATIONALUM",
-                "POLYCAB",
-                "MOTHERSON",
-                "SHRIRAMFIN",
-                "SOLARINDS",
                 "SAIL",
-                "TATASTEEL",
+                "POLYCAB",
+                "ADANIENSOL",
+                "MCX",
+                "ADANIGREEN",
                 "TORNTPHARM",
-                "VEDL");
+                "BHEL",
+                "HINDALCO");
     }
 
     public static Map<String, InstrumentInfo> getAllInstruments() {
@@ -242,6 +195,7 @@ public final class StockFnoRegistry {
             if (info != null) {
                 return info.token();
             }
+            return symbol.toUpperCase().trim();
         }
         return null;
     }

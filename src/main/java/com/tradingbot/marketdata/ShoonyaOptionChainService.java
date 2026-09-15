@@ -568,6 +568,7 @@ public class ShoonyaOptionChainService {
         if ("SAIL".equalsIgnoreCase(underlying)) return new BigDecimal("140");
         if ("POLYCAB".equalsIgnoreCase(underlying)) return new BigDecimal("7000");
         if ("ADANIENSOL".equalsIgnoreCase(underlying)) return new BigDecimal("980");
+        if ("ADANIGREEN".equalsIgnoreCase(underlying)) return new BigDecimal("1250");
         if ("MCX".equalsIgnoreCase(underlying)) return new BigDecimal("6200");
         if ("TORNTPHARM".equalsIgnoreCase(underlying)) return new BigDecimal("3400");
         if ("BHEL".equalsIgnoreCase(underlying)) return new BigDecimal("270");

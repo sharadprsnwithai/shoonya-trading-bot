@@ -11,41 +11,22 @@ import org.junit.jupiter.api.Test;
 class StockFnoRegistryTest {
 
     @Test
-    void testSubscribedSymbolsContainNiftyAndAll29Stocks() {
+    void testSubscribedSymbolsContainNiftyAndTop10ChampionStocks() {
         List<String> symbols = StockFnoRegistry.getAllSubscribedSymbols();
-        assertThat(symbols).hasSize(30);
+        assertThat(symbols).hasSize(11);
         assertThat(symbols)
-                .contains(
+                .containsExactly(
                         "NIFTY50",
-                        "ABB",
-                        "ADANIENSOL",
-                        "ADANIGREEN",
-                        "ADANIPOWER",
-                        "ABCAPITAL",
                         "BSE",
-                        "BHARATFORG",
-                        "BHEL",
-                        "CGPOWER",
-                        "CUMMINSIND",
-                        "FEDERALBNK",
-                        "GVT&D",
-                        "GLENMARK",
-                        "HINDALCO",
-                        "POWERINDIA",
-                        "KEI",
-                        "LTF",
                         "LAURUSLABS",
-                        "MCX",
-                        "NTPC",
-                        "NATIONALUM",
-                        "POLYCAB",
-                        "MOTHERSON",
-                        "SHRIRAMFIN",
-                        "SOLARINDS",
                         "SAIL",
-                        "TATASTEEL",
+                        "POLYCAB",
+                        "ADANIENSOL",
+                        "MCX",
+                        "ADANIGREEN",
                         "TORNTPHARM",
-                        "VEDL");
+                        "BHEL",
+                        "HINDALCO");
     }
 
     @Test
@@ -82,9 +63,11 @@ class StockFnoRegistryTest {
         assertThat(StockFnoRegistry.calculateAtmStrike("SAIL", BigDecimal.valueOf(141.3)))
                 .isEqualByComparingTo(BigDecimal.valueOf(142.5));
 
-        // TATASTEEL (strike step 2.5)
-        assertThat(StockFnoRegistry.calculateAtmStrike("TATASTEEL", BigDecimal.valueOf(151.2)))
-                .isEqualByComparingTo(BigDecimal.valueOf(150.0));
+        // ADANIGREEN (strike step 20.0)
+        assertThat(StockFnoRegistry.getStrikeStep("ADANIGREEN", BigDecimal.valueOf(1255)))
+                .isEqualByComparingTo(BigDecimal.valueOf(20));
+        assertThat(StockFnoRegistry.calculateAtmStrike("ADANIGREEN", BigDecimal.valueOf(1255)))
+                .isEqualByComparingTo(BigDecimal.valueOf(1260));
     }
 
     @Test
@@ -97,6 +80,7 @@ class StockFnoRegistryTest {
         assertThat(StockFnoRegistry.getLotSize("SAIL")).isEqualTo(4700);
         assertThat(StockFnoRegistry.getLotSize("POLYCAB")).isEqualTo(125);
         assertThat(StockFnoRegistry.getLotSize("ADANIENSOL")).isEqualTo(675);
+        assertThat(StockFnoRegistry.getLotSize("ADANIGREEN")).isEqualTo(500);
         assertThat(StockFnoRegistry.getLotSize("MCX")).isEqualTo(125);
         assertThat(StockFnoRegistry.getLotSize("TORNTPHARM")).isEqualTo(250);
         assertThat(StockFnoRegistry.getLotSize("BHEL")).isEqualTo(2625);
