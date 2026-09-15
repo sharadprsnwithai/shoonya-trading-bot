@@ -39,34 +39,8 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
-     * Morning Universe Scan at 09:25:10 IST every trading weekday. Identifies Top 10 Gainers &
-     * Losers from the F&O universe, fixes this list for the day, seeds initial setups, and
-     * dispatches the daily Telegram report once.
-     */
-    @Scheduled(
-            cron = "${trading-bot.strategy.lowest-volume.scanner-cron:10 25 9 ? * MON-FRI}",
-            zone = "Asia/Kolkata")
-    public void scheduledMorningUniverseScan() {
-        if (!schedulerEnabled) {
-            log.debug("[LVR-SCHEDULER] Scheduler is disabled in configuration.");
-            return;
-        }
-
-        try {
-            log.info(
-                    "[LVR-SCHEDULER] 09:25 IST: Executing morning universe scan to fix daily watchlist...");
-            strategyService.runMorningUniverseScan();
-        } catch (Exception e) {
-            log.error(
-                    "[LVR-SCHEDULER] Exception during morning universe scan: {}",
-                    e.getMessage(),
-                    e);
-        }
-    }
-
-    /**
      * Runs every 5 minutes from 09:25:10 to 11:05:10 IST on trading weekdays. (10s offset for
-     * broker latency)
+     * broker latency). Automatically runs morning universe scan on first 09:25 cycle.
      */
     @Scheduled(
             cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-11 ? * MON-FRI}",

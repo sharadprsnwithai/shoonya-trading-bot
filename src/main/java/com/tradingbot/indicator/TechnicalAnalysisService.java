@@ -315,6 +315,61 @@ public class TechnicalAnalysisService {
         return Double.NaN;
     }
 
+    /** Calculates Plus Directional Indicator (+DI) using TA-Lib across all bars. */
+    public double[] calculatePlusDiSeries(double[] high, double[] low, double[] close, int period) {
+        int len = close != null ? close.length : 0;
+        double[] result = new double[len];
+        Arrays.fill(result, Double.NaN);
+
+        if (high == null || low == null || close == null || len < (period + 1) || period <= 0) {
+            return result;
+        }
+
+        int validLen = Math.min(len, Math.min(high.length, low.length));
+        MInteger outBegIdx = new MInteger();
+        MInteger outNBElement = new MInteger();
+        double[] output = new double[validLen];
+
+        RetCode retCode =
+                TA_LIB.plusDI(
+                        0, validLen - 1, high, low, close, period, outBegIdx, outNBElement, output);
+        if (retCode == RetCode.Success && outNBElement.value > 0) {
+            int start = outBegIdx.value;
+            for (int i = 0; i < outNBElement.value; i++) {
+                result[start + i] = output[i];
+            }
+        }
+        return result;
+    }
+
+    /** Calculates Minus Directional Indicator (-DI) using TA-Lib across all bars. */
+    public double[] calculateMinusDiSeries(
+            double[] high, double[] low, double[] close, int period) {
+        int len = close != null ? close.length : 0;
+        double[] result = new double[len];
+        Arrays.fill(result, Double.NaN);
+
+        if (high == null || low == null || close == null || len < (period + 1) || period <= 0) {
+            return result;
+        }
+
+        int validLen = Math.min(len, Math.min(high.length, low.length));
+        MInteger outBegIdx = new MInteger();
+        MInteger outNBElement = new MInteger();
+        double[] output = new double[validLen];
+
+        RetCode retCode =
+                TA_LIB.minusDI(
+                        0, validLen - 1, high, low, close, period, outBegIdx, outNBElement, output);
+        if (retCode == RetCode.Success && outNBElement.value > 0) {
+            int start = outBegIdx.value;
+            for (int i = 0; i < outNBElement.value; i++) {
+                result[start + i] = output[i];
+            }
+        }
+        return result;
+    }
+
     /** Calculates Exponential Moving Average (EMA) using TA-Lib across all bars. */
     public double[] calculateEmaSeries(double[] close, int period) {
         int len = close != null ? close.length : 0;

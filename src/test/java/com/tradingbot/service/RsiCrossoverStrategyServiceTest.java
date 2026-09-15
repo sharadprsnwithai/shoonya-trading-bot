@@ -19,6 +19,7 @@ import com.tradingbot.model.Candle;
 import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionContract;
 import com.tradingbot.model.OptionStrike;
+import com.tradingbot.model.indicator.SuperTrendResult;
 import com.tradingbot.model.strategy.RsiCrossoverPosition;
 import com.tradingbot.order.ShoonyaOrderService;
 import com.tradingbot.telegram.TelegramService;
@@ -66,6 +67,19 @@ class RsiCrossoverStrategyServiceTest {
         // Default ADX to >= 20.0 for happy path tests
         when(taService.calculateAdxSeries(any(), any(), any(), anyInt()))
                 .thenReturn(new double[] {25.0, 25.0, 25.0});
+        when(taService.calculateVwapSeries(any()))
+                .thenReturn(new double[] {22400.0, 22400.0, 22400.0});
+        when(taService.calculateSuperTrendSeries(any(), any(), any(), anyInt(), anyDouble()))
+                .thenReturn(
+                        new SuperTrendResult[] {
+                            SuperTrendResult.of(22300.0, 22600.0, 22300.0, true),
+                            SuperTrendResult.of(22300.0, 22600.0, 22300.0, true),
+                            SuperTrendResult.of(22300.0, 22600.0, 22300.0, true)
+                        });
+        when(taService.calculatePlusDiSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {28.0, 28.0, 28.0});
+        when(taService.calculateMinusDiSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {14.0, 14.0, 14.0});
     }
 
     private Clock createFixedClock(LocalTime time) {
@@ -159,7 +173,15 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getTradesExecutedToday()).isEqualTo(1);
 
         verify(telegramService)
-                .sendRsiCrossoverEntryAlert(eq(pos), eq(55.0), eq(52.0), eq(48.0), eq(52.0));
+                .sendRsiCrossoverEntryAlert(
+                        eq(pos),
+                        eq(55.0),
+                        eq(52.0),
+                        eq(48.0),
+                        eq(52.0),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble());
     }
 
     @Test
@@ -171,6 +193,21 @@ class RsiCrossoverStrategyServiceTest {
         when(marketDataService.fetchHistoricalCandles(
                         eq("NSE"), eq("10576"), eq("NIFTY 50"), eq("5"), eq(5)))
                 .thenReturn(candles);
+
+        // Bearish regime indicators: Spot (22500) < VWAP (22600), ST Bearish (false), -DI > +DI
+        when(taService.calculateVwapSeries(any()))
+                .thenReturn(new double[] {22600.0, 22600.0, 22600.0});
+        when(taService.calculateSuperTrendSeries(any(), any(), any(), anyInt(), anyDouble()))
+                .thenReturn(
+                        new SuperTrendResult[] {
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false),
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false),
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false)
+                        });
+        when(taService.calculatePlusDiSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {14.0, 14.0, 14.0});
+        when(taService.calculateMinusDiSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {28.0, 28.0, 28.0});
 
         // 5m series: prev = 54.0, curr = 46.0
         // 15m series: prev = 50.0, curr = 50.0 (5m crossed BELOW 15m)
@@ -219,7 +256,15 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getTradesExecutedToday()).isEqualTo(1);
 
         verify(telegramService)
-                .sendRsiCrossoverEntryAlert(eq(pos), eq(46.0), eq(50.0), eq(54.0), eq(50.0));
+                .sendRsiCrossoverEntryAlert(
+                        eq(pos),
+                        eq(46.0),
+                        eq(50.0),
+                        eq(54.0),
+                        eq(50.0),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble());
     }
 
     @Test
@@ -315,7 +360,14 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getOpenPosition()).isNull();
         verify(telegramService, never())
                 .sendRsiCrossoverEntryAlert(
-                        any(), anyDouble(), anyDouble(), anyDouble(), anyDouble());
+                        any(),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble());
     }
 
     @Test
@@ -798,5 +850,165 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.isTradeExecutedToday()).isFalse();
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).isEmpty();
+    }
+
+    @Test
+    void testBullishCrossoverRejectedWhenBelowVwap() {
+        strategyService.setClock(createFixedClock(LocalTime.of(9, 45, 10)));
+        strategyService.setVwapFilterEnabled(true);
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+
+        // Bullish crossover
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {40.0, 48.0, 55.0})
+                .thenReturn(new double[] {50.0, 52.0, 52.0});
+
+        // Spot = 22500, VWAP = 22550 (Spot is BELOW VWAP)
+        when(taService.calculateVwapSeries(any()))
+                .thenReturn(new double[] {22550.0, 22550.0, 22550.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(0);
+    }
+
+    @Test
+    void testBullishCrossoverRejectedWhenSupertrendIsBearish() {
+        strategyService.setClock(createFixedClock(LocalTime.of(9, 45, 10)));
+        strategyService.setSupertrendFilterEnabled(true);
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {40.0, 48.0, 55.0})
+                .thenReturn(new double[] {50.0, 52.0, 52.0});
+
+        // Supertrend is Bearish (isBullish = false)
+        when(taService.calculateSuperTrendSeries(any(), any(), any(), anyInt(), anyDouble()))
+                .thenReturn(
+                        new SuperTrendResult[] {
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false),
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false),
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false)
+                        });
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(0);
+    }
+
+    @Test
+    void testBearishCrossoverRejectedWhenAboveVwap() {
+        strategyService.setClock(createFixedClock(LocalTime.of(10, 15, 10)));
+        strategyService.setVwapFilterEnabled(true);
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+
+        // Bearish crossover
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {55.0, 54.0, 46.0})
+                .thenReturn(new double[] {50.0, 50.0, 50.0});
+
+        // Spot = 22500, VWAP = 22400 (Spot is ABOVE VWAP)
+        when(taService.calculateVwapSeries(any()))
+                .thenReturn(new double[] {22400.0, 22400.0, 22400.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(0);
+    }
+
+    @Test
+    void testBullishCrossoverRejectedWhenMinusDiDominant() {
+        strategyService.setClock(createFixedClock(LocalTime.of(9, 45, 10)));
+        strategyService.setDiFilterEnabled(true);
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {40.0, 48.0, 55.0})
+                .thenReturn(new double[] {50.0, 52.0, 52.0});
+
+        // +DI (12.0) < -DI (30.0) -> Dominant sellers
+        when(taService.calculatePlusDiSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {12.0, 12.0, 12.0});
+        when(taService.calculateMinusDiSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {30.0, 30.0, 30.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradesExecutedToday()).isEqualTo(0);
+    }
+
+    @Test
+    void testExitOnSupertrendFlip() {
+        strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
+        strategyService.setSupertrendFilterEnabled(true);
+
+        // Position: Selling PE (Bullish)
+        OptionContract peEntry =
+                new OptionContract(
+                        "NIFTY24OCT22500PE",
+                        "20002",
+                        "PE",
+                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(150.0),
+                        1000,
+                        100,
+                        BigDecimal.valueOf(149.5),
+                        BigDecimal.valueOf(150.5),
+                        BigDecimal.valueOf(140.0));
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, peEntry);
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(
+                        new OptionChainResponse(
+                                "NIFTY",
+                                BigDecimal.valueOf(22500),
+                                BigDecimal.valueOf(22500),
+                                "NIFTY",
+                                1,
+                                1000,
+                                1000,
+                                1.0,
+                                List.of(strike)));
+
+        strategyService.executeTrade("SELL", "PE", 22500.0, 55.0, 50.0, 48.0, 50.0);
+        assertThat(strategyService.getOpenPosition()).isNotNull();
+
+        // 15m Supertrend flips to Bearish (isBullish = false)
+        when(taService.calculateSuperTrendSeries(any(), any(), any(), anyInt(), anyDouble()))
+                .thenReturn(
+                        new SuperTrendResult[] {
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false),
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false),
+                            SuperTrendResult.of(22700.0, 22700.0, 22400.0, false)
+                        });
+
+        List<Candle> candles = generateCandles(200, 22500.0);
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
+                .thenReturn(candles);
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {55.0, 55.0, 55.0})
+                .thenReturn(new double[] {50.0, 50.0, 50.0});
+
+        strategyService.runCycle();
+
+        assertThat(strategyService.getOpenPosition()).isNull();
+        assertThat(strategyService.getTradeHistory()).hasSize(1);
+        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        assertThat(closed.getExitReason()).isEqualTo("ST_FLIP_BEARISH");
     }
 }

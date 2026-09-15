@@ -604,7 +604,7 @@ public class TelegramService {
 
         sb.append("🟢 *TOP GAINERS (LONG CANDIDATES):*\n");
         if (topGainers == null || topGainers.isEmpty()) {
-            sb.append("   • None meeting >= +1.0% threshold\n");
+            sb.append("   • None identified\n");
         } else {
             for (int i = 0; i < topGainers.size(); i++) {
                 StockQuoteSnapshot s = topGainers.get(i);
@@ -617,7 +617,7 @@ public class TelegramService {
 
         sb.append("\n🔴 *TOP LOSERS (SHORT CANDIDATES):*\n");
         if (topLosers == null || topLosers.isEmpty()) {
-            sb.append("   • None meeting <= -1.0% threshold\n");
+            sb.append("   • None identified\n");
         } else {
             for (int i = 0; i < topLosers.size(); i++) {
                 StockQuoteSnapshot s = topLosers.get(i);
@@ -662,14 +662,14 @@ public class TelegramService {
 
         sb.append("🟢 *Top Gainers (Long Watchlist):*\n");
         if (topGainers == null || topGainers.isEmpty()) {
-            sb.append("   • None meeting >= +1.0% threshold\n");
+            sb.append("   • None identified\n");
         } else {
             sb.append("   `").append(String.join(", ", topGainers)).append("`\n");
         }
 
         sb.append("\n🔴 *Top Losers (Short Watchlist):*\n");
         if (topLosers == null || topLosers.isEmpty()) {
-            sb.append("   • None meeting <= -1.0% threshold\n");
+            sb.append("   • None identified\n");
         } else {
             sb.append("   `").append(String.join(", ", topLosers)).append("`\n");
         }
@@ -692,6 +692,23 @@ public class TelegramService {
             double rsi15,
             double prevRsi5,
             double prevRsi15) {
+        sendRsiCrossoverEntryAlert(
+                position, rsi5, rsi15, prevRsi5, prevRsi15, Double.NaN, Double.NaN, Double.NaN);
+    }
+
+    /**
+     * Sends an extended alert with VWAP, Supertrend, and ADX metrics when an option trade is
+     * executed.
+     */
+    public void sendRsiCrossoverEntryAlert(
+            com.tradingbot.model.strategy.RsiCrossoverPosition position,
+            double rsi5,
+            double rsi15,
+            double prevRsi5,
+            double prevRsi15,
+            double vwap,
+            double supertrend,
+            double adx) {
         if (!config.isTelegramEnabled()
                 || config.getTelegramBotToken().isBlank()
                 || config.getTelegramChatId().isBlank()) {
@@ -714,7 +731,9 @@ public class TelegramService {
                             ? "BULL PUT SPREAD (2% OTM HEDGE)"
                             : "BEAR CALL SPREAD (2% OTM HEDGE)";
             direction =
-                    isBullish ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
+                    isBullish
+                            ? "🟢 BULLISH (VWAP + SuperTrend + ADX)"
+                            : "🔴 BEARISH (VWAP + SuperTrend + ADX)";
 
             BigDecimal netCredit = position.getNetCredit();
             BigDecimal strikeDiff =
@@ -764,7 +783,9 @@ public class TelegramService {
         } else {
             header = "SELL".equals(action) ? "OPTION SELL" : "OPTION BUY";
             direction =
-                    isBullish ? "🟢 BULLISH (5m RSI > 15m RSI)" : "🔴 BEARISH (5m RSI < 15m RSI)";
+                    isBullish
+                            ? "🟢 BULLISH (VWAP + SuperTrend + ADX)"
+                            : "🔴 BEARISH (VWAP + SuperTrend + ADX)";
             String strikeLabel =
                     position.getStrike() != null
                             ? String.format(
@@ -783,15 +804,26 @@ public class TelegramService {
                                     : 0.0));
         }
 
+        StringBuilder metrics = new StringBuilder();
+        metrics.append(String.format("📈 *RSI:* 5m: `%.1f` | 15m: `%.1f`\n", rsi5, rsi15));
+        if (!Double.isNaN(vwap)) {
+            metrics.append(String.format("📊 *Intraday VWAP:* `₹%.1f`\n", vwap));
+        }
+        if (!Double.isNaN(supertrend)) {
+            metrics.append(String.format("🎯 *15m Supertrend:* `₹%.1f`\n", supertrend));
+        }
+        if (!Double.isNaN(adx)) {
+            metrics.append(String.format("⚡ *15m ADX:* `%.1f`\n", adx));
+        }
+
         String message =
                 String.format(
-                        "🚀 *[NIFTY RSI CROSSOVER: %s]* 🚀\n\n"
+                        "🚀 *[NIFTY INTRADAY: %s]* 🚀\n\n"
                                 + "🧭 *Direction:* %s\n"
                                 + "⚡ *Action:* `%s %s`\n"
                                 + "📦 *Quantity:* %d units\n\n"
                                 + "📊 *Execution Details:*\n%s\n"
-                                + "📈 *Current RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
-                                + "📉 *Previous RSI:* 5m: `%.1f` | 15m: `%.1f`\n"
+                                + "%s"
                                 + "🕒 *Time:* %s IST",
                         header,
                         direction,
@@ -799,10 +831,7 @@ public class TelegramService {
                         position.getOptionType(),
                         position.getQuantity(),
                         details.toString(),
-                        rsi5,
-                        rsi15,
-                        prevRsi5,
-                        prevRsi15,
+                        metrics.toString(),
                         TIME_FMT.format(
                                 position.getEntryTime() != null
                                         ? position.getEntryTime()

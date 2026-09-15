@@ -8,6 +8,7 @@ import com.tradingbot.model.Candle;
 import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionContract;
 import com.tradingbot.model.OptionStrike;
+import com.tradingbot.model.indicator.SuperTrendResult;
 import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.TransactionType;
 import com.tradingbot.model.strategy.RsiCrossoverPosition;
@@ -92,6 +93,21 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.adx-threshold:20.0}")
     private double adxThreshold = 20.0;
 
+    @Value("${trading-bot.strategy.rsi-crossover.vwap-filter-enabled:true}")
+    private boolean vwapFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.supertrend-filter-enabled:true}")
+    private boolean supertrendFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.supertrend-period:10}")
+    private int supertrendPeriod = 10;
+
+    @Value("${trading-bot.strategy.rsi-crossover.supertrend-multiplier:2.0}")
+    private double supertrendMultiplier = 2.0;
+
+    @Value("${trading-bot.strategy.rsi-crossover.di-filter-enabled:true}")
+    private boolean diFilterEnabled = true;
+
     @Value("${trading-bot.strategy.rsi-crossover.stop-loss-percent:2.0}")
     private double stopLossPercent = 2.0;
 
@@ -121,6 +137,11 @@ public class RsiCrossoverStrategyService {
     private volatile double prevRsi5m = Double.NaN;
     private volatile double prevRsi15m = Double.NaN;
     private volatile double latestAdx15m = Double.NaN;
+    private volatile double latestPlusDi15m = Double.NaN;
+    private volatile double latestMinusDi15m = Double.NaN;
+    private volatile double latestVwap = Double.NaN;
+    private volatile double latestSupertrend = Double.NaN;
+    private volatile boolean latestSupertrendBullish = false;
     private volatile double latestNiftyLtp = Double.NaN;
 
     @Autowired
@@ -198,6 +219,14 @@ public class RsiCrossoverStrategyService {
                 fifteenMinCandles.stream().mapToDouble(c -> c.low().doubleValue()).toArray();
         double[] rsi15mSeries = taService.calculateRsiSeries(close15m, rsiPeriod);
         double[] adx15mSeries = taService.calculateAdxSeries(high15m, low15m, close15m, rsiPeriod);
+        double[] plusDi15mSeries =
+                taService.calculatePlusDiSeries(high15m, low15m, close15m, rsiPeriod);
+        double[] minusDi15mSeries =
+                taService.calculateMinusDiSeries(high15m, low15m, close15m, rsiPeriod);
+        double[] vwapSeries = taService.calculateVwapSeries(fiveMinCandles);
+        SuperTrendResult[] st15mSeries =
+                taService.calculateSuperTrendSeries(
+                        high15m, low15m, close15m, supertrendPeriod, supertrendMultiplier);
 
         int len5 = rsi5mSeries.length;
         int len15 = rsi15mSeries.length;
@@ -211,7 +240,31 @@ public class RsiCrossoverStrategyService {
         double rsi15Curr = rsi15mSeries[len15 - 1];
         double rsi15Prev = rsi15mSeries[len15 - 2];
         double adx15mCurr =
-                (adx15mSeries.length > 0) ? adx15mSeries[adx15mSeries.length - 1] : Double.NaN;
+                (adx15mSeries != null && adx15mSeries.length > 0)
+                        ? adx15mSeries[adx15mSeries.length - 1]
+                        : Double.NaN;
+        double plusDi15mCurr =
+                (plusDi15mSeries != null && plusDi15mSeries.length > 0)
+                        ? plusDi15mSeries[plusDi15mSeries.length - 1]
+                        : Double.NaN;
+        double minusDi15mCurr =
+                (minusDi15mSeries != null && minusDi15mSeries.length > 0)
+                        ? minusDi15mSeries[minusDi15mSeries.length - 1]
+                        : Double.NaN;
+
+        Candle latest5mCandle = fiveMinCandles.get(fiveMinCandles.size() - 1);
+        double spotPrice = latest5mCandle.close().doubleValue();
+
+        double vwapCurr =
+                (vwapSeries != null && vwapSeries.length > 0)
+                        ? vwapSeries[vwapSeries.length - 1]
+                        : spotPrice;
+        SuperTrendResult st15mCurr =
+                (st15mSeries != null && st15mSeries.length > 0)
+                        ? st15mSeries[st15mSeries.length - 1]
+                        : null;
+        boolean isStBullish = st15mCurr != null && st15mCurr.isBullish();
+        double stVal = st15mCurr != null ? st15mCurr.value() : Double.NaN;
 
         if (Double.isNaN(rsi5Curr)
                 || Double.isNaN(rsi5Prev)
@@ -226,30 +279,36 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
-        Candle latest5mCandle = fiveMinCandles.get(fiveMinCandles.size() - 1);
-        double spotPrice = latest5mCandle.close().doubleValue();
-
         this.latestRsi5m = rsi5Curr;
         this.prevRsi5m = rsi5Prev;
         this.latestRsi15m = rsi15Curr;
         this.prevRsi15m = rsi15Prev;
         this.latestAdx15m = adx15mCurr;
+        this.latestPlusDi15m = plusDi15mCurr;
+        this.latestMinusDi15m = minusDi15mCurr;
+        this.latestVwap = vwapCurr;
+        this.latestSupertrend = stVal;
+        this.latestSupertrendBullish = isStBullish;
         this.latestNiftyLtp = spotPrice;
 
         log.info(
-                "[RSI-STRATEGY] [{}] NIFTY: ₹{} | 5m RSI: {:.2f} (prev: {:.2f}) | 15m RSI: {:.2f} (prev: {:.2f}) | 15m ADX: {:.2f}",
+                "[RSI-STRATEGY] [{}] NIFTY: ₹{} | VWAP: ₹{:.1f} | ST(15m): ₹{:.1f} ({}) | 5m RSI: {:.2f} | 15m RSI: {:.2f} | 15m ADX: {:.2f} (+DI: {:.1f}, -DI: {:.1f})",
                 mode,
                 spotPrice,
+                vwapCurr,
+                stVal,
+                (isStBullish ? "BULL" : "BEAR"),
                 rsi5Curr,
-                rsi5Prev,
                 rsi15Curr,
-                rsi15Prev,
-                adx15mCurr);
+                adx15mCurr,
+                plusDi15mCurr,
+                minusDi15mCurr);
 
-        // 1. Manage Active Open Position (Check SL, Target, or Crossover Reversal)
+        // 1. Manage Active Open Position (Check SL, Target, or Crossover/ST Reversal)
         RsiCrossoverPosition current = openPosition.get();
         if (current != null && !current.isClosed()) {
-            evaluatePositionExit(current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, spotPrice);
+            evaluatePositionExit(
+                    current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, spotPrice, isStBullish);
             return;
         }
 
@@ -263,10 +322,20 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
-        evaluateEntry(rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, adx15mCurr, spotPrice);
+        evaluateEntry(
+                rsi5Prev,
+                rsi5Curr,
+                rsi15Prev,
+                rsi15Curr,
+                adx15mCurr,
+                plusDi15mCurr,
+                minusDi15mCurr,
+                spotPrice,
+                vwapCurr,
+                isStBullish);
     }
 
-    /** Evaluates crossover entry condition with optional ADX momentum filter. */
+    /** Compatibility overload for evaluateEntry. */
     public void evaluateEntry(
             double rsi5Prev,
             double rsi5Curr,
@@ -274,6 +343,34 @@ public class RsiCrossoverStrategyService {
             double rsi15Curr,
             double adx15mCurr,
             double spotPrice) {
+        evaluateEntry(
+                rsi5Prev,
+                rsi5Curr,
+                rsi15Prev,
+                rsi15Curr,
+                adx15mCurr,
+                Double.NaN,
+                Double.NaN,
+                spotPrice,
+                Double.NaN,
+                rsi5Curr > rsi15Curr);
+    }
+
+    /**
+     * Evaluates crossover entry condition with comprehensive VWAP, SuperTrend, ADX, and +DI/-DI
+     * filters.
+     */
+    public void evaluateEntry(
+            double rsi5Prev,
+            double rsi5Curr,
+            double rsi15Prev,
+            double rsi15Curr,
+            double adx15mCurr,
+            double plusDi15mCurr,
+            double minusDi15mCurr,
+            double spotPrice,
+            double vwap,
+            boolean isStBullish) {
         // Bullish Crossover: 5m RSI crosses above 15m RSI
         boolean bullishCrossover = (rsi5Prev <= rsi15Prev) && (rsi5Curr > rsi15Curr);
 
@@ -288,7 +385,7 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
-        // ADX Trend Strength Filter
+        // 1. ADX Trend Strength Filter
         if (adxFilterEnabled && !Double.isNaN(adx15mCurr) && adx15mCurr < adxThreshold) {
             log.info(
                     "[RSI-STRATEGY] ⚠️ Crossover detected but 15m ADX ({:.2f}) < threshold ({:.2f}). Skipping low-momentum entry.",
@@ -297,37 +394,95 @@ public class RsiCrossoverStrategyService {
             return;
         }
 
+        // 2. Intraday VWAP Directional Filter
+        if (vwapFilterEnabled && !Double.isNaN(vwap)) {
+            if (bullishCrossover && spotPrice < vwap) {
+                log.info(
+                        "[RSI-STRATEGY] ⚠️ Bullish Crossover rejected: Spot (₹{}) < Intraday VWAP (₹{}). Market is in bearish regime.",
+                        spotPrice,
+                        vwap);
+                return;
+            }
+            if (bearishCrossover && spotPrice > vwap) {
+                log.info(
+                        "[RSI-STRATEGY] ⚠️ Bearish Crossover rejected: Spot (₹{}) > Intraday VWAP (₹{}). Market is in bullish regime.",
+                        spotPrice,
+                        vwap);
+                return;
+            }
+        }
+
+        // 3. 15m Supertrend Directional Filter
+        if (supertrendFilterEnabled) {
+            if (bullishCrossover && !isStBullish) {
+                log.info(
+                        "[RSI-STRATEGY] ⚠️ Bullish Crossover rejected: 15m Supertrend is Bearish (Red).");
+                return;
+            }
+            if (bearishCrossover && isStBullish) {
+                log.info(
+                        "[RSI-STRATEGY] ⚠️ Bearish Crossover rejected: 15m Supertrend is Bullish (Green).");
+                return;
+            }
+        }
+
+        // 4. Directional Movement Indicator Filter (+DI / -DI)
+        if (diFilterEnabled && !Double.isNaN(plusDi15mCurr) && !Double.isNaN(minusDi15mCurr)) {
+            if (bullishCrossover && plusDi15mCurr < minusDi15mCurr) {
+                log.info(
+                        "[RSI-STRATEGY] ⚠️ Bullish Crossover rejected: +DI ({:.2f}) < -DI ({:.2f}). Dominant sellers present.",
+                        plusDi15mCurr,
+                        minusDi15mCurr);
+                return;
+            }
+            if (bearishCrossover && minusDi15mCurr < plusDi15mCurr) {
+                log.info(
+                        "[RSI-STRATEGY] ⚠️ Bearish Crossover rejected: -DI ({:.2f}) < +DI ({:.2f}). Dominant buyers present.",
+                        minusDi15mCurr,
+                        plusDi15mCurr);
+                return;
+            }
+        }
+
         boolean isOptionSelling = "OPTION_SELLING".equalsIgnoreCase(mode);
 
         if (bullishCrossover) {
             if (isOptionSelling) {
                 log.info(
-                        "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM PE SELL...",
+                        "[RSI-STRATEGY] 🟢 BULLISH CONFIRMED: 5m RSI ({:.2f}) > 15m RSI ({:.2f}) | Spot (₹{}) >= VWAP (₹{:.1f}) | ST: BULL | ADX: {:.1f}. Executing ATM PE SELL...",
                         rsi5Curr,
                         rsi15Curr,
+                        spotPrice,
+                        vwap,
                         adx15mCurr);
                 executeTrade("SELL", "PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             } else {
                 log.info(
-                        "[RSI-STRATEGY] 🟢 BULLISH CROSSOVER: 5m ({:.2f}) crossed ABOVE 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM CE BUY...",
+                        "[RSI-STRATEGY] 🟢 BULLISH CONFIRMED: 5m RSI ({:.2f}) > 15m RSI ({:.2f}) | Spot (₹{}) >= VWAP (₹{:.1f}) | ST: BULL | ADX: {:.1f}. Executing ATM CE BUY...",
                         rsi5Curr,
                         rsi15Curr,
+                        spotPrice,
+                        vwap,
                         adx15mCurr);
                 executeTrade("BUY", "CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             }
         } else {
             if (isOptionSelling) {
                 log.info(
-                        "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM CE SELL...",
+                        "[RSI-STRATEGY] 🔴 BEARISH CONFIRMED: 5m RSI ({:.2f}) < 15m RSI ({:.2f}) | Spot (₹{}) <= VWAP (₹{:.1f}) | ST: BEAR | ADX: {:.1f}. Executing ATM CE SELL...",
                         rsi5Curr,
                         rsi15Curr,
+                        spotPrice,
+                        vwap,
                         adx15mCurr);
                 executeTrade("SELL", "CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             } else {
                 log.info(
-                        "[RSI-STRATEGY] 🔴 BEARISH CROSSOVER: 5m ({:.2f}) crossed BELOW 15m ({:.2f}) [ADX: {:.2f}]! Executing ATM PE BUY...",
+                        "[RSI-STRATEGY] 🔴 BEARISH CONFIRMED: 5m RSI ({:.2f}) < 15m RSI ({:.2f}) | Spot (₹{}) <= VWAP (₹{:.1f}) | ST: BEAR | ADX: {:.1f}. Executing ATM PE BUY...",
                         rsi5Curr,
                         rsi15Curr,
+                        spotPrice,
+                        vwap,
                         adx15mCurr);
                 executeTrade("BUY", "PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             }
@@ -464,8 +619,142 @@ public class RsiCrossoverStrategyService {
             }
         }
 
-        // Crossover Reversal check
-        evaluateExitOnReversal(current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr);
+        // Crossover / SuperTrend Reversal check
+        evaluateExitOnReversal(
+                current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, latestSupertrendBullish);
+    }
+
+    /** Evaluates exit condition for an active open position with Supertrend awareness. */
+    public void evaluatePositionExit(
+            RsiCrossoverPosition current,
+            double rsi5Prev,
+            double rsi5Curr,
+            double rsi15Prev,
+            double rsi15Curr,
+            double currentSpotPrice,
+            boolean isStBullish) {
+        BigDecimal currentPremium =
+                fetchOptionPremium(current.getStrike(), current.getOptionType());
+        if (currentPremium == null || currentPremium.compareTo(BigDecimal.ZERO) <= 0) {
+            // Estimate via delta 0.50 if quote fetch fails
+            double spotDiff =
+                    "CE".equalsIgnoreCase(current.getOptionType())
+                            ? currentSpotPrice - current.getStrike().doubleValue()
+                            : current.getStrike().doubleValue() - currentSpotPrice;
+            currentPremium = current.getEntryPrice().add(BigDecimal.valueOf(spotDiff * 0.50));
+            if (currentPremium.compareTo(BigDecimal.ZERO) < 0) {
+                currentPremium = BigDecimal.valueOf(0.05);
+            }
+        }
+
+        BigDecimal entryPrice = current.getEntryPrice();
+        boolean isShortPosition = "SELL".equalsIgnoreCase(current.getAction());
+
+        if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
+            if (isShortPosition && current.isHedgeEnabled()) {
+                // Hedged Credit Spread Evaluation
+                BigDecimal hedgePremium =
+                        fetchOptionPremium(current.getHedgeStrike(), current.getOptionType());
+                if (hedgePremium == null || hedgePremium.compareTo(BigDecimal.ZERO) <= 0) {
+                    hedgePremium = current.getHedgeEntryPrice();
+                }
+
+                double mainPoints = entryPrice.doubleValue() - currentPremium.doubleValue();
+                double hedgePoints =
+                        hedgePremium.doubleValue() - current.getHedgeEntryPrice().doubleValue();
+                double netPoints = mainPoints + hedgePoints;
+                double netCredit = current.getNetCredit().doubleValue();
+
+                if (stopLossPercent > 0.0) {
+                    double slThresholdPoints = -(netCredit * (stopLossPercent / 100.0));
+                    if (netPoints <= slThresholdPoints) {
+                        log.info(
+                                "[RSI-STRATEGY] 🛑 HEDGED SPREAD STOP-LOSS HIT for {}: Net Points {:.2f} <= SL {:.2f} (-{}%)",
+                                current.getSymbol(), netPoints, slThresholdPoints, stopLossPercent);
+                        executeExit("HARD_SL_HIT");
+                        return;
+                    }
+                }
+
+                if (targetProfitPercent > 0.0) {
+                    double tpThresholdPoints = netCredit * (targetProfitPercent / 100.0);
+                    if (netPoints >= tpThresholdPoints) {
+                        log.info(
+                                "[RSI-STRATEGY] 🎯 HEDGED SPREAD TARGET PROFIT HIT for {}: Net Points {:.2f} >= TP {:.2f} (+{}%)",
+                                current.getSymbol(),
+                                netPoints,
+                                tpThresholdPoints,
+                                targetProfitPercent);
+                        executeExit("TARGET_PROFIT_HIT");
+                        return;
+                    }
+                }
+            } else if (isShortPosition) {
+                // For Naked Option Selling: SL is hit when premium rises; TP is hit when premium
+                // decays
+                if (stopLossPercent > 0.0) {
+                    BigDecimal slThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 + (stopLossPercent / 100.0)));
+                    if (currentPremium.compareTo(slThreshold) >= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🛑 SHORT STOP-LOSS HIT for {}: Current ₹{} >= SL ₹{} (+{}%)",
+                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
+                        executeExit("HARD_SL_HIT");
+                        return;
+                    }
+                }
+
+                if (targetProfitPercent > 0.0) {
+                    BigDecimal tpThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 - (targetProfitPercent / 100.0)));
+                    if (currentPremium.compareTo(tpThreshold) <= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🎯 SHORT TARGET PROFIT HIT for {}: Current ₹{} <= TP ₹{} (-{}%)",
+                                current.getSymbol(),
+                                currentPremium,
+                                tpThreshold,
+                                targetProfitPercent);
+                        executeExit("TARGET_PROFIT_HIT");
+                        return;
+                    }
+                }
+            } else {
+                // For Option Buying: SL is hit when premium drops; TP is hit when premium rises
+                if (stopLossPercent > 0.0) {
+                    BigDecimal slThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 - (stopLossPercent / 100.0)));
+                    if (currentPremium.compareTo(slThreshold) <= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🛑 LONG STOP-LOSS HIT for {}: Current ₹{} <= SL ₹{} (-{}%)",
+                                current.getSymbol(), currentPremium, slThreshold, stopLossPercent);
+                        executeExit("HARD_SL_HIT");
+                        return;
+                    }
+                }
+
+                if (targetProfitPercent > 0.0) {
+                    BigDecimal tpThreshold =
+                            entryPrice.multiply(
+                                    BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
+                    if (currentPremium.compareTo(tpThreshold) >= 0) {
+                        log.info(
+                                "[RSI-STRATEGY] 🎯 LONG TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
+                                current.getSymbol(),
+                                currentPremium,
+                                tpThreshold,
+                                targetProfitPercent);
+                        executeExit("TARGET_PROFIT_HIT");
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Crossover / SuperTrend Reversal check
+        evaluateExitOnReversal(current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, isStBullish);
     }
 
     /** Evaluates reversal exit condition for an active open position. */
@@ -475,6 +764,18 @@ public class RsiCrossoverStrategyService {
             double rsi5Curr,
             double rsi15Prev,
             double rsi15Curr) {
+        evaluateExitOnReversal(
+                current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, latestSupertrendBullish);
+    }
+
+    /** Evaluates reversal exit condition with Supertrend support. */
+    public void evaluateExitOnReversal(
+            RsiCrossoverPosition current,
+            double rsi5Prev,
+            double rsi5Curr,
+            double rsi15Prev,
+            double rsi15Curr,
+            boolean isStBullish) {
         String action = current.getAction() != null ? current.getAction().toUpperCase() : "BUY";
         String optionType = current.getOptionType();
 
@@ -483,7 +784,13 @@ public class RsiCrossoverStrategyService {
                         || ("SELL".equals(action) && "PE".equalsIgnoreCase(optionType));
 
         if (isBullishPosition) {
-            // Holding Bullish trade (Buy CE or Sell PE): Exit when 5m RSI drops below 15m RSI
+            // Holding Bullish trade (Buy CE or Sell PE)
+            if (supertrendFilterEnabled && !isStBullish) {
+                log.info(
+                        "[RSI-STRATEGY] 🏁 Bullish Position Exit Triggered: 15m Supertrend flipped Bearish.");
+                executeExit("ST_FLIP_BEARISH");
+                return;
+            }
             if (rsi5Curr < rsi15Curr) {
                 log.info(
                         "[RSI-STRATEGY] 🏁 Bullish Position Exit Reversal Triggered: 5m RSI ({:.2f}) < 15m RSI ({:.2f})",
@@ -492,7 +799,13 @@ public class RsiCrossoverStrategyService {
                 executeExit("RSI_REVERSAL_BEARISH");
             }
         } else {
-            // Holding Bearish trade (Buy PE or Sell CE): Exit when 5m RSI rises above 15m RSI
+            // Holding Bearish trade (Buy PE or Sell CE)
+            if (supertrendFilterEnabled && isStBullish) {
+                log.info(
+                        "[RSI-STRATEGY] 🏁 Bearish Position Exit Triggered: 15m Supertrend flipped Bullish.");
+                executeExit("ST_FLIP_BULLISH");
+                return;
+            }
             if (rsi5Curr > rsi15Curr) {
                 log.info(
                         "[RSI-STRATEGY] 🏁 Bearish Position Exit Reversal Triggered: 5m RSI ({:.2f}) > 15m RSI ({:.2f})",
@@ -664,7 +977,14 @@ public class RsiCrossoverStrategyService {
 
         if (telegramAlerts) {
             telegramService.sendRsiCrossoverEntryAlert(
-                    position, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
+                    position,
+                    rsi5Curr,
+                    rsi15Curr,
+                    rsi5Prev,
+                    rsi15Prev,
+                    latestVwap,
+                    latestSupertrend,
+                    latestAdx15m);
         }
     }
 
@@ -1007,6 +1327,66 @@ public class RsiCrossoverStrategyService {
 
     public void setTelegramAlerts(boolean telegramAlerts) {
         this.telegramAlerts = telegramAlerts;
+    }
+
+    public boolean isVwapFilterEnabled() {
+        return vwapFilterEnabled;
+    }
+
+    public void setVwapFilterEnabled(boolean vwapFilterEnabled) {
+        this.vwapFilterEnabled = vwapFilterEnabled;
+    }
+
+    public boolean isSupertrendFilterEnabled() {
+        return supertrendFilterEnabled;
+    }
+
+    public void setSupertrendFilterEnabled(boolean supertrendFilterEnabled) {
+        this.supertrendFilterEnabled = supertrendFilterEnabled;
+    }
+
+    public int getSupertrendPeriod() {
+        return supertrendPeriod;
+    }
+
+    public void setSupertrendPeriod(int supertrendPeriod) {
+        this.supertrendPeriod = supertrendPeriod;
+    }
+
+    public double getSupertrendMultiplier() {
+        return supertrendMultiplier;
+    }
+
+    public void setSupertrendMultiplier(double supertrendMultiplier) {
+        this.supertrendMultiplier = supertrendMultiplier;
+    }
+
+    public boolean isDiFilterEnabled() {
+        return diFilterEnabled;
+    }
+
+    public void setDiFilterEnabled(boolean diFilterEnabled) {
+        this.diFilterEnabled = diFilterEnabled;
+    }
+
+    public double getLatestVwap() {
+        return latestVwap;
+    }
+
+    public double getLatestSupertrend() {
+        return latestSupertrend;
+    }
+
+    public boolean isLatestSupertrendBullish() {
+        return latestSupertrendBullish;
+    }
+
+    public double getLatestPlusDi15m() {
+        return latestPlusDi15m;
+    }
+
+    public double getLatestMinusDi15m() {
+        return latestMinusDi15m;
     }
 
     public Clock getClock() {

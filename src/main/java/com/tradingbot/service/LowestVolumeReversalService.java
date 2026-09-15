@@ -77,8 +77,8 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
     private int maxConcurrentTrades = 5;
 
-    @Value("${trading-bot.strategy.lowest-volume.min-pct-change:1.0}")
-    private double minPctChange = 1.0;
+    @Value("${trading-bot.strategy.lowest-volume.min-pct-change:0.0}")
+    private double minPctChange = 0.0;
 
     @Value("${trading-bot.strategy.lowest-volume.top-n-stocks:10}")
     private int topNStocks = 10;
@@ -194,6 +194,12 @@ public class LowestVolumeReversalService {
     public synchronized void runMorningUniverseScan() {
         if (!enabled) {
             log.debug("[LVR] Strategy is disabled. Skipping morning universe scan.");
+            return;
+        }
+
+        if (universeScanCompletedToday) {
+            log.info(
+                    "[LVR] Morning universe scan already completed today. Skipping duplicate run.");
             return;
         }
 
@@ -1477,6 +1483,14 @@ public class LowestVolumeReversalService {
 
     public void setSetupTimeoutCandles(int setupTimeoutCandles) {
         this.setupTimeoutCandles = setupTimeoutCandles;
+    }
+
+    public double getMinPctChange() {
+        return minPctChange;
+    }
+
+    public void setMinPctChange(double minPctChange) {
+        this.minPctChange = minPctChange;
     }
 
     public boolean isUniverseScanCompletedToday() {
