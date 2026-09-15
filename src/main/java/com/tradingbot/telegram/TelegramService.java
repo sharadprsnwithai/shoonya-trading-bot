@@ -721,6 +721,11 @@ public class TelegramService {
                         || ("SELL".equals(action)
                                 && "PE".equalsIgnoreCase(position.getOptionType()));
 
+        String indexName =
+                (position.getSymbol() != null && position.getSymbol().startsWith("SENSEX"))
+                        ? "SENSEX"
+                        : "NIFTY";
+
         String header;
         String direction;
         StringBuilder details = new StringBuilder();
@@ -745,13 +750,16 @@ public class TelegramService {
             String mainStrikeLabel =
                     position.getStrike() != null
                             ? String.format(
-                                    "NIFTY %.0f %s",
-                                    position.getStrike().doubleValue(), position.getOptionType())
+                                    "%s %.0f %s",
+                                    indexName,
+                                    position.getStrike().doubleValue(),
+                                    position.getOptionType())
                             : position.getOptionType();
             String hedgeStrikeLabel =
                     position.getHedgeStrike() != null
                             ? String.format(
-                                    "NIFTY %.0f %s",
+                                    "%s %.0f %s",
+                                    indexName,
                                     position.getHedgeStrike().doubleValue(),
                                     position.getOptionType())
                             : position.getOptionType();
@@ -789,8 +797,10 @@ public class TelegramService {
             String strikeLabel =
                     position.getStrike() != null
                             ? String.format(
-                                    "NIFTY %.0f %s",
-                                    position.getStrike().doubleValue(), position.getOptionType())
+                                    "%s %.0f %s",
+                                    indexName,
+                                    position.getStrike().doubleValue(),
+                                    position.getOptionType())
                             : position.getOptionType();
             details.append(
                     String.format(
@@ -818,13 +828,14 @@ public class TelegramService {
 
         String message =
                 String.format(
-                        "🚀 *[NIFTY INTRADAY: %s]* 🚀\n\n"
+                        "🚀 *[%s INTRADAY: %s]* 🚀\n\n"
                                 + "🧭 *Direction:* %s\n"
                                 + "⚡ *Action:* `%s %s`\n"
                                 + "📦 *Quantity:* %d units\n\n"
                                 + "📊 *Execution Details:*\n%s\n"
                                 + "%s"
                                 + "🕒 *Time:* %s IST",
+                        indexName,
                         header,
                         direction,
                         action,
@@ -852,19 +863,26 @@ public class TelegramService {
         BigDecimal totalPnl = position.getTotalRealizedPnl();
         String pnlEmoji = totalPnl.signum() >= 0 ? "🟢" : "🔴";
         String pnlSign = totalPnl.signum() >= 0 ? "+" : "";
+        String indexName =
+                (position.getSymbol() != null && position.getSymbol().startsWith("SENSEX"))
+                        ? "SENSEX"
+                        : "NIFTY";
 
         StringBuilder details = new StringBuilder();
         if (position.isHedgeEnabled()) {
             String mainStrikeLabel =
                     position.getStrike() != null
                             ? String.format(
-                                    "NIFTY %.0f %s",
-                                    position.getStrike().doubleValue(), position.getOptionType())
+                                    "%s %.0f %s",
+                                    indexName,
+                                    position.getStrike().doubleValue(),
+                                    position.getOptionType())
                             : position.getOptionType();
             String hedgeStrikeLabel =
                     position.getHedgeStrike() != null
                             ? String.format(
-                                    "NIFTY %.0f %s",
+                                    "%s %.0f %s",
+                                    indexName,
                                     position.getHedgeStrike().doubleValue(),
                                     position.getOptionType())
                             : position.getOptionType();
@@ -899,8 +917,10 @@ public class TelegramService {
             String strikeLabel =
                     position.getStrike() != null
                             ? String.format(
-                                    "NIFTY %.0f %s",
-                                    position.getStrike().doubleValue(), position.getOptionType())
+                                    "%s %.0f %s",
+                                    indexName,
+                                    position.getStrike().doubleValue(),
+                                    position.getOptionType())
                             : position.getOptionType();
             details.append(
                     String.format("   • *Strike (%s):* `%s`\n", strikeLabel, position.getSymbol()));
@@ -917,11 +937,12 @@ public class TelegramService {
 
         String message =
                 String.format(
-                        "🏁 *[NIFTY RSI CROSSOVER: TRADE EXITED]* 🏁\n\n"
+                        "🏁 *[%s RSI CROSSOVER: TRADE EXITED]* 🏁\n\n"
                                 + "ℹ️ *Reason:* %s\n"
                                 + "📊 *Trade Breakdown:*\n%s\n"
                                 + "%s *Total Realized P&L:* *%s₹%.2f*\n"
                                 + "🕒 *Exit Time:* %s IST",
+                        indexName,
                         reason,
                         details.toString(),
                         pnlEmoji,

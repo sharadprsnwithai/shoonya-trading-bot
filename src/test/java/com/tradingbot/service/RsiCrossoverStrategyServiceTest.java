@@ -155,7 +155,7 @@ class RsiCrossoverStrategyServiceTest {
                         1000,
                         1.0,
                         List.of(strike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(chain);
 
         strategyService.runCycle();
@@ -239,7 +239,7 @@ class RsiCrossoverStrategyServiceTest {
                         1000,
                         1.0,
                         List.of(strike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(chain);
 
         strategyService.runCycle();
@@ -305,7 +305,7 @@ class RsiCrossoverStrategyServiceTest {
                         1000,
                         1.0,
                         List.of(strike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(chain);
 
         strategyService.runCycle();
@@ -409,7 +409,7 @@ class RsiCrossoverStrategyServiceTest {
                         1000,
                         1.0,
                         List.of(strike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(chain);
 
         strategyService.runCycle();
@@ -439,7 +439,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(150.5),
                         BigDecimal.valueOf(140.0));
         OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, peEntry);
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -469,7 +469,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(154.5),
                         BigDecimal.valueOf(140.0));
         OptionStrike strikeRose = new OptionStrike(BigDecimal.valueOf(22500), true, null, peRose);
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -518,7 +518,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(150.5),
                         BigDecimal.valueOf(140.0));
         OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, peEntry);
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -549,7 +549,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(140.0));
         OptionStrike strikeDecayed =
                 new OptionStrike(BigDecimal.valueOf(22500), true, null, peDecayed);
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -606,7 +606,7 @@ class RsiCrossoverStrategyServiceTest {
                         1000,
                         1.0,
                         List.of(strike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(chain);
 
         strategyService.executeTrade("BUY", "CE", 22500.0, 55.0, 50.0, 48.0, 50.0);
@@ -633,7 +633,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(139.5),
                         BigDecimal.valueOf(130.0));
         OptionStrike exitStrike = new OptionStrike(BigDecimal.valueOf(22500), true, exitCe, null);
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -686,7 +686,7 @@ class RsiCrossoverStrategyServiceTest {
                         1000,
                         1.0,
                         List.of(strike));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(chain);
 
         strategyService.executeTrade("BUY", "CE", 22500.0, 55.0, 50.0, 48.0, 50.0);
@@ -737,7 +737,7 @@ class RsiCrossoverStrategyServiceTest {
         OptionStrike strikeHedge =
                 new OptionStrike(BigDecimal.valueOf(22050), false, null, peHedge);
 
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -783,7 +783,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(12.5),
                         BigDecimal.valueOf(13.5),
                         BigDecimal.valueOf(10.0));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -827,7 +827,7 @@ class RsiCrossoverStrategyServiceTest {
         strategyService.setMode("OPTION_SELLING");
         strategyService.setHedgeEnabled(true);
 
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(null);
 
         strategyService.executeTrade("SELL", "PE", 24850.0, 55.0, 50.0, 48.0, 50.0);
@@ -972,7 +972,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(150.5),
                         BigDecimal.valueOf(140.0));
         OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, peEntry);
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -1074,7 +1074,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(12.5),
                         BigDecimal.valueOf(10.0));
 
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -1116,7 +1116,7 @@ class RsiCrossoverStrategyServiceTest {
                         BigDecimal.valueOf(136.5),
                         BigDecimal.valueOf(137.5),
                         BigDecimal.valueOf(130.0));
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
                                 "NIFTY",
@@ -1149,5 +1149,76 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getTradeHistory()).hasSize(1);
         RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("TRAIL_SL_LOCK");
+    }
+
+    @Test
+    void testSensexChampionPresetApplicationAndExecution() {
+        strategyService.applyChampionPreset("SENSEX");
+        strategyService.setClock(createFixedClock(LocalTime.of(9, 45, 10)));
+
+        assertThat(strategyService.getUnderlyingIndex()).isEqualTo("SENSEX");
+        assertThat(strategyService.getIndexExchange()).isEqualTo("BSE");
+        assertThat(strategyService.getLotSize()).isEqualTo(20);
+        assertThat(strategyService.getAdxThreshold()).isEqualTo(25.0);
+        assertThat(strategyService.getVwapMaxDistance()).isEqualTo(150.0);
+        assertThat(strategyService.getTrailStep1Trigger()).isEqualTo(35.0);
+        assertThat(strategyService.getTrailStep1Lock()).isEqualTo(6.0);
+        assertThat(strategyService.getTrailStep2Trigger()).isEqualTo(75.0);
+        assertThat(strategyService.getTrailStep2Lock()).isEqualTo(45.0);
+
+        List<Candle> candles = generateCandles(200, 77000.0);
+        when(marketDataService.fetchHistoricalCandles(
+                        eq("BSE"), eq("1"), eq("SENSEX"), eq("5"), eq(5)))
+                .thenReturn(candles);
+
+        // 5m series: prev = 48.0, curr = 56.0; 15m = 52.0 (Bullish crossover)
+        when(taService.calculateRsiSeries(any(double[].class), eq(14)))
+                .thenReturn(new double[] {40.0, 48.0, 56.0})
+                .thenReturn(new double[] {50.0, 52.0, 52.0});
+
+        when(taService.calculateVwapSeries(any()))
+                .thenReturn(
+                        new double[] {76950.0, 76950.0, 76950.0}); // Spot (77000) > VWAP (76950)
+        when(taService.calculateAdxSeries(any(), any(), any(), anyInt()))
+                .thenReturn(new double[] {26.0, 26.0, 26.0}); // ADX >= 25.0
+
+        OptionContract peMain =
+                new OptionContract(
+                        "SENSEX24OCT77000PE",
+                        "30001",
+                        "PE",
+                        BigDecimal.valueOf(77000),
+                        BigDecimal.valueOf(250.0),
+                        1000,
+                        100,
+                        BigDecimal.valueOf(249.5),
+                        BigDecimal.valueOf(250.5),
+                        BigDecimal.valueOf(245.0));
+        OptionStrike strikeMain = new OptionStrike(BigDecimal.valueOf(77000), true, null, peMain);
+        OptionChainResponse chain =
+                new OptionChainResponse(
+                        "SENSEX",
+                        BigDecimal.valueOf(77000),
+                        BigDecimal.valueOf(77000),
+                        "SENSEX",
+                        1,
+                        1000,
+                        1000,
+                        1.0,
+                        List.of(strikeMain));
+        when(optionChainService.getIndexOptionChain(eq("SENSEX"), any(), anyInt(), anyBoolean()))
+                .thenReturn(chain);
+
+        strategyService.runCycle();
+
+        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        assertThat(pos).isNotNull();
+        assertThat(pos.getAction()).isEqualTo("SELL");
+        assertThat(pos.getOptionType()).isEqualTo("PE");
+        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(77000));
+        assertThat(pos.getQuantity()).isEqualTo(20); // 1 lot * 20
+        assertThat(pos.isHedgeEnabled()).isTrue();
+        // SENSEX Strike Step is 100: 77000 * 0.98 = 75460 -> rounded to 75500
+        assertThat(pos.getHedgeStrike()).isEqualByComparingTo(BigDecimal.valueOf(75500));
     }
 }

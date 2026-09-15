@@ -16,6 +16,7 @@ import com.tradingbot.order.ShoonyaOrderService;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.CandleResamplingUtil;
 import com.tradingbot.util.StockFnoRegistry;
+import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -71,6 +72,18 @@ public class RsiCrossoverStrategyService {
 
     @Value("${trading-bot.strategy.rsi-crossover.enabled:true}")
     private boolean enabled = true;
+
+    @Value("${trading-bot.strategy.rsi-crossover.underlying-index:NIFTY}")
+    private String underlyingIndex = "NIFTY";
+
+    @Value("${trading-bot.strategy.rsi-crossover.exchange:NSE}")
+    private String indexExchange = "NSE";
+
+    @Value("${trading-bot.strategy.rsi-crossover.token:10576}")
+    private String indexToken = "10576";
+
+    @Value("${trading-bot.strategy.rsi-crossover.symbol:NIFTY 50}")
+    private String indexSymbol = "NIFTY 50";
 
     @Value("${trading-bot.strategy.rsi-crossover.mode:OPTION_SELLING}")
     private String mode = "OPTION_SELLING";
@@ -135,6 +148,9 @@ public class RsiCrossoverStrategyService {
     @Value("${trading-bot.strategy.rsi-crossover.hedge-enabled:true}")
     private boolean hedgeEnabled = true;
 
+    @Value("${trading-bot.strategy.rsi-crossover.prefer-weekly:true}")
+    private boolean preferWeekly = true;
+
     @Value("${trading-bot.strategy.rsi-crossover.hedge-otm-percent:2.0}")
     private double hedgeOtmPercent = 2.0;
 
@@ -160,7 +176,104 @@ public class RsiCrossoverStrategyService {
     private volatile double latestVwap = Double.NaN;
     private volatile double latestSupertrend = Double.NaN;
     private volatile boolean latestSupertrendBullish = false;
-    private volatile double latestNiftyLtp = Double.NaN;
+    private volatile double latestIndexLtp = Double.NaN;
+
+    @PostConstruct
+    public void init() {
+        if (underlyingIndex != null && !underlyingIndex.isBlank()) {
+            applyChampionPreset(underlyingIndex);
+        }
+    }
+
+    /**
+     * Applies the validated Champion Setup parameters for a given underlying index or stock.
+     *
+     * @param instrument "NIFTY", "SENSEX", "BANKNIFTY", or Stock Symbol (BSE, LAURUSLABS, etc.)
+     */
+    public void applyChampionPreset(String instrument) {
+        String sym = instrument != null ? instrument.toUpperCase().trim() : "NIFTY";
+        if (sym.contains("SENSEX") || sym.contains("BSESN")) {
+            this.underlyingIndex = "SENSEX";
+            this.indexExchange = "BSE";
+            this.indexToken = "1";
+            this.indexSymbol = "SENSEX";
+            this.lotSize = 20;
+            this.preferWeekly = true;
+            this.adxThreshold = 25.0;
+            this.vwapMaxDistance = 150.0;
+            this.trailStep1Trigger = 35.0;
+            this.trailStep1Lock = 6.0;
+            this.trailStep2Trigger = 75.0;
+            this.trailStep2Lock = 45.0;
+            this.stopLossPercent = 2.0;
+            this.targetProfitPercent = 50.0;
+            this.hedgeEnabled = true;
+            this.hedgeOtmPercent = 2.0;
+            log.info(
+                    "[RSI-STRATEGY] Applied Champion Setup for BSE SENSEX (Weekly Friday Expiry, Lot 20, Step 100).");
+        } else if (sym.contains("BANKNIFTY") || sym.equals("BANK NIFTY")) {
+            this.underlyingIndex = "BANKNIFTY";
+            this.indexExchange = "NSE";
+            this.indexToken = "26009";
+            this.indexSymbol = "BANK NIFTY";
+            this.lotSize = 30;
+            this.preferWeekly = false;
+            this.adxThreshold = 22.0;
+            this.vwapMaxDistance = 80.0;
+            this.trailStep1Trigger = 25.0;
+            this.trailStep1Lock = 5.0;
+            this.trailStep2Trigger = 55.0;
+            this.trailStep2Lock = 30.0;
+            this.stopLossPercent = 2.0;
+            this.targetProfitPercent = 50.0;
+            this.hedgeEnabled = true;
+            this.hedgeOtmPercent = 2.0;
+            log.info(
+                    "[RSI-STRATEGY] Applied Champion Setup for NSE BANK NIFTY (Monthly Thursday Expiry, Lot 30, Step 100).");
+        } else if (sym.contains("NIFTY")) {
+            this.underlyingIndex = "NIFTY";
+            this.indexExchange = "NSE";
+            this.indexToken = "10576";
+            this.indexSymbol = "NIFTY 50";
+            this.lotSize = 65;
+            this.preferWeekly = true;
+            this.adxThreshold = 22.0;
+            this.vwapMaxDistance = 35.0;
+            this.trailStep1Trigger = 12.0;
+            this.trailStep1Lock = 2.0;
+            this.trailStep2Trigger = 25.0;
+            this.trailStep2Lock = 15.0;
+            this.stopLossPercent = 2.0;
+            this.targetProfitPercent = 50.0;
+            this.hedgeEnabled = true;
+            this.hedgeOtmPercent = 2.0;
+            log.info(
+                    "[RSI-STRATEGY] Applied Champion Setup for NSE NIFTY 50 (Weekly Thursday Expiry, Lot 65, Step 50).");
+        } else {
+            // Stock Equity / Option Underlying
+            this.underlyingIndex = sym;
+            this.indexExchange = StockFnoRegistry.getExchange(sym);
+            this.indexToken =
+                    StockFnoRegistry.getToken(sym) != null ? StockFnoRegistry.getToken(sym) : "0";
+            this.indexSymbol = sym;
+            this.lotSize = StockFnoRegistry.getLotSize(sym);
+            this.preferWeekly = false;
+            this.adxThreshold = 22.0;
+            this.vwapMaxDistance = 0.60;
+            this.trailStep1Trigger = 0.50;
+            this.trailStep1Lock = 0.10;
+            this.trailStep2Trigger = 1.00;
+            this.trailStep2Lock = 0.60;
+            this.stopLossPercent = 0.80;
+            this.targetProfitPercent = 1.60;
+            this.hedgeEnabled = false;
+            log.info(
+                    "[RSI-STRATEGY] Applied Champion Setup for Stock {} (Monthly Expiry, Lot {}, Step {}).",
+                    sym,
+                    this.lotSize,
+                    StockFnoRegistry.getStrikeStep(sym, BigDecimal.ZERO));
+        }
+    }
 
     @Autowired
     public RsiCrossoverStrategyService(
@@ -201,14 +314,15 @@ public class RsiCrossoverStrategyService {
         }
 
         log.info(
-                "[RSI-STRATEGY] Running 5-min RSI Crossover cycle [{}] at {} IST...",
+                "[RSI-STRATEGY] Running 5-min RSI Crossover cycle [{}] for {} at {} IST...",
                 mode,
+                indexSymbol,
                 nowTime);
 
         // Fetch 5-day 5-min historical candles (guarantees >= 350 bars for warm RSI)
         List<Candle> fiveMinCandles =
                 marketDataService.fetchHistoricalCandles(
-                        NIFTY_EXCHANGE, NIFTY_TOKEN, NIFTY_SYMBOL, "5", 5);
+                        indexExchange, indexToken, indexSymbol, "5", 5);
         if (fiveMinCandles == null || fiveMinCandles.size() < (rsiPeriod + 10)) {
             log.warn(
                     "[RSI-STRATEGY] Insufficient 5m candles retrieved: {}",
@@ -307,11 +421,12 @@ public class RsiCrossoverStrategyService {
         this.latestVwap = vwapCurr;
         this.latestSupertrend = stVal;
         this.latestSupertrendBullish = isStBullish;
-        this.latestNiftyLtp = spotPrice;
+        this.latestIndexLtp = spotPrice;
 
         log.info(
-                "[RSI-STRATEGY] [{}] NIFTY: ₹{} | VWAP: ₹{:.1f} | ST(15m): ₹{:.1f} ({}) | 5m RSI: {:.2f} | 15m RSI: {:.2f} | 15m ADX: {:.2f} (+DI: {:.1f}, -DI: {:.1f})",
+                "[RSI-STRATEGY] [{}] {}: ₹{} | VWAP: ₹{:.1f} | ST(15m): ₹{:.1f} ({}) | 5m RSI: {:.2f} | 15m RSI: {:.2f} | 15m ADX: {:.2f} (+DI: {:.1f}, -DI: {:.1f})",
                 mode,
+                indexSymbol,
                 spotPrice,
                 vwapCurr,
                 stVal,
@@ -416,13 +531,19 @@ public class RsiCrossoverStrategyService {
         if (vwapFilterEnabled && !Double.isNaN(vwap)) {
             if (vwapMaxDistance > 0.0) {
                 double dist = Math.abs(spotPrice - vwap);
-                if (dist > vwapMaxDistance) {
+                // For equities: vwapMaxDistance is pct (e.g. 0.60 means 0.60%); for indices:
+                // absolute pts
+                double allowedDist =
+                        (!StockFnoRegistry.isIndex(underlyingIndex) && vwapMaxDistance < 5.0)
+                                ? spotPrice * (vwapMaxDistance / 100.0)
+                                : vwapMaxDistance;
+                if (dist > allowedDist) {
                     log.info(
                             "[RSI-STRATEGY] ⚠️ Crossover rejected: Spot (₹{}) is too far from VWAP (₹{:.1f}, dist={:.1f} > max={:.1f}). Skipping chasing price.",
                             spotPrice,
                             vwap,
                             dist,
-                            vwapMaxDistance);
+                            allowedDist);
                     return;
                 }
             }
@@ -798,12 +919,20 @@ public class RsiCrossoverStrategyService {
             double rsi15Curr,
             double rsi5Prev,
             double rsi15Prev) {
-        // Calculate ATM Strike
+        BigDecimal strikeStep =
+                StockFnoRegistry.getStrikeStep(underlyingIndex, BigDecimal.valueOf(spotPrice));
         BigDecimal atmStrike =
-                StockFnoRegistry.calculateAtmStrike("NIFTY50", BigDecimal.valueOf(spotPrice));
+                StockFnoRegistry.calculateAtmStrike(underlyingIndex, BigDecimal.valueOf(spotPrice));
         if (atmStrike == null || atmStrike.compareTo(BigDecimal.ZERO) <= 0) {
-            atmStrike = BigDecimal.valueOf(Math.round(spotPrice / 50.0) * 50);
+            double step = strikeStep.doubleValue();
+            atmStrike = BigDecimal.valueOf(Math.round(spotPrice / step) * step);
         }
+
+        LocalDate today = LocalDate.now(clock);
+        boolean isWeekly = preferWeekly && StockFnoRegistry.isIndex(underlyingIndex);
+        LocalDate expiry =
+                StockFnoRegistry.calculateTargetExpiry(underlyingIndex, today, isWeekly, 1);
+        double dteDays = Math.max(1.0, java.time.temporal.ChronoUnit.DAYS.between(today, expiry));
 
         int totalQuantity = lots * lotSize;
         String tradeId = "RSI_TRD_" + tradeCounter.getAndIncrement();
@@ -812,7 +941,13 @@ public class RsiCrossoverStrategyService {
         String optionSymbol = resolveOptionSymbol(atmStrike, optionType);
         BigDecimal entryPremium = fetchOptionPremium(atmStrike, optionType);
         if (entryPremium == null || entryPremium.compareTo(BigDecimal.ZERO) <= 0) {
-            entryPremium = BigDecimal.valueOf(150.0); // Safe simulated fallback
+            entryPremium =
+                    StockFnoRegistry.estimateTheoreticalPremium(
+                            underlyingIndex,
+                            BigDecimal.valueOf(spotPrice),
+                            atmStrike,
+                            optionType,
+                            dteDays);
         }
 
         boolean applyHedge = hedgeEnabled && "SELL".equalsIgnoreCase(action);
@@ -826,20 +961,27 @@ public class RsiCrossoverStrategyService {
                     "PE".equalsIgnoreCase(optionType)
                             ? spotPrice * (1.0 - hedgeOtmPercent / 100.0)
                             : spotPrice * (1.0 + hedgeOtmPercent / 100.0);
-            hedgeStrike = BigDecimal.valueOf(Math.round(rawHedge / 50.0) * 50);
+            double step = strikeStep.doubleValue();
+            hedgeStrike = BigDecimal.valueOf(Math.round(rawHedge / step) * step);
             if ("PE".equalsIgnoreCase(optionType)) {
                 if (hedgeStrike.compareTo(atmStrike) >= 0) {
-                    hedgeStrike = atmStrike.subtract(BigDecimal.valueOf(50));
+                    hedgeStrike = atmStrike.subtract(strikeStep);
                 }
             } else {
                 if (hedgeStrike.compareTo(atmStrike) <= 0) {
-                    hedgeStrike = atmStrike.add(BigDecimal.valueOf(50));
+                    hedgeStrike = atmStrike.add(strikeStep);
                 }
             }
             hedgeSymbol = resolveOptionSymbol(hedgeStrike, optionType);
             hedgeEntryPremium = fetchOptionPremium(hedgeStrike, optionType);
             if (hedgeEntryPremium == null || hedgeEntryPremium.compareTo(BigDecimal.ZERO) <= 0) {
-                hedgeEntryPremium = BigDecimal.valueOf(12.0); // Safe simulated fallback
+                hedgeEntryPremium =
+                        StockFnoRegistry.estimateTheoreticalPremium(
+                                underlyingIndex,
+                                BigDecimal.valueOf(spotPrice),
+                                hedgeStrike,
+                                optionType,
+                                dteDays);
             }
         }
 
@@ -859,6 +1001,8 @@ public class RsiCrossoverStrategyService {
                         hedgeEntryPremium,
                         applyHedge ? totalQuantity : 0);
 
+        String segment = StockFnoRegistry.getSegment(underlyingIndex);
+
         // If Live Auto-Execution is enabled
         if (autoExecute && config.isEnabled()) {
             if (applyHedge) {
@@ -867,7 +1011,7 @@ public class RsiCrossoverStrategyService {
                     OrderRequest hedgeReq =
                             OrderRequest.market(
                                     hedgeSymbol,
-                                    "NFO",
+                                    segment,
                                     TransactionType.BUY,
                                     totalQuantity,
                                     tradeId + "_HEDGE");
@@ -882,7 +1026,7 @@ public class RsiCrossoverStrategyService {
                         OrderRequest mainReq =
                                 OrderRequest.market(
                                         optionSymbol,
-                                        "NFO",
+                                        segment,
                                         TransactionType.SELL,
                                         totalQuantity,
                                         tradeId);
@@ -899,7 +1043,7 @@ public class RsiCrossoverStrategyService {
                         orderService.placeOrder(
                                 OrderRequest.market(
                                         hedgeSymbol,
-                                        "NFO",
+                                        segment,
                                         TransactionType.SELL,
                                         totalQuantity,
                                         tradeId + "_ROLLBACK"));
@@ -920,7 +1064,7 @@ public class RsiCrossoverStrategyService {
                                     : TransactionType.BUY;
                     OrderRequest orderReq =
                             OrderRequest.market(
-                                    optionSymbol, "NFO", txType, totalQuantity, tradeId);
+                                    optionSymbol, segment, txType, totalQuantity, tradeId);
                     orderService.placeOrder(orderReq);
                     log.info(
                             "[RSI-STRATEGY] [LIVE] Placed {} Order for {} Qty {}",
@@ -995,6 +1139,7 @@ public class RsiCrossoverStrategyService {
 
         // If Live Auto-Execution is enabled, place opposing order(s) to close
         if (autoExecute && config.isEnabled()) {
+            String exitSegment = StockFnoRegistry.getSegment(underlyingIndex);
             try {
                 // Leg 1: Close main leg
                 TransactionType exitTxType =
@@ -1004,7 +1149,7 @@ public class RsiCrossoverStrategyService {
                 OrderRequest exitReq =
                         OrderRequest.market(
                                 current.getSymbol(),
-                                "NFO",
+                                exitSegment,
                                 exitTxType,
                                 current.getQuantity(),
                                 current.getTradeId() + "_EXIT");
@@ -1020,7 +1165,7 @@ public class RsiCrossoverStrategyService {
                     OrderRequest hedgeExitReq =
                             OrderRequest.market(
                                     current.getHedgeSymbol(),
-                                    "NFO",
+                                    exitSegment,
                                     TransactionType.SELL,
                                     current.getHedgeQuantity(),
                                     current.getTradeId() + "_HEDGE_EXIT");
@@ -1078,14 +1223,15 @@ public class RsiCrossoverStrategyService {
         latestRsi15m = Double.NaN;
         prevRsi5m = Double.NaN;
         prevRsi15m = Double.NaN;
-        latestNiftyLtp = Double.NaN;
+        latestIndexLtp = Double.NaN;
     }
 
     // --- Helper Methods ---
 
     private BigDecimal fetchOptionPremium(BigDecimal strike, String optionType) {
         try {
-            OptionChainResponse chain = optionChainService.getNifty50OptionChain(strike, 3, true);
+            OptionChainResponse chain =
+                    optionChainService.getIndexOptionChain(underlyingIndex, strike, 3, true);
             if (chain != null && chain.strikes() != null) {
                 for (OptionStrike os : chain.strikes()) {
                     if (os.strikePrice().compareTo(strike) == 0) {
@@ -1107,7 +1253,8 @@ public class RsiCrossoverStrategyService {
 
     private String resolveOptionSymbol(BigDecimal strike, String optionType) {
         try {
-            OptionChainResponse chain = optionChainService.getNifty50OptionChain(strike, 3, true);
+            OptionChainResponse chain =
+                    optionChainService.getIndexOptionChain(underlyingIndex, strike, 3, true);
             if (chain != null && chain.strikes() != null) {
                 for (OptionStrike os : chain.strikes()) {
                     if (os.strikePrice().compareTo(strike) == 0) {
@@ -1124,23 +1271,27 @@ public class RsiCrossoverStrategyService {
         } catch (Exception e) {
             log.debug("[RSI-STRATEGY] Symbol resolution error: {}", e.getMessage());
         }
-        return formatNiftyOptionSymbol(strike, optionType);
+        return formatOptionSymbol(strike, optionType);
     }
 
-    private String formatNiftyOptionSymbol(BigDecimal strike, String optionType) {
+    private String formatOptionSymbol(BigDecimal strike, String optionType) {
         LocalDate today = LocalDate.now(clock);
-        LocalDate expiry = StockFnoRegistry.calculateWeeklyTargetExpiry(today, 1);
-        String year = String.valueOf(expiry.getYear()).substring(2);
-        String month = expiry.getMonth().name().substring(0, 3).toUpperCase();
-        int strikeInt = strike.intValue();
-        // NSE index option format (both weekly & monthly expiry):
-        // NIFTY{DD}{MMM}{YY}{STRIKE}{CE/PE} e.g. NIFTY18SEP2524850PE
-        return String.format(
-                "NIFTY%02d%s%s%d%s",
-                expiry.getDayOfMonth(), month, year, strikeInt, optionType.toUpperCase());
+        boolean isWeekly = preferWeekly && StockFnoRegistry.isIndex(underlyingIndex);
+        LocalDate expiry =
+                StockFnoRegistry.calculateTargetExpiry(underlyingIndex, today, isWeekly, 1);
+        return StockFnoRegistry.formatTradingSymbol(
+                underlyingIndex, expiry, strike, optionType, isWeekly);
     }
 
     // --- Getters and Setters for Testing & Configuration ---
+
+    public boolean isPreferWeekly() {
+        return preferWeekly;
+    }
+
+    public void setPreferWeekly(boolean preferWeekly) {
+        this.preferWeekly = preferWeekly;
+    }
 
     public boolean isTradeExecutedToday() {
         return tradesExecutedToday.get() >= maxTradesPerDay;
@@ -1211,7 +1362,43 @@ public class RsiCrossoverStrategyService {
     }
 
     public double getLatestNiftyLtp() {
-        return latestNiftyLtp;
+        return latestIndexLtp;
+    }
+
+    public double getLatestIndexLtp() {
+        return latestIndexLtp;
+    }
+
+    public String getUnderlyingIndex() {
+        return underlyingIndex;
+    }
+
+    public void setUnderlyingIndex(String underlyingIndex) {
+        this.underlyingIndex = underlyingIndex;
+    }
+
+    public String getIndexExchange() {
+        return indexExchange;
+    }
+
+    public void setIndexExchange(String indexExchange) {
+        this.indexExchange = indexExchange;
+    }
+
+    public String getIndexToken() {
+        return indexToken;
+    }
+
+    public void setIndexToken(String indexToken) {
+        this.indexToken = indexToken;
+    }
+
+    public String getIndexSymbol() {
+        return indexSymbol;
+    }
+
+    public void setIndexSymbol(String indexSymbol) {
+        this.indexSymbol = indexSymbol;
     }
 
     public String getMode() {
