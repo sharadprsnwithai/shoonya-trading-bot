@@ -11,6 +11,34 @@ import org.junit.jupiter.api.Test;
 class StockFnoRegistryTest {
 
     @Test
+    void testGetToken_ReturnsNullForUnknownSymbol() {
+        assertThat(StockFnoRegistry.getToken("UNKNOWN_XYZ_SYMBOL")).isNull();
+        assertThat(StockFnoRegistry.getToken(null)).isNull();
+    }
+
+    @Test
+    void testGetToken_ReturnsNumericTokenForMajorFnoStocks() {
+        assertThat(StockFnoRegistry.getToken("RELIANCE")).isEqualTo("2885");
+        assertThat(StockFnoRegistry.getToken("TCS")).isEqualTo("11536");
+        assertThat(StockFnoRegistry.getToken("INFY")).isEqualTo("1594");
+        assertThat(StockFnoRegistry.getToken("HDFCBANK")).isEqualTo("1333");
+        assertThat(StockFnoRegistry.getToken("ICICIBANK")).isEqualTo("4963");
+        assertThat(StockFnoRegistry.getToken("SBIN")).isEqualTo("3045");
+        assertThat(StockFnoRegistry.getToken("BHARTIARTL")).isEqualTo("10604");
+        assertThat(StockFnoRegistry.getToken("TATAMOTORS")).isEqualTo("3456");
+        assertThat(StockFnoRegistry.getToken("AXISBANK")).isEqualTo("5900");
+        assertThat(StockFnoRegistry.getToken("KOTAKBANK")).isEqualTo("1922");
+        assertThat(StockFnoRegistry.getToken("LT")).isEqualTo("11483");
+        assertThat(StockFnoRegistry.getToken("BAJFINANCE")).isEqualTo("317");
+        assertThat(StockFnoRegistry.getToken("MARUTI")).isEqualTo("10999");
+        assertThat(StockFnoRegistry.getToken("TITAN")).isEqualTo("3506");
+        assertThat(StockFnoRegistry.getToken("SUNPHARMA")).isEqualTo("3351");
+        assertThat(StockFnoRegistry.getToken("WIPRO")).isEqualTo("3787");
+        assertThat(StockFnoRegistry.getToken("ITC")).isEqualTo("1660");
+        assertThat(StockFnoRegistry.getToken("TATASTEEL")).isEqualTo("3499");
+    }
+
+    @Test
     void testSubscribedSymbolsContainNiftyAndTop10ChampionStocks() {
         List<String> symbols = StockFnoRegistry.getAllSubscribedSymbols();
         assertThat(symbols).hasSize(11);

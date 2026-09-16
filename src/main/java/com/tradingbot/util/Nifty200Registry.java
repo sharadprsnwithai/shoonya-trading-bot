@@ -215,7 +215,7 @@ public final class Nifty200Registry {
             STOCKS.put(
                     sym,
                     new StockMetadata(
-                            sym, token != null ? token : "10576", isFno, lot, strikeStep));
+                            sym, token, isFno, lot, strikeStep));
         }
     }
 
