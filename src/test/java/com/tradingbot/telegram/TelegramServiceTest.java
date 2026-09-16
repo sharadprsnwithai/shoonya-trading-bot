@@ -173,4 +173,10 @@ class TelegramServiceTest {
         // Should not throw when disabled
         telegramService.sendLvrTradeEntryAlert(pos, setup);
     }
+
+    @Test
+    void testSendLvrScanRetryAlert() {
+        telegramService.sendLvrScanRetryAlert(true, java.time.LocalTime.of(9, 30), 0);
+        telegramService.sendLvrScanRetryAlert(false, null, 2);
+    }
 }

@@ -571,6 +571,42 @@ public class TelegramService {
     }
 
     /**
+     * Sends an alert when universe scan yields 0 qualified stocks or data was incomplete, notifying
+     * that a retry will take place on the next 5-minute candle interval.
+     */
+    public void sendLvrScanRetryAlert(
+            boolean niftyBullish, java.time.LocalTime nextRetryTime, int activeSetupsCount) {
+        if (!config.isTelegramEnabled()
+                || config.getTelegramBotToken().isBlank()
+                || config.getTelegramChatId().isBlank()) {
+            return;
+        }
+
+        String niftyEmoji =
+                niftyBullish
+                        ? "🟢 BULLISH (Long Trades Eligible)"
+                        : "🔴 BEARISH (Short Trades Eligible)";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("⚠️ *[LOWEST VOLUME REVERSAL: SCAN RETRY PENDING]* ⚠️\n\n");
+        sb.append("🕒 *Scan Time:* ")
+                .append(TIME_FMT.format(Instant.now()))
+                .append(" IST\n");
+        sb.append("🧭 *NIFTY 50 Direction:* ").append(niftyEmoji).append("\n");
+        sb.append("📊 *Status:* ⚠️ Data snapshot incomplete (0 stocks qualified)\n");
+        sb.append("🔄 *Action:* Daily watchlist not fixed yet. Strategy will automatically retry at *")
+                .append(nextRetryTime != null ? nextRetryTime.toString() : "09:30")
+                .append(" IST*.\n\n");
+        sb.append(
+                String.format(
+                        "🎯 *Active Setups Tracking:* `%d` | 💼 *Open Paper Trades:* 0 / 2\n",
+                        activeSetupsCount));
+        sb.append("🤖 *Automation:* 5-min candle polling active (09:26 - 15:00 IST)");
+
+        sendAsync(sb.toString());
+    }
+
+    /**
      * Sends a detailed alert with all identified F&O stocks (Top Gainers & Losers) including live
      * spot prices, % changes, day open, and market alignment.
      */
