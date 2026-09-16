@@ -127,6 +127,27 @@ public class ShoonyaMarketDataService {
     }
 
     /**
+     * Warms the in-memory token cache at startup with all pre-registered F&O instruments and indices.
+     */
+    @jakarta.annotation.PostConstruct
+    public void warmTokenCache() {
+        for (Map.Entry<String, StockFnoRegistry.InstrumentInfo> entry :
+                StockFnoRegistry.getAllInstruments().entrySet()) {
+            String tok = entry.getValue().token();
+            if (isValidNumericToken(tok)) {
+                tokenCache.put(entry.getKey(), tok);
+            }
+        }
+        log.info(
+                "[MARKET-DATA] Token cache pre-warmed with {} active F&O instruments at startup.",
+                tokenCache.size());
+    }
+
+    private boolean isValidNumericToken(String token) {
+        return token != null && !token.isBlank() && token.matches("\\d+");
+    }
+
+    /**
      * Resolves the instrument token for a symbol using cache, StockFnoRegistry, Nifty200Registry,
      * or Shoonya SearchScrip.
      */
@@ -139,20 +160,20 @@ public class ShoonyaMarketDataService {
         if ("NIFTY".equalsIgnoreCase(clean)) clean = "NIFTY50";
 
         if (tokenCache.containsKey(clean)) {
-            return tokenCache.get(clean);
+            String cached = tokenCache.get(clean);
+            if (isValidNumericToken(cached)) {
+                return cached;
+            }
         }
 
         String registeredToken = StockFnoRegistry.getToken(clean);
-        if (registeredToken != null && !registeredToken.isBlank()) {
+        if (isValidNumericToken(registeredToken)) {
             tokenCache.put(clean, registeredToken);
             return registeredToken;
         }
 
         var n200Meta = com.tradingbot.util.Nifty200Registry.getMetadata(clean);
-        if (n200Meta != null
-                && n200Meta.token() != null
-                && !n200Meta.token().isBlank()
-                && !"10576".equals(n200Meta.token())) {
+        if (n200Meta != null && isValidNumericToken(n200Meta.token())) {
             tokenCache.put(clean, n200Meta.token());
             return n200Meta.token();
         }
@@ -165,14 +186,14 @@ public class ShoonyaMarketDataService {
                     String tsym = item.path("tsym").asText("");
                     if (tsym.equalsIgnoreCase(clean + "-EQ") || tsym.equalsIgnoreCase(clean)) {
                         String tok = item.path("token").asText("");
-                        if (!tok.isBlank()) {
+                        if (isValidNumericToken(tok)) {
                             tokenCache.put(clean, tok);
                             return tok;
                         }
                     }
                 }
                 String tok = searchRes.get(0).path("token").asText("");
-                if (!tok.isBlank()) {
+                if (isValidNumericToken(tok)) {
                     tokenCache.put(clean, tok);
                     return tok;
                 }

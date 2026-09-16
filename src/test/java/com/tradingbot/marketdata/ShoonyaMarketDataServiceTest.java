@@ -70,6 +70,29 @@ class ShoonyaMarketDataServiceTest {
     }
 
     @Test
+    void testWarmTokenCache_PopulatesMajorFnoTokens() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        ShoonyaAuthenticator auth = mock(ShoonyaAuthenticator.class);
+        ShoonyaMarketDataService service = new ShoonyaMarketDataService(config, auth);
+
+        service.warmTokenCache();
+
+        assertThat(service.resolveToken("RELIANCE")).isEqualTo("2885");
+        assertThat(service.resolveToken("TCS")).isEqualTo("11536");
+        assertThat(service.resolveToken("INFY")).isEqualTo("1594");
+        assertThat(service.resolveToken("HDFCBANK")).isEqualTo("1333");
+    }
+
+    @Test
+    void testResolveToken_RejectsNonNumericToken() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        ShoonyaAuthenticator auth = mock(ShoonyaAuthenticator.class);
+        ShoonyaMarketDataService service = new ShoonyaMarketDataService(config, auth);
+
+        assertThat(service.resolveToken("NON_EXISTENT_TICKER_12345")).isNull();
+    }
+
+    @Test
     void testParseEmptyOrErrorResponse() {
         ShoonyaConfig config = new ShoonyaConfig();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
