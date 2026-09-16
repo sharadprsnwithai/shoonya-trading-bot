@@ -1,6 +1,6 @@
 package com.tradingbot.scheduler;
 
-import com.tradingbot.service.RsiCrossoverStrategyService;
+import com.tradingbot.service.MultiIndicatorOptionsService;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import org.slf4j.Logger;
@@ -18,25 +18,26 @@ import org.springframework.stereotype.Service;
  * IST.
  */
 @Service
-public class RsiCrossoverScheduler {
+public class MultiIndicatorOptionsScheduler {
 
-    private static final Logger log = LoggerFactory.getLogger(RsiCrossoverScheduler.class);
+    private static final Logger log = LoggerFactory.getLogger(MultiIndicatorOptionsScheduler.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
-    private final RsiCrossoverStrategyService strategyService;
+    private final MultiIndicatorOptionsService strategyService;
 
-    @Value("${trading-bot.strategy.rsi-crossover.scheduler-enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.scheduler-enabled:true}")
     private boolean schedulerEnabled = true;
 
     @Autowired
-    public RsiCrossoverScheduler(RsiCrossoverStrategyService strategyService) {
+    public MultiIndicatorOptionsScheduler(MultiIndicatorOptionsService strategyService) {
         this.strategyService = strategyService;
     }
 
     /** Daily reset at 09:15:00 IST (market open) Monday through Friday. */
     @Scheduled(cron = "0 15 9 ? * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledDailyReset() {
-        log.info("[RSI-SCHEDULER] Market Open (09:15 IST). Executing daily strategy state reset.");
+        log.info(
+                "[MULTI-INDICATOR-SCHEDULER] Market Open (09:15 IST). Executing daily strategy state reset.");
         strategyService.resetDaily();
     }
 
@@ -45,11 +46,11 @@ public class RsiCrossoverScheduler {
      * ensure broker candle publishing latency is accounted for.
      */
     @Scheduled(
-            cron = "${trading-bot.strategy.rsi-crossover.cron:10 */5 9-15 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.multi-indicator-options.cron:10 */5 9-15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void scheduledEvaluationCycle() {
         if (!schedulerEnabled) {
-            log.debug("[RSI-SCHEDULER] Scheduler is disabled in configuration.");
+            log.debug("[MULTI-INDICATOR-SCHEDULER] Scheduler is disabled in configuration.");
             return;
         }
 
@@ -57,19 +58,19 @@ public class RsiCrossoverScheduler {
         // Only run within the active evaluation window: 09:45 to 15:00 IST
         if (now.isBefore(LocalTime.of(9, 45)) || now.isAfter(LocalTime.of(15, 0, 30))) {
             log.debug(
-                    "[RSI-SCHEDULER] Outside active evaluation window (09:45 - 15:00 IST). Skipping cycle at {}",
+                    "[MULTI-INDICATOR-SCHEDULER] Outside active evaluation window (09:45 - 15:00 IST). Skipping cycle at {}",
                     now);
             return;
         }
 
         try {
             log.info(
-                    "[RSI-SCHEDULER] Executing 5-minute RSI Crossover evaluation cycle at {} IST...",
+                    "[MULTI-INDICATOR-SCHEDULER] Executing 5-minute RSI Crossover evaluation cycle at {} IST...",
                     now);
             strategyService.runCycle();
         } catch (Exception e) {
             log.error(
-                    "[RSI-SCHEDULER] Exception during RSI Crossover evaluation cycle: {}",
+                    "[MULTI-INDICATOR-SCHEDULER] Exception during RSI Crossover evaluation cycle: {}",
                     e.getMessage(),
                     e);
         }
@@ -77,7 +78,8 @@ public class RsiCrossoverScheduler {
 
     /** Mandatory EOD Square-Off at 15:05:10 IST. */
     @Scheduled(
-            cron = "${trading-bot.strategy.rsi-crossover.square-off-cron:10 5 15 ? * MON-FRI}",
+            cron =
+                    "${trading-bot.strategy.multi-indicator-options.square-off-cron:10 5 15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void scheduledEodSquareOff() {
         if (!schedulerEnabled) {
@@ -86,11 +88,13 @@ public class RsiCrossoverScheduler {
 
         try {
             log.info(
-                    "[RSI-SCHEDULER] 15:05:10 IST: Triggering mandatory EOD square-off for any open positions...");
+                    "[MULTI-INDICATOR-SCHEDULER] 15:05:10 IST: Triggering mandatory EOD square-off for any open positions...");
             strategyService.executeSquareOff("MANDATORY_EOD_SQUARE_OFF");
         } catch (Exception e) {
             log.error(
-                    "[RSI-SCHEDULER] Exception during mandatory square-off: {}", e.getMessage(), e);
+                    "[MULTI-INDICATOR-SCHEDULER] Exception during mandatory square-off: {}",
+                    e.getMessage(),
+                    e);
         }
     }
 

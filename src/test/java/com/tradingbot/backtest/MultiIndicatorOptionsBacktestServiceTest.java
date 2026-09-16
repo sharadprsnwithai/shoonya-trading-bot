@@ -15,11 +15,11 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class RsiCrossoverBacktestServiceTest {
+class MultiIndicatorOptionsBacktestServiceTest {
 
     private ShoonyaMarketDataService marketDataService;
     private TechnicalAnalysisService taService;
-    private RsiCrossoverBacktestService backtestService;
+    private MultiIndicatorOptionsBacktestService backtestService;
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
@@ -27,7 +27,7 @@ class RsiCrossoverBacktestServiceTest {
     void setUp() {
         marketDataService = mock(ShoonyaMarketDataService.class);
         taService = new TechnicalAnalysisService(); // Use real TA calculation
-        backtestService = new RsiCrossoverBacktestService(marketDataService, taService);
+        backtestService = new MultiIndicatorOptionsBacktestService(marketDataService, taService);
     }
 
     private List<Candle> generateMockDayCandles(LocalDate date, double basePrice, double trend) {
@@ -73,7 +73,7 @@ class RsiCrossoverBacktestServiceTest {
                 backtestService.evaluateCandles(
                         "NIFTY 50", allCandles, 1, 14, false, 0.0, 20.0, 50.0);
 
-        assertThat(result.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
+        assertThat(result.strategyId()).isEqualTo(MultiIndicatorOptionsBacktestService.STRATEGY_ID);
         assertThat(result.symbol()).isEqualTo("NIFTY 50");
         assertThat(result.daysTested()).isEqualTo(4);
     }
@@ -98,8 +98,10 @@ class RsiCrossoverBacktestServiceTest {
                 backtestService.evaluateCandles(
                         "NIFTY 50", allCandles, "OPTION_BUYING", 1, 14, 2, true, 15.0, 20.0, 50.0);
 
-        assertThat(sellResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
-        assertThat(buyResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
+        assertThat(sellResult.strategyId())
+                .isEqualTo(MultiIndicatorOptionsBacktestService.STRATEGY_ID);
+        assertThat(buyResult.strategyId())
+                .isEqualTo(MultiIndicatorOptionsBacktestService.STRATEGY_ID);
         assertThat(sellResult.daysTested()).isEqualTo(4);
         assertThat(buyResult.daysTested()).isEqualTo(4);
     }
@@ -132,7 +134,8 @@ class RsiCrossoverBacktestServiceTest {
                         2.0,
                         50.0);
 
-        assertThat(hedgedResult.strategyId()).isEqualTo(RsiCrossoverBacktestService.STRATEGY_ID);
+        assertThat(hedgedResult.strategyId())
+                .isEqualTo(MultiIndicatorOptionsBacktestService.STRATEGY_ID);
         assertThat(hedgedResult.daysTested()).isEqualTo(4);
     }
 }

@@ -33,9 +33,10 @@ import org.springframework.stereotype.Service;
  * Mandatory 15:05:10 IST EOD square-off. 8. Realistic Delta ~ 0.50 & Intraday Theta Decay modeling.
  */
 @Service
-public class RsiCrossoverBacktestService {
+public class MultiIndicatorOptionsBacktestService {
 
-    private static final Logger log = LoggerFactory.getLogger(RsiCrossoverBacktestService.class);
+    private static final Logger log =
+            LoggerFactory.getLogger(MultiIndicatorOptionsBacktestService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     public static final String STRATEGY_ID = "NIFTY_RSI_5M_15M_CROSSOVER";
@@ -54,7 +55,7 @@ public class RsiCrossoverBacktestService {
     private final TechnicalAnalysisService taService;
 
     @Autowired
-    public RsiCrossoverBacktestService(
+    public MultiIndicatorOptionsBacktestService(
             ShoonyaMarketDataService marketDataService, TechnicalAnalysisService taService) {
         this.marketDataService = marketDataService;
         this.taService = taService;

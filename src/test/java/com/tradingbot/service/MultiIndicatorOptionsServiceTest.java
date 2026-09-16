@@ -20,7 +20,7 @@ import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionContract;
 import com.tradingbot.model.OptionStrike;
 import com.tradingbot.model.indicator.SuperTrendResult;
-import com.tradingbot.model.strategy.RsiCrossoverPosition;
+import com.tradingbot.model.strategy.MultiIndicatorOptionsPosition;
 import com.tradingbot.order.ShoonyaOrderService;
 import com.tradingbot.telegram.TelegramService;
 import java.math.BigDecimal;
@@ -34,7 +34,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class RsiCrossoverStrategyServiceTest {
+class MultiIndicatorOptionsServiceTest {
 
     private ShoonyaMarketDataService marketDataService;
     private TechnicalAnalysisService taService;
@@ -42,7 +42,7 @@ class RsiCrossoverStrategyServiceTest {
     private ShoonyaOptionChainService optionChainService;
     private ShoonyaOrderService orderService;
     private ShoonyaConfig config;
-    private RsiCrossoverStrategyService strategyService;
+    private MultiIndicatorOptionsService strategyService;
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
@@ -56,7 +56,7 @@ class RsiCrossoverStrategyServiceTest {
         config = mock(ShoonyaConfig.class);
 
         strategyService =
-                new RsiCrossoverStrategyService(
+                new MultiIndicatorOptionsService(
                         marketDataService,
                         taService,
                         telegramService,
@@ -160,7 +160,7 @@ class RsiCrossoverStrategyServiceTest {
 
         strategyService.runCycle();
 
-        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
         assertThat(pos.getAction()).isEqualTo("SELL");
         assertThat(pos.getOptionType()).isEqualTo("PE");
@@ -173,7 +173,7 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getTradesExecutedToday()).isEqualTo(1);
 
         verify(telegramService)
-                .sendRsiCrossoverEntryAlert(
+                .sendMultiIndicatorEntryAlert(
                         eq(pos),
                         eq(55.0),
                         eq(52.0),
@@ -244,7 +244,7 @@ class RsiCrossoverStrategyServiceTest {
 
         strategyService.runCycle();
 
-        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
         assertThat(pos.getAction()).isEqualTo("SELL");
         assertThat(pos.getOptionType()).isEqualTo("CE");
@@ -256,7 +256,7 @@ class RsiCrossoverStrategyServiceTest {
         assertThat(strategyService.getTradesExecutedToday()).isEqualTo(1);
 
         verify(telegramService)
-                .sendRsiCrossoverEntryAlert(
+                .sendMultiIndicatorEntryAlert(
                         eq(pos),
                         eq(46.0),
                         eq(50.0),
@@ -310,7 +310,7 @@ class RsiCrossoverStrategyServiceTest {
 
         strategyService.runCycle();
 
-        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
         assertThat(pos.getAction()).isEqualTo("BUY");
         assertThat(pos.getOptionType()).isEqualTo("CE");
@@ -359,7 +359,7 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         verify(telegramService, never())
-                .sendRsiCrossoverEntryAlert(
+                .sendMultiIndicatorEntryAlert(
                         any(),
                         anyDouble(),
                         anyDouble(),
@@ -493,7 +493,7 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        MultiIndicatorOptionsPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("HARD_SL_HIT");
         assertThat(closed.isClosed()).isTrue();
     }
@@ -573,7 +573,7 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        MultiIndicatorOptionsPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("TARGET_PROFIT_HIT");
         assertThat(closed.isClosed()).isTrue();
     }
@@ -650,12 +650,12 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        MultiIndicatorOptionsPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.isClosed()).isTrue();
         assertThat(closed.getExitReason()).isEqualTo("RSI_REVERSAL_BEARISH");
         assertThat(closed.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(139.0));
 
-        verify(telegramService).sendRsiCrossoverExitAlert(eq(closed), eq("RSI_REVERSAL_BEARISH"));
+        verify(telegramService).sendMultiIndicatorExitAlert(eq(closed), eq("RSI_REVERSAL_BEARISH"));
     }
 
     @Test
@@ -696,7 +696,7 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        MultiIndicatorOptionsPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("MANDATORY_EOD_SQUARE_OFF");
     }
 
@@ -751,7 +751,7 @@ class RsiCrossoverStrategyServiceTest {
                                 List.of(strikeMain, strikeHedge)));
 
         strategyService.executeTrade("SELL", "PE", 22500.0, 55.0, 50.0, 48.0, 50.0);
-        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
         assertThat(pos.isHedgeEnabled()).isTrue();
         assertThat(pos.getNetCredit()).isEqualByComparingTo(BigDecimal.valueOf(138.0));
@@ -814,7 +814,7 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        MultiIndicatorOptionsPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("HARD_SL_HIT");
         assertThat(closed.isClosed()).isTrue();
         assertThat(closed.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(154.0));
@@ -832,7 +832,7 @@ class RsiCrossoverStrategyServiceTest {
 
         strategyService.executeTrade("SELL", "PE", 24850.0, 55.0, 50.0, 48.0, 50.0);
 
-        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
         assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(24850));
         assertThat(pos.getSymbol()).startsWith("NIFTY").endsWith("24850PE");
@@ -1008,7 +1008,7 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        MultiIndicatorOptionsPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("ST_FLIP_BEARISH");
     }
 
@@ -1092,7 +1092,7 @@ class RsiCrossoverStrategyServiceTest {
                                                 BigDecimal.valueOf(22050), false, null, peHedge))));
 
         strategyService.executeTrade("SELL", "PE", 22500.0, 55.0, 50.0, 48.0, 50.0);
-        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
 
         // Simulate position running up to +26 pts profit (Main drops to 124, Hedge drops to 12 ->
@@ -1147,7 +1147,7 @@ class RsiCrossoverStrategyServiceTest {
 
         assertThat(strategyService.getOpenPosition()).isNull();
         assertThat(strategyService.getTradeHistory()).hasSize(1);
-        RsiCrossoverPosition closed = strategyService.getTradeHistory().get(0);
+        MultiIndicatorOptionsPosition closed = strategyService.getTradeHistory().get(0);
         assertThat(closed.getExitReason()).isEqualTo("TRAIL_SL_LOCK");
     }
 
@@ -1211,7 +1211,7 @@ class RsiCrossoverStrategyServiceTest {
 
         strategyService.runCycle();
 
-        RsiCrossoverPosition pos = strategyService.getOpenPosition();
+        MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
         assertThat(pos.getAction()).isEqualTo("SELL");
         assertThat(pos.getOptionType()).isEqualTo("PE");

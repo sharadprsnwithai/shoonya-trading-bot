@@ -202,8 +202,8 @@ public class LowestVolumeReversalService {
      * Losers from the F&O universe, fixes this list for the entire trading day, seeds initial
      * setups, and sends the daily Telegram alert once.
      *
-     * If 0 candidates are qualified (e.g. initial network/broker lag), scan retry alert is sent and
-     * daily watchlist is NOT locked, allowing 5-min cycles to retry up until cutoff.
+     * <p>If 0 candidates are qualified (e.g. initial network/broker lag), scan retry alert is sent
+     * and daily watchlist is NOT locked, allowing 5-min cycles to retry up until cutoff.
      */
     public synchronized void runMorningUniverseScan() {
         if (!enabled) {

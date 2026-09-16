@@ -212,10 +212,7 @@ public final class Nifty200Registry {
             int lot = StockFnoRegistry.getLotSize(sym);
             BigDecimal strikeStep = StockFnoRegistry.getStrikeStep(sym, BigDecimal.valueOf(1000));
             boolean isFno = (lot > 1);
-            STOCKS.put(
-                    sym,
-                    new StockMetadata(
-                            sym, token, isFno, lot, strikeStep));
+            STOCKS.put(sym, new StockMetadata(sym, token, isFno, lot, strikeStep));
         }
     }
 

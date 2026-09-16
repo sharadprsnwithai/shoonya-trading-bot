@@ -5,10 +5,10 @@ import java.math.RoundingMode;
 import java.time.Instant;
 
 /**
- * Represents an active or closed option position in the RSI Crossover strategy. Supports both
- * standalone single-leg execution and 2% OTM Hedged Credit Spreads.
+ * Represents an active or closed option position in the Multi-Indicator Options strategy. Supports
+ * both standalone single-leg execution and 2% OTM Hedged Credit Spreads.
  */
-public class RsiCrossoverPosition {
+public class MultiIndicatorOptionsPosition {
 
     private final String tradeId;
     private final String symbol;
@@ -35,7 +35,7 @@ public class RsiCrossoverPosition {
     private boolean closed;
     private BigDecimal peakProfitPerQty = BigDecimal.ZERO;
 
-    public RsiCrossoverPosition(
+    public MultiIndicatorOptionsPosition(
             String tradeId,
             String symbol,
             String action,
@@ -65,7 +65,7 @@ public class RsiCrossoverPosition {
         this.closed = false;
     }
 
-    public RsiCrossoverPosition(
+    public MultiIndicatorOptionsPosition(
             String tradeId,
             String symbol,
             String action,
@@ -90,7 +90,7 @@ public class RsiCrossoverPosition {
                 0);
     }
 
-    public RsiCrossoverPosition(
+    public MultiIndicatorOptionsPosition(
             String tradeId,
             String symbol,
             String optionType,

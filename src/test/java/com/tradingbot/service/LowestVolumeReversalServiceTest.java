@@ -709,7 +709,8 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.isUniverseScanCompletedToday()).isFalse();
 
         // Second cycle at 09:30: quotes return valid data
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
         com.fasterxml.jackson.databind.node.ObjectNode relQuote = mapper.createObjectNode();
         relQuote.put("stat", "Ok");
         relQuote.put("lp", "2900.0");

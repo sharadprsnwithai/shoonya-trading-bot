@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.tradingbot.config.ShoonyaConfig;
-import com.tradingbot.model.strategy.RsiCrossoverPosition;
+import com.tradingbot.model.strategy.MultiIndicatorOptionsPosition;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,9 +25,9 @@ class TelegramServiceTest {
     }
 
     @Test
-    void testSendRsiCrossoverAlertsDisabled() {
-        RsiCrossoverPosition pos =
-                new RsiCrossoverPosition(
+    void testSendMultiIndicatorAlertsDisabled() {
+        MultiIndicatorOptionsPosition pos =
+                new MultiIndicatorOptionsPosition(
                         "TRD_1",
                         "NIFTY24OCT22500CE",
                         "CE",
@@ -37,16 +37,16 @@ class TelegramServiceTest {
                         Instant.now());
 
         // Should not throw when disabled
-        telegramService.sendRsiCrossoverEntryAlert(pos, 58.5, 52.0, 48.0, 51.5);
+        telegramService.sendMultiIndicatorEntryAlert(pos, 58.5, 52.0, 48.0, 51.5);
 
-        pos.close(BigDecimal.valueOf(180.0), "RSI_REVERSAL", Instant.now());
-        telegramService.sendRsiCrossoverExitAlert(pos, "RSI_REVERSAL");
+        pos.close(BigDecimal.valueOf(180.0), "SIGNAL_REVERSAL", Instant.now());
+        telegramService.sendMultiIndicatorExitAlert(pos, "SIGNAL_REVERSAL");
     }
 
     @Test
-    void testSendRsiCrossoverHedgedAlertsDisabled() {
-        RsiCrossoverPosition hedgedPos =
-                new RsiCrossoverPosition(
+    void testSendMultiIndicatorHedgedAlertsDisabled() {
+        MultiIndicatorOptionsPosition hedgedPos =
+                new MultiIndicatorOptionsPosition(
                         "TRD_HEDGE_1",
                         "NIFTY24OCT22500PE",
                         "SELL",
@@ -61,18 +61,18 @@ class TelegramServiceTest {
                         BigDecimal.valueOf(12.0),
                         65);
 
-        telegramService.sendRsiCrossoverEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
+        telegramService.sendMultiIndicatorEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
 
         hedgedPos.close(
                 BigDecimal.valueOf(60.0),
                 BigDecimal.valueOf(2.0),
                 "TARGET_PROFIT_HIT",
                 Instant.now());
-        telegramService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
+        telegramService.sendMultiIndicatorExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
     }
 
     @Test
-    void testSendRsiCrossoverHedgedAlertsEnabledMessageFormat() {
+    void testSendMultiIndicatorHedgedAlertsEnabledMessageFormat() {
         ShoonyaConfig activeConfig = mock(ShoonyaConfig.class);
         when(activeConfig.isTelegramEnabled()).thenReturn(true);
         when(activeConfig.getTelegramBotToken()).thenReturn("dummy-token");
@@ -87,8 +87,8 @@ class TelegramServiceTest {
                     }
                 };
 
-        RsiCrossoverPosition hedgedPos =
-                new RsiCrossoverPosition(
+        MultiIndicatorOptionsPosition hedgedPos =
+                new MultiIndicatorOptionsPosition(
                         "TRD_HEDGE_1",
                         "NIFTY24OCT24850PE",
                         "SELL",
@@ -103,7 +103,7 @@ class TelegramServiceTest {
                         BigDecimal.valueOf(12.0),
                         65);
 
-        capturingService.sendRsiCrossoverEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
+        capturingService.sendMultiIndicatorEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
 
         assertThat(messages).hasSize(1);
         String entryMsg = messages.get(0);
@@ -116,7 +116,7 @@ class TelegramServiceTest {
                 BigDecimal.valueOf(2.0),
                 "TARGET_PROFIT_HIT",
                 Instant.now());
-        capturingService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
+        capturingService.sendMultiIndicatorExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
 
         assertThat(messages).hasSize(2);
         String exitMsg = messages.get(1);

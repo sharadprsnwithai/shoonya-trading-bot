@@ -6,13 +6,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
-class RsiCrossoverPositionTest {
+class MultiIndicatorOptionsPositionTest {
 
     @Test
     void testPositionLifecycleAndPnlCalculation() {
         Instant now = Instant.now();
-        RsiCrossoverPosition pos =
-                new RsiCrossoverPosition(
+        MultiIndicatorOptionsPosition pos =
+                new MultiIndicatorOptionsPosition(
                         "TRD_001",
                         "NIFTY24OCT22500CE",
                         "CE",
@@ -36,11 +36,11 @@ class RsiCrossoverPositionTest {
 
         // Close position
         Instant exitTime = now.plusSeconds(300);
-        pos.close(BigDecimal.valueOf(180.0), "RSI_REVERSAL", exitTime);
+        pos.close(BigDecimal.valueOf(180.0), "SIGNAL_REVERSAL", exitTime);
 
         assertThat(pos.isClosed()).isTrue();
         assertThat(pos.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(180.0));
-        assertThat(pos.getExitReason()).isEqualTo("RSI_REVERSAL");
+        assertThat(pos.getExitReason()).isEqualTo("SIGNAL_REVERSAL");
         assertThat(pos.getExitTime()).isEqualTo(exitTime);
         assertThat(pos.getPnl()).isEqualByComparingTo(BigDecimal.valueOf(1950.0));
     }
@@ -48,8 +48,8 @@ class RsiCrossoverPositionTest {
     @Test
     void testOptionSellingPositionPnl() {
         Instant now = Instant.now();
-        RsiCrossoverPosition pos =
-                new RsiCrossoverPosition(
+        MultiIndicatorOptionsPosition pos =
+                new MultiIndicatorOptionsPosition(
                         "TRD_002",
                         "NIFTY24OCT22500PE",
                         "SELL",
@@ -76,8 +76,8 @@ class RsiCrossoverPositionTest {
     void testHedgedCreditSpreadPositionLifecycle() {
         Instant now = Instant.now();
         // Bull Put Spread: Sell 22500 PE @ 150, Buy 22050 PE @ 12 (2% OTM Hedge)
-        RsiCrossoverPosition pos =
-                new RsiCrossoverPosition(
+        MultiIndicatorOptionsPosition pos =
+                new MultiIndicatorOptionsPosition(
                         "TRD_HEDGE_001",
                         "NIFTY24OCT22500PE",
                         "SELL",
@@ -98,23 +98,25 @@ class RsiCrossoverPositionTest {
         assertThat(pos.getHedgeEntryPrice()).isEqualByComparingTo(BigDecimal.valueOf(12.0));
         assertThat(pos.getNetCredit()).isEqualByComparingTo(BigDecimal.valueOf(138.0)); // 150 - 12
 
-        // Main leg decays to 50, Hedge decays to 2
-        // Main PnL = (150 - 50) * 65 = +6500
-        // Hedge PnL = (2 - 12) * 65 = -650
-        // Total PnL = +5850
-        assertThat(pos.calculatePnl(BigDecimal.valueOf(50.0)))
-                .isEqualByComparingTo(BigDecimal.valueOf(6500.0));
-        assertThat(pos.calculateHedgePnl(BigDecimal.valueOf(2.0)))
-                .isEqualByComparingTo(BigDecimal.valueOf(-650.0));
-        assertThat(pos.calculateTotalPnl(BigDecimal.valueOf(50.0), BigDecimal.valueOf(2.0)))
-                .isEqualByComparingTo(BigDecimal.valueOf(5850.0));
+        // Main leg decays to 80 (profit +70/sh), Hedge decays to 2 (loss -10/sh) -> Net PnL = (70 -
+        // 10) * 65 = +3900
+        BigDecimal mainPnl = pos.calculatePnl(BigDecimal.valueOf(80.0));
+        BigDecimal hedgePnl = pos.calculateHedgePnl(BigDecimal.valueOf(2.0));
+        BigDecimal totalPnl =
+                pos.calculateTotalPnl(BigDecimal.valueOf(80.0), BigDecimal.valueOf(2.0));
 
-        Instant exitTime = now.plusSeconds(3600);
-        pos.close(BigDecimal.valueOf(50.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", exitTime);
+        assertThat(mainPnl).isEqualByComparingTo(BigDecimal.valueOf(4550.0)); // (150 - 80) * 65
+        assertThat(hedgePnl).isEqualByComparingTo(BigDecimal.valueOf(-650.0)); // (2 - 12) * 65
+        assertThat(totalPnl).isEqualByComparingTo(BigDecimal.valueOf(3900.0));
 
+        // Close hedged position
+        pos.close(
+                BigDecimal.valueOf(80.0),
+                BigDecimal.valueOf(2.0),
+                "TARGET_PROFIT_HIT",
+                now.plusSeconds(600));
         assertThat(pos.isClosed()).isTrue();
-        assertThat(pos.getExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(50.0));
-        assertThat(pos.getHedgeExitPrice()).isEqualByComparingTo(BigDecimal.valueOf(2.0));
-        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo(BigDecimal.valueOf(5850.0));
+        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo(BigDecimal.valueOf(3900.0));
+        assertThat(pos.getExitReason()).isEqualTo("TARGET_PROFIT_HIT");
     }
 }

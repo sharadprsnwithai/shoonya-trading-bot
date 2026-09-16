@@ -4,19 +4,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.tradingbot.service.RsiCrossoverStrategyService;
+import com.tradingbot.service.MultiIndicatorOptionsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class RsiCrossoverSchedulerTest {
+class MultiIndicatorOptionsSchedulerTest {
 
-    private RsiCrossoverStrategyService strategyService;
-    private RsiCrossoverScheduler scheduler;
+    private MultiIndicatorOptionsService strategyService;
+    private MultiIndicatorOptionsScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        strategyService = mock(RsiCrossoverStrategyService.class);
-        scheduler = new RsiCrossoverScheduler(strategyService);
+        strategyService = mock(MultiIndicatorOptionsService.class);
+        scheduler = new MultiIndicatorOptionsScheduler(strategyService);
     }
 
     @Test

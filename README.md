@@ -10,7 +10,7 @@
 1. [Project Overview](#project-overview)
 2. [Active Strategies](#active-strategies)
    - [Lowest Volume Reversal (LVR)](#lowest-volume-reversal-lvr)
-   - [NIFTY RSI Crossover (5m vs 15m)](#nifty-rsi-crossover-5m-vs-15m)
+   - [Multi-Indicator Options Strategy (5m / 15m)](#multi-indicator-options-strategy-5m--15m)
 3. [Execution Modes](#execution-modes)
 4. [Environment Configuration (.env)](#environment-configuration-env)
 5. [Docker & Deployment Commands](#docker--deployment-commands)
@@ -50,13 +50,13 @@ Intraday cash‑stock momentum reversal on 5‑minute candles (`NSE` equities):
 4. **Execution:** ATM options bought (CE for longs, PE for shorts) via `ExecutionManager`; SL, Target 1, and 5m SuperTrend(10, 3) trailing exit.
 5. **Actionable Alerts:** Telegram `[TRADE SIGNAL: BUY CALL/PUT]` messages fire on actual trigger breach and fill (armed‑setup alerts disabled by default).
 
-### NIFTY RSI Crossover (5m vs 15m)
+### Multi-Indicator Options Strategy (5m / 15m)
 
-Intraday RSI(14) crossover on **5‑minute vs 15‑minute resampled candles** of NIFTY 50 (`NSE:10576`):
+Intraday multi-indicator confluence strategy (SuperTrend, VWAP, ADX, DI) on **5‑minute and 15‑minute candles** of NIFTY 50 (`NSE:10576`), SENSEX (`BSE:1`), and BANKNIFTY:
 
-1. **Signal:** 5m RSI crosses above the 15m RSI → **Short OTM Put Spread**; crosses below → **Short OTM Call Spread** - both with a **2% OTM hedge buy leg** for defined risk.
+1. **Signal:** Trend alignment across VWAP, 15m SuperTrend, +DI/-DI, and 15m ADX momentum → **Bull Put Spread / Bear Call Spread** with a **2% OTM hedge buy leg** for defined risk (or ATM Long Options in buying mode).
 2. **Active Window:** 09:45:10 → 15:00:10 IST; **1 trade/day** (configurable); mandatory **EOD square-off at 15:05:10 IST**.
-3. **Strikes:** ATM weekly options with standard NSE symbols (e.g. `NIFTY18SEP2524850PE`), hedge strike ≥ 50 points from ATM.
+3. **Strikes:** ATM weekly options with standard NSE/BSE symbols (e.g. `NIFTY18SEP2524850PE`), hedge strike ≥ 50 points from ATM.
 4. **Execution:** Multi-leg `ExecutionManager` flow (buy hedge first for margin relief, rollback on failure).
 
 ---
@@ -100,7 +100,7 @@ cp .env.example .env
 | `LVR_CRON` | `10 */5 9-11 ? * MON-FRI` | LVR 5m candle evaluation (11:00 AM entry cutoff). |
 | `LVR_PAPER_CAPITAL` | `1000000.0` | LVR paper-trading capital. |
 | `LVR_MAX_CONCURRENT_TRADES` | `5` | Max simultaneous LVR positions. |
-| `RSI_*` | — | NIFTY RSI Crossover schedule / trade-limit settings. |
+| `MULTI_INDICATOR_OPTIONS_*` | — | Multi-Indicator Options schedule / trade-limit / indicator filter settings. |
 
 ---
 

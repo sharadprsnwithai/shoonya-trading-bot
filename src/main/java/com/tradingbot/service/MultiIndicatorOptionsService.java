@@ -11,7 +11,7 @@ import com.tradingbot.model.OptionStrike;
 import com.tradingbot.model.indicator.SuperTrendResult;
 import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.TransactionType;
-import com.tradingbot.model.strategy.RsiCrossoverPosition;
+import com.tradingbot.model.strategy.MultiIndicatorOptionsPosition;
 import com.tradingbot.order.ShoonyaOrderService;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.CandleResamplingUtil;
@@ -48,9 +48,9 @@ import org.springframework.stereotype.Service;
  * square-off.
  */
 @Service
-public class RsiCrossoverStrategyService {
+public class MultiIndicatorOptionsService {
 
-    private static final Logger log = LoggerFactory.getLogger(RsiCrossoverStrategyService.class);
+    private static final Logger log = LoggerFactory.getLogger(MultiIndicatorOptionsService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     public static final String NIFTY_SYMBOL = "NIFTY 50";
     public static final String NIFTY_TOKEN = "10576";
@@ -70,99 +70,100 @@ public class RsiCrossoverStrategyService {
 
     private Clock clock = Clock.system(IST);
 
-    @Value("${trading-bot.strategy.rsi-crossover.enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.enabled:true}")
     private boolean enabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.underlying-index:NIFTY}")
+    @Value("${trading-bot.strategy.multi-indicator-options.underlying-index:NIFTY}")
     private String underlyingIndex = "NIFTY";
 
-    @Value("${trading-bot.strategy.rsi-crossover.exchange:NSE}")
+    @Value("${trading-bot.strategy.multi-indicator-options.exchange:NSE}")
     private String indexExchange = "NSE";
 
-    @Value("${trading-bot.strategy.rsi-crossover.token:10576}")
+    @Value("${trading-bot.strategy.multi-indicator-options.token:10576}")
     private String indexToken = "10576";
 
-    @Value("${trading-bot.strategy.rsi-crossover.symbol:NIFTY 50}")
+    @Value("${trading-bot.strategy.multi-indicator-options.symbol:NIFTY 50}")
     private String indexSymbol = "NIFTY 50";
 
-    @Value("${trading-bot.strategy.rsi-crossover.mode:OPTION_SELLING}")
+    @Value("${trading-bot.strategy.multi-indicator-options.mode:OPTION_SELLING}")
     private String mode = "OPTION_SELLING";
 
-    @Value("${trading-bot.strategy.rsi-crossover.auto-execute:false}")
+    @Value("${trading-bot.strategy.multi-indicator-options.auto-execute:false}")
     private boolean autoExecute = false;
 
-    @Value("${trading-bot.strategy.rsi-crossover.lots:1}")
+    @Value("${trading-bot.strategy.multi-indicator-options.lots:1}")
     private int lots = 1;
 
-    @Value("${trading-bot.strategy.rsi-crossover.lot-size:65}")
+    @Value("${trading-bot.strategy.multi-indicator-options.lot-size:65}")
     private int lotSize = 65;
 
-    @Value("${trading-bot.strategy.rsi-crossover.rsi-period:14}")
+    @Value("${trading-bot.strategy.multi-indicator-options.rsi-period:14}")
     private int rsiPeriod = 14;
 
-    @Value("${trading-bot.strategy.rsi-crossover.adx-filter-enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.adx-filter-enabled:true}")
     private boolean adxFilterEnabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.adx-threshold:22.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.adx-threshold:22.0}")
     private double adxThreshold = 22.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.vwap-filter-enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.vwap-filter-enabled:true}")
     private boolean vwapFilterEnabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.vwap-max-distance:35.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.vwap-max-distance:35.0}")
     private double vwapMaxDistance = 35.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.supertrend-filter-enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.supertrend-filter-enabled:true}")
     private boolean supertrendFilterEnabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.supertrend-period:10}")
+    @Value("${trading-bot.strategy.multi-indicator-options.supertrend-period:10}")
     private int supertrendPeriod = 10;
 
-    @Value("${trading-bot.strategy.rsi-crossover.supertrend-multiplier:2.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.supertrend-multiplier:2.0}")
     private double supertrendMultiplier = 2.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.di-filter-enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.di-filter-enabled:true}")
     private boolean diFilterEnabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.stop-loss-percent:2.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.stop-loss-percent:2.0}")
     private double stopLossPercent = 2.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.trailing-sl-enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.trailing-sl-enabled:true}")
     private boolean trailingSlEnabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.trail-step-1-trigger:12.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.trail-step-1-trigger:12.0}")
     private double trailStep1Trigger = 12.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.trail-step-1-lock:2.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.trail-step-1-lock:2.0}")
     private double trailStep1Lock = 2.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.trail-step-2-trigger:25.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.trail-step-2-trigger:25.0}")
     private double trailStep2Trigger = 25.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.trail-step-2-lock:15.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.trail-step-2-lock:15.0}")
     private double trailStep2Lock = 15.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.target-profit-percent:50.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.target-profit-percent:50.0}")
     private double targetProfitPercent = 50.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.hedge-enabled:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.hedge-enabled:true}")
     private boolean hedgeEnabled = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.prefer-weekly:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.prefer-weekly:true}")
     private boolean preferWeekly = true;
 
-    @Value("${trading-bot.strategy.rsi-crossover.hedge-otm-percent:2.0}")
+    @Value("${trading-bot.strategy.multi-indicator-options.hedge-otm-percent:2.0}")
     private double hedgeOtmPercent = 2.0;
 
-    @Value("${trading-bot.strategy.rsi-crossover.max-trades-per-day:1}")
+    @Value("${trading-bot.strategy.multi-indicator-options.max-trades-per-day:1}")
     private int maxTradesPerDay = 1;
 
-    @Value("${trading-bot.strategy.rsi-crossover.telegram-alerts:true}")
+    @Value("${trading-bot.strategy.multi-indicator-options.telegram-alerts:true}")
     private boolean telegramAlerts = true;
 
     private final AtomicInteger tradesExecutedToday = new AtomicInteger(0);
-    private final AtomicReference<RsiCrossoverPosition> openPosition = new AtomicReference<>(null);
-    private final List<RsiCrossoverPosition> tradeHistory = new CopyOnWriteArrayList<>();
+    private final AtomicReference<MultiIndicatorOptionsPosition> openPosition =
+            new AtomicReference<>(null);
+    private final List<MultiIndicatorOptionsPosition> tradeHistory = new CopyOnWriteArrayList<>();
     private final AtomicInteger tradeCounter = new AtomicInteger(1);
 
     // Latest evaluated indicator values for monitoring
@@ -210,7 +211,7 @@ public class RsiCrossoverStrategyService {
             this.hedgeEnabled = true;
             this.hedgeOtmPercent = 2.0;
             log.info(
-                    "[RSI-STRATEGY] Applied Champion Setup for BSE SENSEX (Weekly Friday Expiry, Lot 20, Step 100).");
+                    "[MULTI-INDICATOR] Applied Champion Setup for BSE SENSEX (Weekly Friday Expiry, Lot 20, Step 100).");
         } else if (sym.contains("BANKNIFTY") || sym.equals("BANK NIFTY")) {
             this.underlyingIndex = "BANKNIFTY";
             this.indexExchange = "NSE";
@@ -229,7 +230,7 @@ public class RsiCrossoverStrategyService {
             this.hedgeEnabled = true;
             this.hedgeOtmPercent = 2.0;
             log.info(
-                    "[RSI-STRATEGY] Applied Champion Setup for NSE BANK NIFTY (Monthly Thursday Expiry, Lot 30, Step 100).");
+                    "[MULTI-INDICATOR] Applied Champion Setup for NSE BANK NIFTY (Monthly Thursday Expiry, Lot 30, Step 100).");
         } else if (sym.contains("NIFTY")) {
             this.underlyingIndex = "NIFTY";
             this.indexExchange = "NSE";
@@ -248,7 +249,7 @@ public class RsiCrossoverStrategyService {
             this.hedgeEnabled = true;
             this.hedgeOtmPercent = 2.0;
             log.info(
-                    "[RSI-STRATEGY] Applied Champion Setup for NSE NIFTY 50 (Weekly Thursday Expiry, Lot 65, Step 50).");
+                    "[MULTI-INDICATOR] Applied Champion Setup for NSE NIFTY 50 (Weekly Thursday Expiry, Lot 65, Step 50).");
         } else {
             // Stock Equity / Option Underlying
             this.underlyingIndex = sym;
@@ -268,7 +269,7 @@ public class RsiCrossoverStrategyService {
             this.targetProfitPercent = 1.60;
             this.hedgeEnabled = false;
             log.info(
-                    "[RSI-STRATEGY] Applied Champion Setup for Stock {} (Monthly Expiry, Lot {}, Step {}).",
+                    "[MULTI-INDICATOR] Applied Champion Setup for Stock {} (Monthly Expiry, Lot {}, Step {}).",
                     sym,
                     this.lotSize,
                     StockFnoRegistry.getStrikeStep(sym, BigDecimal.ZERO));
@@ -276,7 +277,7 @@ public class RsiCrossoverStrategyService {
     }
 
     @Autowired
-    public RsiCrossoverStrategyService(
+    public MultiIndicatorOptionsService(
             ShoonyaMarketDataService marketDataService,
             TechnicalAnalysisService taService,
             TelegramService telegramService,
@@ -294,7 +295,7 @@ public class RsiCrossoverStrategyService {
     /** Executes one strategy evaluation cycle. */
     public synchronized void runCycle() {
         if (!enabled) {
-            log.debug("[RSI-STRATEGY] Strategy is disabled in configuration.");
+            log.debug("[MULTI-INDICATOR] Strategy is disabled in configuration.");
             return;
         }
 
@@ -302,19 +303,20 @@ public class RsiCrossoverStrategyService {
 
         if (nowTime.isBefore(TIME_STRATEGY_START)) {
             log.debug(
-                    "[RSI-STRATEGY] Current time {} is before strategy start window (09:45 IST).",
+                    "[MULTI-INDICATOR] Current time {} is before strategy start window (09:45 IST).",
                     nowTime);
             return;
         }
 
         if (nowTime.isAfter(TIME_SQUARE_OFF)) {
             log.debug(
-                    "[RSI-STRATEGY] Current time {} is past square-off time (15:05 IST).", nowTime);
+                    "[MULTI-INDICATOR] Current time {} is past square-off time (15:05 IST).",
+                    nowTime);
             return;
         }
 
         log.info(
-                "[RSI-STRATEGY] Running 5-min RSI Crossover cycle [{}] for {} at {} IST...",
+                "[MULTI-INDICATOR] Running 5-min RSI Crossover cycle [{}] for {} at {} IST...",
                 mode,
                 indexSymbol,
                 nowTime);
@@ -325,7 +327,7 @@ public class RsiCrossoverStrategyService {
                         indexExchange, indexToken, indexSymbol, "5", 5);
         if (fiveMinCandles == null || fiveMinCandles.size() < (rsiPeriod + 10)) {
             log.warn(
-                    "[RSI-STRATEGY] Insufficient 5m candles retrieved: {}",
+                    "[MULTI-INDICATOR] Insufficient 5m candles retrieved: {}",
                     (fiveMinCandles != null ? fiveMinCandles.size() : 0));
             return;
         }
@@ -333,7 +335,7 @@ public class RsiCrossoverStrategyService {
         List<Candle> fifteenMinCandles = CandleResamplingUtil.resample5MinTo15Min(fiveMinCandles);
         if (fifteenMinCandles == null || fifteenMinCandles.size() < (rsiPeriod + 5)) {
             log.warn(
-                    "[RSI-STRATEGY] Insufficient 15m resampled candles: {}",
+                    "[MULTI-INDICATOR] Insufficient 15m resampled candles: {}",
                     (fifteenMinCandles != null ? fifteenMinCandles.size() : 0));
             return;
         }
@@ -363,7 +365,7 @@ public class RsiCrossoverStrategyService {
         int len5 = rsi5mSeries.length;
         int len15 = rsi15mSeries.length;
         if (len5 < 2 || len15 < 2) {
-            log.warn("[RSI-STRATEGY] RSI series length too short.");
+            log.warn("[MULTI-INDICATOR] RSI series length too short.");
             return;
         }
 
@@ -403,7 +405,7 @@ public class RsiCrossoverStrategyService {
                 || Double.isNaN(rsi15Curr)
                 || Double.isNaN(rsi15Prev)) {
             log.warn(
-                    "[RSI-STRATEGY] One or more RSI values evaluated to NaN: 5m=[{}, {}], 15m=[{}, {}]",
+                    "[MULTI-INDICATOR] One or more RSI values evaluated to NaN: 5m=[{}, {}], 15m=[{}, {}]",
                     rsi5Prev,
                     rsi5Curr,
                     rsi15Prev,
@@ -424,7 +426,7 @@ public class RsiCrossoverStrategyService {
         this.latestIndexLtp = spotPrice;
 
         log.info(
-                "[RSI-STRATEGY] [{}] {}: ₹{} | VWAP: ₹{:.1f} | ST(15m): ₹{:.1f} ({}) | 5m RSI: {:.2f} | 15m RSI: {:.2f} | 15m ADX: {:.2f} (+DI: {:.1f}, -DI: {:.1f})",
+                "[MULTI-INDICATOR] [{}] {}: ₹{} | VWAP: ₹{:.1f} | ST(15m): ₹{:.1f} ({}) | 5m RSI: {:.2f} | 15m RSI: {:.2f} | 15m ADX: {:.2f} (+DI: {:.1f}, -DI: {:.1f})",
                 mode,
                 indexSymbol,
                 spotPrice,
@@ -438,7 +440,7 @@ public class RsiCrossoverStrategyService {
                 minusDi15mCurr);
 
         // 1. Manage Active Open Position (Check SL, Target, or Crossover/ST Reversal)
-        RsiCrossoverPosition current = openPosition.get();
+        MultiIndicatorOptionsPosition current = openPosition.get();
         if (current != null && !current.isClosed()) {
             evaluatePositionExit(
                     current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, spotPrice, isStBullish);
@@ -448,7 +450,7 @@ public class RsiCrossoverStrategyService {
         // 2. If no position is open, check Entry (Max trades per day limit)
         if (tradesExecutedToday.get() >= maxTradesPerDay) {
             log.debug(
-                    "[RSI-STRATEGY] Max {} trades per day limit reached for today ({}/{}). Skipping new entries.",
+                    "[MULTI-INDICATOR] Max {} trades per day limit reached for today ({}/{}). Skipping new entries.",
                     maxTradesPerDay,
                     tradesExecutedToday.get(),
                     maxTradesPerDay);
@@ -512,7 +514,7 @@ public class RsiCrossoverStrategyService {
 
         if (!bullishCrossover && !bearishCrossover) {
             log.debug(
-                    "[RSI-STRATEGY] No crossover detected. (5m: {:.2f}, 15m: {:.2f})",
+                    "[MULTI-INDICATOR] No crossover detected. (5m: {:.2f}, 15m: {:.2f})",
                     rsi5Curr,
                     rsi15Curr);
             return;
@@ -521,7 +523,7 @@ public class RsiCrossoverStrategyService {
         // 1. ADX Trend Strength Filter
         if (adxFilterEnabled && !Double.isNaN(adx15mCurr) && adx15mCurr < adxThreshold) {
             log.info(
-                    "[RSI-STRATEGY] ⚠️ Crossover detected but 15m ADX ({:.2f}) < threshold ({:.2f}). Skipping low-momentum entry.",
+                    "[MULTI-INDICATOR] ⚠️ Crossover detected but 15m ADX ({:.2f}) < threshold ({:.2f}). Skipping low-momentum entry.",
                     adx15mCurr,
                     adxThreshold);
             return;
@@ -539,7 +541,7 @@ public class RsiCrossoverStrategyService {
                                 : vwapMaxDistance;
                 if (dist > allowedDist) {
                     log.info(
-                            "[RSI-STRATEGY] ⚠️ Crossover rejected: Spot (₹{}) is too far from VWAP (₹{:.1f}, dist={:.1f} > max={:.1f}). Skipping chasing price.",
+                            "[MULTI-INDICATOR] ⚠️ Crossover rejected: Spot (₹{}) is too far from VWAP (₹{:.1f}, dist={:.1f} > max={:.1f}). Skipping chasing price.",
                             spotPrice,
                             vwap,
                             dist,
@@ -550,14 +552,14 @@ public class RsiCrossoverStrategyService {
 
             if (bullishCrossover && spotPrice < vwap) {
                 log.info(
-                        "[RSI-STRATEGY] ⚠️ Bullish Crossover rejected: Spot (₹{}) < Intraday VWAP (₹{}). Market is in bearish regime.",
+                        "[MULTI-INDICATOR] ⚠️ Bullish Crossover rejected: Spot (₹{}) < Intraday VWAP (₹{}). Market is in bearish regime.",
                         spotPrice,
                         vwap);
                 return;
             }
             if (bearishCrossover && spotPrice > vwap) {
                 log.info(
-                        "[RSI-STRATEGY] ⚠️ Bearish Crossover rejected: Spot (₹{}) > Intraday VWAP (₹{}). Market is in bullish regime.",
+                        "[MULTI-INDICATOR] ⚠️ Bearish Crossover rejected: Spot (₹{}) > Intraday VWAP (₹{}). Market is in bullish regime.",
                         spotPrice,
                         vwap);
                 return;
@@ -568,12 +570,12 @@ public class RsiCrossoverStrategyService {
         if (supertrendFilterEnabled) {
             if (bullishCrossover && !isStBullish) {
                 log.info(
-                        "[RSI-STRATEGY] ⚠️ Bullish Crossover rejected: 15m Supertrend is Bearish (Red).");
+                        "[MULTI-INDICATOR] ⚠️ Bullish Crossover rejected: 15m Supertrend is Bearish (Red).");
                 return;
             }
             if (bearishCrossover && isStBullish) {
                 log.info(
-                        "[RSI-STRATEGY] ⚠️ Bearish Crossover rejected: 15m Supertrend is Bullish (Green).");
+                        "[MULTI-INDICATOR] ⚠️ Bearish Crossover rejected: 15m Supertrend is Bullish (Green).");
                 return;
             }
         }
@@ -582,14 +584,14 @@ public class RsiCrossoverStrategyService {
         if (diFilterEnabled && !Double.isNaN(plusDi15mCurr) && !Double.isNaN(minusDi15mCurr)) {
             if (bullishCrossover && plusDi15mCurr < minusDi15mCurr) {
                 log.info(
-                        "[RSI-STRATEGY] ⚠️ Bullish Crossover rejected: +DI ({:.2f}) < -DI ({:.2f}). Dominant sellers present.",
+                        "[MULTI-INDICATOR] ⚠️ Bullish Crossover rejected: +DI ({:.2f}) < -DI ({:.2f}). Dominant sellers present.",
                         plusDi15mCurr,
                         minusDi15mCurr);
                 return;
             }
             if (bearishCrossover && minusDi15mCurr < plusDi15mCurr) {
                 log.info(
-                        "[RSI-STRATEGY] ⚠️ Bearish Crossover rejected: -DI ({:.2f}) < +DI ({:.2f}). Dominant buyers present.",
+                        "[MULTI-INDICATOR] ⚠️ Bearish Crossover rejected: -DI ({:.2f}) < +DI ({:.2f}). Dominant buyers present.",
                         minusDi15mCurr,
                         plusDi15mCurr);
                 return;
@@ -601,7 +603,7 @@ public class RsiCrossoverStrategyService {
         if (bullishCrossover) {
             if (isOptionSelling) {
                 log.info(
-                        "[RSI-STRATEGY] 🟢 BULLISH CONFIRMED: 5m RSI ({:.2f}) > 15m RSI ({:.2f}) | Spot (₹{}) >= VWAP (₹{:.1f}) | ST: BULL | ADX: {:.1f}. Executing ATM PE SELL...",
+                        "[MULTI-INDICATOR] 🟢 BULLISH CONFIRMED: 5m RSI ({:.2f}) > 15m RSI ({:.2f}) | Spot (₹{}) >= VWAP (₹{:.1f}) | ST: BULL | ADX: {:.1f}. Executing ATM PE SELL...",
                         rsi5Curr,
                         rsi15Curr,
                         spotPrice,
@@ -610,7 +612,7 @@ public class RsiCrossoverStrategyService {
                 executeTrade("SELL", "PE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             } else {
                 log.info(
-                        "[RSI-STRATEGY] 🟢 BULLISH CONFIRMED: 5m RSI ({:.2f}) > 15m RSI ({:.2f}) | Spot (₹{}) >= VWAP (₹{:.1f}) | ST: BULL | ADX: {:.1f}. Executing ATM CE BUY...",
+                        "[MULTI-INDICATOR] 🟢 BULLISH CONFIRMED: 5m RSI ({:.2f}) > 15m RSI ({:.2f}) | Spot (₹{}) >= VWAP (₹{:.1f}) | ST: BULL | ADX: {:.1f}. Executing ATM CE BUY...",
                         rsi5Curr,
                         rsi15Curr,
                         spotPrice,
@@ -621,7 +623,7 @@ public class RsiCrossoverStrategyService {
         } else {
             if (isOptionSelling) {
                 log.info(
-                        "[RSI-STRATEGY] 🔴 BEARISH CONFIRMED: 5m RSI ({:.2f}) < 15m RSI ({:.2f}) | Spot (₹{}) <= VWAP (₹{:.1f}) | ST: BEAR | ADX: {:.1f}. Executing ATM CE SELL...",
+                        "[MULTI-INDICATOR] 🔴 BEARISH CONFIRMED: 5m RSI ({:.2f}) < 15m RSI ({:.2f}) | Spot (₹{}) <= VWAP (₹{:.1f}) | ST: BEAR | ADX: {:.1f}. Executing ATM CE SELL...",
                         rsi5Curr,
                         rsi15Curr,
                         spotPrice,
@@ -630,7 +632,7 @@ public class RsiCrossoverStrategyService {
                 executeTrade("SELL", "CE", spotPrice, rsi5Curr, rsi15Curr, rsi5Prev, rsi15Prev);
             } else {
                 log.info(
-                        "[RSI-STRATEGY] 🔴 BEARISH CONFIRMED: 5m RSI ({:.2f}) < 15m RSI ({:.2f}) | Spot (₹{}) <= VWAP (₹{:.1f}) | ST: BEAR | ADX: {:.1f}. Executing ATM PE BUY...",
+                        "[MULTI-INDICATOR] 🔴 BEARISH CONFIRMED: 5m RSI ({:.2f}) < 15m RSI ({:.2f}) | Spot (₹{}) <= VWAP (₹{:.1f}) | ST: BEAR | ADX: {:.1f}. Executing ATM PE BUY...",
                         rsi5Curr,
                         rsi15Curr,
                         spotPrice,
@@ -645,7 +647,7 @@ public class RsiCrossoverStrategyService {
      * Evaluates exit condition for an active open position (Stop Loss, Target, or RSI Reversal).
      */
     public void evaluatePositionExit(
-            RsiCrossoverPosition current,
+            MultiIndicatorOptionsPosition current,
             double rsi5Prev,
             double rsi5Curr,
             double rsi15Prev,
@@ -666,7 +668,7 @@ public class RsiCrossoverStrategyService {
      * Trailing Stop.
      */
     public void evaluatePositionExit(
-            RsiCrossoverPosition current,
+            MultiIndicatorOptionsPosition current,
             double rsi5Prev,
             double rsi5Curr,
             double rsi15Prev,
@@ -724,7 +726,7 @@ public class RsiCrossoverStrategyService {
                         String exitReason =
                                 effectiveSlPoints > baseSlPoints ? "TRAIL_SL_LOCK" : "HARD_SL_HIT";
                         log.info(
-                                "[RSI-STRATEGY] 🛑 HEDGED SPREAD {} for {}: Net Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
+                                "[MULTI-INDICATOR] 🛑 HEDGED SPREAD {} for {}: Net Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
                                 exitReason,
                                 current.getSymbol(),
                                 netPoints,
@@ -739,7 +741,7 @@ public class RsiCrossoverStrategyService {
                     double tpThresholdPoints = netCredit * (targetProfitPercent / 100.0);
                     if (netPoints >= tpThresholdPoints) {
                         log.info(
-                                "[RSI-STRATEGY] 🎯 HEDGED SPREAD TARGET PROFIT HIT for {}: Net Points {:.2f} >= TP {:.2f} (+{}%)",
+                                "[MULTI-INDICATOR] 🎯 HEDGED SPREAD TARGET PROFIT HIT for {}: Net Points {:.2f} >= TP {:.2f} (+{}%)",
                                 current.getSymbol(),
                                 netPoints,
                                 tpThresholdPoints,
@@ -770,7 +772,7 @@ public class RsiCrossoverStrategyService {
                         String exitReason =
                                 effectiveSlPoints > baseSlPoints ? "TRAIL_SL_LOCK" : "HARD_SL_HIT";
                         log.info(
-                                "[RSI-STRATEGY] 🛑 SHORT {} for {}: Profit Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
+                                "[MULTI-INDICATOR] 🛑 SHORT {} for {}: Profit Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
                                 exitReason,
                                 current.getSymbol(),
                                 profitPoints,
@@ -787,7 +789,7 @@ public class RsiCrossoverStrategyService {
                                     BigDecimal.valueOf(1.0 - (targetProfitPercent / 100.0)));
                     if (currentPremium.compareTo(tpThreshold) <= 0) {
                         log.info(
-                                "[RSI-STRATEGY] 🎯 SHORT TARGET PROFIT HIT for {}: Current ₹{} <= TP ₹{} (-{}%)",
+                                "[MULTI-INDICATOR] 🎯 SHORT TARGET PROFIT HIT for {}: Current ₹{} <= TP ₹{} (-{}%)",
                                 current.getSymbol(),
                                 currentPremium,
                                 tpThreshold,
@@ -818,7 +820,7 @@ public class RsiCrossoverStrategyService {
                         String exitReason =
                                 effectiveSlPoints > baseSlPoints ? "TRAIL_SL_LOCK" : "HARD_SL_HIT";
                         log.info(
-                                "[RSI-STRATEGY] 🛑 LONG {} for {}: Profit Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
+                                "[MULTI-INDICATOR] 🛑 LONG {} for {}: Profit Points {:.2f} <= SL {:.2f} (Peak {:.2f} pts)",
                                 exitReason,
                                 current.getSymbol(),
                                 profitPoints,
@@ -835,7 +837,7 @@ public class RsiCrossoverStrategyService {
                                     BigDecimal.valueOf(1.0 + (targetProfitPercent / 100.0)));
                     if (currentPremium.compareTo(tpThreshold) >= 0) {
                         log.info(
-                                "[RSI-STRATEGY] 🎯 LONG TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
+                                "[MULTI-INDICATOR] 🎯 LONG TARGET PROFIT HIT for {}: Current ₹{} >= TP ₹{} (+{}%)",
                                 current.getSymbol(),
                                 currentPremium,
                                 tpThreshold,
@@ -853,7 +855,7 @@ public class RsiCrossoverStrategyService {
 
     /** Evaluates reversal exit condition for an active open position. */
     public void evaluateExitOnReversal(
-            RsiCrossoverPosition current,
+            MultiIndicatorOptionsPosition current,
             double rsi5Prev,
             double rsi5Curr,
             double rsi15Prev,
@@ -864,7 +866,7 @@ public class RsiCrossoverStrategyService {
 
     /** Evaluates reversal exit condition with Supertrend support. */
     public void evaluateExitOnReversal(
-            RsiCrossoverPosition current,
+            MultiIndicatorOptionsPosition current,
             double rsi5Prev,
             double rsi5Curr,
             double rsi15Prev,
@@ -881,13 +883,13 @@ public class RsiCrossoverStrategyService {
             // Holding Bullish trade (Buy CE or Sell PE)
             if (supertrendFilterEnabled && !isStBullish) {
                 log.info(
-                        "[RSI-STRATEGY] 🏁 Bullish Position Exit Triggered: 15m Supertrend flipped Bearish.");
+                        "[MULTI-INDICATOR] 🏁 Bullish Position Exit Triggered: 15m Supertrend flipped Bearish.");
                 executeExit("ST_FLIP_BEARISH");
                 return;
             }
             if (rsi5Curr < rsi15Curr) {
                 log.info(
-                        "[RSI-STRATEGY] 🏁 Bullish Position Exit Reversal Triggered: 5m RSI ({:.2f}) < 15m RSI ({:.2f})",
+                        "[MULTI-INDICATOR] 🏁 Bullish Position Exit Reversal Triggered: 5m RSI ({:.2f}) < 15m RSI ({:.2f})",
                         rsi5Curr,
                         rsi15Curr);
                 executeExit("RSI_REVERSAL_BEARISH");
@@ -896,13 +898,13 @@ public class RsiCrossoverStrategyService {
             // Holding Bearish trade (Buy PE or Sell CE)
             if (supertrendFilterEnabled && isStBullish) {
                 log.info(
-                        "[RSI-STRATEGY] 🏁 Bearish Position Exit Triggered: 15m Supertrend flipped Bullish.");
+                        "[MULTI-INDICATOR] 🏁 Bearish Position Exit Triggered: 15m Supertrend flipped Bullish.");
                 executeExit("ST_FLIP_BULLISH");
                 return;
             }
             if (rsi5Curr > rsi15Curr) {
                 log.info(
-                        "[RSI-STRATEGY] 🏁 Bearish Position Exit Reversal Triggered: 5m RSI ({:.2f}) > 15m RSI ({:.2f})",
+                        "[MULTI-INDICATOR] 🏁 Bearish Position Exit Reversal Triggered: 5m RSI ({:.2f}) > 15m RSI ({:.2f})",
                         rsi5Curr,
                         rsi15Curr);
                 executeExit("RSI_REVERSAL_BULLISH");
@@ -985,8 +987,8 @@ public class RsiCrossoverStrategyService {
             }
         }
 
-        RsiCrossoverPosition position =
-                new RsiCrossoverPosition(
+        MultiIndicatorOptionsPosition position =
+                new MultiIndicatorOptionsPosition(
                         tradeId,
                         optionSymbol,
                         action,
@@ -1017,7 +1019,7 @@ public class RsiCrossoverStrategyService {
                                     tradeId + "_HEDGE");
                     orderService.placeOrder(hedgeReq);
                     log.info(
-                            "[RSI-STRATEGY] [LIVE] Placed BUY Hedge Order for {} Qty {}",
+                            "[MULTI-INDICATOR] [LIVE] Placed BUY Hedge Order for {} Qty {}",
                             totalQuantity,
                             hedgeSymbol);
 
@@ -1032,12 +1034,12 @@ public class RsiCrossoverStrategyService {
                                         tradeId);
                         orderService.placeOrder(mainReq);
                         log.info(
-                                "[RSI-STRATEGY] [LIVE] Placed SELL ATM Order for {} Qty {}",
+                                "[MULTI-INDICATOR] [LIVE] Placed SELL ATM Order for {} Qty {}",
                                 totalQuantity,
                                 optionSymbol);
                     } catch (Exception e) {
                         log.error(
-                                "[RSI-STRATEGY] [LIVE] Failed to place ATM Sell order after hedge fill. Rolling back hedge leg: {}",
+                                "[MULTI-INDICATOR] [LIVE] Failed to place ATM Sell order after hedge fill. Rolling back hedge leg: {}",
                                 e.getMessage(),
                                 e);
                         orderService.placeOrder(
@@ -1051,7 +1053,7 @@ public class RsiCrossoverStrategyService {
                     }
                 } catch (Exception e) {
                     log.error(
-                            "[RSI-STRATEGY] [LIVE] Hedge buy placement failed. Aborting trade entry: {}",
+                            "[MULTI-INDICATOR] [LIVE] Hedge buy placement failed. Aborting trade entry: {}",
                             e.getMessage(),
                             e);
                     return;
@@ -1067,12 +1069,13 @@ public class RsiCrossoverStrategyService {
                                     optionSymbol, segment, txType, totalQuantity, tradeId);
                     orderService.placeOrder(orderReq);
                     log.info(
-                            "[RSI-STRATEGY] [LIVE] Placed {} Order for {} Qty {}",
+                            "[MULTI-INDICATOR] [LIVE] Placed {} Order for {} Qty {}",
                             action,
                             totalQuantity,
                             optionSymbol);
                 } catch (Exception e) {
-                    log.error("[RSI-STRATEGY] Live order placement failed: {}", e.getMessage(), e);
+                    log.error(
+                            "[MULTI-INDICATOR] Live order placement failed: {}", e.getMessage(), e);
                 }
             }
         }
@@ -1081,7 +1084,7 @@ public class RsiCrossoverStrategyService {
         this.tradesExecutedToday.incrementAndGet();
 
         log.info(
-                "[RSI-STRATEGY] {} FILLED: {} | {} Strike ₹{} @ ₹{} (Hedge: {} Strike ₹{} @ ₹{}) | Qty: {}",
+                "[MULTI-INDICATOR] {} FILLED: {} | {} Strike ₹{} @ ₹{} (Hedge: {} Strike ₹{} @ ₹{}) | Qty: {}",
                 applyHedge ? "HEDGED SPREAD" : "OPTION " + action,
                 tradeId,
                 optionSymbol,
@@ -1093,7 +1096,7 @@ public class RsiCrossoverStrategyService {
                 totalQuantity);
 
         if (telegramAlerts) {
-            telegramService.sendRsiCrossoverEntryAlert(
+            telegramService.sendMultiIndicatorEntryAlert(
                     position,
                     rsi5Curr,
                     rsi15Curr,
@@ -1118,7 +1121,7 @@ public class RsiCrossoverStrategyService {
 
     /** Closes open position with specified reason. */
     public synchronized void executeExit(String reason) {
-        RsiCrossoverPosition current = openPosition.get();
+        MultiIndicatorOptionsPosition current = openPosition.get();
         if (current == null || current.isClosed()) {
             return;
         }
@@ -1155,7 +1158,7 @@ public class RsiCrossoverStrategyService {
                                 current.getTradeId() + "_EXIT");
                 orderService.placeOrder(exitReq);
                 log.info(
-                        "[RSI-STRATEGY] [LIVE] Placed {} Exit Order for {} Qty {}",
+                        "[MULTI-INDICATOR] [LIVE] Placed {} Exit Order for {} Qty {}",
                         exitTxType,
                         current.getQuantity(),
                         current.getSymbol());
@@ -1171,12 +1174,15 @@ public class RsiCrossoverStrategyService {
                                     current.getTradeId() + "_HEDGE_EXIT");
                     orderService.placeOrder(hedgeExitReq);
                     log.info(
-                            "[RSI-STRATEGY] [LIVE] Placed SELL Hedge Exit Order for {} Qty {}",
+                            "[MULTI-INDICATOR] [LIVE] Placed SELL Hedge Exit Order for {} Qty {}",
                             current.getHedgeQuantity(),
                             current.getHedgeSymbol());
                 }
             } catch (Exception e) {
-                log.error("[RSI-STRATEGY] Live exit order placement failed: {}", e.getMessage(), e);
+                log.error(
+                        "[MULTI-INDICATOR] Live exit order placement failed: {}",
+                        e.getMessage(),
+                        e);
             }
         }
 
@@ -1185,7 +1191,7 @@ public class RsiCrossoverStrategyService {
         openPosition.set(null);
 
         log.info(
-                "[RSI-STRATEGY] POSITION EXITED: {} {} | Main Entry/Exit: ₹{}/₹{} | Hedge Entry/Exit: ₹{}/₹{} | Total P&L: ₹{} | Reason: {}",
+                "[MULTI-INDICATOR] POSITION EXITED: {} {} | Main Entry/Exit: ₹{}/₹{} | Hedge Entry/Exit: ₹{}/₹{} | Total P&L: ₹{} | Reason: {}",
                 current.getAction(),
                 current.getSymbol(),
                 current.getEntryPrice(),
@@ -1196,16 +1202,16 @@ public class RsiCrossoverStrategyService {
                 reason);
 
         if (telegramAlerts) {
-            telegramService.sendRsiCrossoverExitAlert(current, reason);
+            telegramService.sendMultiIndicatorExitAlert(current, reason);
         }
     }
 
     /** Mandatory EOD Square-Off (called at 15:05:10 IST). */
     public synchronized void executeSquareOff(String reason) {
-        RsiCrossoverPosition current = openPosition.get();
+        MultiIndicatorOptionsPosition current = openPosition.get();
         if (current != null && !current.isClosed()) {
             log.info(
-                    "[RSI-STRATEGY] 15:05 Mandatory Square-Off triggered for {}",
+                    "[MULTI-INDICATOR] 15:05 Mandatory Square-Off triggered for {}",
                     current.getSymbol());
             executeExit(reason);
         }
@@ -1214,7 +1220,7 @@ public class RsiCrossoverStrategyService {
     /** Resets the daily state for a new trading day (called at 09:15:00 IST). */
     public synchronized void resetDaily() {
         log.info(
-                "[RSI-STRATEGY] Daily reset invoked: Clearing open positions and daily trade limit.");
+                "[MULTI-INDICATOR] Daily reset invoked: Clearing open positions and daily trade limit.");
         tradesExecutedToday.set(0);
         openPosition.set(null);
         tradeHistory.clear();
@@ -1246,7 +1252,7 @@ public class RsiCrossoverStrategyService {
                 }
             }
         } catch (Exception e) {
-            log.debug("[RSI-STRATEGY] Option chain premium fetch error: {}", e.getMessage());
+            log.debug("[MULTI-INDICATOR] Option chain premium fetch error: {}", e.getMessage());
         }
         return null;
     }
@@ -1269,7 +1275,7 @@ public class RsiCrossoverStrategyService {
                 }
             }
         } catch (Exception e) {
-            log.debug("[RSI-STRATEGY] Symbol resolution error: {}", e.getMessage());
+            log.debug("[MULTI-INDICATOR] Symbol resolution error: {}", e.getMessage());
         }
         return formatOptionSymbol(strike, optionType);
     }
@@ -1333,11 +1339,11 @@ public class RsiCrossoverStrategyService {
         this.maxTradesPerDay = maxTradesPerDay;
     }
 
-    public RsiCrossoverPosition getOpenPosition() {
+    public MultiIndicatorOptionsPosition getOpenPosition() {
         return openPosition.get();
     }
 
-    public List<RsiCrossoverPosition> getTradeHistory() {
+    public List<MultiIndicatorOptionsPosition> getTradeHistory() {
         return tradeHistory;
     }
 

@@ -589,12 +589,11 @@ public class TelegramService {
 
         StringBuilder sb = new StringBuilder();
         sb.append("⚠️ *[LOWEST VOLUME REVERSAL: SCAN RETRY PENDING]* ⚠️\n\n");
-        sb.append("🕒 *Scan Time:* ")
-                .append(TIME_FMT.format(Instant.now()))
-                .append(" IST\n");
+        sb.append("🕒 *Scan Time:* ").append(TIME_FMT.format(Instant.now())).append(" IST\n");
         sb.append("🧭 *NIFTY 50 Direction:* ").append(niftyEmoji).append("\n");
         sb.append("📊 *Status:* ⚠️ Data snapshot incomplete (0 stocks qualified)\n");
-        sb.append("🔄 *Action:* Daily watchlist not fixed yet. Strategy will automatically retry at *")
+        sb.append(
+                        "🔄 *Action:* Daily watchlist not fixed yet. Strategy will automatically retry at *")
                 .append(nextRetryTime != null ? nextRetryTime.toString() : "09:30")
                 .append(" IST*.\n\n");
         sb.append(
@@ -720,15 +719,15 @@ public class TelegramService {
     }
 
     /**
-     * Sends an alert when an RSI Crossover option trade is executed (Single Leg or Hedged Spread).
+     * Sends an alert when a Multi-Indicator option trade is executed (Single Leg or Hedged Spread).
      */
-    public void sendRsiCrossoverEntryAlert(
-            com.tradingbot.model.strategy.RsiCrossoverPosition position,
+    public void sendMultiIndicatorEntryAlert(
+            com.tradingbot.model.strategy.MultiIndicatorOptionsPosition position,
             double rsi5,
             double rsi15,
             double prevRsi5,
             double prevRsi15) {
-        sendRsiCrossoverEntryAlert(
+        sendMultiIndicatorEntryAlert(
                 position, rsi5, rsi15, prevRsi5, prevRsi15, Double.NaN, Double.NaN, Double.NaN);
     }
 
@@ -736,8 +735,8 @@ public class TelegramService {
      * Sends an extended alert with VWAP, Supertrend, and ADX metrics when an option trade is
      * executed.
      */
-    public void sendRsiCrossoverEntryAlert(
-            com.tradingbot.model.strategy.RsiCrossoverPosition position,
+    public void sendMultiIndicatorEntryAlert(
+            com.tradingbot.model.strategy.MultiIndicatorOptionsPosition position,
             double rsi5,
             double rsi15,
             double prevRsi5,
@@ -887,9 +886,9 @@ public class TelegramService {
         sendAsync(message);
     }
 
-    /** Sends an alert when an RSI Crossover option trade is exited (Reversal, SL, TP, or EOD). */
-    public void sendRsiCrossoverExitAlert(
-            com.tradingbot.model.strategy.RsiCrossoverPosition position, String reason) {
+    /** Sends an alert when a Multi-Indicator option trade is exited (Reversal, SL, TP, or EOD). */
+    public void sendMultiIndicatorExitAlert(
+            com.tradingbot.model.strategy.MultiIndicatorOptionsPosition position, String reason) {
         if (!config.isTelegramEnabled()
                 || config.getTelegramBotToken().isBlank()
                 || config.getTelegramChatId().isBlank()) {
