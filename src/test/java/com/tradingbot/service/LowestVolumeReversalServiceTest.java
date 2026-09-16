@@ -2,6 +2,7 @@ package com.tradingbot.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -671,5 +672,105 @@ class LowestVolumeReversalServiceTest {
         // Trade entry alert MUST be dispatched when taking the trade
         org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
                 .sendLvrTradeEntryAlert(any(), any());
+    }
+
+    @Test
+    void testMorningScan_ZeroSnapshots_DoesNotLockWatchlistAndSendsRetryAlert() {
+        // Quote fetch returns null (simulating broker error/unresolved token)
+        when(marketDataService.fetchQuote(anyString(), anyString())).thenReturn(null);
+
+        // Run at 09:25 AM
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(9, 25).atZone(IST).toInstant(), IST));
+
+        service.runMorningUniverseScan();
+
+        // Must NOT be marked completed today
+        assertThat(service.isUniverseScanCompletedToday()).isFalse();
+        assertThat(service.getCurrentTopGainers()).isEmpty();
+        assertThat(service.getCurrentTopLosers()).isEmpty();
+
+        // Verify Retry Alert sent, Identified Stocks Alert not sent
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
+                .sendLvrScanRetryAlert(anyBoolean(), any(), anyInt());
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.never())
+                .sendLvrIdentifiedStocksAlert(any(), any(), anyBoolean(), anyInt(), anyInt());
+    }
+
+    @Test
+    void testMorningScan_RetryOnSecondCycle_SucceedsAndLocksWatchlist() {
+        // First cycle at 09:25: quotes return null
+        when(marketDataService.fetchQuote(anyString(), anyString())).thenReturn(null);
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(9, 25).atZone(IST).toInstant(), IST));
+        service.runMorningUniverseScan();
+        assertThat(service.isUniverseScanCompletedToday()).isFalse();
+
+        // Second cycle at 09:30: quotes return valid data
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode relQuote = mapper.createObjectNode();
+        relQuote.put("stat", "Ok");
+        relQuote.put("lp", "2900.0");
+        relQuote.put("o", "2850.0");
+        relQuote.put("c", "2800.0");
+        relQuote.put("v", "100000");
+
+        com.fasterxml.jackson.databind.node.ObjectNode niftyQuote = mapper.createObjectNode();
+        niftyQuote.put("stat", "Ok");
+        niftyQuote.put("lp", "25000.0");
+        niftyQuote.put("o", "24900.0");
+        niftyQuote.put("c", "24800.0");
+
+        when(marketDataService.resolveToken("RELIANCE")).thenReturn("2885");
+        when(marketDataService.fetchQuote("NSE", "10576")).thenReturn(niftyQuote);
+        when(marketDataService.fetchQuote("NSE", "2885")).thenReturn(relQuote);
+
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(9, 30).atZone(IST).toInstant(), IST));
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getCurrentTopGainers()).contains("RELIANCE");
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
+                .sendLvrIdentifiedStocksAlert(any(), any(), anyBoolean(), anyInt(), anyInt());
+    }
+
+    @Test
+    void testMorningScan_CutoffReached_AppliesChampionFallback() {
+        when(marketDataService.fetchQuote(anyString(), anyString())).thenReturn(null);
+
+        // Set time past 10:00 AM cutoff (e.g. 10:05 IST)
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(10, 5).atZone(IST).toInstant(), IST));
+
+        service.runMorningUniverseScan();
+
+        // Must lock watchlist with champion stocks fallback
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).isNotEmpty();
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
+                .sendLvrIdentifiedStocksAlert(any(), any(), anyBoolean(), anyInt(), anyInt());
+    }
+
+    @Test
+    void testRunCycle_RetriesWhenUniverseScanIncomplete() {
+        // At 09:30 AM IST
+        service.setClock(
+                java.time.Clock.fixed(
+                        LocalDate.now(IST).atTime(9, 30).atZone(IST).toInstant(), IST));
+
+        // Scanner fails
+        when(marketDataService.fetchQuote(anyString(), anyString())).thenReturn(null);
+
+        service.runCycle();
+
+        assertThat(service.isUniverseScanCompletedToday()).isFalse();
+        assertThat(service.getActiveSetups()).isEmpty();
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
+                .sendLvrScanRetryAlert(anyBoolean(), any(), anyInt());
     }
 }

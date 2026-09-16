@@ -101,6 +101,12 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.live-breach-check-enabled:true}")
     private boolean liveBreachCheckEnabled = true;
 
+    @Value("${trading-bot.strategy.lowest-volume.scanner-fallback-cutoff:10:00}")
+    private String scannerFallbackCutoffStr = "10:00";
+
+    @Value("${trading-bot.strategy.lowest-volume.scanner-timeout-seconds:30}")
+    private int scannerTimeoutSeconds = 30;
+
     // Active state maps
     private final Map<String, LowestVolumeSetup> activeSetups = new ConcurrentHashMap<>();
     private final Map<String, LowestVolumePaperPosition> openPositions = new ConcurrentHashMap<>();
@@ -177,6 +183,11 @@ public class LowestVolumeReversalService {
             log.info(
                     "[LVR] Morning universe scan not yet completed today. Triggering morning scan now...");
             runMorningUniverseScan();
+            if (!universeScanCompletedToday) {
+                log.info(
+                        "[LVR] Morning scan still pending valid candidates. Will retry on next 5-min candle cycle.");
+                return;
+            }
         } else {
             // Re-evaluate NIFTY 50 Direction to track ongoing trend alignment
             evaluateNiftyDirection();
@@ -190,6 +201,9 @@ public class LowestVolumeReversalService {
      * Scheduled Morning Universe Scan (at 09:25 AM IST). Identifies Top 10 Gainers and Top 10
      * Losers from the F&O universe, fixes this list for the entire trading day, seeds initial
      * setups, and sends the daily Telegram alert once.
+     *
+     * If 0 candidates are qualified (e.g. initial network/broker lag), scan retry alert is sent and
+     * daily watchlist is NOT locked, allowing 5-min cycles to retry up until cutoff.
      */
     public synchronized void runMorningUniverseScan() {
         if (!enabled) {
@@ -203,7 +217,8 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        log.info("[LVR] Running 09:25 AM Morning Universe Scan to fix daily watchlist...");
+        LocalTime nowTime = LocalTime.now(clock);
+        log.info("[LVR] Running Morning Universe Scan at {} IST...", nowTime);
 
         // 1. Evaluate NIFTY 50 Direction
         evaluateNiftyDirection();
@@ -211,7 +226,32 @@ public class LowestVolumeReversalService {
         // 2. Scan F&O Universe for Top Gainers and Top Losers
         scanUniverse();
 
-        // 3. Fix the list for the day and initialize active setups
+        // 3. Verify scan results or evaluate retry / fallback
+        boolean scanSucceeded = !currentTopGainers.isEmpty() || !currentTopLosers.isEmpty();
+        LocalTime fallbackCutoff = getFallbackCutoffTime();
+
+        if (!scanSucceeded) {
+            if (nowTime.isBefore(fallbackCutoff)) {
+                LocalTime nextRetry = calculateNextRetryTime(nowTime);
+                log.warn(
+                        "[LVR] Universe scan yielded 0 stocks before cutoff ({} IST). Daily watchlist not locked. Will retry at {} IST.",
+                        fallbackCutoff,
+                        nextRetry);
+                if (telegramAlerts) {
+                    telegramService.sendLvrScanRetryAlert(
+                            niftyBullish, nextRetry, activeSetups.size());
+                }
+                return;
+            } else {
+                // Cutoff reached/passed: Apply fallback basket
+                log.warn(
+                        "[LVR] Cutoff ({} IST) reached with empty scan. Falling back to default Champion Stocks basket.",
+                        fallbackCutoff);
+                applyFallbackBasket();
+            }
+        }
+
+        // 4. Fix the list for the day and initialize active setups
         if (niftyBullish) {
             for (String g : currentTopGainers) {
                 if (!exhaustedSymbols.contains(g)) {
@@ -237,7 +277,7 @@ public class LowestVolumeReversalService {
                 currentTopLosers,
                 activeSetups.size());
 
-        // 4. Send Telegram message once a day upon list identification
+        // 5. Send Telegram message once a day upon list identification
         if (telegramAlerts) {
             telegramService.sendLvrIdentifiedStocksAlert(
                     currentTopGainerSnapshots,
@@ -245,6 +285,55 @@ public class LowestVolumeReversalService {
                     niftyBullish,
                     activeSetups.size(),
                     openPositions.size());
+        }
+    }
+
+    private LocalTime getFallbackCutoffTime() {
+        try {
+            if (scannerFallbackCutoffStr != null && !scannerFallbackCutoffStr.isBlank()) {
+                return LocalTime.parse(scannerFallbackCutoffStr);
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[LVR] Error parsing scannerFallbackCutoffStr '{}', defaulting to 10:00",
+                    scannerFallbackCutoffStr);
+        }
+        return LocalTime.of(10, 0);
+    }
+
+    private LocalTime calculateNextRetryTime(LocalTime nowTime) {
+        int minute = nowTime.getMinute();
+        int nextMinute = ((minute / 5) + 1) * 5;
+        if (nextMinute >= 60) {
+            return LocalTime.of(nowTime.getHour() + 1, nextMinute - 60);
+        }
+        return LocalTime.of(nowTime.getHour(), nextMinute);
+    }
+
+    private void applyFallbackBasket() {
+        List<String> champions =
+                StockFnoRegistry.getAllSubscribedSymbols().stream()
+                        .filter(s -> !StockFnoRegistry.isIndex(s))
+                        .toList();
+
+        currentTopGainers.clear();
+        currentTopLosers.clear();
+        currentTopGainerSnapshots.clear();
+        currentTopLoserSnapshots.clear();
+
+        if (niftyBullish) {
+            currentTopGainers.addAll(champions);
+        } else {
+            currentTopLosers.addAll(champions);
+        }
+
+        for (String sym : champions) {
+            StockQuoteSnapshot dummy = new StockQuoteSnapshot(sym, 0.0, 0.0, 0.0, 0.0);
+            if (niftyBullish) {
+                currentTopGainerSnapshots.add(dummy);
+            } else {
+                currentTopLoserSnapshots.add(dummy);
+            }
         }
     }
 
@@ -294,7 +383,7 @@ public class LowestVolumeReversalService {
 
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                    .get(15, java.util.concurrent.TimeUnit.SECONDS);
+                    .get(scannerTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
             log.warn(
                     "[LVR] Universe scan snapshot batch timed out or interrupted: {}",
