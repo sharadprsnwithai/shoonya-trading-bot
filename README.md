@@ -43,8 +43,8 @@ The bot runs automated strategies on the NIFTY 50 index and high-liquidity F&O s
 
 Intraday cash‑stock momentum reversal on 5‑minute candles (`NSE` equities):
 
-1. **Morning Universe Scan (09:25:10 IST):** Fixes the daily watchlist from the F&O universe (top gainers/losers ≥ +/−1.0%) and seeds initial setups.
-2. **Pullback Volume Exhaustion:** A stock in a longer timeframe position that pulls back on the **lowest session volume** (evaluated across all candles from 09:15 open) signals reversal.
+1. **Morning Universe Scan (09:25:10 IST):** Fixes the daily watchlist from the F&O universe (Top Gainers and Top Losers).
+2. **Direction & Lowest Volume Candle (≥ 09:30 IST):** Strategy direction is determined by the 1st 5-minute candle (Green → LONG, Red → SHORT). Evaluates completed 5m candles after 09:30 AM to find the lowest volume opposite-color candle as the trigger.
 3. **Entry Cutoff:** Hard cutoff at **11:00 AM IST** — no new setups or armed triggers after 11:00 AM; open trades continue to target / stop-loss / SuperTrend trailing.
 4. **Execution:** ATM options bought (CE for longs, PE for shorts) via `ExecutionManager`; SL, Target 1, and 5m SuperTrend(10, 3) trailing exit.
 5. **Actionable Alerts:** Telegram `[TRADE SIGNAL: BUY CALL/PUT]` messages fire on actual trigger breach and fill (armed‑setup alerts disabled by default).

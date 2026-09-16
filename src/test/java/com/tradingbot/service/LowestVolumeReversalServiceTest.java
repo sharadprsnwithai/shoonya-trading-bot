@@ -77,39 +77,73 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    void testInitialLegDetection_Long() {
-        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
-        double atr = 10.0; // 0.5 * atr = 5.0
+    void testLowestVolumeReversal_LongFromGreen1stCandle() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", null);
+        double atr = 10.0;
 
-        Instant t0 = todayInstant(9, 25);
-        Candle c1 = makeCandle("RELIANCE", t0, 2500, 2506, 2499, 2505, 50000);
+        Instant t0 = todayInstant(9, 15);
+        // Candle 1 (09:15): Green -> Direction LONG (vol 50,000)
+        Candle c1 = makeCandle("RELIANCE", t0, 2500, 2512, 2499, 2510, 50000);
+        // Candle 2 (09:20): Red before 9:30 (vol 40,000)
         Candle c2 =
                 makeCandle(
-                        "RELIANCE", t0.plus(5, ChronoUnit.MINUTES), 2505, 2512, 2504, 2511, 45000);
+                        "RELIANCE", t0.plus(5, ChronoUnit.MINUTES), 2510, 2511, 2504, 2505, 40000);
+        // Candle 3 (09:25): Green (vol 45,000)
+        Candle c3 =
+                makeCandle(
+                        "RELIANCE", t0.plus(10, ChronoUnit.MINUTES), 2505, 2515, 2504, 2514, 45000);
+        // Candle 4 (09:30): Red (vol 25,000)
+        Candle c4 =
+                makeCandle(
+                        "RELIANCE", t0.plus(15, ChronoUnit.MINUTES), 2514, 2516, 2508, 2509, 25000);
+        // Candle 5 (09:35): Red (vol 15,000) -> Lowest volume of the entire day printed after
+        // 09:30!
+        Candle c5 =
+                makeCandle(
+                        "RELIANCE", t0.plus(20, ChronoUnit.MINUTES), 2509, 2512, 2506, 2507, 15000);
 
-        List<Candle> candles = List.of(c1, c2); // Cumulative move: 2511 - 2500 = 11.0 >= 5.0
-        service.evaluateInitialLeg(candles, setup, atr);
+        List<Candle> todayCandles = List.of(c1, c2, c3, c4, c5);
+        service.evaluateLowestVolumeReversal(todayCandles, setup, atr, LocalTime.of(9, 40));
 
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.LEG_CONFIRMED);
-        assertThat(setup.getInitialLegMove()).isEqualByComparingTo(BigDecimal.valueOf(11.0));
-        assertThat(setup.getInitialLegCandles()).hasSize(2);
+        assertThat(setup.getDirection()).isEqualTo(LowestVolumeDirection.LONG);
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(setup.getTriggerCandle()).isEqualTo(c5);
+        assertThat(setup.getTriggerCandleVolume()).isEqualTo(15000L);
+        assertThat(setup.getTriggerPrice()).isEqualByComparingTo(new BigDecimal("2512.05"));
+        assertThat(setup.getStopLossPrice()).isEqualByComparingTo(new BigDecimal("2505.95"));
     }
 
     @Test
-    void testInitialLegDetection_Short() {
-        LowestVolumeSetup setup = new LowestVolumeSetup("INFY", LowestVolumeDirection.SHORT);
-        double atr = 8.0; // 0.5 * atr = 4.0
+    void testLowestVolumeReversal_ShortFromRed1stCandle() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("INFY", null);
+        double atr = 8.0;
 
-        Instant t0 = todayInstant(9, 25);
-        Candle c1 = makeCandle("INFY", t0, 1500, 1502, 1495, 1496, 30000);
+        Instant t0 = todayInstant(9, 15);
+        // Candle 1 (09:15): Red -> Direction SHORT (vol 40,000)
+        Candle c1 = makeCandle("INFY", t0, 1500, 1502, 1488, 1490, 40000);
+        // Candle 2 (09:20): Green before 9:30 (vol 30,000)
         Candle c2 =
-                makeCandle("INFY", t0.plus(5, ChronoUnit.MINUTES), 1496, 1497, 1490, 1491, 35000);
+                makeCandle("INFY", t0.plus(5, ChronoUnit.MINUTES), 1490, 1496, 1489, 1495, 30000);
+        // Candle 3 (09:25): Red (vol 35,000)
+        Candle c3 =
+                makeCandle("INFY", t0.plus(10, ChronoUnit.MINUTES), 1495, 1496, 1485, 1486, 35000);
+        // Candle 4 (09:30): Green (vol 20,000)
+        Candle c4 =
+                makeCandle("INFY", t0.plus(15, ChronoUnit.MINUTES), 1486, 1492, 1485, 1491, 20000);
+        // Candle 5 (09:35): Green (vol 12,000) -> Lowest volume of the entire day printed after
+        // 09:30!
+        Candle c5 =
+                makeCandle("INFY", t0.plus(20, ChronoUnit.MINUTES), 1491, 1494, 1490, 1493, 12000);
 
-        List<Candle> candles = List.of(c1, c2); // Cumulative move: 1500 - 1491 = 9.0 >= 4.0
-        service.evaluateInitialLeg(candles, setup, atr);
+        List<Candle> todayCandles = List.of(c1, c2, c3, c4, c5);
+        service.evaluateLowestVolumeReversal(todayCandles, setup, atr, LocalTime.of(9, 40));
 
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.LEG_CONFIRMED);
-        assertThat(setup.getInitialLegMove()).isEqualByComparingTo(BigDecimal.valueOf(9.0));
+        assertThat(setup.getDirection()).isEqualTo(LowestVolumeDirection.SHORT);
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(setup.getTriggerCandle()).isEqualTo(c5);
+        assertThat(setup.getTriggerCandleVolume()).isEqualTo(12000L);
+        assertThat(setup.getTriggerPrice()).isEqualByComparingTo(new BigDecimal("1489.95"));
+        assertThat(setup.getStopLossPrice()).isEqualByComparingTo(new BigDecimal("1494.05"));
     }
 
     @Test
@@ -551,9 +585,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    void testPullbackLowestVolumeFromStartOfDay_Beyond10Bars() {
+    void testLowestVolumeOppositeCandle_After930AM() {
         LowestVolumeSetup setup = new LowestVolumeSetup("TATAMOTORS", LowestVolumeDirection.LONG);
-        setup.transitionTo(LowestVolumeSetupState.LEG_CONFIRMED, "Leg confirmed");
 
         double atr = 10.0;
         Instant t0 = todayInstant(9, 15);
@@ -561,12 +594,12 @@ class LowestVolumeReversalServiceTest {
         List<Candle> todayCandles = new java.util.ArrayList<>();
         // Candle 0 (09:15): Green
         todayCandles.add(makeCandle("TATAMOTORS", t0, 950, 955, 948, 954, 80000));
-        // Candle 1 (09:20): Red with lowest volume of the entire day (12,000)
-        Candle earlyLowestRed =
-                makeCandle("TATAMOTORS", t0.plus(5, ChronoUnit.MINUTES), 954, 955, 950, 951, 12000);
-        todayCandles.add(earlyLowestRed);
+        // Candle 1 (09:20): Red before 09:30
+        Candle earlyRed =
+                makeCandle("TATAMOTORS", t0.plus(5, ChronoUnit.MINUTES), 954, 955, 950, 951, 40000);
+        todayCandles.add(earlyRed);
 
-        // Candles 2..11 (09:25 .. 10:10): 10 consecutive green candles (strong rally)
+        // Candles 2..11 (09:25 .. 10:10): 10 consecutive green candles
         for (int i = 2; i <= 11; i++) {
             todayCandles.add(
                     makeCandle(
@@ -579,23 +612,66 @@ class LowestVolumeReversalServiceTest {
                             60000));
         }
 
-        // Candle 12 (10:15): Red with higher volume (35,000)
+        // Candle 12 (10:15): Red with 35,000 volume
         todayCandles.add(
                 makeCandle(
                         "TATAMOTORS", t0.plus(60, ChronoUnit.MINUTES), 978, 979, 974, 975, 35000));
-        // Candle 13 (10:20): Red with 25,000 volume (> 12,000)
-        todayCandles.add(
+        // Candle 13 (10:20): Red with 25,000 volume -> lowest volume of entire day printed after
+        // 09:30!
+        Candle lowestAfter930Red =
                 makeCandle(
-                        "TATAMOTORS", t0.plus(65, ChronoUnit.MINUTES), 975, 976, 972, 973, 25000));
+                        "TATAMOTORS", t0.plus(65, ChronoUnit.MINUTES), 975, 976, 972, 973, 25000);
+        todayCandles.add(lowestAfter930Red);
 
-        // Evaluate pullback with all 14 candles
-        service.evaluatePullback(todayCandles, setup, atr);
+        // Evaluate with all 14 candles
+        service.evaluateLowestVolumeReversal(todayCandles, setup, atr, LocalTime.of(10, 25));
 
-        // Must pick earlyLowestRed (volume 12000) from start of day, NOT candle 13 (25000) from
-        // rolling 10
+        // Must pick lowestAfter930Red (volume 25000)
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
-        assertThat(setup.getTriggerCandle()).isEqualTo(earlyLowestRed);
-        assertThat(setup.getTriggerCandleVolume()).isEqualTo(12000L);
+        assertThat(setup.getTriggerCandle()).isEqualTo(lowestAfter930Red);
+        assertThat(setup.getTriggerCandleVolume()).isEqualTo(25000L);
+    }
+
+    @Test
+    void testLowestVolumeOppositeCandle_RejectedIfNotLowestFromStartOfDay() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("TATAMOTORS", LowestVolumeDirection.LONG);
+
+        double atr = 10.0;
+        Instant t0 = todayInstant(9, 15);
+
+        // Candle 0 (09:15): Green (80,000) -> LONG
+        Candle c0 = makeCandle("TATAMOTORS", t0, 950, 955, 948, 954, 80000);
+        // Candle 1 (09:20): Green with volume 10,000 (Session lowest is 10,000)
+        Candle c1 =
+                makeCandle("TATAMOTORS", t0.plus(5, ChronoUnit.MINUTES), 954, 956, 953, 955, 10000);
+        // Candle 2 (09:25): Green (50,000)
+        Candle c2 =
+                makeCandle(
+                        "TATAMOTORS", t0.plus(10, ChronoUnit.MINUTES), 955, 957, 954, 956, 50000);
+        // Candle 3 (09:30): Red with volume 25,000 (> 10,000 session min)
+        Candle c3 =
+                makeCandle(
+                        "TATAMOTORS", t0.plus(15, ChronoUnit.MINUTES), 956, 957, 952, 953, 25000);
+
+        List<Candle> todayCandles = new java.util.ArrayList<>(List.of(c0, c1, c2, c3));
+        service.evaluateLowestVolumeReversal(todayCandles, setup, atr, LocalTime.of(9, 35));
+
+        // Should NOT arm because 25,000 is not the lowest volume since start of day (10,000 is
+        // lower)
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(setup.getTriggerCandle()).isNull();
+
+        // Candle 4 (09:35): Red with volume 8,000 (New session low <= 8,000)
+        Candle c4 =
+                makeCandle("TATAMOTORS", t0.plus(20, ChronoUnit.MINUTES), 953, 954, 949, 950, 8000);
+        todayCandles.add(c4);
+
+        service.evaluateLowestVolumeReversal(todayCandles, setup, atr, LocalTime.of(9, 40));
+
+        // Should now ARM because c4 (8,000) is the lowest of the entire day printed >= 09:30!
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(setup.getTriggerCandle()).isEqualTo(c4);
+        assertThat(setup.getTriggerCandleVolume()).isEqualTo(8000L);
     }
 
     @Test
@@ -773,5 +849,69 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.getActiveSetups()).isEmpty();
         org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
                 .sendLvrScanRetryAlert(anyBoolean(), any(), anyInt());
+    }
+
+    @Test
+    void testTieBreak_LowestVolumeOppositeCandle_SelectsMoreRecent() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("TCS", null);
+        double atr = 15.0;
+        Instant t0 = todayInstant(9, 15);
+
+        // Candle 1 (09:15): Green -> LONG
+        Candle c1 = makeCandle("TCS", t0, 3500, 3520, 3495, 3515, 60000);
+        // Candle 2 (09:20): Green
+        Candle c2 =
+                makeCandle("TCS", t0.plus(5, ChronoUnit.MINUTES), 3515, 3525, 3510, 3522, 55000);
+        // Candle 3 (09:25): Green
+        Candle c3 =
+                makeCandle("TCS", t0.plus(10, ChronoUnit.MINUTES), 3522, 3530, 3520, 3528, 50000);
+        // Candle 4 (09:30): Red with volume 20,000
+        Candle c4 =
+                makeCandle("TCS", t0.plus(15, ChronoUnit.MINUTES), 3528, 3529, 3518, 3520, 20000);
+        // Candle 5 (09:35): Red with identical volume 20,000 (more recent!)
+        Candle c5 =
+                makeCandle("TCS", t0.plus(20, ChronoUnit.MINUTES), 3520, 3522, 3514, 3516, 20000);
+
+        List<Candle> todayCandles = List.of(c1, c2, c3, c4, c5);
+        service.evaluateLowestVolumeReversal(todayCandles, setup, atr, LocalTime.of(9, 40));
+
+        // Most recent candle (c5) should be selected as the trigger candle
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(setup.getTriggerCandle()).isEqualTo(c5);
+        assertThat(setup.getTriggerCandleVolume()).isEqualTo(20000L);
+        assertThat(setup.getTriggerPrice()).isEqualByComparingTo(new BigDecimal("3522.05"));
+        assertThat(setup.getStopLossPrice()).isEqualByComparingTo(new BigDecimal("3513.95"));
+    }
+
+    @Test
+    void testDojiFirstCandle_Skipped() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("WIPRO", null);
+        service.addActiveSetupForTesting("WIPRO", setup);
+
+        Instant t0 = todayInstant(9, 15);
+        // Candle 1 (09:15): Open == Close (Doji)
+        Candle c1 = makeCandle("WIPRO", t0, 500, 505, 495, 500, 30000);
+        Candle c2 = makeCandle("WIPRO", t0.plus(15, ChronoUnit.MINUTES), 500, 502, 498, 499, 10000);
+
+        when(marketDataService.fetch5MinCandles(eq("WIPRO"), anyInt()))
+                .thenReturn(generate2DayCandlesWithToday("WIPRO", List.of(c1, c2)));
+
+        service.evaluateSymbolSetup("WIPRO", LocalTime.of(9, 35));
+
+        // Setup should remain SCANNING with no direction or trigger armed
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(setup.getDirection()).isNull();
+        assertThat(setup.getTriggerCandle()).isNull();
+    }
+
+    private List<Candle> generate2DayCandlesWithToday(String symbol, List<Candle> todayCandles) {
+        List<Candle> list = new java.util.ArrayList<>();
+        LocalDate yesterday = LocalDate.now(IST).minusDays(1);
+        for (int i = 0; i < 20; i++) {
+            Instant t = yesterday.atTime(9, 15).plusMinutes(i * 5L).atZone(IST).toInstant();
+            list.add(makeCandle(symbol, t, 500, 505, 495, 500, 20000));
+        }
+        list.addAll(todayCandles);
+        return list;
     }
 }

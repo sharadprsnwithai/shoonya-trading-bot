@@ -53,6 +53,7 @@ public class LowestVolumeReversalService {
 
     public static final LocalTime TIME_SESSION_START = LocalTime.of(9, 15);
     public static final LocalTime TIME_SCANNER_START = LocalTime.of(9, 25);
+    public static final LocalTime TIME_EVALUATION_START = LocalTime.of(9, 30);
     public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(11, 0);
     public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
 
@@ -252,19 +253,14 @@ public class LowestVolumeReversalService {
         }
 
         // 4. Fix the list for the day and initialize active setups
-        if (niftyBullish) {
-            for (String g : currentTopGainers) {
-                if (!exhaustedSymbols.contains(g)) {
-                    activeSetups.computeIfAbsent(
-                            g, k -> new LowestVolumeSetup(k, LowestVolumeDirection.LONG));
-                }
+        for (String g : currentTopGainers) {
+            if (!exhaustedSymbols.contains(g)) {
+                activeSetups.computeIfAbsent(g, k -> new LowestVolumeSetup(k, null));
             }
-        } else {
-            for (String l : currentTopLosers) {
-                if (!exhaustedSymbols.contains(l)) {
-                    activeSetups.computeIfAbsent(
-                            l, k -> new LowestVolumeSetup(k, LowestVolumeDirection.SHORT));
-                }
+        }
+        for (String l : currentTopLosers) {
+            if (!exhaustedSymbols.contains(l)) {
+                activeSetups.computeIfAbsent(l, k -> new LowestVolumeSetup(k, null));
             }
         }
 
@@ -410,20 +406,18 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        // Rank Top Gainers (pctChange >= +minPctChange, sorted descending)
+        // Rank Top Gainers (sorted descending by pctChange, limit topNStocks)
         List<StockQuoteSnapshot> gainerSnapshots =
                 snapshots.stream()
-                        .filter(s -> s.pctChange() >= minPctChange)
                         .sorted(
                                 Comparator.comparingDouble(StockQuoteSnapshot::pctChange)
                                         .reversed())
                         .limit(topNStocks)
                         .toList();
 
-        // Rank Top Losers (pctChange <= -minPctChange, sorted ascending)
+        // Rank Top Losers (sorted ascending by pctChange, limit topNStocks)
         List<StockQuoteSnapshot> loserSnapshots =
                 snapshots.stream()
-                        .filter(s -> s.pctChange() <= -minPctChange)
                         .sorted(Comparator.comparingDouble(StockQuoteSnapshot::pctChange))
                         .limit(topNStocks)
                         .toList();
@@ -471,25 +465,17 @@ public class LowestVolumeReversalService {
         // Collect candidate symbols
         Set<String> symbolsToEvaluate = ConcurrentHashMap.newKeySet();
 
-        // Add newly qualifying top gainers (if Nifty is Bullish)
-        if (niftyBullish) {
-            for (String g : currentTopGainers) {
-                if (!exhaustedSymbols.contains(g)) {
-                    symbolsToEvaluate.add(g);
-                    activeSetups.computeIfAbsent(
-                            g, k -> new LowestVolumeSetup(k, LowestVolumeDirection.LONG));
-                }
+        for (String g : currentTopGainers) {
+            if (!exhaustedSymbols.contains(g)) {
+                symbolsToEvaluate.add(g);
+                activeSetups.computeIfAbsent(g, k -> new LowestVolumeSetup(k, null));
             }
         }
 
-        // Add newly qualifying top losers (if Nifty is Bearish)
-        if (!niftyBullish) {
-            for (String l : currentTopLosers) {
-                if (!exhaustedSymbols.contains(l)) {
-                    symbolsToEvaluate.add(l);
-                    activeSetups.computeIfAbsent(
-                            l, k -> new LowestVolumeSetup(k, LowestVolumeDirection.SHORT));
-                }
+        for (String l : currentTopLosers) {
+            if (!exhaustedSymbols.contains(l)) {
+                symbolsToEvaluate.add(l);
+                activeSetups.computeIfAbsent(l, k -> new LowestVolumeSetup(k, null));
             }
         }
 
@@ -562,188 +548,146 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        LowestVolumeDirection dir = setup.getDirection();
-        LowestVolumeSetupState state = setup.getState();
-
-        // STATE MACHINE EVALUATION
-        switch (state) {
-            case SCANNING, LEG_FORMING:
-                evaluateInitialLeg(todayCandles, setup, currentAtr);
-                break;
-
-            case LEG_CONFIRMED, PULLBACK_TRACKING:
-                evaluatePullback(todayCandles, setup, currentAtr);
-                break;
-
-            case TRIGGER_ARMED:
-                evaluateArmedTrigger(todayCandles, setup, nowTime);
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    /**
-     * Evaluates the Initial Leg (§3.1): 2-3 consecutive candles in direction whose cumulative move
-     * >= 0.5 * ATR(14).
-     */
-    public void evaluateInitialLeg(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
-        if (todayCandles.size() < 2) {
+        // Determine direction from the 1st 5-minute candle of the day (09:15-09:20)
+        Candle candle1 = todayCandles.get(0);
+        int cmp = candle1.close().compareTo(candle1.open());
+        if (cmp == 0) {
+            log.debug("[LVR] [{}] 1st 5m candle is doji (open == close). Skipping.", symbol);
             return;
         }
+        LowestVolumeDirection dir =
+                (cmp > 0) ? LowestVolumeDirection.LONG : LowestVolumeDirection.SHORT;
+        setup.setDirection(dir);
 
-        LowestVolumeDirection dir = setup.getDirection();
-        double minMoveThreshold = 0.5 * atr;
-
-        // Check the last 2 or 3 completed candles
-        int lastIdx = todayCandles.size() - 1;
-
-        // Test 3-candle leg
-        if (todayCandles.size() >= 3) {
-            Candle c1 = todayCandles.get(lastIdx - 2);
-            Candle c2 = todayCandles.get(lastIdx - 1);
-            Candle c3 = todayCandles.get(lastIdx);
-
-            if (isDirectional(c1, dir) && isDirectional(c2, dir) && isDirectional(c3, dir)) {
-                BigDecimal move = getCumulativeMove(c1, c3, dir);
-                if (move.doubleValue() >= minMoveThreshold) {
-                    setup.setInitialLeg(List.of(c1, c2, c3), move, atr);
-                    log.info(
-                            "[LVR] [{}] 3-Candle Initial Leg Confirmed! Move: ₹{} >= Threshold: ₹{}",
-                            setup.getSymbol(),
-                            move,
-                            minMoveThreshold);
-                    return;
-                }
-            }
-        }
-
-        // Test 2-candle leg
-        Candle c1 = todayCandles.get(lastIdx - 1);
-        Candle c2 = todayCandles.get(lastIdx);
-        if (isDirectional(c1, dir) && isDirectional(c2, dir)) {
-            BigDecimal move = getCumulativeMove(c1, c2, dir);
-            if (move.doubleValue() >= minMoveThreshold) {
-                setup.setInitialLeg(List.of(c1, c2), move, atr);
-                log.info(
-                        "[LVR] [{}] 2-Candle Initial Leg Confirmed! Move: ₹{} >= Threshold: ₹{}",
-                        setup.getSymbol(),
-                        move,
-                        minMoveThreshold);
-                return;
-            } else {
-                setup.transitionTo(
-                        LowestVolumeSetupState.LEG_FORMING, "Forming leg, move below 0.5 ATR");
-            }
-        }
+        // Evaluate lowest volume opposite-color candle printed at or after 09:30 AM
+        evaluateLowestVolumeReversal(todayCandles, setup, currentAtr, nowTime);
     }
 
     /**
-     * Evaluates Pullback & Lowest Volume Trigger Candle (§3.2, §3.3): Checks opposite-color candles
-     * since start of day (09:15) and applies the Range filter.
+     * Evaluates the Lowest Volume Reversal Strategy: Identifies the lowest volume 5-min candle
+     * printed at or after 09:30 AM of opposite color to the day's first 5-min candle.
      */
-    public void evaluatePullback(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
+    public void evaluateLowestVolumeReversal(
+            List<Candle> todayCandles, LowestVolumeSetup setup, double atr, LocalTime nowTime) {
         if (todayCandles.isEmpty()) {
             return;
         }
 
-        LowestVolumeDirection dir = setup.getDirection();
-        Candle latestCandle = todayCandles.get(todayCandles.size() - 1);
-
-        // If opposite-color candle printed
-        if (isOppositeColor(latestCandle, dir)) {
-            setup.transitionTo(
-                    LowestVolumeSetupState.PULLBACK_TRACKING,
-                    "Opposite candle printed in pullback");
-
-            // Look back across all candles since start of day to identify the lowest volume
-            // opposite candle
-            Candle lowestVolCandle = null;
-            long minVolume = Long.MAX_VALUE;
-
-            for (Candle c : todayCandles) {
-                if (isOppositeColor(c, dir)) {
-                    // Tie-break: if equal volume, the more recent candle takes precedence
-                    if (c.volume() <= minVolume) {
-                        minVolume = c.volume();
-                        lowestVolCandle = c;
-                    }
-                }
+        if (setup.getDirection() == null) {
+            Candle candle1 = todayCandles.get(0);
+            int cmp = candle1.close().compareTo(candle1.open());
+            if (cmp > 0) {
+                setup.setDirection(LowestVolumeDirection.LONG);
+            } else if (cmp < 0) {
+                setup.setDirection(LowestVolumeDirection.SHORT);
+            } else {
+                return;
             }
-
-            if (lowestVolCandle != null) {
-                // §3.3 Range Filter: Reject trigger candle if (high - low) > 1.2 * ATR(14)
-                double candleRange =
-                        lowestVolCandle.high().subtract(lowestVolCandle.low()).doubleValue();
-                double maxAllowedRange = 1.2 * atr;
-
-                if (candleRange > maxAllowedRange) {
-                    log.info(
-                            "[LVR] [{}] Trigger candle rejected by Range Filter! Range: ₹{} > Max: ₹{}",
-                            setup.getSymbol(),
-                            candleRange,
-                            maxAllowedRange);
-                    return;
-                }
-
-                // Arm the Trigger!
-                BigDecimal tickSize = BigDecimal.valueOf(0.05);
-                BigDecimal triggerPrc;
-                BigDecimal slPrc;
-                BigDecimal target1Prc;
-
-                if (dir == LowestVolumeDirection.LONG) {
-                    triggerPrc =
-                            lowestVolCandle.high().add(tickSize).setScale(2, RoundingMode.HALF_UP);
-                    slPrc =
-                            lowestVolCandle
-                                    .low()
-                                    .subtract(tickSize)
-                                    .setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal slDistance = triggerPrc.subtract(slPrc);
-                    target1Prc =
-                            triggerPrc
-                                    .add(slDistance.multiply(BigDecimal.valueOf(4)))
-                                    .setScale(2, RoundingMode.HALF_UP);
-                } else {
-                    triggerPrc =
-                            lowestVolCandle
-                                    .low()
-                                    .subtract(tickSize)
-                                    .setScale(2, RoundingMode.HALF_UP);
-                    slPrc = lowestVolCandle.high().add(tickSize).setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal slDistance = slPrc.subtract(triggerPrc);
-                    target1Prc =
-                            triggerPrc
-                                    .subtract(slDistance.multiply(BigDecimal.valueOf(4)))
-                                    .setScale(2, RoundingMode.HALF_UP);
-                }
-
-                setup.setTriggerCandle(lowestVolCandle, triggerPrc, slPrc, target1Prc);
-                log.info(
-                        "[LVR] [{}] TRIGGER ARMED! Direction: {}, Trigger: ₹{}, SL: ₹{}, Target1: ₹{}, Vol: {}",
-                        setup.getSymbol(),
-                        dir,
-                        triggerPrc,
-                        slPrc,
-                        target1Prc,
-                        lowestVolCandle.volume());
-
-                int minLots = getDefaultLots();
-                if (telegramAlerts && telegramArmedAlerts) {
-                    telegramService.sendLvrSetupArmedAlert(
-                            setup, minLots, BigDecimal.valueOf(getRiskPerTradeAmount()));
-                }
-            }
-        } else if (isDirectional(latestCandle, dir)) {
-            // Same-direction candle prints without a qualifying trigger -> pullback invalidated
-            // (§3.2 / §6)
-            log.info(
-                    "[LVR] [{}] Leg resumed with same-direction candle before trigger armed. Resetting to SCANNING.",
-                    setup.getSymbol());
-            setup.resetToScanning();
         }
+
+        LowestVolumeDirection dir = setup.getDirection();
+
+        // 1. Find minimum volume across ALL candles of the day (since 09:15 start of day)
+        long sessionMinVolume = Long.MAX_VALUE;
+        for (Candle c : todayCandles) {
+            if (c.volume() < sessionMinVolume) {
+                sessionMinVolume = c.volume();
+            }
+        }
+
+        // 2. Look for opposite-color candle printed >= 09:30 AM whose volume equals session min
+        // volume
+        Candle lowestVolCandle = null;
+        for (Candle c : todayCandles) {
+            LocalTime cTime = c.timestamp().atZone(IST).toLocalTime();
+            if (!cTime.isBefore(TIME_EVALUATION_START)) { // >= 09:30 AM
+                if (isOppositeColor(c, dir) && c.volume() <= sessionMinVolume) {
+                    // Tie-break: if equal volume, the more recent candle takes precedence
+                    lowestVolCandle = c;
+                }
+            }
+        }
+
+        if (lowestVolCandle == null) {
+            log.debug(
+                    "[LVR] [{}] No opposite-color candle printed >= 09:30 IST matches session lowest volume ({}) for direction {}.",
+                    setup.getSymbol(),
+                    sessionMinVolume,
+                    dir);
+            return;
+        }
+
+        // §3.3 Range Filter: Reject trigger candle if (high - low) > 1.2 * ATR(14)
+        double candleRange = lowestVolCandle.high().subtract(lowestVolCandle.low()).doubleValue();
+        double maxAllowedRange = 1.2 * atr;
+
+        if (candleRange > maxAllowedRange) {
+            log.info(
+                    "[LVR] [{}] Lowest-volume opposite candle rejected by Range Filter! Range: ₹{} > Max: ₹{}",
+                    setup.getSymbol(),
+                    candleRange,
+                    maxAllowedRange);
+            return;
+        }
+
+        // Calculate trigger, SL, Target1
+        BigDecimal tickSize = BigDecimal.valueOf(0.05);
+        BigDecimal triggerPrc;
+        BigDecimal slPrc;
+        BigDecimal target1Prc;
+
+        if (dir == LowestVolumeDirection.LONG) {
+            triggerPrc = lowestVolCandle.high().add(tickSize).setScale(2, RoundingMode.HALF_UP);
+            slPrc = lowestVolCandle.low().subtract(tickSize).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal slDistance = triggerPrc.subtract(slPrc);
+            target1Prc =
+                    triggerPrc
+                            .add(slDistance.multiply(BigDecimal.valueOf(4)))
+                            .setScale(2, RoundingMode.HALF_UP);
+        } else {
+            triggerPrc = lowestVolCandle.low().subtract(tickSize).setScale(2, RoundingMode.HALF_UP);
+            slPrc = lowestVolCandle.high().add(tickSize).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal slDistance = slPrc.subtract(triggerPrc);
+            target1Prc =
+                    triggerPrc
+                            .subtract(slDistance.multiply(BigDecimal.valueOf(4)))
+                            .setScale(2, RoundingMode.HALF_UP);
+        }
+
+        boolean isNewOrUpdatedCandle =
+                setup.getTriggerCandle() == null
+                        || !setup.getTriggerCandle().timestamp().equals(lowestVolCandle.timestamp())
+                        || setup.getState() != LowestVolumeSetupState.TRIGGER_ARMED;
+
+        if (isNewOrUpdatedCandle) {
+            setup.setTriggerCandle(lowestVolCandle, triggerPrc, slPrc, target1Prc);
+            log.info(
+                    "[LVR] [{}] TRIGGER ARMED! Direction: {}, Trigger: ₹{}, SL: ₹{}, Target1: ₹{}, Vol: {}",
+                    setup.getSymbol(),
+                    dir,
+                    triggerPrc,
+                    slPrc,
+                    target1Prc,
+                    lowestVolCandle.volume());
+
+            int minLots = getDefaultLots();
+            if (telegramAlerts && telegramArmedAlerts) {
+                telegramService.sendLvrSetupArmedAlert(
+                        setup, minLots, BigDecimal.valueOf(getRiskPerTradeAmount()));
+            }
+        }
+
+        if (setup.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
+            evaluateArmedTrigger(todayCandles, setup, nowTime);
+        }
+    }
+
+    public void evaluatePullback(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
+        evaluateLowestVolumeReversal(todayCandles, setup, atr, LocalTime.now(clock));
+    }
+
+    public void evaluateInitialLeg(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
+        // Point 2 (Impulse Leg) removed from strategy specification
     }
 
     /**
@@ -1360,7 +1304,7 @@ public class LowestVolumeReversalService {
         if (allCandles == null || allCandles.isEmpty()) {
             return Collections.emptyList();
         }
-        var today = java.time.LocalDate.now(IST);
+        var today = java.time.LocalDate.now(clock);
         return allCandles.stream()
                 .filter(c -> c.timestamp().atZone(IST).toLocalDate().equals(today))
                 .toList();
