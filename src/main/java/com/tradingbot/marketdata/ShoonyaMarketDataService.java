@@ -154,7 +154,7 @@ public class ShoonyaMarketDataService {
      */
     public String resolveToken(String symbol) {
         if (symbol == null || symbol.isBlank()) {
-            return "10576";
+            return "26000";
         }
         String clean = symbol.toUpperCase().trim();
         if (clean.startsWith("NSE:")) clean = clean.substring(4);
@@ -206,8 +206,10 @@ public class ShoonyaMarketDataService {
                     e.getMessage());
         }
 
-        if ("NIFTY50".equalsIgnoreCase(clean) || "NIFTY".equalsIgnoreCase(clean)) {
-            return "10576";
+        if ("NIFTY50".equalsIgnoreCase(clean)
+                || "NIFTY".equalsIgnoreCase(clean)
+                || "NIFTY 50".equalsIgnoreCase(clean)) {
+            return "26000";
         }
         log.warn("[MARKET-DATA] Unable to resolve token for symbol: {}", clean);
         return null;

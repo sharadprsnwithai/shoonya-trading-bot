@@ -41,7 +41,7 @@ import org.springframework.stereotype.Service;
  * (Bearish credit). 2. OPTION_BUYING: - 5m RSI(14) crosses above 15m RSI(14) -> BUY ATM CE. - 5m
  * RSI(14) crosses below 15m RSI(14) -> BUY ATM PE.
  *
- * <p>Rules: 1. Monitored on NIFTY 50 index (NSE:10576). 2. Active evaluation starts at 09:45:10 IST
+ * <p>Rules: 1. Monitored on NIFTY 50 index (NSE:26000). 2. Active evaluation starts at 09:45:10 IST
  * and runs every 5 minutes until 15:00:10 IST. 3. Trend strength verified using 15m ADX(14) >=
  * threshold (default 20.0). 4. Strict 1 trade per day limit. 5. Hard Stop-Loss and Target Profit
  * protection on option premium. 6. Exit on reverse crossover or mandatory 15:05:10 IST EOD
@@ -53,7 +53,7 @@ public class MultiIndicatorOptionsService {
     private static final Logger log = LoggerFactory.getLogger(MultiIndicatorOptionsService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     public static final String NIFTY_SYMBOL = "NIFTY 50";
-    public static final String NIFTY_TOKEN = "10576";
+    public static final String NIFTY_TOKEN = "26000";
     public static final String NIFTY_EXCHANGE = "NSE";
 
     public static final LocalTime TIME_SESSION_START = LocalTime.of(9, 15);
@@ -79,14 +79,20 @@ public class MultiIndicatorOptionsService {
     @Value("${trading-bot.strategy.multi-indicator-options.exchange:NSE}")
     private String indexExchange = "NSE";
 
-    @Value("${trading-bot.strategy.multi-indicator-options.token:10576}")
-    private String indexToken = "10576";
+    @Value("${trading-bot.strategy.multi-indicator-options.token:26000}")
+    private String indexToken = "26000";
 
     @Value("${trading-bot.strategy.multi-indicator-options.symbol:NIFTY 50}")
     private String indexSymbol = "NIFTY 50";
 
     @Value("${trading-bot.strategy.multi-indicator-options.mode:OPTION_SELLING}")
     private String mode = "OPTION_SELLING";
+
+    @Value("${trading-bot.strategy.multi-indicator-options.sell-otm-strikes:2}")
+    private int sellOtmStrikes = 2;
+
+    @Value("${trading-bot.strategy.multi-indicator-options.rsi-exit-enabled:false}")
+    private boolean rsiExitEnabled = false;
 
     @Value("${trading-bot.strategy.multi-indicator-options.auto-execute:false}")
     private boolean autoExecute = false;
@@ -234,12 +240,12 @@ public class MultiIndicatorOptionsService {
         } else if (sym.contains("NIFTY")) {
             this.underlyingIndex = "NIFTY";
             this.indexExchange = "NSE";
-            this.indexToken = "10576";
+            this.indexToken = "26000";
             this.indexSymbol = "NIFTY 50";
             this.lotSize = 65;
             this.preferWeekly = true;
             this.adxThreshold = 22.0;
-            this.vwapMaxDistance = 35.0;
+            this.vwapMaxDistance = 75.0;
             this.trailStep1Trigger = 12.0;
             this.trailStep1Lock = 2.0;
             this.trailStep2Trigger = 25.0;
@@ -864,7 +870,7 @@ public class MultiIndicatorOptionsService {
                 current, rsi5Prev, rsi5Curr, rsi15Prev, rsi15Curr, latestSupertrendBullish);
     }
 
-    /** Evaluates reversal exit condition with Supertrend support. */
+    /** Evaluates reversal exit condition with Supertrend support (no micro RSI dip cut). */
     public void evaluateExitOnReversal(
             MultiIndicatorOptionsPosition current,
             double rsi5Prev,
@@ -880,34 +886,32 @@ public class MultiIndicatorOptionsService {
                         || ("SELL".equals(action) && "PE".equalsIgnoreCase(optionType));
 
         if (isBullishPosition) {
-            // Holding Bullish trade (Buy CE or Sell PE)
-            if (supertrendFilterEnabled && !isStBullish) {
+            // Holding Bullish trade (Buy CE or Sell PE) - Exit if micro RSI exit enabled or
+            // 15m Supertrend flips Bearish
+            if (rsiExitEnabled && rsi5Curr < rsi15Curr) {
                 log.info(
-                        "[MULTI-INDICATOR] 🏁 Bullish Position Exit Triggered: 15m Supertrend flipped Bearish.");
-                executeExit("ST_FLIP_BEARISH");
-                return;
-            }
-            if (rsi5Curr < rsi15Curr) {
-                log.info(
-                        "[MULTI-INDICATOR] 🏁 Bullish Position Exit Reversal Triggered: 5m RSI ({:.2f}) < 15m RSI ({:.2f})",
+                        "[MULTI-INDICATOR] 🏁 Bullish Position Exit Triggered: 5m RSI ({:.2f}) dropped below 15m RSI ({:.2f}).",
                         rsi5Curr,
                         rsi15Curr);
                 executeExit("RSI_REVERSAL_BEARISH");
+            } else if (supertrendFilterEnabled && !isStBullish) {
+                log.info(
+                        "[MULTI-INDICATOR] 🏁 Bullish Position Exit Triggered: 15m Supertrend flipped Bearish.");
+                executeExit("ST_FLIP_BEARISH");
             }
         } else {
-            // Holding Bearish trade (Buy PE or Sell CE)
-            if (supertrendFilterEnabled && isStBullish) {
+            // Holding Bearish trade (Buy PE or Sell CE) - Exit if micro RSI exit enabled or 15m
+            // Supertrend flips Bullish
+            if (rsiExitEnabled && rsi5Curr > rsi15Curr) {
                 log.info(
-                        "[MULTI-INDICATOR] 🏁 Bearish Position Exit Triggered: 15m Supertrend flipped Bullish.");
-                executeExit("ST_FLIP_BULLISH");
-                return;
-            }
-            if (rsi5Curr > rsi15Curr) {
-                log.info(
-                        "[MULTI-INDICATOR] 🏁 Bearish Position Exit Reversal Triggered: 5m RSI ({:.2f}) > 15m RSI ({:.2f})",
+                        "[MULTI-INDICATOR] 🏁 Bearish Position Exit Triggered: 5m RSI ({:.2f}) crossed above 15m RSI ({:.2f}).",
                         rsi5Curr,
                         rsi15Curr);
                 executeExit("RSI_REVERSAL_BULLISH");
+            } else if (supertrendFilterEnabled && isStBullish) {
+                log.info(
+                        "[MULTI-INDICATOR] 🏁 Bearish Position Exit Triggered: 15m Supertrend flipped Bullish.");
+                executeExit("ST_FLIP_BULLISH");
             }
         }
     }
@@ -939,15 +943,26 @@ public class MultiIndicatorOptionsService {
         int totalQuantity = lots * lotSize;
         String tradeId = "RSI_TRD_" + tradeCounter.getAndIncrement();
 
-        // Resolve Option Symbol and Premium for ATM Leg
-        String optionSymbol = resolveOptionSymbol(atmStrike, optionType);
-        BigDecimal entryPremium = fetchOptionPremium(atmStrike, optionType);
+        // Calculate trade strike: If selling and sellOtmStrikes > 0, calculate OTM strike
+        BigDecimal tradeStrike = atmStrike;
+        if ("SELL".equalsIgnoreCase(action) && sellOtmStrikes > 0) {
+            BigDecimal offset = strikeStep.multiply(BigDecimal.valueOf(sellOtmStrikes));
+            if ("PE".equalsIgnoreCase(optionType)) {
+                tradeStrike = atmStrike.subtract(offset);
+            } else {
+                tradeStrike = atmStrike.add(offset);
+            }
+        }
+
+        // Resolve Option Symbol and Premium for Primary Leg
+        String optionSymbol = resolveOptionSymbol(tradeStrike, optionType);
+        BigDecimal entryPremium = fetchOptionPremium(tradeStrike, optionType);
         if (entryPremium == null || entryPremium.compareTo(BigDecimal.ZERO) <= 0) {
             entryPremium =
                     StockFnoRegistry.estimateTheoreticalPremium(
                             underlyingIndex,
                             BigDecimal.valueOf(spotPrice),
-                            atmStrike,
+                            tradeStrike,
                             optionType,
                             dteDays);
         }
@@ -966,12 +981,12 @@ public class MultiIndicatorOptionsService {
             double step = strikeStep.doubleValue();
             hedgeStrike = BigDecimal.valueOf(Math.round(rawHedge / step) * step);
             if ("PE".equalsIgnoreCase(optionType)) {
-                if (hedgeStrike.compareTo(atmStrike) >= 0) {
-                    hedgeStrike = atmStrike.subtract(strikeStep);
+                if (hedgeStrike.compareTo(tradeStrike) >= 0) {
+                    hedgeStrike = tradeStrike.subtract(strikeStep);
                 }
             } else {
-                if (hedgeStrike.compareTo(atmStrike) <= 0) {
-                    hedgeStrike = atmStrike.add(strikeStep);
+                if (hedgeStrike.compareTo(tradeStrike) <= 0) {
+                    hedgeStrike = tradeStrike.add(strikeStep);
                 }
             }
             hedgeSymbol = resolveOptionSymbol(hedgeStrike, optionType);
@@ -993,7 +1008,7 @@ public class MultiIndicatorOptionsService {
                         optionSymbol,
                         action,
                         optionType,
-                        atmStrike,
+                        tradeStrike,
                         entryPremium,
                         totalQuantity,
                         Instant.now(clock),
@@ -1413,6 +1428,22 @@ public class MultiIndicatorOptionsService {
 
     public void setMode(String mode) {
         this.mode = mode;
+    }
+
+    public int getSellOtmStrikes() {
+        return sellOtmStrikes;
+    }
+
+    public void setSellOtmStrikes(int sellOtmStrikes) {
+        this.sellOtmStrikes = sellOtmStrikes;
+    }
+
+    public boolean isRsiExitEnabled() {
+        return rsiExitEnabled;
+    }
+
+    public void setRsiExitEnabled(boolean rsiExitEnabled) {
+        this.rsiExitEnabled = rsiExitEnabled;
     }
 
     public boolean isEnabled() {

@@ -42,8 +42,7 @@ class ShoonyaLive1MonthBacktestRunnerTest {
 
         int daysBack = 30;
 
-        System.out.println(
-                "\n>>> EVALUATING NIFTY 50 (Token: 10576, Mode: OPTION_SELLING, 1 Lot = 65 Qty, Hedged: true)...");
+        System.out.println("\n>>> EVALUATING NIFTY 50 [Config: 2 OTM Sell, No RSI Exit]...");
         try {
             BacktestResult niftyResult =
                     backtestService.runBacktest(
@@ -54,12 +53,48 @@ class ShoonyaLive1MonthBacktestRunnerTest {
                             1, // Max 1 trade per day
                             true, // Hedged Credit Spread (2% OTM)
                             2.0, // 2% OTM Hedge
+                            2, // 2 OTM strikes
+                            false, // RSI Exit disabled
                             true, // ADX Filter
                             22.0, // ADX >= 22.0
-                            2.0, // 2% Spot SL
-                            50.0 // 50% Take Profit
+                            20.0, // 20% Option SL (-27.6 pts)
+                            50.0 // 50% Take Profit (+69.0 pts)
                             );
-            printBacktestSummary("NIFTY 50 (1 Lot = 65 Qty)", niftyResult);
+            printBacktestSummary("NIFTY 50 (2 OTM Sell, RSI Exit = False)", niftyResult);
+
+            BacktestResult niftyRsiExitResult =
+                    backtestService.runBacktest(
+                            daysBack,
+                            "OPTION_SELLING",
+                            1,
+                            14,
+                            1,
+                            true,
+                            2.0,
+                            2, // 2 OTM strikes
+                            true, // RSI Exit enabled
+                            true,
+                            22.0,
+                            20.0,
+                            50.0);
+            printBacktestSummary("NIFTY 50 (2 OTM Sell, RSI Exit = True)", niftyRsiExitResult);
+
+            BacktestResult niftyAtmResult =
+                    backtestService.runBacktest(
+                            daysBack,
+                            "OPTION_SELLING",
+                            1,
+                            14,
+                            1,
+                            true,
+                            2.0,
+                            0, // ATM
+                            true, // RSI Exit enabled
+                            true,
+                            22.0,
+                            20.0,
+                            50.0);
+            printBacktestSummary("NIFTY 50 (ATM Sell, RSI Exit = True)", niftyAtmResult);
         } catch (Exception e) {
             System.err.println("Error running NIFTY 50 backtest: " + e.getMessage());
             e.printStackTrace();

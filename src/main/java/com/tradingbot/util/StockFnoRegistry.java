@@ -35,8 +35,9 @@ public final class StockFnoRegistry {
 
     static {
         // Major Benchmark Indices
-        register("NIFTY50", "10576", 50.0, 65, "NSE", "NFO");
-        register("NIFTY", "10576", 50.0, 65, "NSE", "NFO");
+        register("NIFTY50", "26000", 50.0, 65, "NSE", "NFO");
+        register("NIFTY", "26000", 50.0, 65, "NSE", "NFO");
+        register("NIFTY 50", "26000", 50.0, 65, "NSE", "NFO");
         register("BANKNIFTY", "26009", 100.0, 30, "NSE", "NFO");
         register("BANK NIFTY", "26009", 100.0, 30, "NSE", "NFO");
         register("SENSEX", "1", 100.0, 20, "BSE", "BFO");

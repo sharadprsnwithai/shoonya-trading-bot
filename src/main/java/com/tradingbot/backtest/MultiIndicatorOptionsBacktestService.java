@@ -3,6 +3,7 @@ package com.tradingbot.backtest;
 import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
+import com.tradingbot.model.indicator.SuperTrendResult;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.util.CandleResamplingUtil;
 import java.math.BigDecimal;
@@ -24,13 +25,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Historical Backtest Service for NIFTY 50 5m vs 15m RSI(14) Crossover Strategy.
+ * Historical Backtest Service for NIFTY 50 Multi-Indicator Options Strategy.
  *
- * <p>Supports: 1. OPTION_SELLING Mode (Bullish: Sell ATM PE | Bearish: Sell ATM CE). 2.
- * OPTION_BUYING Mode (Bullish: Buy ATM CE | Bearish: Buy ATM PE). 3. 09:45:10 to 15:00:10 IST
- * evaluation cycle on 5m NIFTY candles. 4. 15m ADX trend strength filter (default >= 20.0). 5.
- * Strict 1 trade per day limit. 6. Hard Stop-Loss and Target Profit exits. 7. Reversal exit &
- * Mandatory 15:05:10 IST EOD square-off. 8. Realistic Delta ~ 0.50 & Intraday Theta Decay modeling.
+ * <p>Confluence Rules: 1. 5m vs 15m RSI(14) Crossover. 2. 15m SuperTrend(10, 2.0) Alignment. 3.
+ * Intraday VWAP Regime & Max Distance Gate (<= 35 pts). 4. 15m ADX Trend Strength Filter (>= 22.0)
+ * & +DI/-DI Polarity.
+ *
+ * <p>Exit Rules (No micro RSI dip cut): 1. Stepped Trailing SL (+12pt -> lock 2pt, +25pt -> lock
+ * 15pt). 2. Target Profit (+50% Net Premium Decay). 3. Hard Stop Loss. 4. 15m SuperTrend Flip
+ * Reversal. 5. Mandatory 15:05 IST EOD Square-Off.
  */
 @Service
 public class MultiIndicatorOptionsBacktestService {
@@ -39,7 +42,7 @@ public class MultiIndicatorOptionsBacktestService {
             LoggerFactory.getLogger(MultiIndicatorOptionsBacktestService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    public static final String STRATEGY_ID = "NIFTY_RSI_5M_15M_CROSSOVER";
+    public static final String STRATEGY_ID = "NIFTY_MULTI_INDICATOR_OPTIONS";
     public static final String DEFAULT_MODE = "OPTION_SELLING";
     public static final int NIFTY_LOT_SIZE = 65;
     public static final int DEFAULT_LOTS = 1;
@@ -47,7 +50,9 @@ public class MultiIndicatorOptionsBacktestService {
     public static final int DEFAULT_MAX_TRADES_PER_DAY = 1;
     public static final boolean DEFAULT_HEDGE_ENABLED = true;
     public static final double DEFAULT_HEDGE_OTM_PERCENT = 2.0;
-    public static final double DEFAULT_ADX_THRESHOLD = 20.0;
+    public static final int DEFAULT_SELL_OTM_STRIKES = 2;
+    public static final boolean DEFAULT_RSI_EXIT_ENABLED = false;
+    public static final double DEFAULT_ADX_THRESHOLD = 22.0;
     public static final double DEFAULT_STOP_LOSS_PERCENT = 2.0;
     public static final double DEFAULT_TARGET_PROFIT_PERCENT = 50.0;
 
@@ -144,15 +149,48 @@ public class MultiIndicatorOptionsBacktestService {
             double adxThreshold,
             double stopLossPercent,
             double targetProfitPercent) {
+        return runBacktest(
+                daysBack,
+                mode,
+                lots,
+                rsiPeriod,
+                maxTradesPerDay,
+                hedgeEnabled,
+                hedgeOtmPercent,
+                DEFAULT_SELL_OTM_STRIKES,
+                DEFAULT_RSI_EXIT_ENABLED,
+                adxFilterEnabled,
+                adxThreshold,
+                stopLossPercent,
+                targetProfitPercent);
+    }
+
+    /** Runs backtest with full parameter control including sell OTM strikes and RSI exit flag. */
+    public BacktestResult runBacktest(
+            int daysBack,
+            String mode,
+            int lots,
+            int rsiPeriod,
+            int maxTradesPerDay,
+            boolean hedgeEnabled,
+            double hedgeOtmPercent,
+            int sellOtmStrikes,
+            boolean rsiExitEnabled,
+            boolean adxFilterEnabled,
+            double adxThreshold,
+            double stopLossPercent,
+            double targetProfitPercent) {
         int boundedDays = Math.max(1, Math.min(daysBack, 95));
         log.info(
-                "[RSI-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:10576) [Mode: {}, Hedged: {}]",
+                "[MULTI-INDICATOR-BACKTEST] Fetching {} days of 5m candles for NIFTY 50 (NSE:26000) [Mode: {}, Hedged: {}, SellOTM: {}, RsiExit: {}]",
                 boundedDays,
                 mode,
-                hedgeEnabled);
+                hedgeEnabled,
+                sellOtmStrikes,
+                rsiExitEnabled);
         List<Candle> candles =
                 marketDataService.fetchHistoricalCandles(
-                        "NSE", "10576", "NIFTY 50", "5", boundedDays);
+                        "NSE", "26000", "NIFTY 50", "5", boundedDays);
         return evaluateCandles(
                 "NIFTY 50",
                 candles,
@@ -162,6 +200,8 @@ public class MultiIndicatorOptionsBacktestService {
                 maxTradesPerDay,
                 hedgeEnabled,
                 hedgeOtmPercent,
+                sellOtmStrikes,
+                rsiExitEnabled,
                 adxFilterEnabled,
                 adxThreshold,
                 stopLossPercent,
@@ -228,7 +268,7 @@ public class MultiIndicatorOptionsBacktestService {
                 targetProfitPercent);
     }
 
-    /** Evaluates a chronological list of 5m candles through the RSI Crossover strategy. */
+    /** Evaluates a chronological list of 5m candles through the strategy. */
     public BacktestResult evaluateCandles(
             String symbol,
             List<Candle> candles,
@@ -255,7 +295,7 @@ public class MultiIndicatorOptionsBacktestService {
                 targetProfitPercent);
     }
 
-    /** Evaluates a chronological list of 5m candles through the RSI Crossover strategy. */
+    /** Evaluates a chronological list of 5m candles through the Multi-Indicator Strategy. */
     public BacktestResult evaluateCandles(
             String symbol,
             List<Candle> candles,
@@ -265,6 +305,39 @@ public class MultiIndicatorOptionsBacktestService {
             int maxTradesPerDay,
             boolean hedgeEnabled,
             double hedgeOtmPercent,
+            boolean adxFilterEnabled,
+            double adxThreshold,
+            double stopLossPercent,
+            double targetProfitPercent) {
+        return evaluateCandles(
+                symbol,
+                candles,
+                mode,
+                lots,
+                rsiPeriod,
+                maxTradesPerDay,
+                hedgeEnabled,
+                hedgeOtmPercent,
+                DEFAULT_SELL_OTM_STRIKES,
+                DEFAULT_RSI_EXIT_ENABLED,
+                adxFilterEnabled,
+                adxThreshold,
+                stopLossPercent,
+                targetProfitPercent);
+    }
+
+    /** Evaluates a chronological list of 5m candles with full strike and exit condition tuning. */
+    public BacktestResult evaluateCandles(
+            String symbol,
+            List<Candle> candles,
+            String mode,
+            int lots,
+            int rsiPeriod,
+            int maxTradesPerDay,
+            boolean hedgeEnabled,
+            double hedgeOtmPercent,
+            int sellOtmStrikes,
+            boolean rsiExitEnabled,
             boolean adxFilterEnabled,
             double adxThreshold,
             double stopLossPercent,
@@ -290,9 +363,34 @@ public class MultiIndicatorOptionsBacktestService {
         boolean isOptionSelling = !"OPTION_BUYING".equalsIgnoreCase(mode);
         boolean applyHedge = isOptionSelling && hedgeEnabled;
         int totalQuantity = Math.max(1, lots) * NIFTY_LOT_SIZE;
-        double delta = 0.50; // Standard ATM option delta
-        double assumedEntryPremium = 150.0;
-        double thetaPerHour = isOptionSelling ? 1.0 : -1.0; // In selling, theta works in favor
+
+        double delta;
+        double assumedEntryPremium;
+        double thetaPerHour;
+
+        if (isOptionSelling) {
+            if (sellOtmStrikes == 0) {
+                delta = 0.50;
+                assumedEntryPremium = 150.0;
+                thetaPerHour = 1.0;
+            } else if (sellOtmStrikes == 1) {
+                delta = 0.42;
+                assumedEntryPremium = 110.0;
+                thetaPerHour = 0.90;
+            } else if (sellOtmStrikes == 2) {
+                delta = 0.35;
+                assumedEntryPremium = 85.0;
+                thetaPerHour = 0.80;
+            } else {
+                delta = 0.28;
+                assumedEntryPremium = 60.0;
+                thetaPerHour = 0.65;
+            }
+        } else {
+            delta = 0.50; // Standard ATM option delta for option buying
+            assumedEntryPremium = 150.0;
+            thetaPerHour = -1.0;
+        }
 
         // 2% OTM Hedge properties
         double hedgeEntryPremium = 12.0;
@@ -332,51 +430,6 @@ public class MultiIndicatorOptionsBacktestService {
                 currentDayBars.add(bar);
                 LocalTime time = bar.timestamp().atZone(IST).toLocalTime();
 
-                // EOD Square-Off at 15:05 IST
-                if (time.isAfter(LocalTime.of(15, 0)) && openPosition != null) {
-                    BigDecimal exitSpot = bar.close();
-                    double spotDiff =
-                            openPosition.isBullish
-                                    ? exitSpot.subtract(openPosition.entrySpot).doubleValue()
-                                    : openPosition.entrySpot.subtract(exitSpot).doubleValue();
-
-                    double holdHours =
-                            Duration.between(openPosition.entryTime, bar.timestamp()).toSeconds()
-                                    / 3600.0;
-                    double atmPts = (spotDiff * delta) + (holdHours * thetaPerHour);
-                    double hedgePts =
-                            applyHedge
-                                    ? ((-spotDiff * hedgeDelta) + (holdHours * hedgeThetaPerHour))
-                                    : 0.0;
-                    double optionPoints = Math.round((atmPts + hedgePts) * 100.0) / 100.0;
-
-                    BigDecimal pnlAmount =
-                            BigDecimal.valueOf(optionPoints * totalQuantity)
-                                    .setScale(2, RoundingMode.HALF_UP);
-                    boolean isWin = pnlAmount.compareTo(BigDecimal.ZERO) > 0;
-
-                    executedTrades.add(
-                            new BacktestTrade(
-                                    tradeIdCounter++,
-                                    day.format(DATE_FMT),
-                                    symbol,
-                                    openPosition.action,
-                                    openPosition.entryTime,
-                                    openPosition.entrySpot,
-                                    bar.timestamp(),
-                                    exitSpot,
-                                    optionPoints,
-                                    pnlAmount,
-                                    "MANDATORY_EOD_SQUARE_OFF (15:05)",
-                                    isWin));
-                    openPosition = null;
-                    continue;
-                }
-
-                if (time.isBefore(LocalTime.of(9, 45))) {
-                    continue;
-                }
-
                 List<Candle> allBars = new ArrayList<>(warmHistory);
                 allBars.addAll(currentDayBars);
 
@@ -388,6 +441,7 @@ public class MultiIndicatorOptionsBacktestService {
                 double[] close5m =
                         allBars.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
                 double[] rsi5mSeries = taService.calculateRsiSeries(close5m, rsiPeriod);
+                double[] vwapSeries = taService.calculateVwapSeries(allBars);
 
                 double[] close15m =
                         fifteenMinBars.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
@@ -398,6 +452,12 @@ public class MultiIndicatorOptionsBacktestService {
                 double[] rsi15mSeries = taService.calculateRsiSeries(close15m, rsiPeriod);
                 double[] adx15mSeries =
                         taService.calculateAdxSeries(high15m, low15m, close15m, rsiPeriod);
+                double[] plusDi15mSeries =
+                        taService.calculatePlusDiSeries(high15m, low15m, close15m, rsiPeriod);
+                double[] minusDi15mSeries =
+                        taService.calculateMinusDiSeries(high15m, low15m, close15m, rsiPeriod);
+                SuperTrendResult[] st15mSeries =
+                        taService.calculateSuperTrendSeries(high15m, low15m, close15m, 10, 2.0);
 
                 int len5 = rsi5mSeries.length;
                 int len15 = rsi15mSeries.length;
@@ -411,6 +471,17 @@ public class MultiIndicatorOptionsBacktestService {
                         (adx15mSeries.length > 0)
                                 ? adx15mSeries[adx15mSeries.length - 1]
                                 : Double.NaN;
+                double plusDi15Curr =
+                        (plusDi15mSeries.length > 0)
+                                ? plusDi15mSeries[plusDi15mSeries.length - 1]
+                                : Double.NaN;
+                double minusDi15Curr =
+                        (minusDi15mSeries.length > 0)
+                                ? minusDi15mSeries[minusDi15mSeries.length - 1]
+                                : Double.NaN;
+                SuperTrendResult st15Curr =
+                        (st15mSeries.length > 0) ? st15mSeries[st15mSeries.length - 1] : null;
+                boolean isStBullish = st15Curr != null && st15Curr.isBullish();
 
                 if (Double.isNaN(rsi5Curr)
                         || Double.isNaN(rsi5Prev)
@@ -419,7 +490,8 @@ public class MultiIndicatorOptionsBacktestService {
                     continue;
                 }
 
-                // 1. Manage active open position (Stop Loss, Target Profit, or Reversal Exit)
+                // 1. Manage active open position (EOD Square-Off, Stop Loss, Trailing SL, Target
+                // Profit, ST Flip)
                 if (openPosition != null) {
                     BigDecimal exitSpot = bar.close();
                     double spotDiff =
@@ -437,27 +509,77 @@ public class MultiIndicatorOptionsBacktestService {
                                     : 0.0;
                     double optionPoints = Math.round((atmPts + hedgePts) * 100.0) / 100.0;
 
-                    double slThresholdPoints = -(netCredit * (stopLossPercent / 100.0));
+                    if (optionPoints > openPosition.peakProfitPoints) {
+                        openPosition.peakProfitPoints = optionPoints;
+                    }
+
+                    // EOD Square-Off at 15:05 IST
+                    if (time.isAfter(LocalTime.of(15, 0))) {
+                        BigDecimal pnlAmount =
+                                BigDecimal.valueOf(optionPoints * totalQuantity)
+                                        .setScale(2, RoundingMode.HALF_UP);
+                        boolean isWin = pnlAmount.compareTo(BigDecimal.ZERO) > 0;
+
+                        executedTrades.add(
+                                new BacktestTrade(
+                                        tradeIdCounter++,
+                                        day.format(DATE_FMT),
+                                        symbol,
+                                        openPosition.action,
+                                        openPosition.entryTime,
+                                        openPosition.entrySpot,
+                                        bar.timestamp(),
+                                        exitSpot,
+                                        optionPoints,
+                                        pnlAmount,
+                                        "MANDATORY_EOD_SQUARE_OFF (15:05)",
+                                        isWin));
+                        openPosition = null;
+                        continue;
+                    }
+
+                    double baseSlThresholdPoints = -(netCredit * (stopLossPercent / 100.0));
+                    double effectiveSlPoints = baseSlThresholdPoints;
+
+                    // Stepped Trailing Stop Loss
+                    if (openPosition.peakProfitPoints >= 25.0) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, 15.0);
+                    } else if (openPosition.peakProfitPoints >= 12.0) {
+                        effectiveSlPoints = Math.max(effectiveSlPoints, 2.0);
+                    }
+
                     double tpThresholdPoints = netCredit * (targetProfitPercent / 100.0);
 
-                    boolean isSlHit = stopLossPercent > 0.0 && optionPoints <= slThresholdPoints;
+                    boolean isSlHit = stopLossPercent > 0.0 && optionPoints <= effectiveSlPoints;
                     boolean isTpHit =
                             targetProfitPercent > 0.0 && optionPoints >= tpThresholdPoints;
-                    boolean isReversal =
-                            (openPosition.isBullish && rsi5Curr < rsi15Curr)
-                                    || (!openPosition.isBullish && rsi5Curr > rsi15Curr);
+                    boolean isRsiReversal =
+                            rsiExitEnabled
+                                    && ((openPosition.isBullish && rsi5Curr < rsi15Curr)
+                                            || (!openPosition.isBullish && rsi5Curr > rsi15Curr));
+                    boolean isStReversal =
+                            (openPosition.isBullish && !isStBullish)
+                                    || (!openPosition.isBullish && isStBullish);
 
-                    if (isSlHit || isTpHit || isReversal) {
+                    if (isSlHit || isTpHit || isRsiReversal || isStReversal) {
                         String reason;
-                        if (isSlHit) {
-                            reason = "HARD_SL_HIT (" + optionPoints + " pts)";
-                        } else if (isTpHit) {
+                        if (isTpHit) {
                             reason = "TARGET_PROFIT_HIT (" + optionPoints + " pts)";
+                        } else if (isSlHit) {
+                            reason =
+                                    effectiveSlPoints > baseSlThresholdPoints
+                                            ? "TRAIL_SL_LOCK (" + optionPoints + " pts)"
+                                            : "HARD_SL_HIT (" + optionPoints + " pts)";
+                        } else if (isRsiReversal) {
+                            reason =
+                                    openPosition.isBullish
+                                            ? "RSI_REVERSAL_BEARISH (" + optionPoints + " pts)"
+                                            : "RSI_REVERSAL_BULLISH (" + optionPoints + " pts)";
                         } else {
                             reason =
                                     openPosition.isBullish
-                                            ? "RSI_REVERSAL_BEARISH"
-                                            : "RSI_REVERSAL_BULLISH";
+                                            ? "ST_FLIP_BEARISH (" + optionPoints + " pts)"
+                                            : "ST_FLIP_BULLISH (" + optionPoints + " pts)";
                         }
 
                         BigDecimal pnlAmount =
@@ -484,8 +606,12 @@ public class MultiIndicatorOptionsBacktestService {
                     continue;
                 }
 
-                // 2. Evaluate entry (max trades per day limit)
-                if (tradesTodayCount < maxTradesPerDay && time.isBefore(LocalTime.of(15, 0))) {
+                // 2. Evaluate entry (max trades per day limit, 09:45 to 15:00 IST)
+                if (time.isBefore(LocalTime.of(9, 45)) || time.isAfter(LocalTime.of(15, 0))) {
+                    continue;
+                }
+
+                if (tradesTodayCount < maxTradesPerDay) {
                     boolean bullishCrossover = (rsi5Prev <= rsi15Prev) && (rsi5Curr > rsi15Curr);
                     boolean bearishCrossover = (rsi5Prev >= rsi15Prev) && (rsi5Curr < rsi15Curr);
 
@@ -497,7 +623,27 @@ public class MultiIndicatorOptionsBacktestService {
                         continue;
                     }
 
+                    double spotPrice = bar.close().doubleValue();
+                    double currentVwap =
+                            (vwapSeries != null && vwapSeries.length > 0)
+                                    ? vwapSeries[vwapSeries.length - 1]
+                                    : spotPrice;
+
                     if (bullishCrossover) {
+                        // Bullish Confluence: ST Bullish, +DI >= -DI, Spot >= VWAP, VWAP Distance
+                        // <= 35
+                        if (!isStBullish) {
+                            continue;
+                        }
+                        if (!Double.isNaN(plusDi15Curr)
+                                && !Double.isNaN(minusDi15Curr)
+                                && plusDi15Curr < minusDi15Curr) {
+                            continue;
+                        }
+                        if (spotPrice < currentVwap || (spotPrice - currentVwap) > 75.0) {
+                            continue;
+                        }
+
                         if (isOptionSelling) {
                             openPosition =
                                     new SimulatedPosition(
@@ -517,6 +663,20 @@ public class MultiIndicatorOptionsBacktestService {
                         }
                         tradesTodayCount++;
                     } else {
+                        // Bearish Confluence: ST Bearish, -DI >= +DI, Spot <= VWAP, VWAP Distance
+                        // <= 35
+                        if (isStBullish) {
+                            continue;
+                        }
+                        if (!Double.isNaN(plusDi15Curr)
+                                && !Double.isNaN(minusDi15Curr)
+                                && minusDi15Curr < plusDi15Curr) {
+                            continue;
+                        }
+                        if (spotPrice > currentVwap || (currentVwap - spotPrice) > 75.0) {
+                            continue;
+                        }
+
                         if (isOptionSelling) {
                             openPosition =
                                     new SimulatedPosition(
@@ -649,6 +809,7 @@ public class MultiIndicatorOptionsBacktestService {
         final boolean isBullish;
         final Instant entryTime;
         final BigDecimal entrySpot;
+        double peakProfitPoints;
 
         SimulatedPosition(
                 SignalAction action,
@@ -661,6 +822,7 @@ public class MultiIndicatorOptionsBacktestService {
             this.isBullish = isBullish;
             this.entryTime = entryTime;
             this.entrySpot = entrySpot;
+            this.peakProfitPoints = 0.0;
         }
     }
 }

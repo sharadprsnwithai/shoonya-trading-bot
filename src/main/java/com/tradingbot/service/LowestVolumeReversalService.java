@@ -343,7 +343,7 @@ public class LowestVolumeReversalService {
      */
     public void evaluateNiftyDirection() {
         try {
-            JsonNode quote = marketDataService.fetchQuote("NSE", "10576");
+            JsonNode quote = marketDataService.fetchQuote("NSE", "26000");
             if (quote != null && quote.has("lp") && quote.has("o")) {
                 double lp = quote.path("lp").asDouble(0.0);
                 double o = quote.path("o").asDouble(0.0);

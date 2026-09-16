@@ -349,7 +349,7 @@ class LowestVolumeReversalServiceTest {
                 new com.fasterxml.jackson.databind.ObjectMapper();
         com.fasterxml.jackson.databind.JsonNode niftyQuote =
                 mapper.readTree("{\"lp\": 24500.0, \"o\": 24400.0, \"c\": 24350.0}");
-        when(marketDataService.fetchQuote("NSE", "10576")).thenReturn(niftyQuote);
+        when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(niftyQuote);
 
         assertThat(service.isUniverseScanCompletedToday()).isFalse();
 
@@ -725,7 +725,7 @@ class LowestVolumeReversalServiceTest {
         niftyQuote.put("c", "24800.0");
 
         when(marketDataService.resolveToken("RELIANCE")).thenReturn("2885");
-        when(marketDataService.fetchQuote("NSE", "10576")).thenReturn(niftyQuote);
+        when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(niftyQuote);
         when(marketDataService.fetchQuote("NSE", "2885")).thenReturn(relQuote);
 
         service.setClock(

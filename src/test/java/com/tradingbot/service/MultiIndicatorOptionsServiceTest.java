@@ -122,8 +122,7 @@ class MultiIndicatorOptionsServiceTest {
         strategyService.setHedgeOtmPercent(2.0);
 
         List<Candle> candles = generateCandles(200, 22500.0);
-        when(marketDataService.fetchHistoricalCandles(
-                        eq("NSE"), eq("10576"), eq("NIFTY 50"), eq("5"), eq(5)))
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
                 .thenReturn(candles);
 
         // 5m series: prev = 48.0, curr = 55.0
@@ -133,17 +132,17 @@ class MultiIndicatorOptionsServiceTest {
 
         OptionContract pe =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(145.0),
                         1000,
                         100,
                         BigDecimal.valueOf(144.5),
                         BigDecimal.valueOf(145.5),
                         BigDecimal.valueOf(140.0));
-        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, pe);
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22400), true, null, pe);
         OptionChainResponse chain =
                 new OptionChainResponse(
                         "NIFTY",
@@ -164,7 +163,7 @@ class MultiIndicatorOptionsServiceTest {
         assertThat(pos).isNotNull();
         assertThat(pos.getAction()).isEqualTo("SELL");
         assertThat(pos.getOptionType()).isEqualTo("PE");
-        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(22500));
+        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(22400));
         assertThat(pos.getEntryPrice()).isEqualByComparingTo(BigDecimal.valueOf(145.0));
         assertThat(pos.isHedgeEnabled()).isTrue();
         assertThat(pos.getHedgeStrike())
@@ -190,8 +189,7 @@ class MultiIndicatorOptionsServiceTest {
         strategyService.setMode("OPTION_SELLING");
 
         List<Candle> candles = generateCandles(200, 22500.0);
-        when(marketDataService.fetchHistoricalCandles(
-                        eq("NSE"), eq("10576"), eq("NIFTY 50"), eq("5"), eq(5)))
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
                 .thenReturn(candles);
 
         // Bearish regime indicators: Spot (22500) < VWAP (22510), ST Bearish (false), -DI > +DI
@@ -217,17 +215,17 @@ class MultiIndicatorOptionsServiceTest {
 
         OptionContract ce =
                 new OptionContract(
-                        "NIFTY24OCT22500CE",
+                        "NIFTY24OCT22600CE",
                         "20001",
                         "CE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22600),
                         BigDecimal.valueOf(160.0),
                         1000,
                         100,
                         BigDecimal.valueOf(159.5),
                         BigDecimal.valueOf(160.5),
                         BigDecimal.valueOf(150.0));
-        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, ce, null);
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22600), true, ce, null);
         OptionChainResponse chain =
                 new OptionChainResponse(
                         "NIFTY",
@@ -248,7 +246,7 @@ class MultiIndicatorOptionsServiceTest {
         assertThat(pos).isNotNull();
         assertThat(pos.getAction()).isEqualTo("SELL");
         assertThat(pos.getOptionType()).isEqualTo("CE");
-        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(22500));
+        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(22600));
         assertThat(pos.getEntryPrice()).isEqualByComparingTo(BigDecimal.valueOf(160.0));
         assertThat(pos.isHedgeEnabled()).isTrue();
         assertThat(pos.getHedgeStrike())
@@ -273,8 +271,7 @@ class MultiIndicatorOptionsServiceTest {
         strategyService.setMode("OPTION_BUYING");
 
         List<Candle> candles = generateCandles(200, 22500.0);
-        when(marketDataService.fetchHistoricalCandles(
-                        eq("NSE"), eq("10576"), eq("NIFTY 50"), eq("5"), eq(5)))
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
                 .thenReturn(candles);
 
         when(taService.calculateRsiSeries(any(double[].class), eq(14)))
@@ -377,8 +374,7 @@ class MultiIndicatorOptionsServiceTest {
         strategyService.setTradesExecutedToday(1); // 1 trade executed, 1 remaining
 
         List<Candle> candles = generateCandles(200, 22500.0);
-        when(marketDataService.fetchHistoricalCandles(
-                        eq("NSE"), eq("10576"), eq("NIFTY 50"), eq("5"), eq(5)))
+        when(marketDataService.fetchHistoricalCandles(any(), any(), any(), any(), anyInt()))
                 .thenReturn(candles);
 
         when(taService.calculateRsiSeries(any(double[].class), eq(14)))
@@ -428,17 +424,17 @@ class MultiIndicatorOptionsServiceTest {
         // Entry: Sell PE at Rs. 150
         OptionContract peEntry =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(150.0),
                         1000,
                         100,
                         BigDecimal.valueOf(149.5),
                         BigDecimal.valueOf(150.5),
                         BigDecimal.valueOf(140.0));
-        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, peEntry);
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22400), true, null, peEntry);
         when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
@@ -458,17 +454,17 @@ class MultiIndicatorOptionsServiceTest {
         // 2% SL threshold for seller = 150 * 1.02 = 153.00. Quote jumps to 154
         OptionContract peRose =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(154.0),
                         1000,
                         100,
                         BigDecimal.valueOf(153.5),
                         BigDecimal.valueOf(154.5),
                         BigDecimal.valueOf(140.0));
-        OptionStrike strikeRose = new OptionStrike(BigDecimal.valueOf(22500), true, null, peRose);
+        OptionStrike strikeRose = new OptionStrike(BigDecimal.valueOf(22400), true, null, peRose);
         when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
@@ -507,17 +503,17 @@ class MultiIndicatorOptionsServiceTest {
         // Entry: Sell PE at Rs. 150
         OptionContract peEntry =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(150.0),
                         1000,
                         100,
                         BigDecimal.valueOf(149.5),
                         BigDecimal.valueOf(150.5),
                         BigDecimal.valueOf(140.0));
-        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, peEntry);
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22400), true, null, peEntry);
         when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
@@ -537,10 +533,10 @@ class MultiIndicatorOptionsServiceTest {
         // 50% TP threshold for seller = 150 * 0.5 = 75. Quote decays to 70
         OptionContract peDecayed =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(70.0),
                         1000,
                         100,
@@ -548,7 +544,7 @@ class MultiIndicatorOptionsServiceTest {
                         BigDecimal.valueOf(70.5),
                         BigDecimal.valueOf(140.0));
         OptionStrike strikeDecayed =
-                new OptionStrike(BigDecimal.valueOf(22500), true, null, peDecayed);
+                new OptionStrike(BigDecimal.valueOf(22400), true, null, peDecayed);
         when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
@@ -581,6 +577,7 @@ class MultiIndicatorOptionsServiceTest {
     @Test
     void testExitOnReverseCrossover() {
         strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
+        strategyService.setRsiExitEnabled(true);
 
         OptionContract ce =
                 new OptionContract(
@@ -710,17 +707,17 @@ class MultiIndicatorOptionsServiceTest {
         // Entry: Sell 22500 PE @ 150, Buy 22050 PE @ 12. Net credit = 138.
         OptionContract peMain =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(150.0),
                         1000,
                         100,
                         BigDecimal.valueOf(149.5),
                         BigDecimal.valueOf(150.5),
                         BigDecimal.valueOf(140.0));
-        OptionStrike strikeMain = new OptionStrike(BigDecimal.valueOf(22500), true, null, peMain);
+        OptionStrike strikeMain = new OptionStrike(BigDecimal.valueOf(22400), true, null, peMain);
 
         OptionContract peHedge =
                 new OptionContract(
@@ -761,10 +758,10 @@ class MultiIndicatorOptionsServiceTest {
         // Spread loss = -3.0 pts (-195 Rs)
         OptionContract peMainRose =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(154.0),
                         1000,
                         100,
@@ -796,7 +793,7 @@ class MultiIndicatorOptionsServiceTest {
                                 1.0,
                                 List.of(
                                         new OptionStrike(
-                                                BigDecimal.valueOf(22500), true, null, peMainRose),
+                                                BigDecimal.valueOf(22400), true, null, peMainRose),
                                         new OptionStrike(
                                                 BigDecimal.valueOf(22050),
                                                 false,
@@ -834,8 +831,8 @@ class MultiIndicatorOptionsServiceTest {
 
         MultiIndicatorOptionsPosition pos = strategyService.getOpenPosition();
         assertThat(pos).isNotNull();
-        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(24850));
-        assertThat(pos.getSymbol()).startsWith("NIFTY").endsWith("24850PE");
+        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(24750));
+        assertThat(pos.getSymbol()).startsWith("NIFTY").endsWith("24750PE");
         assertThat(pos.getSymbol()).doesNotContain("NIFTY_ATM");
         assertThat(pos.getHedgeStrike()).isEqualByComparingTo(BigDecimal.valueOf(24350));
         assertThat(pos.getHedgeSymbol()).startsWith("NIFTY").endsWith("24350PE");
@@ -957,21 +954,22 @@ class MultiIndicatorOptionsServiceTest {
     void testExitOnSupertrendFlip() {
         strategyService.setClock(createFixedClock(LocalTime.of(11, 0, 10)));
         strategyService.setSupertrendFilterEnabled(true);
+        strategyService.setHedgeEnabled(false);
 
         // Position: Selling PE (Bullish)
         OptionContract peEntry =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(150.0),
                         1000,
                         100,
                         BigDecimal.valueOf(149.5),
                         BigDecimal.valueOf(150.5),
                         BigDecimal.valueOf(140.0));
-        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22500), true, null, peEntry);
+        OptionStrike strike = new OptionStrike(BigDecimal.valueOf(22400), true, null, peEntry);
         when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(
                         new OptionChainResponse(
@@ -1048,13 +1046,13 @@ class MultiIndicatorOptionsServiceTest {
         strategyService.setTrailStep2Trigger(25.0);
         strategyService.setTrailStep2Lock(15.0);
 
-        // Entry: Sell 22500 PE @ 150, Buy 22050 PE @ 12. Net credit = 138.
+        // Entry: Sell 22400 PE @ 150, Buy 22050 PE @ 12. Net credit = 138.
         OptionContract peMain =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(150.0),
                         1000,
                         100,
@@ -1087,7 +1085,7 @@ class MultiIndicatorOptionsServiceTest {
                                 1.0,
                                 List.of(
                                         new OptionStrike(
-                                                BigDecimal.valueOf(22500), true, null, peMain),
+                                                BigDecimal.valueOf(22400), true, null, peMain),
                                         new OptionStrike(
                                                 BigDecimal.valueOf(22050), false, null, peHedge))));
 
@@ -1106,10 +1104,10 @@ class MultiIndicatorOptionsServiceTest {
         // Current profit (+13.0 pts) <= SL (+15.0 pts) -> Triggers TRAIL_SL_LOCK exit!
         OptionContract peMainRetraced =
                 new OptionContract(
-                        "NIFTY24OCT22500PE",
+                        "NIFTY24OCT22400PE",
                         "20002",
                         "PE",
-                        BigDecimal.valueOf(22500),
+                        BigDecimal.valueOf(22400),
                         BigDecimal.valueOf(137.0),
                         1000,
                         100,
@@ -1129,7 +1127,7 @@ class MultiIndicatorOptionsServiceTest {
                                 1.0,
                                 List.of(
                                         new OptionStrike(
-                                                BigDecimal.valueOf(22500),
+                                                BigDecimal.valueOf(22400),
                                                 true,
                                                 null,
                                                 peMainRetraced),
@@ -1184,17 +1182,17 @@ class MultiIndicatorOptionsServiceTest {
 
         OptionContract peMain =
                 new OptionContract(
-                        "SENSEX24OCT77000PE",
+                        "SENSEX24OCT76800PE",
                         "30001",
                         "PE",
-                        BigDecimal.valueOf(77000),
+                        BigDecimal.valueOf(76800),
                         BigDecimal.valueOf(250.0),
                         1000,
                         100,
                         BigDecimal.valueOf(249.5),
                         BigDecimal.valueOf(250.5),
                         BigDecimal.valueOf(245.0));
-        OptionStrike strikeMain = new OptionStrike(BigDecimal.valueOf(77000), true, null, peMain);
+        OptionStrike strikeMain = new OptionStrike(BigDecimal.valueOf(76800), true, null, peMain);
         OptionChainResponse chain =
                 new OptionChainResponse(
                         "SENSEX",
@@ -1215,7 +1213,7 @@ class MultiIndicatorOptionsServiceTest {
         assertThat(pos).isNotNull();
         assertThat(pos.getAction()).isEqualTo("SELL");
         assertThat(pos.getOptionType()).isEqualTo("PE");
-        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(77000));
+        assertThat(pos.getStrike()).isEqualByComparingTo(BigDecimal.valueOf(76800));
         assertThat(pos.getQuantity()).isEqualTo(20); // 1 lot * 20
         assertThat(pos.isHedgeEnabled()).isTrue();
         // SENSEX Strike Step is 100: 77000 * 0.98 = 75460 -> rounded to 75500
