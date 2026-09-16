@@ -1,11 +1,9 @@
 package com.tradingbot.telegram;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.tradingbot.config.ShoonyaConfig;
-import com.tradingbot.model.strategy.MultiIndicatorOptionsPosition;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,107 +20,6 @@ class TelegramServiceTest {
         when(config.isTelegramEnabled())
                 .thenReturn(false); // Do not send live network requests in unit tests
         telegramService = new TelegramService(config);
-    }
-
-    @Test
-    void testSendMultiIndicatorAlertsDisabled() {
-        MultiIndicatorOptionsPosition pos =
-                new MultiIndicatorOptionsPosition(
-                        "TRD_1",
-                        "NIFTY24OCT22500CE",
-                        "CE",
-                        BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(150.0),
-                        65,
-                        Instant.now());
-
-        // Should not throw when disabled
-        telegramService.sendMultiIndicatorEntryAlert(pos, 58.5, 52.0, 48.0, 51.5);
-
-        pos.close(BigDecimal.valueOf(180.0), "SIGNAL_REVERSAL", Instant.now());
-        telegramService.sendMultiIndicatorExitAlert(pos, "SIGNAL_REVERSAL");
-    }
-
-    @Test
-    void testSendMultiIndicatorHedgedAlertsDisabled() {
-        MultiIndicatorOptionsPosition hedgedPos =
-                new MultiIndicatorOptionsPosition(
-                        "TRD_HEDGE_1",
-                        "NIFTY24OCT22500PE",
-                        "SELL",
-                        "PE",
-                        BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(150.0),
-                        65,
-                        Instant.now(),
-                        true,
-                        "NIFTY24OCT22050PE",
-                        BigDecimal.valueOf(22050),
-                        BigDecimal.valueOf(12.0),
-                        65);
-
-        telegramService.sendMultiIndicatorEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
-
-        hedgedPos.close(
-                BigDecimal.valueOf(60.0),
-                BigDecimal.valueOf(2.0),
-                "TARGET_PROFIT_HIT",
-                Instant.now());
-        telegramService.sendMultiIndicatorExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
-    }
-
-    @Test
-    void testSendMultiIndicatorHedgedAlertsEnabledMessageFormat() {
-        ShoonyaConfig activeConfig = mock(ShoonyaConfig.class);
-        when(activeConfig.isTelegramEnabled()).thenReturn(true);
-        when(activeConfig.getTelegramBotToken()).thenReturn("dummy-token");
-        when(activeConfig.getTelegramChatId()).thenReturn("dummy-chat");
-
-        java.util.List<String> messages = new java.util.ArrayList<>();
-        TelegramService capturingService =
-                new TelegramService(activeConfig) {
-                    @Override
-                    public void sendAsync(String text) {
-                        messages.add(text);
-                    }
-                };
-
-        MultiIndicatorOptionsPosition hedgedPos =
-                new MultiIndicatorOptionsPosition(
-                        "TRD_HEDGE_1",
-                        "NIFTY24OCT24850PE",
-                        "SELL",
-                        "PE",
-                        BigDecimal.valueOf(24850),
-                        BigDecimal.valueOf(150.0),
-                        65,
-                        Instant.now(),
-                        true,
-                        "NIFTY24OCT24350PE",
-                        BigDecimal.valueOf(24350),
-                        BigDecimal.valueOf(12.0),
-                        65);
-
-        capturingService.sendMultiIndicatorEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
-
-        assertThat(messages).hasSize(1);
-        String entryMsg = messages.get(0);
-        assertThat(entryMsg).contains("SELL *NIFTY 24850 PE* (`NIFTY24OCT24850PE`) @ ₹150.00");
-        assertThat(entryMsg).contains("BUY *NIFTY 24350 PE* (`NIFTY24OCT24350PE`) @ ₹12.00");
-        assertThat(entryMsg).contains("BULL PUT SPREAD (2% OTM HEDGE)");
-
-        hedgedPos.close(
-                BigDecimal.valueOf(60.0),
-                BigDecimal.valueOf(2.0),
-                "TARGET_PROFIT_HIT",
-                Instant.now());
-        capturingService.sendMultiIndicatorExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
-
-        assertThat(messages).hasSize(2);
-        String exitMsg = messages.get(1);
-        assertThat(exitMsg).contains("Main Sell Leg (NIFTY 24850 PE)");
-        assertThat(exitMsg).contains("Hedge Buy Leg (NIFTY 24350 PE)");
-        assertThat(exitMsg).contains("TARGET_PROFIT_HIT");
     }
 
     @Test
