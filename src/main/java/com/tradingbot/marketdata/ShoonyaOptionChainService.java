@@ -340,6 +340,9 @@ public class ShoonyaOptionChainService {
                         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                                 .get(10, java.util.concurrent.TimeUnit.SECONDS);
                     } catch (Exception e) {
+                        if (e instanceof InterruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
                         log.warn(
                                 "Option chain quote batch fetch timed out or interrupted: {}",
                                 e.getMessage());

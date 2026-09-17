@@ -151,6 +151,9 @@ public class TelegramBotCommandListener {
                     }
                 }
             }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            log.debug("[TELEGRAM LISTENER] Polling thread interrupted");
         } catch (Exception e) {
             log.debug("[TELEGRAM LISTENER] pollUpdates exception: {}", e.getMessage());
         }

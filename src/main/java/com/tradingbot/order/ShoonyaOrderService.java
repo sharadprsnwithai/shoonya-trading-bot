@@ -158,6 +158,9 @@ public class ShoonyaOrderService {
                 }
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "[SHOONYA-ORDER] Order placement exception (attempt {}): {}",
                         attempt,
@@ -259,6 +262,9 @@ public class ShoonyaOrderService {
                 }
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "[SHOONYA-ORDER] Error modifying order {} (attempt {}): {}",
                         orderId,
@@ -345,6 +351,9 @@ public class ShoonyaOrderService {
                 }
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "[SHOONYA-ORDER] Error cancelling order {} (attempt {}): {}",
                         orderId,
@@ -421,6 +430,9 @@ public class ShoonyaOrderService {
 
                 return objectMapper.readTree(body);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "Failed to query Shoonya endpoint {} (attempt {}): {}",
                         endpoint,

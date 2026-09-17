@@ -293,6 +293,9 @@ public class ShoonyaMarketDataService {
                 }
                 return objectMapper.readTree(respBody);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.warn(
                         "[QUOTE] Error fetching quote for token {} (attempt {}): {}",
                         token,
@@ -368,6 +371,9 @@ public class ShoonyaMarketDataService {
                     return root.path("values");
                 }
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.warn(
                         "[SEARCH-SCRIP] Error searching for scrip {} (attempt {}): {}",
                         searchText,
@@ -472,6 +478,9 @@ public class ShoonyaMarketDataService {
                 return parseShoonyaCandles(body, symbol, timeframe);
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.warn(
                         "Error fetching Shoonya TPSeries for {} (attempt {}): {}",
                         symbol,
