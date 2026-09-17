@@ -969,6 +969,43 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getTriggerCandle()).isNull();
     }
 
+    @Test
+    void testExecutePaperTradeEntry_RespectsMaxConcurrentTrades() {
+        service.setMaxConcurrentTrades(1);
+        LowestVolumeSetup setup1 = new LowestVolumeSetup("INFY", LowestVolumeDirection.LONG);
+        setup1.setTriggerCandle(null, new BigDecimal("1600.00"), new BigDecimal("1590.00"), new BigDecimal("1640.00"));
+        mockOptionPremium("INFY", "CE", 40.0);
+
+        service.executePaperTradeEntry(setup1, new BigDecimal("1600.00"), new BigDecimal("1590.00"));
+        assertThat(service.getOpenPositions()).containsKey("INFY");
+
+        // Attempt 2nd trade when max concurrent is 1
+        LowestVolumeSetup setup2 = new LowestVolumeSetup("TCS", LowestVolumeDirection.LONG);
+        setup2.setTriggerCandle(null, new BigDecimal("3500.00"), new BigDecimal("3480.00"), new BigDecimal("3580.00"));
+        mockOptionPremium("TCS", "CE", 80.0);
+
+        service.executePaperTradeEntry(setup2, new BigDecimal("3500.00"), new BigDecimal("3480.00"));
+        // TCS should NOT be added
+        assertThat(service.getOpenPositions()).doesNotContainKey("TCS");
+        assertThat(service.getOpenPositions()).hasSize(1);
+    }
+
+    @Test
+    void testExecutePaperTradeEntry_UsesTheoreticalPremiumFallbackWhenQuoteFails() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(null, new BigDecimal("2900.00"), new BigDecimal("2880.00"), new BigDecimal("2980.00"));
+
+        // Scrip search fails or returns null
+        when(marketDataService.searchScrip(anyString(), anyString())).thenReturn(null);
+
+        service.executePaperTradeEntry(setup, new BigDecimal("2900.00"), new BigDecimal("2880.00"));
+
+        assertThat(service.getOpenPositions()).containsKey("RELIANCE");
+        LowestVolumePaperPosition pos = service.getOpenPositions().get("RELIANCE");
+        assertThat(pos.getEntryPremium()).isNotNull();
+        assertThat(pos.getEntryPremium()).isGreaterThan(BigDecimal.ZERO);
+    }
+
     private List<Candle> generate2DayCandlesWithToday(String symbol, List<Candle> todayCandles) {
         List<Candle> list = new java.util.ArrayList<>();
         LocalDate yesterday = LocalDate.now(IST).minusDays(1);

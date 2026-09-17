@@ -944,6 +944,12 @@ public class LowestVolumeReversalService {
                             fetchOptionPremium(sym, pos.getAtmStrike(), pos.getOptionType());
                     if (exitPremium != null && exitPremium.compareTo(BigDecimal.ZERO) > 0) {
                         pos.executePartialBook(exitPremium, Instant.now());
+                        LowestVolumeSetup setup = activeSetups.get(sym);
+                        if (setup != null) {
+                            setup.transitionTo(
+                                    LowestVolumeSetupState.PARTIAL_BOOKED,
+                                    "Target 1 Hit Live. 50% booked, SL to BE.");
+                        }
                         if (telegramAlerts) {
                             telegramService.sendLvrPartialBookAlert(pos, pos.getPartialPnl());
                         }
@@ -975,22 +981,33 @@ public class LowestVolumeReversalService {
     public synchronized void executePaperTradeEntry(
             LowestVolumeSetup setup, BigDecimal fillPrice, BigDecimal slPrc) {
         String symbol = setup.getSymbol();
+
+        if (openPositions.size() >= maxConcurrentTrades) {
+            log.warn(
+                    "[LVR] [{}] Max concurrent trades ({}) reached. Cannot execute paper trade.",
+                    symbol,
+                    maxConcurrentTrades);
+            return;
+        }
+
         LowestVolumeDirection dir = setup.getDirection();
         String optionType = (dir == LowestVolumeDirection.LONG) ? "CE" : "PE";
 
         // Determine ATM strike and lot size from stock price
         BigDecimal atmStrike = StockFnoRegistry.calculateAtmStrike(symbol, fillPrice);
-        int lotSize = StockFnoRegistry.getLotSize(symbol);
+        int lotSize = Math.max(1, StockFnoRegistry.getLotSize(symbol));
 
         // Fetch ATM monthly option premium
         BigDecimal entryPremium = fetchOptionPremium(symbol, atmStrike, optionType);
         if (entryPremium == null || entryPremium.compareTo(BigDecimal.ZERO) <= 0) {
             log.warn(
-                    "[LVR] [{}] Could not fetch ATM {} premium for strike {}. Skipping trade.",
+                    "[LVR] [{}] Could not fetch live ATM {} premium for strike {}. Using theoretical estimate fallback.",
                     symbol,
                     optionType,
                     atmStrike);
-            return;
+            entryPremium =
+                    StockFnoRegistry.estimateTheoreticalPremium(
+                            symbol, fillPrice, atmStrike, optionType, 15.0);
         }
 
         // Build monthly expiry option symbol
@@ -1196,7 +1213,13 @@ public class LowestVolumeReversalService {
 
         LowestVolumeSetup setup = activeSetups.get(symbol);
         if (setup != null) {
-            setup.transitionTo(LowestVolumeSetupState.CLOSED_SL, reason);
+            LowestVolumeSetupState finalState = LowestVolumeSetupState.CLOSED_SL;
+            if (reason != null && reason.contains("SUPERTREND")) {
+                finalState = LowestVolumeSetupState.CLOSED_TRAIL_EXIT;
+            } else if (reason != null && (reason.contains("HARD_EXIT") || reason.contains("TIMEOUT"))) {
+                finalState = LowestVolumeSetupState.CLOSED_TIMEOUT;
+            }
+            setup.transitionTo(finalState, reason);
         }
 
         if (telegramAlerts) {
@@ -1256,6 +1279,9 @@ public class LowestVolumeReversalService {
 
         if (!todayCandles.isEmpty()) {
             Candle candle1 = todayCandles.get(0);
+            if (candle1.open().compareTo(BigDecimal.ZERO) <= 0) {
+                return false;
+            }
             double c1Move =
                     Math.abs(candle1.close().subtract(candle1.open()).doubleValue())
                             / candle1.open().doubleValue();
@@ -1423,7 +1449,7 @@ public class LowestVolumeReversalService {
      * Shoonya convention.
      */
     private String resolveMonthlyExpiry(String symbol) {
-        LocalDate today = LocalDate.now(IST);
+        LocalDate today = LocalDate.now(clock);
         YearMonth currentMonth = YearMonth.from(today);
 
         // Find last Thursday of the current month
