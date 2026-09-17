@@ -158,7 +158,7 @@ class RsiHighwayIntegrationTest {
         assertThat(posDay2.getTrancheCount()).isEqualTo(2);
         assertThat(posDay2.getTotalQuantity()).isGreaterThan(day1Qty);
         assertThat(posDay2.getAveragePrice()).isGreaterThan(2800.0);
-        assertThat(posDay2.getCurrentSlPrice()).isEqualTo(2880.0); // Trailed SL
+        assertThat(posDay2.getCurrentSlPrice()).isEqualTo(2879.95); // Trailed SL (2880.0 - 1 tick)
 
         // --- STEP 3: DAY 3 DAILY RSI < 50 EXIT ---
         List<Candle> day3Candles = createDummyDailyCandles(302, 2850.0);

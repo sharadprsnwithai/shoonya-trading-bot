@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +99,13 @@ public class RsiHighwaySwingService {
             if (file.getParentFile() != null) {
                 file.getParentFile().mkdirs();
             }
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file, state);
+            File tempFile = new File(config.getStateFilePath() + ".tmp");
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, state);
+            try {
+                java.nio.file.Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                java.nio.file.Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (Exception e) {
             log.error("[RSI-HIGHWAY] Failed to save state to {}", config.getStateFilePath(), e);
         }
@@ -210,11 +217,12 @@ public class RsiHighwaySwingService {
                         ? RsiHighwaySignalType.PYRAMID_TRANCHE_2
                         : RsiHighwaySignalType.PYRAMID_TRANCHE_3;
 
+                double pyramidSl = Math.max(snap.signalCandleLow() - 0.05, currentPrice * 0.92);
                 RsiHighwaySignal pyramidSignal = new RsiHighwaySignal(
                         sym,
                         sigType,
                         currentPrice,
-                        Math.max(position.getCurrentSlPrice(), snap.signalCandleLow()),
+                        Math.max(position.getCurrentSlPrice(), pyramidSl),
                         nextTranche,
                         snap.monthlyRsi(),
                         snap.weeklyRsi(),
@@ -235,7 +243,7 @@ public class RsiHighwaySwingService {
                     state.setAvailableCapital(Math.max(0.0, state.getAvailableCapital() - (t.quantity() * t.entryPrice())));
                     position.addTranche(t);
                     // Trail SL up to the new swing bounce low
-                    position.setCurrentSlPrice(Math.max(position.getCurrentSlPrice(), snap.signalCandleLow()));
+                    position.setCurrentSlPrice(Math.max(position.getCurrentSlPrice(), pyramidSl));
                     addRecentSignal(pyramidSignal);
                     notifyTelegram(String.format("🚀 *RSI Highway Pyramid Tranche %d*\nSymbol: %s\nPrice: ₹%.2f\nQty: %d\nNew Avg: ₹%.2f",
                             nextTranche, sym, currentPrice, t.quantity(), position.getAveragePrice()));
@@ -273,13 +281,16 @@ public class RsiHighwaySwingService {
         log.info("[RSI-HIGHWAY] Found {} valid entry setups for {} available portfolio slots.",
                 candidates.size(), availableSlots);
 
-        // Sort candidates by Daily RSI proximity to 50 (ascending)
-        candidates.sort((a, b) -> Double.compare(Math.abs(a.dailyRsi() - 50.0), Math.abs(b.dailyRsi() - 50.0)));
+        // Sort candidates by Daily RSI proximity to 50 (ascending), breaking ties by MTF RSI momentum strength
+        candidates.sort(Comparator.comparingDouble((MultiTimeframeRsiSnapshot s) -> Math.abs(s.dailyRsi() - 50.0))
+                .thenComparing((a, b) -> Double.compare(b.monthlyRsi() + b.weeklyRsi(), a.monthlyRsi() + a.weeklyRsi())));
 
         int slotsToFill = Math.min(availableSlots, candidates.size());
         for (int i = 0; i < slotsToFill; i++) {
             MultiTimeframeRsiSnapshot snap = candidates.get(i);
-            double slPrice = Math.min(snap.signalCandleLow(), snap.currentPrice() - snap.dailyAtr());
+            double maxPermissibleSl = snap.currentPrice() * 0.92; // 8% maximum permissible risk SL
+            double priceActionSl = snap.signalCandleLow() - 0.05; // Low of signal candle - 1 tick
+            double slPrice = Math.max(priceActionSl, maxPermissibleSl);
 
             RsiHighwaySignal entrySignal = new RsiHighwaySignal(
                     snap.symbol(),
