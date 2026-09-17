@@ -82,6 +82,68 @@ public final class CandleResamplingUtil {
     }
 
     /**
+     * Resamples a chronological list of Daily candles into Monthly candles. Each month groups all
+     * trading days within the calendar month into a single Monthly bar.
+     *
+     * @param dailyCandles chronological list of daily candles
+     * @return chronological list of monthly candles
+     */
+    public static List<Candle> resampleDailyToMonthly(List<Candle> dailyCandles) {
+        if (dailyCandles == null || dailyCandles.isEmpty()) {
+            return List.of();
+        }
+
+        // Group by (year * 100 + monthValue)
+        Map<Integer, List<Candle>> groupedByMonth = new LinkedHashMap<>();
+
+        for (Candle c : dailyCandles) {
+            if (c == null || c.timestamp() == null) continue;
+            var localDate = c.timestamp().atZone(IST).toLocalDate();
+            int year = localDate.getYear();
+            int month = localDate.getMonthValue();
+            int monthKey = year * 100 + month;
+
+            groupedByMonth.computeIfAbsent(monthKey, k -> new ArrayList<>()).add(c);
+        }
+
+        List<Candle> monthlyCandles = new ArrayList<>();
+
+        for (List<Candle> monthBars : groupedByMonth.values()) {
+            if (monthBars.isEmpty()) continue;
+
+            monthBars.sort(Comparator.comparing(Candle::timestamp));
+            Candle first = monthBars.get(0);
+            Candle last = monthBars.get(monthBars.size() - 1);
+
+            BigDecimal open = first.open();
+            BigDecimal close = last.close();
+            BigDecimal high = first.high();
+            BigDecimal low = first.low();
+            long totalVolume = 0;
+
+            for (Candle b : monthBars) {
+                if (b.high().compareTo(high) > 0) high = b.high();
+                if (b.low().compareTo(low) < 0) low = b.low();
+                totalVolume += b.volume();
+            }
+
+            monthlyCandles.add(
+                    new Candle(
+                            first.symbol(),
+                            "1M",
+                            last.timestamp(),
+                            open,
+                            high,
+                            low,
+                            close,
+                            totalVolume));
+        }
+
+        monthlyCandles.sort(Comparator.comparing(Candle::timestamp));
+        return monthlyCandles;
+    }
+
+    /**
      * Resamples a chronological list of 5-minute candles into 15-minute candles.
      *
      * @param fiveMinCandles chronological list of 5m candles

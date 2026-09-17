@@ -201,4 +201,30 @@ class CandleResamplingUtilTest {
         assertThat(b2.close()).isEqualByComparingTo(BigDecimal.valueOf(111));
         assertThat(b2.volume()).isEqualTo(1200);
     }
+
+    @Test
+    void testResampleDailyToMonthly() {
+        List<Candle> daily = List.of(
+                new Candle("TCS", "D", Instant.parse("2026-01-05T10:00:00Z"), BigDecimal.valueOf(3500), BigDecimal.valueOf(3600), BigDecimal.valueOf(3480), BigDecimal.valueOf(3550), 1000L),
+                new Candle("TCS", "D", Instant.parse("2026-01-20T10:00:00Z"), BigDecimal.valueOf(3550), BigDecimal.valueOf(3700), BigDecimal.valueOf(3540), BigDecimal.valueOf(3680), 2000L),
+                new Candle("TCS", "D", Instant.parse("2026-02-02T10:00:00Z"), BigDecimal.valueOf(3680), BigDecimal.valueOf(3750), BigDecimal.valueOf(3650), BigDecimal.valueOf(3720), 1500L)
+        );
+
+        List<Candle> monthly = CandleResamplingUtil.resampleDailyToMonthly(daily);
+
+        assertThat(monthly).hasSize(2);
+        assertThat(monthly.get(0).timeframe()).isEqualTo("1M");
+        assertThat(monthly.get(0).open()).isEqualByComparingTo(BigDecimal.valueOf(3500));
+        assertThat(monthly.get(0).high()).isEqualByComparingTo(BigDecimal.valueOf(3700));
+        assertThat(monthly.get(0).low()).isEqualByComparingTo(BigDecimal.valueOf(3480));
+        assertThat(monthly.get(0).close()).isEqualByComparingTo(BigDecimal.valueOf(3680));
+        assertThat(monthly.get(0).volume()).isEqualTo(3000L);
+
+        assertThat(monthly.get(1).timeframe()).isEqualTo("1M");
+        assertThat(monthly.get(1).open()).isEqualByComparingTo(BigDecimal.valueOf(3680));
+        assertThat(monthly.get(1).high()).isEqualByComparingTo(BigDecimal.valueOf(3750));
+        assertThat(monthly.get(1).low()).isEqualByComparingTo(BigDecimal.valueOf(3650));
+        assertThat(monthly.get(1).close()).isEqualByComparingTo(BigDecimal.valueOf(3720));
+        assertThat(monthly.get(1).volume()).isEqualTo(1500L);
+    }
 }
