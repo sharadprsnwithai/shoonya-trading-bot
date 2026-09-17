@@ -133,6 +133,18 @@ public class BollingerHaPositionalService {
             List<BollingerBandSnapshot> snapshots =
                     indicatorService.calculate(dailyCandles, 20, 2.0);
             BigDecimal currentSpot = dailyCandles.get(dailyCandles.size() - 1).close();
+            try {
+                String token = marketDataService.resolveToken(config.getSymbol());
+                com.fasterxml.jackson.databind.JsonNode quote =
+                        marketDataService.fetchQuote("NSE", token);
+                if (quote != null && quote.has("lp")) {
+                    double lpVal = Double.parseDouble(quote.path("lp").asText());
+                    if (lpVal > 0) {
+                        currentSpot = BigDecimal.valueOf(lpVal);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
 
             evaluateSnapshots(snapshots, currentSpot);
             persistState();
@@ -584,6 +596,11 @@ public class BollingerHaPositionalService {
                     isBullPut
                             ? currentSpot.compareTo(targetBand) >= 0
                             : currentSpot.compareTo(targetBand) <= 0;
+        } else if (trade.targetSpot() != null) {
+            targetHit =
+                    isBullPut
+                            ? currentSpot.compareTo(trade.targetSpot()) >= 0
+                            : currentSpot.compareTo(trade.targetSpot()) <= 0;
         }
 
         if (targetHit) {
@@ -606,8 +623,16 @@ public class BollingerHaPositionalService {
     }
 
     public synchronized void forceExitCurrentPosition(String exitReason) {
-        if (state.getActiveTrade() == null) {
-            log.warn("No active positional spread to exit.");
+        if (state.getActiveTrade() == null && state.getActiveAlert() == null) {
+            log.warn("No active positional spread or alert to exit.");
+            return;
+        }
+        if (state.getActiveTrade() == null && state.getActiveAlert() != null) {
+            log.info("Canceling active positional alert. Resetting state to FLAT.");
+            state.setActiveAlert(null);
+            state.setStatus(PositionalStatus.FLAT);
+            persistState();
+            telegramService.sendAlert("🛑 Active positional alert was canceled. Strategy status reset to FLAT.");
             return;
         }
         BigDecimal currentSpot = state.getActiveTrade().entrySpot();
