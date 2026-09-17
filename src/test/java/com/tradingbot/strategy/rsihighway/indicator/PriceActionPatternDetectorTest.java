@@ -85,4 +85,11 @@ class PriceActionPatternDetectorTest {
         List<Double> rsiSeries = List.of(60.0, 55.0, 52.0, 47.0);
         assertThat(detector.isRsi50BounceOrCross(rsiSeries)).isFalse();
     }
+
+    @Test
+    void testRsi50RejectedWhenOverbought() {
+        // Previous dipped to 51, but current spiked to 72 (overbought)
+        List<Double> rsiSeries = List.of(60.0, 51.0, 72.0);
+        assertThat(detector.isRsi50BounceOrCross(rsiSeries)).isFalse();
+    }
 }

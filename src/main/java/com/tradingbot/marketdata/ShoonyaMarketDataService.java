@@ -104,7 +104,7 @@ public class ShoonyaMarketDataService {
      */
     public List<Candle> fetchDailyCandles(String symbol, int daysBack) {
         String token = resolveToken(symbol);
-        int boundedDays = Math.max(1, Math.min(daysBack, 400));
+        int boundedDays = Math.max(1, Math.min(daysBack, 1200));
         log.info(
                 "[DAILY-DATA] Fetching {} days of daily candles for {} (token: {})",
                 boundedDays,
@@ -139,8 +139,15 @@ public class ShoonyaMarketDataService {
                 tokenCache.put(entry.getKey(), tok);
             }
         }
+        for (Map.Entry<String, com.tradingbot.util.Nifty500Registry.StockMetadata> entry :
+                com.tradingbot.util.Nifty500Registry.getAllMetadata().entrySet()) {
+            String tok = entry.getValue().token();
+            if (isValidNumericToken(tok)) {
+                tokenCache.putIfAbsent(entry.getKey(), tok);
+            }
+        }
         log.info(
-                "[MARKET-DATA] Token cache pre-warmed with {} active F&O instruments at startup.",
+                "[MARKET-DATA] Token cache pre-warmed with {} active instruments (F&O + Nifty 500) at startup.",
                 tokenCache.size());
     }
 
@@ -177,6 +184,12 @@ public class ShoonyaMarketDataService {
         if (n200Meta != null && isValidNumericToken(n200Meta.token())) {
             tokenCache.put(clean, n200Meta.token());
             return n200Meta.token();
+        }
+
+        var n500Meta = com.tradingbot.util.Nifty500Registry.getMetadata(clean);
+        if (n500Meta != null && isValidNumericToken(n500Meta.token())) {
+            tokenCache.put(clean, n500Meta.token());
+            return n500Meta.token();
         }
 
         // Fallback: Query SearchScrip API from Shoonya

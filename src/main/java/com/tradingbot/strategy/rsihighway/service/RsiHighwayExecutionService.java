@@ -63,7 +63,8 @@ public class RsiHighwayExecutionService {
         double maxCapitalBudget = accountCapital * (maxCapitalPercent / 100.0);
         int qtyByCapital = (int) Math.floor(maxCapitalBudget / entryPrice);
 
-        return Math.max(1, Math.min(qtyByRisk, qtyByCapital));
+        int allowedQty = Math.min(qtyByRisk, qtyByCapital);
+        return Math.max(0, allowedQty);
     }
 
     /**
@@ -85,6 +86,12 @@ public class RsiHighwayExecutionService {
                 config.getMaxCapitalPerStockPercent()
         );
 
+        if (baseQty <= 0) {
+            log.warn("[RSI-HIGHWAY] Position size computed as 0 for {} (Capital ₹{}, Price ₹{}). Skipping entry.",
+                    signal.symbol(), capital, signal.triggerPrice());
+            return Optional.empty();
+        }
+
         // Adjust quantity for pyramiding tranches (Tranche 1: 100%, Tranche 2: 50%, Tranche 3: 25%)
         int trancheQty = baseQty;
         if (signal.trancheNumber() == 2) {
@@ -93,12 +100,20 @@ public class RsiHighwayExecutionService {
             trancheQty = Math.max(1, (int) Math.round(baseQty * 0.25));
         }
 
+        double totalRequiredCapital = trancheQty * signal.triggerPrice();
+        if (totalRequiredCapital > capital) {
+            log.warn("[RSI-HIGHWAY] Required capital ₹{} exceeds available capital ₹{} for {}. Skipping entry.",
+                    totalRequiredCapital, capital, signal.symbol());
+            return Optional.empty();
+        }
+
         String orderId = "RSI_HW_" + UUID.randomUUID().toString().substring(0, 8);
+        Instant executionTime = signal.generatedAt() != null ? signal.generatedAt() : Instant.now();
 
         if (config.isPaperTrading()) {
             log.info("[PAPER-EXECUTION] Filled {} Tranche {} for {} shares @ ₹{} (SL: ₹{}). OrderId: {}",
                     signal.symbol(), signal.trancheNumber(), trancheQty, signal.triggerPrice(), signal.initialSlPrice(), orderId);
-            return Optional.of(new RsiHighwayTranche(signal.trancheNumber(), trancheQty, signal.triggerPrice(), Instant.now(), orderId));
+            return Optional.of(new RsiHighwayTranche(signal.trancheNumber(), trancheQty, signal.triggerPrice(), executionTime, orderId));
         }
 
         // Live Execution on Shoonya (CNC / Delivery)
@@ -120,7 +135,7 @@ public class RsiHighwayExecutionService {
                 String brokerOrderId = resp.orderId() != null ? resp.orderId() : orderId;
                 log.info("[LIVE-EXECUTION] Placed Shoonya CNC Buy for {} qty {} @ ₹{}. Broker OrderId: {}",
                         signal.symbol(), trancheQty, signal.triggerPrice(), brokerOrderId);
-                return Optional.of(new RsiHighwayTranche(signal.trancheNumber(), trancheQty, signal.triggerPrice(), Instant.now(), brokerOrderId));
+                return Optional.of(new RsiHighwayTranche(signal.trancheNumber(), trancheQty, signal.triggerPrice(), executionTime, brokerOrderId));
             } else {
                 log.error("[LIVE-EXECUTION] Order placement failed for {}: {}", signal.symbol(), resp != null ? resp.message() : "null response");
                 return Optional.empty();

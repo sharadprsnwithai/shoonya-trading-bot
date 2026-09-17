@@ -54,6 +54,36 @@ class RsiHighwayExecutionServiceTest {
     }
 
     @Test
+    void testPositionSizingZeroWhenCapitalInsufficient() {
+        // Account capital = 5,000. Max allocation 10% = 500. Stock price = 10,000.
+        // Cannot afford even 1 share within budget -> returns 0
+        int qty = executionService.calculatePositionSize(10000.0, 9500.0, 5000.0, 1.0, 10.0);
+        assertThat(qty).isEqualTo(0);
+    }
+
+    @Test
+    void testExecuteEntrySignalReturnsEmptyWhenCapitalInsufficient() {
+        RsiHighwaySignal signal = new RsiHighwaySignal(
+                "MRF",
+                RsiHighwaySignalType.INITIAL_ENTRY,
+                120000.0,
+                115000.0,
+                1,
+                65.0,
+                62.0,
+                52.0,
+                20.0,
+                PriceActionPattern.BULLISH_ENGULFING,
+                "Initial Setup",
+                Instant.now()
+        );
+
+        // Account capital 10,000 is way below MRF share price 120,000
+        Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(signal, 10000.0);
+        assertThat(tranche).isEmpty();
+    }
+
+    @Test
     void testExecutePaperEntrySignal() {
         RsiHighwaySignal signal = new RsiHighwaySignal(
                 "INFY",

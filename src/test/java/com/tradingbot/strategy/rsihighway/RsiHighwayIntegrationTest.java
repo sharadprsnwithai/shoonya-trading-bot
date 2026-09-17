@@ -117,7 +117,7 @@ class RsiHighwayIntegrationTest {
                 Optional.of(PriceActionPattern.BULLISH_ENGULFING),
                 true,
                 true,
-                Instant.now()
+                Instant.parse("2026-03-01T10:00:00Z")
         );
         when(multiTimeframeRsiService.computeSnapshot(eq("RELIANCE"), any())).thenReturn(day1Snap);
 
@@ -147,7 +147,7 @@ class RsiHighwayIntegrationTest {
                 Optional.of(PriceActionPattern.MOMENTUM_EXPANSION),
                 true,
                 true,
-                Instant.now()
+                Instant.parse("2026-03-02T10:00:00Z")
         );
         when(multiTimeframeRsiService.computeSnapshot(eq("RELIANCE"), any())).thenReturn(day2Snap);
 
@@ -176,7 +176,7 @@ class RsiHighwayIntegrationTest {
                 Optional.empty(),
                 false,
                 false,
-                Instant.now()
+                Instant.parse("2026-03-03T10:00:00Z")
         );
         when(multiTimeframeRsiService.computeSnapshot(eq("RELIANCE"), any())).thenReturn(day3Snap);
 

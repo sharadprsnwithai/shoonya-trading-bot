@@ -99,6 +99,11 @@ public class PriceActionPatternDetector {
             return false;
         }
 
+        // Must not be heavily overbought on entry (capped at 65.0)
+        if (currRsi > 65.0) {
+            return false;
+        }
+
         // Setup A: RSI 50 Pullback & Bounce
         // Previous RSI dipped into [48.0, 55.0] and current RSI turns up and is >= 50.0
         if (prevRsi >= 48.0 && prevRsi <= 55.0 && currRsi > prevRsi && currRsi >= 50.0) {

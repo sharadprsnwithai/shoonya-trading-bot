@@ -138,6 +138,9 @@ class RsiHighwaySwingServiceTest {
         RsiHighwayPosition pos = swingService.getActivePositions().get("TCS");
         assertThat(pos.getTotalQuantity()).isEqualTo(10);
         assertThat(pos.getAveragePrice()).isEqualTo(3500.0);
+
+        // Capital should be deducted: 1,000,000 - (10 * 3500) = 965,000
+        assertThat(swingService.getState().getAvailableCapital()).isEqualTo(1000000.0 - 35000.0);
     }
 
     @Test
@@ -209,5 +212,30 @@ class RsiHighwaySwingServiceTest {
 
         assertThat(swingService.getActivePositions()).doesNotContainKey("WIPRO");
         assertThat(swingService.getState().getClosedPositions()).hasSize(1);
+    }
+
+    @Test
+    void testPyramidingSkipsSameDayEntry() {
+        // Position entered today
+        RsiHighwayPosition pos = new RsiHighwayPosition("INFY", "NSE", 1500.0, 1450.0);
+        pos.addTranche(new RsiHighwayTranche(1, 10, 1500.0, Instant.now(), "ORD_01"));
+        swingService.getState().getPositions().put("INFY", pos);
+
+        when(breadthService.evaluateBreadth(any(), any(), anyInt(), anyDouble()))
+                .thenReturn(new MarketBreadthSnapshot(true, 500, 20, List.of(), 0.05, "Healthy", Instant.now()));
+
+        List<Candle> candles = createDummyDailyCandles(300, 1550.0);
+        when(marketDataService.fetchDailyCandles(eq("INFY"), anyInt())).thenReturn(candles);
+
+        MultiTimeframeRsiSnapshot snap = new MultiTimeframeRsiSnapshot(
+                "INFY", 65.0, 62.0, 52.0, 20.0, 1550.0, 1560.0, 1520.0,
+                Optional.of(PriceActionPattern.BULLISH_ENGULFING), true, true, Instant.now()
+        );
+        when(multiTimeframeRsiService.computeSnapshot(eq("INFY"), any())).thenReturn(snap);
+
+        swingService.evaluateEodScanForSymbols(List.of("INFY"));
+
+        // Since it was entered today, pyramid tranche 2 should NOT be executed
+        assertThat(pos.getTrancheCount()).isEqualTo(1);
     }
 }
