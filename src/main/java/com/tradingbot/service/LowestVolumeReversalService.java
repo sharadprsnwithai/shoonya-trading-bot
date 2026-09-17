@@ -54,7 +54,7 @@ public class LowestVolumeReversalService {
     public static final LocalTime TIME_SESSION_START = LocalTime.of(9, 15);
     public static final LocalTime TIME_SCANNER_START = LocalTime.of(9, 25);
     public static final LocalTime TIME_EVALUATION_START = LocalTime.of(9, 30);
-    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(11, 0);
+    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(13, 0);
     public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
 
     private final ShoonyaMarketDataService marketDataService;
@@ -87,8 +87,8 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.telegram-alerts:true}")
     private boolean telegramAlerts = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:false}")
-    private boolean telegramArmedAlerts = false;
+    @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:true}")
+    private boolean telegramArmedAlerts = true;
 
     @Value("${trading-bot.strategy.lowest-volume.option-buying-enabled:true}")
     private boolean optionBuyingEnabled = true;
@@ -169,10 +169,10 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        // Past 11:00 AM cutoff: No new setups, manage open positions only
+        // Past 13:00 cutoff: No new setups, manage open positions only
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
             log.info(
-                    "[LVR] Past 11:00 AM cutoff. Skipping new setups; managing open positions only.");
+                    "[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
             evaluateOpenPositions(nowTime);
             return;
         }
@@ -368,35 +368,30 @@ public class LowestVolumeReversalService {
 
     /**
      * Scans the F&O universe to rank Top Gainers and Top Losers by % change from previous close.
+     * Paced at ~8 requests/sec (~110ms delay) to strictly honor Shoonya API's 10 req/s limit.
      */
     public void scanUniverse() {
         List<String> universe = getFnoUniverse();
-        List<CompletableFuture<StockQuoteSnapshot>> futures = new ArrayList<>();
+        List<StockQuoteSnapshot> snapshots = new ArrayList<>();
+        long delayMs = 110L;
+
+        log.info("[LVR] Starting universe scan for {} F&O stocks with 110ms rate-limit pacing...", universe.size());
 
         for (String sym : universe) {
-            futures.add(CompletableFuture.supplyAsync(() -> fetchStockSnapshot(sym), executor));
-        }
-
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                    .get(scannerTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.warn(
-                    "[LVR] Universe scan snapshot batch timed out or interrupted: {}",
-                    e.getMessage());
-        }
-
-        List<StockQuoteSnapshot> snapshots = new ArrayList<>();
-        for (CompletableFuture<StockQuoteSnapshot> f : futures) {
             try {
-                if (f.isDone() && !f.isCompletedExceptionally()) {
-                    StockQuoteSnapshot s = f.join();
-                    if (s != null && s.ltp() > 0 && s.prevClose() > 0) {
-                        snapshots.add(s);
-                    }
+                StockQuoteSnapshot snap = fetchStockSnapshot(sym);
+                if (snap != null && snap.ltp() > 0 && snap.prevClose() > 0) {
+                    snapshots.add(snap);
                 }
+                if (delayMs > 0) {
+                    Thread.sleep(delayMs);
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.warn("[LVR] Universe scan interrupted");
+                break;
             } catch (Exception e) {
-                log.debug("[LVR] Snapshot fetch error: {}", e.getMessage());
+                log.debug("[LVR] Snapshot fetch error for {}: {}", sym, e.getMessage());
             }
         }
 
@@ -700,9 +695,9 @@ public class LowestVolumeReversalService {
             return;
         }
 
-        // Check entry cutoff (11:00)
+        // Check entry cutoff (13:00)
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-            log.info("[LVR] [{}] After 11:00 cutoff. Armed setup cancelled.", setup.getSymbol());
+            log.info("[LVR] [{}] After 13:00 cutoff. Armed setup cancelled.", setup.getSymbol());
             setup.resetToScanning();
             return;
         }

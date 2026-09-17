@@ -277,6 +277,12 @@ public class ShoonyaMarketDataService {
                     continue;
                 }
 
+                if (resp.statusCode() == 400 && respBody != null && respBody.contains("exceeds Limit 10")) {
+                    log.warn("[QUOTE] Rate limit reached fetching token {}. Backing off 250ms (attempt {})...", token, attempt);
+                    Thread.sleep(250);
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "[QUOTE] HTTP error {} fetching quote for token {}: {}",
@@ -337,6 +343,15 @@ public class ShoonyaMarketDataService {
                             searchText,
                             attempt);
                     authenticator.invalidateSession();
+                    continue;
+                }
+
+                if (response.statusCode() == 400 && body != null && body.contains("exceeds Limit 10")) {
+                    log.warn(
+                            "[SEARCH-SCRIP] Rate limit reached searching for {}. Backing off 250ms (attempt {})...",
+                            searchText,
+                            attempt);
+                    Thread.sleep(250);
                     continue;
                 }
 
@@ -433,6 +448,15 @@ public class ShoonyaMarketDataService {
                             symbol,
                             attempt);
                     authenticator.invalidateSession();
+                    continue;
+                }
+
+                if (response.statusCode() == 400 && body != null && body.contains("exceeds Limit 10")) {
+                    log.warn(
+                            "Rate limit reached fetching TPSeries for {}. Backing off 250ms (attempt {})...",
+                            symbol,
+                            attempt);
+                    Thread.sleep(250);
                     continue;
                 }
 

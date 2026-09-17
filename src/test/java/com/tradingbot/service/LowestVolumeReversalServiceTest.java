@@ -675,7 +675,7 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    void testEntryCutoffAt11AM_CancelsArmedTrigger() {
+    void testEntryCutoffAt1300_CancelsArmedTrigger() {
         LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
                 null,
@@ -683,22 +683,22 @@ class LowestVolumeReversalServiceTest {
                 new BigDecimal("2490.00"),
                 new BigDecimal("2520.00"));
 
-        Instant t0 = todayInstant(11, 5);
+        Instant t0 = todayInstant(13, 5);
         Candle candle = makeCandle("RELIANCE", t0, 2498, 2505, 2497, 2502, 50000);
 
-        // Evaluation at 11:01 AM (after 11:00 cutoff)
-        service.evaluateArmedTrigger(List.of(candle), setup, LocalTime.of(11, 1));
+        // Evaluation at 13:01 (after 13:00 cutoff)
+        service.evaluateArmedTrigger(List.of(candle), setup, LocalTime.of(13, 1));
 
-        // Setup must be dropped to SCANNING due to 11:00 AM cutoff
+        // Setup must be dropped to SCANNING due to 13:00 cutoff
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
         assertThat(service.getOpenPositions()).doesNotContainKey("RELIANCE");
     }
 
     @Test
-    void testRunCycle_Past11AM_DoesNotScanNewSetups() {
+    void testRunCycle_Past1300_DoesNotScanNewSetups() {
         service.setClock(
                 java.time.Clock.fixed(
-                        LocalDate.now(IST).atTime(11, 5).atZone(IST).toInstant(), IST));
+                        LocalDate.now(IST).atTime(13, 5).atZone(IST).toInstant(), IST));
 
         service.runCycle();
 
@@ -707,9 +707,10 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    void testTelegramArmedAlert_DisabledByDefault_DoesNotSendOnArmed() {
+    void testTelegramArmedAlert_WhenDisabled_DoesNotSendOnArmed() {
         LowestVolumeSetup setup = new LowestVolumeSetup("HDFCBANK", LowestVolumeDirection.LONG);
         setup.transitionTo(LowestVolumeSetupState.LEG_CONFIRMED, "Leg confirmed");
+        service.setTelegramArmedAlerts(false);
 
         double atr = 10.0;
         Instant t0 = todayInstant(9, 25);
@@ -718,14 +719,36 @@ class LowestVolumeReversalServiceTest {
                 makeCandle(
                         "HDFCBANK", t0.plus(5, ChronoUnit.MINUTES), 1607, 1608, 1602, 1603, 10000);
 
-        // Default telegramArmedAlerts is false
         assertThat(service.isTelegramArmedAlerts()).isFalse();
 
         service.evaluatePullback(List.of(c1, c2), setup, atr);
 
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
-        // Armed alert should NOT be sent
+        // Armed alert should NOT be sent when disabled
         org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.never())
+                .sendLvrSetupArmedAlert(any(), anyInt(), any());
+    }
+
+    @Test
+    void testTelegramArmedAlert_WhenEnabled_SendsOnArmed() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("HDFCBANK", LowestVolumeDirection.LONG);
+        setup.transitionTo(LowestVolumeSetupState.LEG_CONFIRMED, "Leg confirmed");
+        service.setTelegramArmedAlerts(true);
+
+        double atr = 10.0;
+        Instant t0 = todayInstant(9, 25);
+        Candle c1 = makeCandle("HDFCBANK", t0, 1600, 1608, 1599, 1607, 80000);
+        Candle c2 =
+                makeCandle(
+                        "HDFCBANK", t0.plus(5, ChronoUnit.MINUTES), 1607, 1608, 1602, 1603, 10000);
+
+        assertThat(service.isTelegramArmedAlerts()).isTrue();
+
+        service.evaluatePullback(List.of(c1, c2), setup, atr);
+
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        // Armed alert MUST be sent when enabled
+        org.mockito.Mockito.verify(telegramService, org.mockito.Mockito.times(1))
                 .sendLvrSetupArmedAlert(any(), anyInt(), any());
     }
 

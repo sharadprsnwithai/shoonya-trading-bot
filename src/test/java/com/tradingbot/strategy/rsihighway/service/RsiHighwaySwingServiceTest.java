@@ -63,6 +63,7 @@ class RsiHighwaySwingServiceTest {
         config.setPaperTrading(true);
         config.setStateFilePath(tempStateFile.getAbsolutePath());
         config.setMaxConcurrentPositions(5);
+        config.setScanDelayMs(0L);
 
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 

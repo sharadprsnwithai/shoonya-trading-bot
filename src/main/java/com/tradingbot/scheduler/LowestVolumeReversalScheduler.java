@@ -39,11 +39,11 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
-     * Runs every 5 minutes from 09:25:10 to 11:05:10 IST on trading weekdays. (10s offset for
+     * Runs every 5 minutes from 09:25:10 to 15:05:10 IST on trading weekdays. (10s offset for
      * broker latency). Automatically runs morning universe scan on first 09:25 cycle.
      */
     @Scheduled(
-            cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-11 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void scheduledCandleCycle() {
         if (!schedulerEnabled) {
@@ -52,8 +52,8 @@ public class LowestVolumeReversalScheduler {
         }
 
         LocalTime now = LocalTime.now(IST);
-        // Do not scan or evaluate after 11:05
-        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(11, 5))) {
+        // Do not scan or evaluate outside market hours (09:25 - 15:05)
+        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 5))) {
             return;
         }
 

@@ -63,6 +63,7 @@ class RsiHighwayIntegrationTest {
         config.setMaxCapitalPerStockPercent(10.0);
         config.setStateFilePath(tempStateFile.getAbsolutePath());
         config.setMaxConcurrentPositions(5);
+        config.setScanDelayMs(0L);
 
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         executionService = new RsiHighwayExecutionService(null, config);

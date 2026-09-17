@@ -29,6 +29,7 @@ public class RsiHighwayConfig {
     private double maxIndexDrawdownPct = 0.20;
     private String stateFilePath = "data/rsi_highway_state.json";
     private boolean telegramAlerts = true;
+    private long scanDelayMs = 110L;
 
     public boolean isEnabled() {
         return enabled;
@@ -180,5 +181,13 @@ public class RsiHighwayConfig {
 
     public void setTelegramAlerts(boolean telegramAlerts) {
         this.telegramAlerts = telegramAlerts;
+    }
+
+    public long getScanDelayMs() {
+        return scanDelayMs;
+    }
+
+    public void setScanDelayMs(long scanDelayMs) {
+        this.scanDelayMs = scanDelayMs;
     }
 }

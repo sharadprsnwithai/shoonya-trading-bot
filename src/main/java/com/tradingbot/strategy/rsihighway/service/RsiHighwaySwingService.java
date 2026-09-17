@@ -126,12 +126,22 @@ public class RsiHighwaySwingService {
 
         // 1. Fetch candles & evaluate Market Breadth
         Map<String, List<Candle>> candlesMap = new HashMap<>();
+        long delayMs = symbols.size() > 1 ? config.getScanDelayMs() : 0L;
+        log.info("[RSI-HIGHWAY] Starting 15:00 IST EOD scan for {} symbols with {}ms pacing...", symbols.size(), delayMs);
+
         for (String sym : symbols) {
             try {
                 List<Candle> candles = marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
                 if (candles != null && !candles.isEmpty()) {
                     candlesMap.put(sym, candles);
                 }
+                if (delayMs > 0) {
+                    Thread.sleep(delayMs);
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.warn("[RSI-HIGHWAY] EOD scan interrupted during symbol fetch loop");
+                break;
             } catch (Exception e) {
                 log.warn("[RSI-HIGHWAY] Failed fetching daily candles for {}: {}", sym, e.getMessage());
             }
