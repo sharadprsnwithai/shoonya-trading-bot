@@ -149,6 +149,11 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
         BigDecimal netCredit =
                 sellFillPremium.subtract(buyHedgeFillPremium).setScale(2, RoundingMode.HALF_UP);
 
+        String resolvedExpiry =
+                (trade.expiryDate() != null && !trade.expiryDate().isBlank() && !"MONTHLY".equalsIgnoreCase(trade.expiryDate()))
+                        ? trade.expiryDate()
+                        : resolveNextMonthlyExpiry().toString();
+
         return new PositionalTrade(
                 trade.tradeId(),
                 trade.underlying(),
@@ -157,9 +162,7 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                 trade.sellStrike(),
                 trade.buyHedgeOptionType(),
                 trade.buyHedgeStrike(),
-                trade.expiryDate() != null
-                        ? trade.expiryDate()
-                        : resolveNextMonthlyExpiry().toString(),
+                resolvedExpiry,
                 trade.entryDate() != null ? trade.entryDate() : LocalDate.now(),
                 trade.entrySpot(),
                 sellFillPremium,
@@ -193,10 +196,10 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
         BigDecimal sellExitPremium;
         BigDecimal buyHedgeExitPremium;
 
-        int daysHeld = 1;
+        int daysHeld = 0;
         if (trade.entryDate() != null) {
             daysHeld =
-                    (int) Math.max(1, ChronoUnit.DAYS.between(trade.entryDate(), LocalDate.now()));
+                    (int) Math.max(0, ChronoUnit.DAYS.between(trade.entryDate(), LocalDate.now()));
         }
 
         if (mode == ExecutionMode.LIVE && orderService != null) {
@@ -367,7 +370,8 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
     private LocalDate resolveNextMonthlyExpiry() {
         LocalDate now = LocalDate.now();
         LocalDate lastThuThisMonth = now.with(TemporalAdjusters.lastInMonth(DayOfWeek.THURSDAY));
-        if (now.isAfter(lastThuThisMonth.minusDays(5))) {
+        // If within 15 days of this month's expiry, roll to next month for positional trades (> 20 DTE target)
+        if (now.isAfter(lastThuThisMonth.minusDays(15))) {
             return now.plusMonths(1).with(TemporalAdjusters.lastInMonth(DayOfWeek.THURSDAY));
         }
         return lastThuThisMonth;

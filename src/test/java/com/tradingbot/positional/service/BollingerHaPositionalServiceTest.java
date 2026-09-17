@@ -364,4 +364,77 @@ class BollingerHaPositionalServiceTest {
                 "STOP_LOSS",
                 positionalService.getState().getHistoricalTrades().get(0).exitReason());
     }
+
+    @Test
+    void testAlertTimeoutInvalidation() {
+        PositionalAlert alert =
+                new PositionalAlert(
+                        LocalDate.now().minusDays(10),
+                        "BUY",
+                        BigDecimal.valueOf(23800),
+                        BigDecimal.valueOf(23400),
+                        BigDecimal.valueOf(23400),
+                        Instant.now().minusSeconds(86400 * 10));
+        positionalService.getState().setStatus(PositionalStatus.ALERT_PENDING);
+        positionalService.getState().setActiveAlert(alert);
+
+        BollingerBandSnapshot today =
+                new BollingerBandSnapshot(
+                        Instant.now(),
+                        "2025-02-10",
+                        BigDecimal.valueOf(23600),
+                        BigDecimal.valueOf(23700),
+                        BigDecimal.valueOf(23500),
+                        BigDecimal.valueOf(23650),
+                        BigDecimal.valueOf(23600),
+                        BigDecimal.valueOf(23700),
+                        BigDecimal.valueOf(23500),
+                        BigDecimal.valueOf(23650),
+                        BigDecimal.valueOf(23500),
+                        BigDecimal.valueOf(24000),
+                        BigDecimal.valueOf(23000),
+                        BigDecimal.valueOf(0.04));
+
+        positionalService.evaluateSnapshots(List.of(today, today), BigDecimal.valueOf(23650));
+
+        assertEquals(PositionalStatus.FLAT, positionalService.getState().getStatus());
+        assertNull(positionalService.getState().getActiveAlert());
+    }
+
+    @Test
+    void testAlertReTouchBandInvalidation() {
+        PositionalAlert alert =
+                new PositionalAlert(
+                        LocalDate.now().minusDays(2),
+                        "SELL",
+                        BigDecimal.valueOf(23800),
+                        BigDecimal.valueOf(23400),
+                        BigDecimal.valueOf(23800),
+                        Instant.now().minusSeconds(86400 * 2));
+        positionalService.getState().setStatus(PositionalStatus.ALERT_PENDING);
+        positionalService.getState().setActiveAlert(alert);
+
+        // Today touches Upper Band again (HA High 24100 >= BB Upper 24000)
+        BollingerBandSnapshot today =
+                new BollingerBandSnapshot(
+                        Instant.now(),
+                        "2025-02-10",
+                        BigDecimal.valueOf(23900),
+                        BigDecimal.valueOf(24100),
+                        BigDecimal.valueOf(23800),
+                        BigDecimal.valueOf(24050),
+                        BigDecimal.valueOf(23900),
+                        BigDecimal.valueOf(24100),
+                        BigDecimal.valueOf(23800),
+                        BigDecimal.valueOf(24050),
+                        BigDecimal.valueOf(23500),
+                        BigDecimal.valueOf(24000),
+                        BigDecimal.valueOf(23000),
+                        BigDecimal.valueOf(0.04));
+
+        positionalService.evaluateSnapshots(List.of(today, today), BigDecimal.valueOf(23750));
+
+        assertEquals(PositionalStatus.FLAT, positionalService.getState().getStatus());
+        assertNull(positionalService.getState().getActiveAlert());
+    }
 }

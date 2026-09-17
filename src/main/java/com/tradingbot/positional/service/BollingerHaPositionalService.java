@@ -180,7 +180,7 @@ public class BollingerHaPositionalService {
     }
 
     private void checkNewAlertCandle(List<BollingerBandSnapshot> snapshots) {
-        if (snapshots == null || snapshots.isEmpty()) {
+        if (snapshots == null || snapshots.size() < 2) {
             return;
         }
         int n = snapshots.size();
@@ -189,105 +189,125 @@ public class BollingerHaPositionalService {
             return;
         }
 
-        // Look back up to 5 bars for a Bollinger Band touch
-        for (int i = n - 2; i >= Math.max(0, n - 6); i--) {
-            BollingerBandSnapshot prior = snapshots.get(i);
-            if (prior.bbUpper() == null || prior.bbLower() == null || prior.haHigh() == null || prior.haLow() == null) continue;
+        // The immediate previous bar (n - 2) must have touched or exceeded the Bollinger Band
+        BollingerBandSnapshot prior = snapshots.get(n - 2);
+        if (prior.bbUpper() == null || prior.bbLower() == null || prior.haHigh() == null || prior.haLow() == null) {
+            return;
+        }
 
-            boolean touchedUpper = prior.haHigh().compareTo(prior.bbUpper()) >= 0;
-            boolean touchedLower = prior.haLow().compareTo(prior.bbLower()) <= 0;
+        boolean priorTouchedUpper = prior.haHigh().compareTo(prior.bbUpper()) >= 0;
+        boolean priorTouchedLower = prior.haLow().compareTo(prior.bbLower()) <= 0;
 
-            if (touchedUpper) {
-                // Today closed inside without touching upper band -> SELL Alert (Bear Call Spread)
-                if (today.haHigh().compareTo(today.bbUpper()) < 0) {
-                    PositionalAlert alert =
-                            new PositionalAlert(
-                                    LocalDate.now(),
-                                    "SELL",
-                                    today.normalHigh(),
-                                    today.normalLow(),
-                                    today.bbUpper(),
-                                    Instant.now());
-                    state.setStatus(PositionalStatus.ALERT_PENDING);
-                    state.setActiveAlert(alert);
+        if (priorTouchedUpper && today.haHigh().compareTo(today.bbUpper()) < 0) {
+            // Reversal from Upper Band -> SELL Alert (Bear Call Spread)
+            PositionalAlert alert =
+                    new PositionalAlert(
+                            LocalDate.now(),
+                            "SELL",
+                            today.normalHigh(),
+                            today.normalLow(),
+                            today.bbUpper(),
+                            Instant.now());
+            state.setStatus(PositionalStatus.ALERT_PENDING);
+            state.setActiveAlert(alert);
 
-                    BigDecimal plannedAtm = roundToNearestStrike(today.normalLow(), 50);
-                    BigDecimal plannedHedge =
-                            plannedAtm.add(BigDecimal.valueOf(config.getHedgeOffsetPoints()));
+            BigDecimal plannedAtm = roundToNearestStrike(today.normalLow(), 50);
+            BigDecimal plannedHedge =
+                    plannedAtm.add(BigDecimal.valueOf(config.getHedgeOffsetPoints()));
 
-                    log.info(
-                            "🚨 New SELL Alert Candle detected on {}. H_alert={}, L_alert={}",
-                            alert.alertDate(),
+            log.info(
+                    "🚨 New SELL Alert Candle detected on {}. H_alert={}, L_alert={}",
+                    alert.alertDate(),
+                    alert.highPrice(),
+                    alert.lowPrice());
+            telegramService.sendAlert(
+                    String.format(
+                            "🚨 *Positional SELL Alert Detected (%s)*\n\n"
+                                    + "• Normal Alert High (SL): %.2f\n"
+                                    + "• Normal Alert Low (Entry Trigger): %.2f\n"
+                                    + "• Target (Lower BB): %.2f\n\n"
+                                    + "📦 *Planned Structure (BEAR CALL SPREAD):*\n"
+                                    + "• SELL Leg (ATM): %.0f CE\n"
+                                    + "• BUY Hedge (0.2 Delta): %.0f CE\n"
+                                    + "• Status: Waiting for Spot <= %.2f",
+                            config.getSymbol(),
                             alert.highPrice(),
-                            alert.lowPrice());
-                    telegramService.sendAlert(
-                            String.format(
-                                    "🚨 *Positional SELL Alert Detected (%s)*\n\n"
-                                            + "• Normal Alert High (SL): %.2f\n"
-                                            + "• Normal Alert Low (Entry Trigger): %.2f\n"
-                                            + "• Target (Lower BB): %.2f\n\n"
-                                            + "📦 *Planned Structure (BEAR CALL SPREAD):*\n"
-                                            + "• SELL Leg (ATM): %.0f CE\n"
-                                            + "• BUY Hedge (0.2 Delta): %.0f CE\n"
-                                            + "• Status: Waiting for Spot <= %.2f",
-                                    config.getSymbol(),
-                                    alert.highPrice(),
-                                    alert.lowPrice(),
-                                    today.bbLower(),
-                                    plannedAtm,
-                                    plannedHedge,
-                                    alert.lowPrice()));
-                    return;
-                }
-            } else if (touchedLower) {
-                // Today closed inside without touching lower band -> BUY Alert (Bull Put Spread)
-                if (today.haLow().compareTo(today.bbLower()) > 0) {
-                    PositionalAlert alert =
-                            new PositionalAlert(
-                                    LocalDate.now(),
-                                    "BUY",
-                                    today.normalHigh(),
-                                    today.normalLow(),
-                                    today.bbLower(),
-                                    Instant.now());
-                    state.setStatus(PositionalStatus.ALERT_PENDING);
-                    state.setActiveAlert(alert);
+                            alert.lowPrice(),
+                            today.bbLower(),
+                            plannedAtm,
+                            plannedHedge,
+                            alert.lowPrice()));
+        } else if (priorTouchedLower && today.haLow().compareTo(today.bbLower()) > 0) {
+            // Reversal from Lower Band -> BUY Alert (Bull Put Spread)
+            PositionalAlert alert =
+                    new PositionalAlert(
+                            LocalDate.now(),
+                            "BUY",
+                            today.normalHigh(),
+                            today.normalLow(),
+                            today.bbLower(),
+                            Instant.now());
+            state.setStatus(PositionalStatus.ALERT_PENDING);
+            state.setActiveAlert(alert);
 
-                    BigDecimal plannedAtm = roundToNearestStrike(today.normalHigh(), 50);
-                    BigDecimal plannedHedge =
-                            plannedAtm.subtract(BigDecimal.valueOf(config.getHedgeOffsetPoints()));
+            BigDecimal plannedAtm = roundToNearestStrike(today.normalHigh(), 50);
+            BigDecimal plannedHedge =
+                    plannedAtm.subtract(BigDecimal.valueOf(config.getHedgeOffsetPoints()));
 
-                    log.info(
-                            "🚨 New BUY Alert Candle detected on {}. H_alert={}, L_alert={}",
-                            alert.alertDate(),
+            log.info(
+                    "🚨 New BUY Alert Candle detected on {}. H_alert={}, L_alert={}",
+                    alert.alertDate(),
+                    alert.highPrice(),
+                    alert.lowPrice());
+            telegramService.sendAlert(
+                    String.format(
+                            "🚨 *Positional BUY Alert Detected (%s)*\n\n"
+                                    + "• Normal Alert High (Entry Trigger): %.2f\n"
+                                    + "• Normal Alert Low (SL): %.2f\n"
+                                    + "• Target (Upper BB): %.2f\n\n"
+                                    + "📦 *Planned Structure (BULL PUT SPREAD):*\n"
+                                    + "• SELL Leg (ATM): %.0f PE\n"
+                                    + "• BUY Hedge (0.2 Delta): %.0f PE\n"
+                                    + "• Status: Waiting for Spot >= %.2f",
+                            config.getSymbol(),
                             alert.highPrice(),
-                            alert.lowPrice());
-                    telegramService.sendAlert(
-                            String.format(
-                                    "🚨 *Positional BUY Alert Detected (%s)*\n\n"
-                                            + "• Normal Alert High (Entry Trigger): %.2f\n"
-                                            + "• Normal Alert Low (SL): %.2f\n"
-                                            + "• Target (Upper BB): %.2f\n\n"
-                                            + "📦 *Planned Structure (BULL PUT SPREAD):*\n"
-                                            + "• SELL Leg (ATM): %.0f PE\n"
-                                            + "• BUY Hedge (0.2 Delta): %.0f PE\n"
-                                            + "• Status: Waiting for Spot >= %.2f",
-                                    config.getSymbol(),
-                                    alert.highPrice(),
-                                    alert.lowPrice(),
-                                    today.bbUpper(),
-                                    plannedAtm,
-                                    plannedHedge,
-                                    alert.highPrice()));
-                    return;
-                }
-            }
+                            alert.lowPrice(),
+                            today.bbUpper(),
+                            plannedAtm,
+                            plannedHedge,
+                            alert.highPrice()));
         }
     }
 
     private void checkAlertTriggerOrInvalidation(
             PositionalAlert alert, BollingerBandSnapshot today, BigDecimal currentSpot) {
+        if (alert == null || currentSpot == null) {
+            return;
+        }
+
+        // 1. Invalidation by Timeout (> 5 trading days / 7 calendar days)
+        if (alert.alertDate() != null) {
+            long daysOld = java.time.temporal.ChronoUnit.DAYS.between(alert.alertDate(), LocalDate.now());
+            if (daysOld > 7) {
+                log.info("Positional Alert timed out ({} days old). Resetting to FLAT.", daysOld);
+                telegramService.sendAlert(
+                        String.format("⌛ Positional %s Alert timed out (> 5 trading days). State reset to FLAT.", alert.direction()));
+                state.setStatus(PositionalStatus.FLAT);
+                state.setActiveAlert(null);
+                return;
+            }
+        }
+
         if ("BUY".equalsIgnoreCase(alert.direction())) {
+            // Invalidation by re-touching the Lower BB
+            if (today.bbLower() != null && today.haLow() != null && today.haLow().compareTo(today.bbLower()) <= 0) {
+                log.info("BUY Alert invalidated: Price touched Lower BB again.");
+                telegramService.sendAlert("❌ BUY Alert invalidated (Price re-touched Lower BB). State reset to FLAT.");
+                state.setStatus(PositionalStatus.FLAT);
+                state.setActiveAlert(null);
+                return;
+            }
+
             // Invalidation: Spot drops below Alert Low
             if (currentSpot.compareTo(alert.lowPrice()) < 0) {
                 log.info(
@@ -313,6 +333,15 @@ public class BollingerHaPositionalService {
                         "BULL_PUT_SPREAD", "PE", currentSpot, alert.lowPrice(), today.bbUpper());
             }
         } else if ("SELL".equalsIgnoreCase(alert.direction())) {
+            // Invalidation by re-touching the Upper BB
+            if (today.bbUpper() != null && today.haHigh() != null && today.haHigh().compareTo(today.bbUpper()) >= 0) {
+                log.info("SELL Alert invalidated: Price touched Upper BB again.");
+                telegramService.sendAlert("❌ SELL Alert invalidated (Price re-touched Upper BB). State reset to FLAT.");
+                state.setStatus(PositionalStatus.FLAT);
+                state.setActiveAlert(null);
+                return;
+            }
+
             // Invalidation: Spot breaks above Alert High
             if (currentSpot.compareTo(alert.highPrice()) > 0) {
                 log.info(

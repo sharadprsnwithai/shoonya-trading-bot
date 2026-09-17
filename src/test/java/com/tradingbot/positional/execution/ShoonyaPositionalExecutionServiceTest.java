@@ -92,4 +92,40 @@ class ShoonyaPositionalExecutionServiceTest {
         assertNotNull(closed.pnl());
         assertTrue(closed.pnl().doubleValue() > 0);
     }
+
+    @Test
+    void testMonthlyExpiryResolutionWhenStagedWithMonthlyPlaceholder() {
+        PositionalTrade stagedTrade =
+                new PositionalTrade(
+                        "POS_2",
+                        "NIFTY 50",
+                        "BEAR_CALL_SPREAD",
+                        "CE",
+                        BigDecimal.valueOf(23500),
+                        "CE",
+                        BigDecimal.valueOf(23800),
+                        "MONTHLY",
+                        LocalDate.now(),
+                        BigDecimal.valueOf(23480.0),
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.valueOf(23700.0),
+                        BigDecimal.valueOf(22900.0),
+                        10,
+                        650,
+                        ExecutionMode.PAPER,
+                        "STAGED",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        PositionalTrade filled = executionService.executeEntry(stagedTrade);
+        assertNotNull(filled);
+        assertNotEquals("MONTHLY", filled.expiryDate());
+        assertFalse(filled.expiryDate().isBlank());
+    }
 }
