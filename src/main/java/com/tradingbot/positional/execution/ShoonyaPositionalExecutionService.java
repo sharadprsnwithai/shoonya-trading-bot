@@ -266,14 +266,19 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
         }
 
         // PnL Calculation
-        BigDecimal soldLegPnl = trade.sellEntryPremium().subtract(sellExitPremium);
-        BigDecimal hedgeLegPnl = buyHedgeExitPremium.subtract(trade.buyHedgeEntryPremium());
+        BigDecimal sellEntryPrem = trade.sellEntryPremium() != null ? trade.sellEntryPremium() : BigDecimal.ZERO;
+        BigDecimal buyHedgeEntryPrem = trade.buyHedgeEntryPremium() != null ? trade.buyHedgeEntryPremium() : BigDecimal.ZERO;
+        BigDecimal soldLegPnl = sellEntryPrem.subtract(sellExitPremium);
+        BigDecimal hedgeLegPnl = buyHedgeExitPremium.subtract(buyHedgeEntryPrem);
         BigDecimal netPnlPts = soldLegPnl.add(hedgeLegPnl);
 
         // Cap PnL between Max Profit (Net Credit) and Max Loss (Spread Width - Net Credit)
-        BigDecimal spreadWidth = trade.sellStrike().subtract(trade.buyHedgeStrike()).abs();
-        BigDecimal maxProfit = trade.netCredit();
-        BigDecimal maxLoss = spreadWidth.subtract(trade.netCredit()).negate();
+        BigDecimal sellStrike = trade.sellStrike() != null ? trade.sellStrike() : BigDecimal.ZERO;
+        BigDecimal buyHedgeStrike = trade.buyHedgeStrike() != null ? trade.buyHedgeStrike() : BigDecimal.ZERO;
+        BigDecimal spreadWidth = sellStrike.subtract(buyHedgeStrike).abs();
+        BigDecimal netCredit = trade.netCredit() != null ? trade.netCredit() : sellEntryPrem.subtract(buyHedgeEntryPrem);
+        BigDecimal maxProfit = netCredit;
+        BigDecimal maxLoss = spreadWidth.subtract(netCredit).negate();
 
         if (netPnlPts.compareTo(maxProfit) > 0) {
             netPnlPts = maxProfit;
@@ -375,6 +380,35 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
         if (cleanUnderlying.contains("NIFTY50") || cleanUnderlying.contains("NIFTY 50")) {
             cleanUnderlying = "NIFTY";
         }
-        return String.format("%s%.0f%s", cleanUnderlying, strike.doubleValue(), type.toUpperCase());
+        String expStr = resolveShoonyaExpiryFormat(expiry);
+        double strikeVal = strike != null ? strike.doubleValue() : 0.0;
+        String typeStr = type != null ? type.toUpperCase() : "CE";
+        return String.format("%s%s%.0f%s", cleanUnderlying, expStr, strikeVal, typeStr);
+    }
+
+    private String resolveShoonyaExpiryFormat(String expiry) {
+        if (expiry == null || expiry.isBlank() || expiry.equalsIgnoreCase("MONTHLY")) {
+            LocalDate expDate = resolveNextMonthlyExpiry();
+            int year = expDate.getYear() % 100;
+            String month =
+                    expDate.getMonth()
+                            .getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+                            .toUpperCase(java.util.Locale.ENGLISH);
+            return String.format("%02d%s", year, month);
+        }
+        if (expiry.length() == 5) {
+            return expiry.toUpperCase();
+        }
+        try {
+            LocalDate expDate = LocalDate.parse(expiry);
+            int year = expDate.getYear() % 100;
+            String month =
+                    expDate.getMonth()
+                            .getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+                            .toUpperCase(java.util.Locale.ENGLISH);
+            return String.format("%02d%s", year, month);
+        } catch (Exception e) {
+            return expiry.toUpperCase();
+        }
     }
 }

@@ -95,7 +95,13 @@ public class BollingerHaPositionalService {
             if (file.getParentFile() != null && !file.getParentFile().exists()) {
                 file.getParentFile().mkdirs();
             }
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file, state);
+            File tempFile = new File(file.getAbsolutePath() + ".tmp");
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, state);
+            java.nio.file.Files.move(
+                    tempFile.toPath(),
+                    file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
             log.debug("Persisted positional state to {}", config.getStateFilePath());
         } catch (IOException e) {
             log.error("Failed to persist positional state to {}", config.getStateFilePath(), e);
@@ -174,13 +180,19 @@ public class BollingerHaPositionalService {
     }
 
     private void checkNewAlertCandle(List<BollingerBandSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return;
+        }
         int n = snapshots.size();
         BollingerBandSnapshot today = snapshots.get(n - 1);
+        if (today.bbUpper() == null || today.bbLower() == null || today.haHigh() == null || today.haLow() == null) {
+            return;
+        }
 
         // Look back up to 5 bars for a Bollinger Band touch
         for (int i = n - 2; i >= Math.max(0, n - 6); i--) {
             BollingerBandSnapshot prior = snapshots.get(i);
-            if (prior.bbUpper() == null || prior.bbLower() == null) continue;
+            if (prior.bbUpper() == null || prior.bbLower() == null || prior.haHigh() == null || prior.haLow() == null) continue;
 
             boolean touchedUpper = prior.haHigh().compareTo(prior.bbUpper()) >= 0;
             boolean touchedLower = prior.haLow().compareTo(prior.bbLower()) <= 0;
@@ -343,8 +355,8 @@ public class BollingerHaPositionalService {
         String tradeId = "POS_" + System.currentTimeMillis();
         ExecutionMode mode =
                 ExecutionMode.valueOf(
-                        config.getExecutionMode().toUpperCase().contains("AUTO")
-                                ? "PAPER"
+                        config.getExecutionMode().toUpperCase().contains("LIVE")
+                                ? "LIVE"
                                 : "PAPER");
 
         int totalQty = config.getTotalQuantity();
@@ -390,12 +402,15 @@ public class BollingerHaPositionalService {
     }
 
     private void sendStagedApprovalAlert(PositionalTrade trade) {
+        if (trade == null) return;
+        BigDecimal entrySpot = trade.entrySpot() != null ? trade.entrySpot() : BigDecimal.ZERO;
+        BigDecimal slSpot = trade.slSpot() != null ? trade.slSpot() : entrySpot;
         BigDecimal estAtm =
-                trade.entrySpot()
+                entrySpot
                         .multiply(BigDecimal.valueOf(0.015))
                         .setScale(2, RoundingMode.HALF_UP);
         BigDecimal estHedge =
-                trade.entrySpot()
+                entrySpot
                         .multiply(BigDecimal.valueOf(0.0038))
                         .setScale(2, RoundingMode.HALF_UP);
         BigDecimal estNetCredit = estAtm.subtract(estHedge);
@@ -429,8 +444,8 @@ public class BollingerHaPositionalService {
                         estTotalCredit,
                         trade.quantity(),
                         trade.numLots(),
-                        trade.slSpot(),
-                        trade.entrySpot().subtract(trade.slSpot()).abs(),
+                        slSpot,
+                        entrySpot.subtract(slSpot).abs(),
                         trade.targetSpot());
 
         telegramService.sendInteractiveMessage(
@@ -513,7 +528,7 @@ public class BollingerHaPositionalService {
 
     private void manageActiveTrade(BollingerBandSnapshot today, BigDecimal currentSpot) {
         PositionalTrade trade = state.getActiveTrade();
-        if (trade == null) return;
+        if (trade == null || currentSpot == null || trade.slSpot() == null) return;
 
         boolean isBullPut = "BULL_PUT_SPREAD".equalsIgnoreCase(trade.strategyType());
 
@@ -659,8 +674,10 @@ public class BollingerHaPositionalService {
     }
 
     private BigDecimal roundToNearestStrike(BigDecimal spot, int interval) {
+        if (spot == null) return BigDecimal.ZERO;
+        int safeInterval = interval > 0 ? interval : 50;
         double val = spot.doubleValue();
-        double rounded = Math.round(val / interval) * interval;
+        double rounded = Math.round(val / safeInterval) * safeInterval;
         return BigDecimal.valueOf(rounded).setScale(2, RoundingMode.HALF_UP);
     }
 

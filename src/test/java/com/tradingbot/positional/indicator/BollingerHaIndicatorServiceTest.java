@@ -66,4 +66,30 @@ class BollingerHaIndicatorServiceTest {
         assertNotNull(lastSnapshot.haClose());
         assertTrue(lastSnapshot.haHigh().compareTo(lastSnapshot.haLow()) >= 0);
     }
+
+    @Test
+    void testInvalidParametersReturnEmpty() {
+        List<Candle> candles = List.of(
+                new Candle("NSE:NIFTY50", "D", Instant.now(), BigDecimal.valueOf(100), BigDecimal.valueOf(105), BigDecimal.valueOf(95), BigDecimal.valueOf(102), 1000L));
+
+        assertTrue(indicatorService.calculate(null, 20, 2.0).isEmpty());
+        assertTrue(indicatorService.calculate(List.of(), 20, 2.0).isEmpty());
+        assertTrue(indicatorService.calculate(candles, 0, 2.0).isEmpty());
+        assertTrue(indicatorService.calculate(candles, -5, 2.0).isEmpty());
+        assertTrue(indicatorService.calculate(candles, 20, -1.0).isEmpty());
+        assertTrue(indicatorService.calculate(candles, 20, Double.NaN).isEmpty());
+    }
+
+    @Test
+    void testCandleWithNullPricesGracefullyHandled() {
+        List<Candle> candles = new ArrayList<>();
+        Instant start = Instant.parse("2025-01-01T09:15:00Z");
+        for (int i = 0; i < 25; i++) {
+            candles.add(new Candle("NSE:NIFTY50", "D", start.plusSeconds(i * 86400), null, null, null, null, 1000L));
+        }
+
+        List<BollingerBandSnapshot> snapshots = indicatorService.calculate(candles, 20, 2.0);
+        assertNotNull(snapshots);
+        assertEquals(25, snapshots.size());
+    }
 }

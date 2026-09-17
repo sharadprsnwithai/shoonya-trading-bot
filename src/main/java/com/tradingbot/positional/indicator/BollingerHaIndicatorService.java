@@ -21,17 +21,21 @@ public class BollingerHaIndicatorService {
      */
     public List<BollingerBandSnapshot> calculate(
             List<Candle> candles, int period, double multiplier) {
-        if (candles == null || candles.isEmpty()) {
+        if (candles == null || candles.isEmpty() || period <= 0 || multiplier < 0 || Double.isNaN(multiplier)) {
             return List.of();
         }
 
         int n = candles.size();
         List<HeikinAshiCandle> haSeries = calculateHeikinAshi(candles);
+        if (haSeries.isEmpty()) {
+            return List.of();
+        }
         List<BollingerBandSnapshot> result = new ArrayList<>(n);
 
         double[] haCloses = new double[n];
         for (int i = 0; i < n; i++) {
-            haCloses[i] = haSeries.get(i).close().doubleValue();
+            BigDecimal c = haSeries.get(i).close();
+            haCloses[i] = c != null ? c.doubleValue() : 0.0;
         }
 
         for (int i = 0; i < n; i++) {
@@ -54,19 +58,30 @@ public class BollingerHaIndicatorService {
                 for (int j = i - period + 1; j <= i; j++) {
                     varSum += Math.pow(haCloses[j] - mean, 2);
                 }
-                double std = Math.sqrt(varSum / period);
+                double std = Math.sqrt(Math.max(0.0, varSum / period));
 
                 double u = mean + multiplier * std;
                 double l = mean - multiplier * std;
 
-                sma = BigDecimal.valueOf(mean).setScale(2, RoundingMode.HALF_UP);
-                upper = BigDecimal.valueOf(u).setScale(2, RoundingMode.HALF_UP);
-                lower = BigDecimal.valueOf(l).setScale(2, RoundingMode.HALF_UP);
-                bandwidth =
-                        (mean != 0)
-                                ? BigDecimal.valueOf((u - l) / mean)
-                                        .setScale(4, RoundingMode.HALF_UP)
-                                : BigDecimal.ZERO;
+                if (!Double.isNaN(mean) && !Double.isInfinite(mean)) {
+                    sma = BigDecimal.valueOf(mean).setScale(2, RoundingMode.HALF_UP);
+                }
+                if (!Double.isNaN(u) && !Double.isInfinite(u)) {
+                    upper = BigDecimal.valueOf(u).setScale(2, RoundingMode.HALF_UP);
+                }
+                if (!Double.isNaN(l) && !Double.isInfinite(l)) {
+                    lower = BigDecimal.valueOf(l).setScale(2, RoundingMode.HALF_UP);
+                }
+                if (mean > 0 && !Double.isNaN(u) && !Double.isNaN(l)) {
+                    double bw = (u - l) / mean;
+                    if (!Double.isNaN(bw) && !Double.isInfinite(bw)) {
+                        bandwidth = BigDecimal.valueOf(bw).setScale(4, RoundingMode.HALF_UP);
+                    } else {
+                        bandwidth = BigDecimal.ZERO;
+                    }
+                } else {
+                    bandwidth = BigDecimal.ZERO;
+                }
             }
 
             result.add(
@@ -100,15 +115,15 @@ public class BollingerHaIndicatorService {
         List<HeikinAshiCandle> haList = new ArrayList<>(n);
 
         Candle first = candles.get(0);
-        double haClose0 =
-                (first.open().doubleValue()
-                                + first.high().doubleValue()
-                                + first.low().doubleValue()
-                                + first.close().doubleValue())
-                        / 4.0;
-        double haOpen0 = (first.open().doubleValue() + first.close().doubleValue()) / 2.0;
-        double haHigh0 = Math.max(first.high().doubleValue(), Math.max(haOpen0, haClose0));
-        double haLow0 = Math.min(first.low().doubleValue(), Math.min(haOpen0, haClose0));
+        double fOpen = first.open() != null ? first.open().doubleValue() : 0.0;
+        double fHigh = first.high() != null ? first.high().doubleValue() : fOpen;
+        double fLow = first.low() != null ? first.low().doubleValue() : fOpen;
+        double fClose = first.close() != null ? first.close().doubleValue() : fOpen;
+
+        double haClose0 = (fOpen + fHigh + fLow + fClose) / 4.0;
+        double haOpen0 = (fOpen + fClose) / 2.0;
+        double haHigh0 = Math.max(fHigh, Math.max(haOpen0, haClose0));
+        double haLow0 = Math.min(fLow, Math.min(haOpen0, haClose0));
 
         haList.add(
                 new HeikinAshiCandle(
@@ -125,17 +140,15 @@ public class BollingerHaIndicatorService {
 
         for (int i = 1; i < n; i++) {
             Candle curr = candles.get(i);
-            double currHaClose =
-                    (curr.open().doubleValue()
-                                    + curr.high().doubleValue()
-                                    + curr.low().doubleValue()
-                                    + curr.close().doubleValue())
-                            / 4.0;
+            double cOpen = curr.open() != null ? curr.open().doubleValue() : prevHaClose;
+            double cHigh = curr.high() != null ? curr.high().doubleValue() : cOpen;
+            double cLow = curr.low() != null ? curr.low().doubleValue() : cOpen;
+            double cClose = curr.close() != null ? curr.close().doubleValue() : cOpen;
+
+            double currHaClose = (cOpen + cHigh + cLow + cClose) / 4.0;
             double currHaOpen = (prevHaOpen + prevHaClose) / 2.0;
-            double currHaHigh =
-                    Math.max(curr.high().doubleValue(), Math.max(currHaOpen, currHaClose));
-            double currHaLow =
-                    Math.min(curr.low().doubleValue(), Math.min(currHaOpen, currHaClose));
+            double currHaHigh = Math.max(cHigh, Math.max(currHaOpen, currHaClose));
+            double currHaLow = Math.min(cLow, Math.min(currHaOpen, currHaClose));
 
             haList.add(
                     new HeikinAshiCandle(
