@@ -143,8 +143,9 @@ public class RsiHighwayExecutionService {
 
         // Live Execution on Shoonya (CNC / Delivery)
         try {
+            String tradingSymbol = resolveTradingSymbol(signal.symbol(), "NSE");
             OrderRequest req = new OrderRequest(
-                    signal.symbol(),
+                    tradingSymbol,
                     "NSE",
                     TransactionType.BUY,
                     OrderType.MKT,
@@ -158,8 +159,8 @@ public class RsiHighwayExecutionService {
             OrderResponse resp = orderService.placeOrder(req);
             if (resp != null && resp.success()) {
                 String brokerOrderId = resp.orderId() != null ? resp.orderId() : orderId;
-                log.info("[LIVE-EXECUTION] Placed Shoonya CNC Buy for {} qty {} @ ₹{}. Broker OrderId: {}",
-                        signal.symbol(), trancheQty, signal.triggerPrice(), brokerOrderId);
+                log.info("[LIVE-EXECUTION] Placed Shoonya CNC Buy for {} ({}) qty {} @ ₹{}. Broker OrderId: {}",
+                        signal.symbol(), tradingSymbol, trancheQty, signal.triggerPrice(), brokerOrderId);
                 return Optional.of(new RsiHighwayTranche(signal.trancheNumber(), trancheQty, signal.triggerPrice(), executionTime, brokerOrderId));
             } else {
                 log.error("[LIVE-EXECUTION] Order placement failed for {}: {}", signal.symbol(), resp != null ? resp.message() : "null response");
@@ -194,9 +195,11 @@ public class RsiHighwayExecutionService {
 
         // Live Execution on Shoonya (Sell CNC)
         try {
+            String exchange = position.getExchange() != null ? position.getExchange() : "NSE";
+            String tradingSymbol = resolveTradingSymbol(position.getSymbol(), exchange);
             OrderRequest req = new OrderRequest(
-                    position.getSymbol(),
-                    position.getExchange() != null ? position.getExchange() : "NSE",
+                    tradingSymbol,
+                    exchange,
                     TransactionType.SELL,
                     OrderType.MKT,
                     ProductType.CNC,
@@ -210,8 +213,8 @@ public class RsiHighwayExecutionService {
             if (resp != null && resp.success()) {
                 position.setActive(false);
                 position.setLastEvaluatedAt(Instant.now());
-                log.info("[LIVE-EXIT] Shoonya Sell filled for {} ({} shares) @ ₹{}. Broker OrderId: {}",
-                        position.getSymbol(), position.getTotalQuantity(), exitPrice, resp.orderId());
+                log.info("[LIVE-EXIT] Shoonya Sell filled for {} ({}) ({} shares) @ ₹{}. Broker OrderId: {}",
+                        position.getSymbol(), tradingSymbol, position.getTotalQuantity(), exitPrice, resp.orderId());
                 return true;
             } else {
                 log.error("[LIVE-EXIT] Failed to place Shoonya Sell for {}: {}", position.getSymbol(), resp != null ? resp.message() : "null");
@@ -221,5 +224,17 @@ public class RsiHighwayExecutionService {
             log.error("[LIVE-EXIT] Exception closing live position for {}", position.getSymbol(), e);
             return false;
         }
+    }
+
+    private String resolveTradingSymbol(String symbol, String exchange) {
+        if (symbol == null) return "";
+        String clean = symbol.trim();
+        if (clean.startsWith("NSE:")) {
+            clean = clean.substring(4);
+        }
+        if ("NSE".equalsIgnoreCase(exchange) && !clean.endsWith("-EQ") && !clean.startsWith("NIFTY")) {
+            return clean + "-EQ";
+        }
+        return clean;
     }
 }

@@ -236,7 +236,7 @@ public class RsiHighwaySwingService {
                     position.addTranche(t);
                     // Trail SL up to the new swing bounce low
                     position.setCurrentSlPrice(Math.max(position.getCurrentSlPrice(), snap.signalCandleLow()));
-                    state.getRecentSignals().add(pyramidSignal);
+                    addRecentSignal(pyramidSignal);
                     notifyTelegram(String.format("🚀 *RSI Highway Pyramid Tranche %d*\nSymbol: %s\nPrice: ₹%.2f\nQty: %d\nNew Avg: ₹%.2f",
                             nextTranche, sym, currentPrice, t.quantity(), position.getAveragePrice()));
                 }
@@ -307,7 +307,7 @@ public class RsiHighwaySwingService {
                 RsiHighwayPosition position = new RsiHighwayPosition(snap.symbol(), "NSE", snap.currentPrice(), slPrice);
                 position.addTranche(t);
                 state.getPositions().put(snap.symbol(), position);
-                state.getRecentSignals().add(entrySignal);
+                addRecentSignal(entrySignal);
 
                 notifyTelegram(String.format("🟢 *RSI Highway New Entry*\nSymbol: %s\nEntry: ₹%.2f\nSL: ₹%.2f\nMonthly RSI: %.1f | Weekly: %.1f | Daily: %.1f\nPattern: %s",
                         snap.symbol(), snap.currentPrice(), slPrice, snap.monthlyRsi(), snap.weeklyRsi(), snap.dailyRsi(),
@@ -379,6 +379,14 @@ public class RsiHighwaySwingService {
             }
         }
         return currentPrice > lastTranche.entryPrice();
+    }
+
+    private void addRecentSignal(RsiHighwaySignal signal) {
+        if (signal == null) return;
+        state.getRecentSignals().add(signal);
+        while (state.getRecentSignals().size() > 100) {
+            state.getRecentSignals().remove(0);
+        }
     }
 
     private void archivePosition(RsiHighwayPosition position, double exitPrice) {
