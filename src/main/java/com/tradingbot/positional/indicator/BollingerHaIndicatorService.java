@@ -72,7 +72,7 @@ public class BollingerHaIndicatorService {
                 if (!Double.isNaN(l) && !Double.isInfinite(l)) {
                     lower = BigDecimal.valueOf(l).setScale(2, RoundingMode.HALF_UP);
                 }
-                if (mean > 0 && !Double.isNaN(u) && !Double.isNaN(l)) {
+                if (Math.abs(mean) > 1e-9 && !Double.isNaN(u) && !Double.isNaN(l)) {
                     double bw = (u - l) / mean;
                     if (!Double.isNaN(bw) && !Double.isInfinite(bw)) {
                         bandwidth = BigDecimal.valueOf(bw).setScale(4, RoundingMode.HALF_UP);

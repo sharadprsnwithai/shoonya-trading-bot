@@ -98,6 +98,11 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
 
                 log.info("[POSITIONAL LIVE] Placing BUY 0.20 Delta Hedge: {}", hedgeOrder);
                 OrderResponse hedgeResp = orderService.placeOrder(hedgeOrder);
+                if (hedgeResp == null || !hedgeResp.success()) {
+                    String err = hedgeResp != null ? hedgeResp.message() : "Null response";
+                    log.error("[POSITIONAL LIVE] Hedge leg placement failed: {}. Aborting sell leg.", err);
+                    throw new RuntimeException("Hedge leg order failed: " + err);
+                }
                 buyHedgeFillPremium = estimate02DeltaPremium(trade.entrySpot());
 
                 // 2. Second SELL ATM Leg
@@ -121,6 +126,11 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
 
                 log.info("[POSITIONAL LIVE] Placing SELL ATM Leg: {}", sellOrder);
                 OrderResponse sellResp = orderService.placeOrder(sellOrder);
+                if (sellResp == null || !sellResp.success()) {
+                    String err = sellResp != null ? sellResp.message() : "Null response";
+                    log.error("[POSITIONAL LIVE] Sell leg placement failed: {}", err);
+                    throw new RuntimeException("Sell leg order failed: " + err);
+                }
                 sellFillPremium = estimateAtmPremium(trade.entrySpot());
 
                 log.info(

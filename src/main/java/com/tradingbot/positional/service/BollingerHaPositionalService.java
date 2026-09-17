@@ -97,11 +97,18 @@ public class BollingerHaPositionalService {
             }
             File tempFile = new File(file.getAbsolutePath() + ".tmp");
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, state);
-            java.nio.file.Files.move(
-                    tempFile.toPath(),
-                    file.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            try {
+                java.nio.file.Files.move(
+                        tempFile.toPath(),
+                        file.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                java.nio.file.Files.move(
+                        tempFile.toPath(),
+                        file.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
             log.debug("Persisted positional state to {}", config.getStateFilePath());
         } catch (IOException e) {
             log.error("Failed to persist positional state to {}", config.getStateFilePath(), e);
