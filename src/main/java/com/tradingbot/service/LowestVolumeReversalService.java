@@ -554,6 +554,15 @@ public class LowestVolumeReversalService {
                 (cmp > 0) ? LowestVolumeDirection.LONG : LowestVolumeDirection.SHORT;
         setup.setDirection(dir);
 
+        // Market alignment check: Longs only when Nifty is Bullish, Shorts only when Nifty is Bearish
+        if (dir == LowestVolumeDirection.LONG && !niftyBullish) {
+            log.debug("[LVR] [{}] Long setup skipped: NIFTY 50 is Bearish.", symbol);
+            return;
+        } else if (dir == LowestVolumeDirection.SHORT && niftyBullish) {
+            log.debug("[LVR] [{}] Short setup skipped: NIFTY 50 is Bullish.", symbol);
+            return;
+        }
+
         // Evaluate lowest volume opposite-color candle printed at or after 09:30 AM
         evaluateLowestVolumeReversal(todayCandles, setup, currentAtr, nowTime);
     }
@@ -590,8 +599,7 @@ public class LowestVolumeReversalService {
             }
         }
 
-        // 2. Look for opposite-color candle printed >= 09:30 AM whose volume equals session min
-        // volume
+        // 2. Look for opposite-color candle printed >= 09:30 AM whose volume equals session min volume
         Candle lowestVolCandle = null;
         for (Candle c : todayCandles) {
             LocalTime cTime = c.timestamp().atZone(IST).toLocalTime();
@@ -800,7 +808,13 @@ public class LowestVolumeReversalService {
                     CompletableFuture.runAsync(
                             () -> {
                                 try {
-                                    String token = StockFnoRegistry.getToken(sym);
+                                    String token = marketDataService.resolveToken(sym);
+                                    if (token == null || token.isBlank()) {
+                                        token = StockFnoRegistry.getToken(sym);
+                                    }
+                                    if (token == null || token.isBlank()) {
+                                        token = sym;
+                                    }
                                     JsonNode quote = marketDataService.fetchQuote("NSE", token);
                                     if (quote != null && quote.has("lp")) {
                                         double lp = quote.path("lp").asDouble(0.0);
@@ -1086,7 +1100,7 @@ public class LowestVolumeReversalService {
                     continue;
                 }
 
-                // 2. Check Target 1 (1:2 RR) Partial Booking (on STOCK PRICE)
+                // 2. Check Target 1 (1:4 RR) Partial Booking (on STOCK PRICE)
                 if (!pos.isPartialBooked()) {
                     boolean targetHit =
                             (dir == LowestVolumeDirection.LONG)
@@ -1107,7 +1121,7 @@ public class LowestVolumeReversalService {
                                     "Target 1 Hit. 50% booked, SL to BE.");
                         }
                         log.info(
-                                "[LVR] [{}] Target 1 (1:2 RR) Hit! Booked 50%% at premium ₹{}, SL moved to Breakeven ₹{}",
+                                "[LVR] [{}] Target 1 (1:4 RR) Hit! Booked 50%% at premium ₹{}, SL moved to Breakeven ₹{}",
                                 symbol, exitPremium, pos.getEntryPremium());
                         if (telegramAlerts) {
                             telegramService.sendLvrPartialBookAlert(pos, pos.getPartialPnl());
@@ -1346,13 +1360,36 @@ public class LowestVolumeReversalService {
             // Search for the option scrip on NFO
             JsonNode searchResult = marketDataService.searchScrip("NFO", optionSymbol);
             if (searchResult == null || !searchResult.isArray() || searchResult.isEmpty()) {
+                searchResult = marketDataService.searchScrip("NFO", underlyingSymbol + " " + expiry);
+            }
+            if (searchResult == null || !searchResult.isArray() || searchResult.isEmpty()) {
                 log.warn("[LVR] Option scrip not found for {} on NFO", optionSymbol);
                 return null;
             }
 
-            // Use the first matching result to get the token
-            JsonNode firstMatch = searchResult.get(0);
-            String token = firstMatch.path("token").asText(null);
+            // Find matching tsym exactly or by strike and optionType
+            String token = null;
+            for (JsonNode item : searchResult) {
+                String tsym = item.path("tsym").asText("");
+                if (tsym.equalsIgnoreCase(optionSymbol)) {
+                    token = item.path("token").asText(null);
+                    break;
+                }
+            }
+            if (token == null || token.isBlank()) {
+                String strikeStr = String.valueOf(strike.intValue());
+                for (JsonNode item : searchResult) {
+                    String tsym = item.path("tsym").asText("").toUpperCase();
+                    if (tsym.contains(strikeStr) && tsym.endsWith(optionType.toUpperCase())) {
+                        token = item.path("token").asText(null);
+                        break;
+                    }
+                }
+            }
+            if (token == null || token.isBlank()) {
+                token = searchResult.get(0).path("token").asText(null);
+            }
+
             if (token == null || token.isBlank()) {
                 log.warn("[LVR] No token found for option {}", optionSymbol);
                 return null;

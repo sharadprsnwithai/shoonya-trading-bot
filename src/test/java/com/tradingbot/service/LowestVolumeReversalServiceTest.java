@@ -927,6 +927,48 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getTriggerCandle()).isNull();
     }
 
+    @Test
+    void testNiftyBearish_SkipsLongSetup() {
+        service.setNiftyBullish(false); // NIFTY is Bearish
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", null);
+        service.addActiveSetupForTesting("RELIANCE", setup);
+
+        Instant t0 = todayInstant(9, 15);
+        // Candle 1 (09:15): Green (Long signal)
+        Candle c1 = makeCandle("RELIANCE", t0, 2500, 2510, 2495, 2508, 30000);
+        Candle c2 = makeCandle("RELIANCE", t0.plus(15, ChronoUnit.MINUTES), 2508, 2509, 2502, 2503, 10000);
+
+        when(marketDataService.fetch5MinCandles(eq("RELIANCE"), anyInt()))
+                .thenReturn(generate2DayCandlesWithToday("RELIANCE", List.of(c1, c2)));
+
+        service.evaluateSymbolSetup("RELIANCE", LocalTime.of(9, 35));
+
+        // Setup should NOT be armed because NIFTY is Bearish
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(setup.getTriggerCandle()).isNull();
+    }
+
+    @Test
+    void testNiftyBullish_SkipsShortSetup() {
+        service.setNiftyBullish(true); // NIFTY is Bullish
+        LowestVolumeSetup setup = new LowestVolumeSetup("TATASTEEL", null);
+        service.addActiveSetupForTesting("TATASTEEL", setup);
+
+        Instant t0 = todayInstant(9, 15);
+        // Candle 1 (09:15): Red (Short signal)
+        Candle c1 = makeCandle("TATASTEEL", t0, 150, 151, 145, 147, 30000);
+        Candle c2 = makeCandle("TATASTEEL", t0.plus(15, ChronoUnit.MINUTES), 147, 149, 146, 148, 10000);
+
+        when(marketDataService.fetch5MinCandles(eq("TATASTEEL"), anyInt()))
+                .thenReturn(generate2DayCandlesWithToday("TATASTEEL", List.of(c1, c2)));
+
+        service.evaluateSymbolSetup("TATASTEEL", LocalTime.of(9, 35));
+
+        // Setup should NOT be armed because NIFTY is Bullish
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(setup.getTriggerCandle()).isNull();
+    }
+
     private List<Candle> generate2DayCandlesWithToday(String symbol, List<Candle> todayCandles) {
         List<Candle> list = new java.util.ArrayList<>();
         LocalDate yesterday = LocalDate.now(IST).minusDays(1);
