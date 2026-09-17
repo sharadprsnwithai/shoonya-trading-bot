@@ -53,14 +53,16 @@ public class RsiHighwayMarketBreadthService {
             }
         }
 
-        // Evaluate index drawdown
+        // Evaluate index drawdown over trailing 52-week window (250 trading bars)
         double indexDrawdown = 0.0;
         if (indexDailyCandles != null && !indexDailyCandles.isEmpty()) {
-            double indexHigh = Double.MIN_VALUE;
-            for (Candle c : indexDailyCandles) {
-                indexHigh = Math.max(indexHigh, c.high().doubleValue());
+            int indexSize = indexDailyCandles.size();
+            int indexWindow = Math.min(indexSize, ROLLING_52W_BARS);
+            double indexHigh = 0.0;
+            for (int i = indexSize - indexWindow; i < indexSize; i++) {
+                indexHigh = Math.max(indexHigh, indexDailyCandles.get(i).high().doubleValue());
             }
-            double latestIndexClose = indexDailyCandles.get(indexDailyCandles.size() - 1).close().doubleValue();
+            double latestIndexClose = indexDailyCandles.get(indexSize - 1).close().doubleValue();
             if (indexHigh > 0) {
                 indexDrawdown = (indexHigh - latestIndexClose) / indexHigh;
             }
@@ -100,7 +102,7 @@ public class RsiHighwayMarketBreadthService {
     private boolean isNear52WeekHigh(List<Candle> candles) {
         int size = candles.size();
         int window = Math.min(size, ROLLING_52W_BARS);
-        double maxHigh = Double.MIN_VALUE;
+        double maxHigh = 0.0;
 
         for (int i = size - window; i < size; i++) {
             maxHigh = Math.max(maxHigh, candles.get(i).high().doubleValue());

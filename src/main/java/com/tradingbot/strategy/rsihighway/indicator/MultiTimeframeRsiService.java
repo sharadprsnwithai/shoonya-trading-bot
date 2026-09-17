@@ -2,6 +2,7 @@ package com.tradingbot.strategy.rsihighway.indicator;
 
 import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.model.Candle;
+import com.tradingbot.strategy.rsihighway.config.RsiHighwayConfig;
 import com.tradingbot.strategy.rsihighway.model.MultiTimeframeRsiSnapshot;
 import com.tradingbot.strategy.rsihighway.model.PriceActionPattern;
 import com.tradingbot.util.CandleResamplingUtil;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,12 +29,22 @@ public class MultiTimeframeRsiService {
 
     private final TechnicalAnalysisService taService;
     private final PriceActionPatternDetector patternDetector;
+    private final RsiHighwayConfig config;
 
     public MultiTimeframeRsiService(
             TechnicalAnalysisService taService,
             PriceActionPatternDetector patternDetector) {
+        this(taService, patternDetector, null);
+    }
+
+    @Autowired
+    public MultiTimeframeRsiService(
+            TechnicalAnalysisService taService,
+            PriceActionPatternDetector patternDetector,
+            @Autowired(required = false) RsiHighwayConfig config) {
         this.taService = taService;
         this.patternDetector = patternDetector;
+        this.config = config;
     }
 
     /**
@@ -96,8 +108,13 @@ public class MultiTimeframeRsiService {
         }
 
         // 7. Detect Price Action Pattern on latest daily candle
+        double minMonthly = config != null ? config.getMonthlyRsiThreshold() : 60.0;
+        double minWeekly = config != null ? config.getWeeklyRsiThreshold() : 60.0;
+        double dailyLower = config != null ? config.getDailyRsiLower() : 48.0;
+        double dailyUpper = config != null ? config.getDailyRsiUpper() : 55.0;
+
         Optional<PriceActionPattern> pattern = patternDetector.detectPattern(dailyCandles, latestDailyAtr);
-        boolean isRsiBounceOrCross = patternDetector.isRsi50BounceOrCross(validDailyRsis);
+        boolean isRsiBounceOrCross = patternDetector.isRsi50BounceOrCross(validDailyRsis, dailyLower, dailyUpper, 50.0, 65.0);
 
         Candle signalCandle = dailyCandles.get(dailySize - 1);
         double currentPrice = signalCandle.close().doubleValue();
@@ -105,8 +122,8 @@ public class MultiTimeframeRsiService {
         double signalLow = signalCandle.low().doubleValue();
         Instant timestamp = signalCandle.timestamp();
 
-        boolean isHighwayCandidate = (!Double.isNaN(latestMonthlyRsi) && latestMonthlyRsi >= 60.0)
-                && (!Double.isNaN(latestWeeklyRsi) && latestWeeklyRsi >= 60.0);
+        boolean isHighwayCandidate = (!Double.isNaN(latestMonthlyRsi) && latestMonthlyRsi >= minMonthly)
+                && (!Double.isNaN(latestWeeklyRsi) && latestWeeklyRsi >= minWeekly);
 
         boolean isDailySetupValid = isRsiBounceOrCross && pattern.isPresent();
 

@@ -165,7 +165,9 @@ public class ShoonyaMarketDataService {
         }
         String clean = symbol.toUpperCase().trim();
         if (clean.startsWith("NSE:")) clean = clean.substring(4);
-        if ("NIFTY".equalsIgnoreCase(clean)) clean = "NIFTY50";
+        if ("NIFTY".equalsIgnoreCase(clean) || "NIFTY 50".equalsIgnoreCase(clean) || "NIFTY_50".equalsIgnoreCase(clean)) {
+            clean = "NIFTY50";
+        }
 
         if (tokenCache.containsKey(clean)) {
             String cached = tokenCache.get(clean);

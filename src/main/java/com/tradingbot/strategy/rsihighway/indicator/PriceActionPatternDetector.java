@@ -68,7 +68,7 @@ public class PriceActionPatternDetector {
 
         // 4. Horizontal Consolidation Breakout (past 5 candles)
         if (size >= 6 && isGreen) {
-            double maxPriorHigh = Double.MIN_VALUE;
+            double maxPriorHigh = 0.0;
             for (int i = size - 6; i < size - 1; i++) {
                 maxPriorHigh = Math.max(maxPriorHigh, candles.get(i).high().doubleValue());
             }
@@ -87,6 +87,25 @@ public class PriceActionPatternDetector {
      * @return true if an RSI 50 bounce or crossover is confirmed
      */
     public boolean isRsi50BounceOrCross(List<Double> rsiSeries) {
+        return isRsi50BounceOrCross(rsiSeries, 48.0, 55.0, 50.0, 65.0);
+    }
+
+    /**
+     * Checks if the recent Daily RSI series exhibits an RSI 50 bounce or crossover with custom bounds.
+     *
+     * @param rsiSeries Chronological list of Daily RSI(14) values
+     * @param lowerBound Lower bound of the pullback dip zone (e.g. 48.0)
+     * @param upperBound Upper bound of the pullback dip zone (e.g. 55.0)
+     * @param minTrigger Minimum RSI level to trigger (e.g. 50.0)
+     * @param maxUpperLimit Maximum allowed RSI on entry to avoid overbought chase (e.g. 65.0)
+     * @return true if an RSI bounce or crossover is confirmed
+     */
+    public boolean isRsi50BounceOrCross(
+            List<Double> rsiSeries,
+            double lowerBound,
+            double upperBound,
+            double minTrigger,
+            double maxUpperLimit) {
         if (rsiSeries == null || rsiSeries.size() < 2) {
             return false;
         }
@@ -99,27 +118,27 @@ public class PriceActionPatternDetector {
             return false;
         }
 
-        // Must not be heavily overbought on entry (capped at 65.0)
-        if (currRsi > 65.0) {
+        // Must not be heavily overbought on entry (capped at maxUpperLimit)
+        if (currRsi > maxUpperLimit) {
             return false;
         }
 
         // Setup A: RSI 50 Pullback & Bounce
-        // Previous RSI dipped into [48.0, 55.0] and current RSI turns up and is >= 50.0
-        if (prevRsi >= 48.0 && prevRsi <= 55.0 && currRsi > prevRsi && currRsi >= 50.0) {
+        // Previous RSI dipped into [lowerBound, upperBound] and current RSI turns up and is >= minTrigger
+        if (prevRsi >= lowerBound && prevRsi <= upperBound && currRsi > prevRsi && currRsi >= minTrigger) {
             return true;
         }
 
         // Setup B: RSI 50 Fresh Crossover
-        // Previous RSI was < 50.0 and current RSI crossed above 50.0
-        if (prevRsi < 50.0 && currRsi >= 50.0 && currRsi > prevRsi) {
+        // Previous RSI was < minTrigger and current RSI crossed above minTrigger
+        if (prevRsi < minTrigger && currRsi >= minTrigger && currRsi > prevRsi) {
             return true;
         }
 
         // 2-bar lag bounce check (e.g. dipped 2 bars ago)
         if (size >= 3) {
             double prevPrevRsi = rsiSeries.get(size - 3);
-            if (!Double.isNaN(prevPrevRsi) && prevPrevRsi >= 48.0 && prevPrevRsi <= 55.0 && currRsi >= 50.0 && currRsi > prevRsi) {
+            if (!Double.isNaN(prevPrevRsi) && prevPrevRsi >= lowerBound && prevPrevRsi <= upperBound && currRsi >= minTrigger && currRsi > prevRsi) {
                 return true;
             }
         }

@@ -56,7 +56,8 @@ public class RsiHighwayExecutionService {
             return 0;
         }
 
-        double riskPerShare = Math.max(0.5, entryPrice - slPrice);
+        double minRiskDistance = Math.max(0.05, 0.005 * entryPrice);
+        double riskPerShare = Math.max(minRiskDistance, entryPrice - slPrice);
         double maxRiskBudget = accountCapital * (rptPercent / 100.0);
         int qtyByRisk = (int) Math.floor(maxRiskBudget / riskPerShare);
 

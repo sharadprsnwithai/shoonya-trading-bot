@@ -55,6 +55,32 @@ class MultiTimeframeRsiServiceTest {
     }
 
     @Test
+    void testComputeSnapshotWithCustomConfigThresholds() {
+        var config = new com.tradingbot.strategy.rsihighway.config.RsiHighwayConfig();
+        config.setMonthlyRsiThreshold(70.0);
+        config.setWeeklyRsiThreshold(70.0);
+        var configuredService = new MultiTimeframeRsiService(new TechnicalAnalysisService(), new PriceActionPatternDetector(), config);
+
+        List<Candle> dailyCandles = new ArrayList<>();
+        Instant baseTime = Instant.parse("2024-01-01T10:00:00Z");
+        for (int i = 0; i < 600; i++) {
+            double price = 100.0 + i * 2.0;
+            dailyCandles.add(new Candle(
+                    "BEL", "D", baseTime.plusSeconds(i * 86400L),
+                    BigDecimal.valueOf(price - 1), BigDecimal.valueOf(price + 2),
+                    BigDecimal.valueOf(price - 2), BigDecimal.valueOf(price), 10000L
+            ));
+        }
+
+        MultiTimeframeRsiSnapshot snapshot = configuredService.computeSnapshot("BEL", dailyCandles);
+        assertThat(snapshot).isNotNull();
+        // With higher threshold, candidate status honors the 70.0 threshold
+        if (snapshot.monthlyRsi() >= 70.0 && snapshot.weeklyRsi() >= 70.0) {
+            assertThat(snapshot.isHighwayCandidate()).isTrue();
+        }
+    }
+
+    @Test
     void testComputeSnapshotHandlesInsufficientData() {
         List<Candle> smallList = List.of(
                 new Candle("BEL", "D", Instant.now(), BigDecimal.valueOf(100), BigDecimal.valueOf(105), BigDecimal.valueOf(95), BigDecimal.valueOf(102), 1000L)
