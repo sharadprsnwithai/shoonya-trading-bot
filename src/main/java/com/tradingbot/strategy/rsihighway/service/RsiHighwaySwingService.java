@@ -420,19 +420,19 @@ public class RsiHighwaySwingService {
     }
 
     // Accessors
-    public RsiHighwayState getState() {
+    public synchronized RsiHighwayState getState() {
         return state;
     }
 
-    public Map<String, RsiHighwayPosition> getActivePositions() {
-        return Collections.unmodifiableMap(state.getPositions());
+    public synchronized Map<String, RsiHighwayPosition> getActivePositions() {
+        return Collections.unmodifiableMap(new java.util.LinkedHashMap<>(state.getPositions()));
     }
 
-    public List<RsiHighwayPosition> getClosedPositions() {
-        return Collections.unmodifiableList(state.getClosedPositions());
+    public synchronized List<RsiHighwayPosition> getClosedPositions() {
+        return Collections.unmodifiableList(new ArrayList<>(state.getClosedPositions()));
     }
 
-    public MarketBreadthSnapshot getLastBreadthSnapshot() {
+    public synchronized MarketBreadthSnapshot getLastBreadthSnapshot() {
         return state.getLastBreadthSnapshot();
     }
 }

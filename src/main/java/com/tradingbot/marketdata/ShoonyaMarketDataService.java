@@ -480,10 +480,13 @@ public class ShoonyaMarketDataService {
                         long volume = node.path("v").asLong(0);
 
                         Instant timestamp = parseTimestamp(node);
-                        candles.add(
-                                new Candle(
-                                        symbol, timeframe, timestamp, open, high, low, close,
-                                        volume));
+                        if (open.compareTo(BigDecimal.ZERO) > 0 && high.compareTo(BigDecimal.ZERO) > 0
+                                && low.compareTo(BigDecimal.ZERO) > 0 && close.compareTo(BigDecimal.ZERO) > 0) {
+                            candles.add(
+                                    new Candle(
+                                            symbol, timeframe, timestamp, open, high, low, close,
+                                            volume));
+                        }
                     }
                 }
             } else if (root.isObject() && "Not_Ok".equalsIgnoreCase(root.path("stat").asText())) {
