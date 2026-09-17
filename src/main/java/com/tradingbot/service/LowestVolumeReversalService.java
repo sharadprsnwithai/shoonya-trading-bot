@@ -1358,7 +1358,8 @@ public class LowestVolumeReversalService {
                     return new StockQuoteSnapshot(symbol, lp, c, o, pct);
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.debug("[LVR] Error fetching stock snapshot for {}: {}", symbol, e.getMessage());
         }
         return null;
     }

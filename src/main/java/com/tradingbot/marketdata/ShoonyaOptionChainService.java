@@ -463,6 +463,7 @@ public class ShoonyaOptionChainService {
             }
             return objectMapper.readTree(resp.body());
         } catch (Exception e) {
+            log.debug("GetQuotes API threw exception for token {}: {}", token, e.getMessage());
             return null;
         }
     }

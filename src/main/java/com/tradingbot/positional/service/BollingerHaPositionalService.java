@@ -150,7 +150,8 @@ public class BollingerHaPositionalService {
                         currentSpot = BigDecimal.valueOf(lpVal);
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.debug("Live spot LTP quote fetch failed for {}, using last candle close: {}", config.getSymbol(), e.getMessage());
             }
 
             evaluateSnapshots(snapshots, currentSpot);
@@ -648,7 +649,8 @@ public class BollingerHaPositionalService {
             if (recent != null && !recent.isEmpty()) {
                 currentSpot = recent.get(recent.size() - 1).close();
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.debug("Failed to fetch recent candles for spot exit, using entry spot: {}", e.getMessage());
         }
 
         exitActiveTrade(currentSpot, exitReason != null ? exitReason : "MANUAL_EXIT");

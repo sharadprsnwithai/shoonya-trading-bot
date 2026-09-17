@@ -105,7 +105,8 @@ public class ShoonyaConfig {
                 this.publicIp = ip;
                 return ip;
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.debug("Dynamic public IP resolution from ipify failed ({}), using fallback.", e.getMessage());
         }
         return "58.84.60.54";
     }

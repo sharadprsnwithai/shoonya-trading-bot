@@ -557,7 +557,8 @@ public class ShoonyaMarketDataService {
                 try {
                     LocalDateTime ldt = LocalDateTime.parse(timeStr, FORMATTER_DASH);
                     return ldt.atZone(IST).toInstant();
-                } catch (Exception ignored) {
+                } catch (Exception e2) {
+                    log.debug("Failed parsing Shoonya candle time string '{}', defaulting to now", timeStr);
                 }
             }
         }
