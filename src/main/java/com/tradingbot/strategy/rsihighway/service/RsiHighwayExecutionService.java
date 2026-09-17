@@ -75,20 +75,37 @@ public class RsiHighwayExecutionService {
      * @return Executed RsiHighwayTranche or empty on failure
      */
     public Optional<RsiHighwayTranche> executeEntrySignal(RsiHighwaySignal signal, double availableCapital) {
+        return executeEntrySignal(signal, availableCapital, availableCapital);
+    }
+
+    /**
+     * Executes an entry signal (Tranche 1, 2, or 3) sized by total portfolio equity and constrained by available cash.
+     *
+     * @param signal Generated buy signal
+     * @param portfolioEquity Total portfolio equity for percentage-based position sizing
+     * @param availableCash Cash balance available for execution
+     * @return Executed RsiHighwayTranche or empty on failure
+     */
+    public Optional<RsiHighwayTranche> executeEntrySignal(
+            RsiHighwaySignal signal,
+            double portfolioEquity,
+            double availableCash) {
         if (signal == null) return Optional.empty();
 
-        double capital = availableCapital > 0 ? availableCapital : config.getPaperCapital();
+        double equity = portfolioEquity > 0 ? portfolioEquity : config.getPaperCapital();
+        double cash = availableCash > 0 ? availableCash : equity;
+
         int baseQty = calculatePositionSize(
                 signal.triggerPrice(),
                 signal.initialSlPrice(),
-                capital,
+                equity,
                 config.getRiskPerTradePercent(),
                 config.getMaxCapitalPerStockPercent()
         );
 
         if (baseQty <= 0) {
-            log.warn("[RSI-HIGHWAY] Position size computed as 0 for {} (Capital ₹{}, Price ₹{}). Skipping entry.",
-                    signal.symbol(), capital, signal.triggerPrice());
+            log.warn("[RSI-HIGHWAY] Position size computed as 0 for {} (Equity ₹{}, Price ₹{}). Skipping entry.",
+                    signal.symbol(), equity, signal.triggerPrice());
             return Optional.empty();
         }
 
@@ -100,11 +117,18 @@ public class RsiHighwayExecutionService {
             trancheQty = Math.max(1, (int) Math.round(baseQty * 0.25));
         }
 
+        // Check against available cash and cap if necessary
         double totalRequiredCapital = trancheQty * signal.triggerPrice();
-        if (totalRequiredCapital > capital) {
-            log.warn("[RSI-HIGHWAY] Required capital ₹{} exceeds available capital ₹{} for {}. Skipping entry.",
-                    totalRequiredCapital, capital, signal.symbol());
-            return Optional.empty();
+        if (totalRequiredCapital > cash) {
+            int affordableQty = (int) Math.floor(cash / signal.triggerPrice());
+            if (affordableQty <= 0) {
+                log.warn("[RSI-HIGHWAY] Required capital ₹{} exceeds available cash ₹{} for {}. Skipping entry.",
+                        totalRequiredCapital, cash, signal.symbol());
+                return Optional.empty();
+            }
+            log.info("[RSI-HIGHWAY] Capping tranche qty from {} to {} based on available cash ₹{} for {}",
+                    trancheQty, affordableQty, cash, signal.symbol());
+            trancheQty = affordableQty;
         }
 
         String orderId = "RSI_HW_" + UUID.randomUUID().toString().substring(0, 8);
@@ -158,10 +182,10 @@ public class RsiHighwayExecutionService {
         if (position == null || !position.isActive()) return false;
 
         String orderId = "EXIT_HW_" + UUID.randomUUID().toString().substring(0, 8);
-        position.setActive(false);
-        position.setLastEvaluatedAt(Instant.now());
 
         if (config.isPaperTrading()) {
+            position.setActive(false);
+            position.setLastEvaluatedAt(Instant.now());
             log.info("[PAPER-EXIT] Closed 100% position in {} ({} shares) @ ₹{}. Reason: {}. OrderId: {}",
                     position.getSymbol(), position.getTotalQuantity(), exitPrice, reason, orderId);
             return true;
@@ -183,6 +207,8 @@ public class RsiHighwayExecutionService {
 
             OrderResponse resp = orderService.placeOrder(req);
             if (resp != null && resp.success()) {
+                position.setActive(false);
+                position.setLastEvaluatedAt(Instant.now());
                 log.info("[LIVE-EXIT] Shoonya Sell filled for {} ({} shares) @ ₹{}. Broker OrderId: {}",
                         position.getSymbol(), position.getTotalQuantity(), exitPrice, resp.orderId());
                 return true;

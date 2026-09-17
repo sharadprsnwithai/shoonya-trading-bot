@@ -79,4 +79,12 @@ public class RsiHighwayState {
     public void setAvailableCapital(double availableCapital) {
         this.availableCapital = availableCapital;
     }
+
+    public double getTotalPortfolioEquity() {
+        double posValue = positions.values().stream()
+                .filter(RsiHighwayPosition::isActive)
+                .mapToDouble(p -> p.getTotalQuantity() * p.getAveragePrice())
+                .sum();
+        return availableCapital + posValue;
+    }
 }

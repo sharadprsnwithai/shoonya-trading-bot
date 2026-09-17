@@ -139,13 +139,22 @@ public class RsiHighwaySwingService {
             }
         }
 
-        MarketBreadthSnapshot breadth = breadthService.evaluateBreadth(
-                candlesMap,
-                indexCandles,
-                config.getMin52wLeaders(),
-                config.getMaxIndexDrawdownPct()
-        );
-        state.setLastBreadthSnapshot(breadth);
+        MarketBreadthSnapshot breadth;
+        if (symbols.size() >= config.getMin52wLeaders()) {
+            breadth = breadthService.evaluateBreadth(
+                    candlesMap,
+                    indexCandles,
+                    config.getMin52wLeaders(),
+                    config.getMaxIndexDrawdownPct()
+            );
+            state.setLastBreadthSnapshot(breadth);
+        } else if (state.getLastBreadthSnapshot() != null) {
+            breadth = state.getLastBreadthSnapshot();
+            log.info("[RSI-HIGHWAY] Reusing active market breadth snapshot for partial scan of {} symbols (Highway Open: {})",
+                    symbols.size(), breadth.isHighwayOpen());
+        } else {
+            breadth = new MarketBreadthSnapshot(true, symbols.size(), symbols.size(), symbols, 0.0, "Manual single-stock scan bypass", Instant.now());
+        }
 
         // 2. Evaluate Exits & Pyramids for Existing Positions
         List<String> activeSymbols = new ArrayList<>(state.getPositions().keySet());
@@ -210,10 +219,14 @@ public class RsiHighwaySwingService {
                         snap.dailyAtr(),
                         snap.pattern().orElse(null),
                         "Pyramid Tranche " + nextTranche + " Bounce",
-                        Instant.now()
+                        snap.timestamp() != null ? snap.timestamp() : Instant.now()
                 );
 
-                Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(pyramidSignal, state.getAvailableCapital());
+                Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(
+                        pyramidSignal,
+                        state.getTotalPortfolioEquity(),
+                        state.getAvailableCapital()
+                );
                 if (tranche.isPresent()) {
                     RsiHighwayTranche t = tranche.get();
                     state.setAvailableCapital(Math.max(0.0, state.getAvailableCapital() - (t.quantity() * t.entryPrice())));
@@ -277,10 +290,14 @@ public class RsiHighwaySwingService {
                     snap.dailyAtr(),
                     snap.pattern().orElse(null),
                     "Initial Setup Confirmation (" + snap.pattern().map(PriceActionPattern::getDisplayName).orElse("Bounce") + ")",
-                    Instant.now()
+                    snap.timestamp() != null ? snap.timestamp() : Instant.now()
             );
 
-            Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(entrySignal, state.getAvailableCapital());
+            Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(
+                    entrySignal,
+                    state.getTotalPortfolioEquity(),
+                    state.getAvailableCapital()
+            );
             if (tranche.isPresent()) {
                 RsiHighwayTranche t = tranche.get();
                 state.setAvailableCapital(Math.max(0.0, state.getAvailableCapital() - (t.quantity() * t.entryPrice())));

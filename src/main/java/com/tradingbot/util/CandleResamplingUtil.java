@@ -15,7 +15,7 @@ import java.util.Map;
 public final class CandleResamplingUtil {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final WeekFields WEEK_FIELDS = WeekFields.of(Locale.getDefault());
+    private static final WeekFields WEEK_FIELDS = WeekFields.ISO;
 
     private CandleResamplingUtil() {}
 

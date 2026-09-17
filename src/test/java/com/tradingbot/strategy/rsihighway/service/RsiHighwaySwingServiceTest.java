@@ -106,6 +106,30 @@ class RsiHighwaySwingServiceTest {
     }
 
     @Test
+    void testSingleStockScanPreservesPriorBreadth() {
+        // Cached breadth is open
+        MarketBreadthSnapshot cachedBreadth = new MarketBreadthSnapshot(true, 500, 30, List.of("TCS"), 0.03, "Healthy", Instant.now());
+        swingService.getState().setLastBreadthSnapshot(cachedBreadth);
+
+        List<Candle> candles = createDummyDailyCandles(300, 3500.0);
+        when(marketDataService.fetchDailyCandles(eq("TCS"), anyInt())).thenReturn(candles);
+
+        MultiTimeframeRsiSnapshot rsiSnapshot = new MultiTimeframeRsiSnapshot(
+                "TCS", 65.0, 62.0, 51.5, 60.0, 3500.0, 3520.0, 3450.0,
+                Optional.of(PriceActionPattern.BULLISH_ENGULFING), true, true, Instant.now()
+        );
+        when(multiTimeframeRsiService.computeSnapshot(eq("TCS"), any())).thenReturn(rsiSnapshot);
+        when(executionService.executeEntrySignal(any(), anyDouble(), anyDouble()))
+                .thenReturn(Optional.of(new RsiHighwayTranche(1, 10, 3500.0, Instant.now(), "ORD_TEST_01")));
+
+        // Execute scan for single stock
+        swingService.evaluateEodScanForSymbols(List.of("TCS"));
+
+        // Stock should be entered because cached breadth was open
+        assertThat(swingService.getActivePositions()).containsKey("TCS");
+    }
+
+    @Test
     void testEvaluateEodScanGeneratesInitialEntry() {
         when(breadthService.evaluateBreadth(any(), any(), anyInt(), anyDouble()))
                 .thenReturn(new MarketBreadthSnapshot(true, 500, 25, List.of("TCS"), 0.05, "Healthy regime", Instant.now()));
@@ -129,7 +153,7 @@ class RsiHighwaySwingServiceTest {
         );
         when(multiTimeframeRsiService.computeSnapshot(eq("TCS"), any())).thenReturn(rsiSnapshot);
 
-        when(executionService.executeEntrySignal(any(), anyDouble()))
+        when(executionService.executeEntrySignal(any(), anyDouble(), anyDouble()))
                 .thenReturn(Optional.of(new RsiHighwayTranche(1, 10, 3500.0, Instant.now(), "ORD_TEST_01")));
 
         swingService.evaluateEodScanForSymbols(List.of("TCS"));
