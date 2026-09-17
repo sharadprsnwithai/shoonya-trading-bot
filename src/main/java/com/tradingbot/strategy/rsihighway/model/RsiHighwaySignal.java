@@ -16,7 +16,11 @@ public record RsiHighwaySignal(
         double weeklyRsi,
         double dailyRsi,
         double dailyAtr,
-        Optional<PriceActionPattern> pattern,
+        PriceActionPattern pattern,
         String reason,
         Instant generatedAt
-) {}
+) {
+    public Optional<PriceActionPattern> optionalPattern() {
+        return Optional.ofNullable(pattern);
+    }
+}

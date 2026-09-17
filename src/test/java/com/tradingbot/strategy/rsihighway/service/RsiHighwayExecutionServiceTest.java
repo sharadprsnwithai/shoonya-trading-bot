@@ -65,7 +65,7 @@ class RsiHighwayExecutionServiceTest {
                 62.0,
                 52.0,
                 20.0,
-                Optional.of(PriceActionPattern.BULLISH_ENGULFING),
+                PriceActionPattern.BULLISH_ENGULFING,
                 "Initial Setup",
                 Instant.now()
         );

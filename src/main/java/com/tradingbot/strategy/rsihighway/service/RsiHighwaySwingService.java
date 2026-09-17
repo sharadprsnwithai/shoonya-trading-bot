@@ -195,7 +195,7 @@ public class RsiHighwaySwingService {
                         snap.weeklyRsi(),
                         snap.dailyRsi(),
                         snap.dailyAtr(),
-                        snap.pattern(),
+                        snap.pattern().orElse(null),
                         "Pyramid Tranche " + nextTranche + " Bounce",
                         Instant.now()
                 );
@@ -260,7 +260,7 @@ public class RsiHighwaySwingService {
                     snap.weeklyRsi(),
                     snap.dailyRsi(),
                     snap.dailyAtr(),
-                    snap.pattern(),
+                    snap.pattern().orElse(null),
                     "Initial Setup Confirmation (" + snap.pattern().map(PriceActionPattern::getDisplayName).orElse("Bounce") + ")",
                     Instant.now()
             );
