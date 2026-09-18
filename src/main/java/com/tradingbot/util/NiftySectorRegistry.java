@@ -11,6 +11,19 @@ import java.util.Map;
  */
 public final class NiftySectorRegistry {
 
+    public static final List<String> NIFTY_50_CONSTITUENTS = List.of(
+            "ADANIENT", "ADANIPORTS", "APOLLOHOSP", "ASIANPAINT", "AXISBANK",
+            "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BEL", "BPCL",
+            "BHARTIARTL", "BRITANNIA", "CIPLA", "COALINDIA", "DRREDDY",
+            "EICHERMOT", "GRASIM", "HCLTECH", "HDFCBANK", "HDFCLIFE",
+            "HEROMOTOCO", "HINDALCO", "HINDUNILVR", "ICICIBANK", "INDUSINDBK",
+            "INFY", "ITC", "JSWSTEEL", "KOTAKBANK", "LT",
+            "M&M", "MARUTI", "NESTLEIND", "NTPC", "ONGC",
+            "POWERGRID", "RELIANCE", "SBILIFE", "SHRIRAMFIN", "SBIN",
+            "SUNPHARMA", "TCS", "TATACONSUM", "TATAMOTORS", "TATASTEEL",
+            "TECHM", "TITAN", "TRENT", "ULTRACEMCO", "WIPRO"
+    );
+
     private static final Map<String, List<String>> SECTORS = new LinkedHashMap<>();
     private static final Map<String, String> SYMBOL_TO_SECTOR = new LinkedHashMap<>();
 

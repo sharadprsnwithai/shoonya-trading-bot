@@ -530,8 +530,7 @@ public class LowestVolumeReversalService {
                 if (spotLtp <= 0) continue;
 
                 BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
-                double optLtp = fetchOptionLtp(symbol, pos.getOptionType(), pos.getAtmStrike());
-                BigDecimal optionPremium = BigDecimal.valueOf(optLtp > 0 ? optLtp : pos.getEntryPremium().doubleValue());
+                BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
 
                 // 1. Check Stop Loss breach on Spot
                 boolean slHit = false;
@@ -635,8 +634,9 @@ public class LowestVolumeReversalService {
             String symbol = entry.getKey();
             LowestVolumePaperPosition pos = entry.getValue();
 
-            double optLtp = fetchOptionLtp(symbol, pos.getOptionType(), pos.getAtmStrike());
-            BigDecimal optionPremium = BigDecimal.valueOf(optLtp > 0 ? optLtp : pos.getEntryPremium().doubleValue());
+            double spotLtp = fetchLiveSpotPrice(symbol);
+            BigDecimal spotPrice = BigDecimal.valueOf(spotLtp > 0 ? spotLtp : pos.getStockEntryPrice().doubleValue());
+            BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
 
             pos.close(optionPremium, "EOD_1515_HARD_EXIT", Instant.now());
             tradeHistory.add(pos);
@@ -692,6 +692,29 @@ public class LowestVolumeReversalService {
         return 0.0;
     }
 
+    public BigDecimal estimateOptionPremium(LowestVolumePaperPosition pos, BigDecimal currentSpot) {
+        if (pos == null || currentSpot == null) return BigDecimal.valueOf(20.0);
+        BigDecimal entrySpot = pos.getStockEntryPrice();
+        BigDecimal entryPrem = pos.getEntryPremium();
+        if (entrySpot == null || entryPrem == null || entrySpot.compareTo(BigDecimal.ZERO) <= 0) {
+            return entryPrem != null ? entryPrem : BigDecimal.valueOf(20.0);
+        }
+
+        BigDecimal delta = BigDecimal.valueOf(0.50); // ATM Delta
+        BigDecimal spotMove;
+        if (pos.getDirection() == LowestVolumeDirection.SHORT) {
+            spotMove = entrySpot.subtract(currentSpot); // Profitable when spot falls
+        } else {
+            spotMove = currentSpot.subtract(entrySpot); // Profitable when spot rises
+        }
+
+        BigDecimal estPrem = entryPrem.add(spotMove.multiply(delta));
+        if (estPrem.compareTo(BigDecimal.valueOf(0.50)) < 0) {
+            estPrem = BigDecimal.valueOf(0.50);
+        }
+        return estPrem.setScale(2, RoundingMode.HALF_UP);
+    }
+
     private double fetchOptionLtp(String symbol, String optionType, BigDecimal strike) {
         if (marketDataService == null) return 0.0;
         return 0.0; // In live trading, option chain service resolves exact contract LTP
@@ -700,8 +723,7 @@ public class LowestVolumeReversalService {
     private List<StockQuoteSnapshot> fetchNifty50Quotes() {
         if (marketDataService == null) return Collections.emptyList();
         List<StockQuoteSnapshot> list = new ArrayList<>();
-        List<String> symbols = Nifty200Registry.getNifty200Symbols().stream().limit(50).toList();
-        for (String sym : symbols) {
+        for (String sym : NiftySectorRegistry.NIFTY_50_CONSTITUENTS) {
             var info = StockFnoRegistry.get(sym);
             if (info == null) continue;
             JsonNode quote = marketDataService.fetchQuote(info.exchange(), info.token());
