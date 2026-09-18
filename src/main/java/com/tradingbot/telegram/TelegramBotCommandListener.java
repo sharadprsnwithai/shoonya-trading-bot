@@ -38,6 +38,8 @@ public class TelegramBotCommandListener {
 
     private final BollingerHaPositionalService positionalService;
     private final PositionalStrategyConfig positionalConfig;
+    private final com.tradingbot.service.LowestVolumeReversalService lvrService;
+    private final com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -51,12 +53,16 @@ public class TelegramBotCommandListener {
     public TelegramBotCommandListener(
             BollingerHaPositionalService positionalService,
             PositionalStrategyConfig positionalConfig,
+            @Autowired(required = false) com.tradingbot.service.LowestVolumeReversalService lvrService,
+            @Autowired(required = false) com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
         this(
                 positionalService,
                 positionalConfig,
+                lvrService,
+                swingService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -66,16 +72,38 @@ public class TelegramBotCommandListener {
     public TelegramBotCommandListener(
             BollingerHaPositionalService positionalService,
             PositionalStrategyConfig positionalConfig,
+            com.tradingbot.service.LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
             TelegramService telegramService,
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
         this.positionalService = positionalService;
         this.positionalConfig = positionalConfig;
+        this.lvrService = lvrService;
+        this.swingService = swingService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
+    }
+
+    public TelegramBotCommandListener(
+            BollingerHaPositionalService positionalService,
+            PositionalStrategyConfig positionalConfig,
+            TelegramService telegramService,
+            ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
+        this(
+                positionalService,
+                positionalConfig,
+                null,
+                null,
+                telegramService,
+                shoonyaConfig,
+                objectMapper,
+                httpClient);
     }
 
     @PostConstruct
@@ -133,7 +161,12 @@ public class TelegramBotCommandListener {
                             "https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=5",
                             token, lastUpdateId + 1);
 
-            HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            HttpRequest req =
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(url))
+                            .timeout(Duration.ofSeconds(10))
+                            .GET()
+                            .build();
 
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() == 200) {
@@ -217,6 +250,78 @@ public class TelegramBotCommandListener {
 
         switch (cmd) {
             case "/status":
+            case "/all_status":
+            case "/all":
+                StringBuilder sb = new StringBuilder("🤖 *All Strategy Status*\n\n");
+                if (positionalService != null) {
+                    sb.append("📊 *Bollinger Positional (NIFTY):*\n")
+                            .append(positionalService.getSummaryStatus())
+                            .append("\n\n");
+                }
+                if (lvrService != null) {
+                    sb.append("⚡ *LVR Strategy (5m Options):*\n")
+                            .append("• Winning Sector: ")
+                            .append(lvrService.getSectorState().topSector() != null && !lvrService.getSectorState().topSector().isBlank()
+                                    ? lvrService.getSectorState().topSector()
+                                    : "None")
+                            .append("\n• Active Setups: ")
+                            .append(lvrService.getActiveSetups().size())
+                            .append(" | Open Positions: ")
+                            .append(lvrService.getOpenPositions().size())
+                            .append("\n• Closed Trades: ")
+                            .append(lvrService.getTradeHistory().size())
+                            .append("\n\n");
+                }
+                if (swingService != null) {
+                    sb.append("📈 *RSI Highway Swing:*\n")
+                            .append("• Active Positions: ")
+                            .append(swingService.getActivePositions().size())
+                            .append("\n• Available Capital: ₹")
+                            .append(String.format("%.2f", swingService.getState().getAvailableCapital()))
+                            .append("\n");
+                }
+                return sb.toString();
+
+            case "/lvr":
+            case "/lvr_status":
+                if (lvrService == null) return "⚠️ LVR Service not active.";
+                var sec = lvrService.getSectorState();
+                return String.format(
+                        "⚡ *Lowest Volume Reversal (LVR) Status*\n"
+                                + "• Market Sentiment: *%s* (%d Adv / %d Dec)\n"
+                                + "• Winning Sector: *%s* (%.2f%%)\n"
+                                + "• Candidates (%d): `%s`\n"
+                                + "• Open Positions: %d | Closed Trades: %d",
+                        sec.sentiment(),
+                        sec.advances(),
+                        sec.declines(),
+                        sec.topSector() != null && !sec.topSector().isBlank() ? sec.topSector() : "None",
+                        sec.sectorPctChange(),
+                        sec.candidateSymbols() != null ? sec.candidateSymbols().size() : 0,
+                        sec.candidateSymbols() != null ? String.join(", ", sec.candidateSymbols()) : "None",
+                        lvrService.getOpenPositions().size(),
+                        lvrService.getTradeHistory().size());
+
+            case "/lvr_scan":
+                if (lvrService == null) return "⚠️ LVR Service not active.";
+                lvrService.runMorningUniverseScan();
+                return "🔍 LVR Morning Universe Scan completed!\n\n" + processCommand("/lvr_status");
+
+            case "/swing":
+            case "/swing_status":
+                if (swingService == null) return "⚠️ RSI Highway Swing Service not active.";
+                var swingState = swingService.getState();
+                return String.format(
+                        "📈 *RSI Highway Swing Status*\n"
+                                + "• Total Equity: ₹%.2f\n"
+                                + "• Available Capital: ₹%.2f\n"
+                                + "• Active Positions: %d\n"
+                                + "• Closed Positions: %d",
+                        swingState.getTotalPortfolioEquity(),
+                        swingState.getAvailableCapital(),
+                        swingState.getPositions().size(),
+                        swingState.getClosedPositions().size());
+
             case "/pos_status":
                 return positionalService.getSummaryStatus();
 
@@ -266,14 +371,25 @@ public class TelegramBotCommandListener {
             case "/help":
             case "/pos_help":
                 return """
-                        🤖 *Positional Strategy Bot Commands:*
+                        🤖 *Shoonya Trading Bot Commands:*
 
-                        • `/status` - View current positional strategy state & active trade
-                        • `/scan` - Run manual 3:00 PM IST strategy evaluation scan
-                        • `/approve` - Confirm and execute staged trade
-                        • `/reject` - Cancel and reject staged trade
+                        📊 *Overall & Multi-Strategy:*
+                        • `/status` or `/all` - View status across all 3 strategies
+
+                        ⚡ *LVR (Lowest Volume Reversal 5m Options):*
+                        • `/lvr` - View LVR winning sector & candidate setups
+                        • `/lvr_scan` - Trigger manual LVR 09:25 AM universe scan
+
+                        📈 *RSI Highway Swing:*
+                        • `/swing` - View RSI Highway portfolio & active positions
+
+                        🛡️ *Positional Strategy (Bollinger Bands + HA):*
+                        • `/pos_status` - View current positional trade & state
+                        • `/scan` or `/pos_scan` - Run 3:00 PM IST strategy evaluation
+                        • `/approve` - Confirm & execute staged positional trade
+                        • `/reject` - Cancel & reject staged positional trade
                         • `/exit` - Immediately exit active positional trade
-                        • `/mode <AUTO|MANUAL>` - Switch execution mode
+                        • `/mode <AUTO|MANUAL>` - Switch positional execution mode
                         • `/help` - Show command list
                         """;
 
