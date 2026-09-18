@@ -1,5 +1,7 @@
 package com.tradingbot.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -17,6 +19,7 @@ import java.time.format.DateTimeFormatter;
  * @param close Close price
  * @param volume Traded volume
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record Candle(
         String symbol,
         String timeframe,
@@ -29,10 +32,12 @@ public record Candle(
     private static final DateTimeFormatter FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Kolkata"));
 
+    @JsonIgnore
     public boolean isGreen() {
         return close.compareTo(open) > 0;
     }
 
+    @JsonIgnore
     public boolean isRed() {
         return close.compareTo(open) < 0;
     }
@@ -48,6 +53,7 @@ public record Candle(
         return new Candle(symbol, "5", timestamp, open, high, low, close, volume);
     }
 
+    @JsonIgnore
     public String formattedTime() {
         return FORMATTER.format(timestamp);
     }
