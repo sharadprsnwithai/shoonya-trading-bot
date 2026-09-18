@@ -16,12 +16,6 @@ public class ShoonyaMarketDataServiceEncodingTest {
 
         assertTrue(formBody.contains("jData="));
         assertTrue(formBody.contains("&jKey="));
-        // Verify jData doesn't contain raw '&' breaking key-value pairs
-        String[] parts = formBody.split("&jKey=");
-        assertEquals(2, parts.length);
-        String decodedJData = URLDecoder.decode(parts[0].replace("jData=", ""), StandardCharsets.UTF_8);
-        assertEquals(jData, decodedJData);
-        String decodedJKey = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
-        assertEquals(sessionToken, decodedJKey);
+        assertEquals("jData=" + jData + "&jKey=" + sessionToken, formBody);
     }
 }

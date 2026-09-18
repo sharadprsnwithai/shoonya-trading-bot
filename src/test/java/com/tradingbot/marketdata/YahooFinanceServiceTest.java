@@ -22,10 +22,10 @@ public class YahooFinanceServiceTest {
         assertEquals("RELIANCE.NS", service.toYahooTicker("RELIANCE"));
         assertEquals("M%26M.NS", service.toYahooTicker("M&M"));
         assertEquals("ARE%26M.NS", service.toYahooTicker("ARE&M"));
-        assertEquals("^NSEI", service.toYahooTicker("NIFTY 50"));
-        assertEquals("^NSEI", service.toYahooTicker("NIFTY50"));
-        assertEquals("^NSEI", service.toYahooTicker("NIFTY"));
-        assertEquals("^NSEI", service.toYahooTicker("^NSEI"));
+        assertEquals("%5ENSEI", service.toYahooTicker("NIFTY 50"));
+        assertEquals("%5ENSEI", service.toYahooTicker("NIFTY50"));
+        assertEquals("%5ENSEI", service.toYahooTicker("NIFTY"));
+        assertEquals("%5ENSEI", service.toYahooTicker("^NSEI"));
         assertEquals("TCS.NS", service.toYahooTicker("NSE:TCS"));
     }
 

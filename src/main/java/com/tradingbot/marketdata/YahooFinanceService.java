@@ -53,11 +53,11 @@ public class YahooFinanceService {
 
     /**
      * Converts a local symbol (e.g. "RELIANCE", "M&M", "NIFTY 50") into a Yahoo Finance ticker
-     * (e.g. "RELIANCE.NS", "M%26M.NS", "^NSEI").
+     * (e.g. "RELIANCE.NS", "M%26M.NS", "%5ENSEI").
      */
     public String toYahooTicker(String symbol) {
         if (symbol == null || symbol.isBlank()) {
-            return "^NSEI";
+            return "%5ENSEI";
         }
         String clean = symbol.trim();
         if (clean.startsWith("NSE:")) {
@@ -67,21 +67,46 @@ public class YahooFinanceService {
         if ("NIFTY 50".equalsIgnoreCase(clean)
                 || "NIFTY50".equalsIgnoreCase(clean)
                 || "NIFTY".equalsIgnoreCase(clean)
-                || "^NSEI".equalsIgnoreCase(clean)) {
-            return "^NSEI";
+                || "^NSEI".equalsIgnoreCase(clean)
+                || "%5ENSEI".equalsIgnoreCase(clean)) {
+            return "%5ENSEI";
         }
 
         if ("NIFTY BANK".equalsIgnoreCase(clean)
                 || "BANKNIFTY".equalsIgnoreCase(clean)
-                || "^NSEBANK".equalsIgnoreCase(clean)) {
-            return "^NSEBANK";
+                || "BANK NIFTY".equalsIgnoreCase(clean)
+                || "^NSEBANK".equalsIgnoreCase(clean)
+                || "%5ENSEBANK".equalsIgnoreCase(clean)) {
+            return "%5ENSEBANK";
+        }
+
+        if ("FINNIFTY".equalsIgnoreCase(clean)
+                || "NIFTY FIN SERVICE".equalsIgnoreCase(clean)
+                || "NIFTY FINANCIAL SERVICES".equalsIgnoreCase(clean)
+                || "^CNXFIN".equalsIgnoreCase(clean)
+                || "%5ECNXFIN".equalsIgnoreCase(clean)) {
+            return "%5ECNXFIN";
+        }
+
+        if ("MIDCPNIFTY".equalsIgnoreCase(clean)
+                || "NIFTY MID SELECT".equalsIgnoreCase(clean)
+                || "^NSEMDCP".equalsIgnoreCase(clean)
+                || "%5ENSEMDCP".equalsIgnoreCase(clean)) {
+            return "%5ENSEMDCP";
+        }
+
+        if ("SENSEX".equalsIgnoreCase(clean)
+                || "BSESN".equalsIgnoreCase(clean)
+                || "^BSESN".equalsIgnoreCase(clean)
+                || "%5EBSESN".equalsIgnoreCase(clean)) {
+            return "%5EBSESN";
         }
 
         if (clean.startsWith("^")) {
-            return clean;
+            return "%5E" + clean.substring(1);
         }
 
-        String encodedSymbol = URLEncoder.encode(clean, StandardCharsets.UTF_8);
+        String encodedSymbol = URLEncoder.encode(clean, StandardCharsets.UTF_8).replace("+", "%20");
         return encodedSymbol + ".NS";
     }
 

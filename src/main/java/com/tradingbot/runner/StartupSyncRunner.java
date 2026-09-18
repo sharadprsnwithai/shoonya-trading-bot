@@ -53,14 +53,14 @@ public class StartupSyncRunner implements CommandLineRunner {
 
         try {
             // 1. Authenticate / Login
-            log.info("[1/2] Authenticating with Shoonya (Finvasia NorenAPI)...");
+            log.info("[1/3] Authenticating with Shoonya (Finvasia NorenAPI)...");
             String sessionToken = authenticator.getOrAuthenticateToken();
             log.info(
-                    "[1/2] Shoonya Authentication Successful! Session Token: {}...",
+                    "[1/3] Shoonya Authentication Successful! Session Token: {}...",
                     sessionToken.length() > 8 ? sessionToken.substring(0, 8) + "***" : "***");
 
             // 2. Fetch OHLC data for last 5 days on startup
-            log.info("[2/2] Fetching OHLC data of the last 5 days on startup...");
+            log.info("[2/3] Fetching OHLC data of the last 5 days on startup...");
 
             // Default startup instruments: F&O Benchmark Basket + NIFTY 50
             record InstrumentTarget(
@@ -93,7 +93,11 @@ public class StartupSyncRunner implements CommandLineRunner {
                 // Respect Shoonya API rate limit (350ms between requests)
                 Thread.sleep(350);
             }
+        } catch (Exception e) {
+            log.warn("Shoonya Startup Sync Notice: {}", e.getMessage());
+        }
 
+        try {
             // 3. Verify Historical OHLC Local Cache
             log.info("[3/3] Checking Yahoo Finance Historical OHLC Cache status...");
             if (ohlcCacheService.getCachedSymbolCount() == 0) {
@@ -105,9 +109,8 @@ public class StartupSyncRunner implements CommandLineRunner {
                         ohlcCacheService.getCachedSymbolCount(),
                         ohlcCacheService.isCacheValidForToday());
             }
-
         } catch (Exception e) {
-            log.warn("Shoonya Startup Sync Notice: {}", e.getMessage());
+            log.warn("Yahoo Historical OHLC Cache Startup Notice: {}", e.getMessage());
         }
 
         log.info("==================================================================");

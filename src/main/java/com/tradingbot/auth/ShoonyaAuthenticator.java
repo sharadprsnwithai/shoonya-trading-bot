@@ -193,11 +193,7 @@ public class ShoonyaAuthenticator {
             genAcsPayload.put("code", authCode);
             genAcsPayload.put("checksum", checksum);
 
-            String genAcsBody =
-                    "jData="
-                            + java.net.URLEncoder.encode(
-                                    objectMapper.writeValueAsString(genAcsPayload),
-                                    StandardCharsets.UTF_8);
+            String genAcsBody = "jData=" + objectMapper.writeValueAsString(genAcsPayload);
 
             HttpRequest genAcsReq =
                     HttpRequest.newBuilder()

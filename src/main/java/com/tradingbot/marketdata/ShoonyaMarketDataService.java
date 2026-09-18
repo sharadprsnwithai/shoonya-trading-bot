@@ -56,9 +56,9 @@ public class ShoonyaMarketDataService {
 
     public static String buildFormBody(String jDataStr, String sessionToken) {
         StringBuilder sb = new StringBuilder();
-        sb.append("jData=").append(java.net.URLEncoder.encode(jDataStr != null ? jDataStr : "", StandardCharsets.UTF_8));
+        sb.append("jData=").append(jDataStr != null ? jDataStr : "");
         if (sessionToken != null) {
-            sb.append("&jKey=").append(java.net.URLEncoder.encode(sessionToken, StandardCharsets.UTF_8));
+            sb.append("&jKey=").append(sessionToken);
         }
         return sb.toString();
     }
