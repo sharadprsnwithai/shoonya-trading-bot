@@ -424,6 +424,7 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                             .toUpperCase(java.util.Locale.ENGLISH);
             return String.format("%02d%s", year, month);
         } catch (Exception e) {
+            log.debug("Failed parsing expiry string '{}', defaulting to uppercase fallback: {}", expiry, e.getMessage());
             return expiry.toUpperCase();
         }
     }
