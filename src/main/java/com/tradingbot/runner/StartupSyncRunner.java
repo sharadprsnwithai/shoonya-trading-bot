@@ -29,6 +29,7 @@ public class StartupSyncRunner implements CommandLineRunner {
     private final ShoonyaMarketDataService marketDataService;
     private final com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public StartupSyncRunner(
             ShoonyaConfig config,
             ShoonyaAuthenticator authenticator,

@@ -37,12 +37,32 @@ public class BollingerHaPositionalService {
 
     private final BollingerHaIndicatorService indicatorService;
     private final ShoonyaMarketDataService marketDataService;
+    private final com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService;
     private final PositionalExecutionService executionService;
     private final TelegramService telegramService;
     private final PositionalStrategyConfig config;
     private final ObjectMapper objectMapper;
 
     private PositionalState state;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public BollingerHaPositionalService(
+            BollingerHaIndicatorService indicatorService,
+            ShoonyaMarketDataService marketDataService,
+            com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService,
+            PositionalExecutionService executionService,
+            TelegramService telegramService,
+            PositionalStrategyConfig config,
+            ObjectMapper objectMapper) {
+        this.indicatorService = indicatorService;
+        this.marketDataService = marketDataService;
+        this.ohlcCacheService = ohlcCacheService;
+        this.executionService = executionService;
+        this.telegramService = telegramService;
+        this.config = config;
+        this.objectMapper = objectMapper;
+        this.state = new PositionalState();
+    }
 
     public BollingerHaPositionalService(
             BollingerHaIndicatorService indicatorService,
@@ -51,13 +71,14 @@ public class BollingerHaPositionalService {
             TelegramService telegramService,
             PositionalStrategyConfig config,
             ObjectMapper objectMapper) {
-        this.indicatorService = indicatorService;
-        this.marketDataService = marketDataService;
-        this.executionService = executionService;
-        this.telegramService = telegramService;
-        this.config = config;
-        this.objectMapper = objectMapper;
-        this.state = new PositionalState();
+        this(
+                indicatorService,
+                marketDataService,
+                null,
+                executionService,
+                telegramService,
+                config,
+                objectMapper);
     }
 
     @PostConstruct
@@ -745,6 +766,16 @@ public class BollingerHaPositionalService {
     }
 
     private List<Candle> fetchDailyCandles(String symbol, int count) {
+        if (ohlcCacheService != null) {
+            try {
+                List<Candle> cached = ohlcCacheService.getDailyCandles(symbol);
+                if (cached != null && !cached.isEmpty()) {
+                    return cached;
+                }
+            } catch (Exception e) {
+                log.debug("[POSITIONAL] HistoricalOhlcCache lookup failed for {}: {}", symbol, e.getMessage());
+            }
+        }
         if (marketDataService != null) {
             try {
                 return marketDataService.fetchDailyCandles(symbol, count);

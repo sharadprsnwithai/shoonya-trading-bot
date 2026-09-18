@@ -22,6 +22,7 @@ public class HistoricalOhlcScheduler {
 
     private final HistoricalOhlcCacheService cacheService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public HistoricalOhlcScheduler(HistoricalOhlcCacheService cacheService) {
         this.cacheService = cacheService;
     }

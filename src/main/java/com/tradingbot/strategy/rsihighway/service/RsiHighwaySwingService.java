@@ -43,6 +43,7 @@ public class RsiHighwaySwingService {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final ShoonyaMarketDataService marketDataService;
+    private final com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService;
     private final MultiTimeframeRsiService multiTimeframeRsiService;
     private final RsiHighwayMarketBreadthService breadthService;
     private final RsiHighwayExecutionService executionService;
@@ -52,6 +53,26 @@ public class RsiHighwaySwingService {
 
     private RsiHighwayState state = new RsiHighwayState();
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public RsiHighwaySwingService(
+            ShoonyaMarketDataService marketDataService,
+            com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService,
+            MultiTimeframeRsiService multiTimeframeRsiService,
+            RsiHighwayMarketBreadthService breadthService,
+            RsiHighwayExecutionService executionService,
+            TelegramService telegramService,
+            RsiHighwayConfig config,
+            ObjectMapper objectMapper) {
+        this.marketDataService = marketDataService;
+        this.ohlcCacheService = ohlcCacheService;
+        this.multiTimeframeRsiService = multiTimeframeRsiService;
+        this.breadthService = breadthService;
+        this.executionService = executionService;
+        this.telegramService = telegramService;
+        this.config = config;
+        this.objectMapper = objectMapper;
+    }
+
     public RsiHighwaySwingService(
             ShoonyaMarketDataService marketDataService,
             MultiTimeframeRsiService multiTimeframeRsiService,
@@ -60,13 +81,15 @@ public class RsiHighwaySwingService {
             TelegramService telegramService,
             RsiHighwayConfig config,
             ObjectMapper objectMapper) {
-        this.marketDataService = marketDataService;
-        this.multiTimeframeRsiService = multiTimeframeRsiService;
-        this.breadthService = breadthService;
-        this.executionService = executionService;
-        this.telegramService = telegramService;
-        this.config = config;
-        this.objectMapper = objectMapper;
+        this(
+                marketDataService,
+                null,
+                multiTimeframeRsiService,
+                breadthService,
+                executionService,
+                telegramService,
+                config,
+                objectMapper);
     }
 
     @PostConstruct
@@ -127,16 +150,38 @@ public class RsiHighwaySwingService {
         // 1. Fetch candles & evaluate Market Breadth
         Map<String, List<Candle>> candlesMap = new HashMap<>();
         long delayMs = symbols.size() > 1 ? config.getScanDelayMs() : 0L;
-        log.info("[RSI-HIGHWAY] Starting 15:00 IST EOD scan for {} symbols with {}ms pacing...", symbols.size(), delayMs);
+        int consecutiveBrokerFailures = 0;
+        final int MAX_CONSECUTIVE_FAILURES = 3;
 
         for (String sym : symbols) {
             try {
-                List<Candle> candles = marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
+                List<Candle> candles = null;
+                if (ohlcCacheService != null) {
+                    candles = ohlcCacheService.getDailyCandles(sym);
+                }
+
+                if (candles == null || candles.isEmpty()) {
+                    candles = marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
+                    if (candles == null || candles.isEmpty()) {
+                        consecutiveBrokerFailures++;
+                        if (consecutiveBrokerFailures >= MAX_CONSECUTIVE_FAILURES && symbols.size() > 10) {
+                            String msg = String.format(
+                                    "[RSI-HIGHWAY] Fast-fail circuit breaker triggered: %d consecutive broker fetch failures. Aborting EOD scan.",
+                                    consecutiveBrokerFailures);
+                            log.error(msg);
+                            notifyTelegram("⚠️ " + msg);
+                            break;
+                        }
+                    } else {
+                        consecutiveBrokerFailures = 0;
+                    }
+                    if (delayMs > 0) {
+                        Thread.sleep(delayMs);
+                    }
+                }
+
                 if (candles != null && !candles.isEmpty()) {
                     candlesMap.put(sym, candles);
-                }
-                if (delayMs > 0) {
-                    Thread.sleep(delayMs);
                 }
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
@@ -150,7 +195,12 @@ public class RsiHighwaySwingService {
         List<Candle> indexCandles = candlesMap.get("NIFTY 50");
         if (indexCandles == null || indexCandles.isEmpty()) {
             try {
-                indexCandles = marketDataService.fetchDailyCandles("NIFTY 50", CANDLES_HISTORY_DAYS);
+                if (ohlcCacheService != null) {
+                    indexCandles = ohlcCacheService.getDailyCandles("NIFTY 50");
+                }
+                if (indexCandles == null || indexCandles.isEmpty()) {
+                    indexCandles = marketDataService.fetchDailyCandles("NIFTY 50", CANDLES_HISTORY_DAYS);
+                }
             } catch (Exception e) {
                 log.warn("[RSI-HIGHWAY] Failed fetching NIFTY 50 index candles: {}", e.getMessage());
             }
