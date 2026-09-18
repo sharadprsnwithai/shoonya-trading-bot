@@ -341,6 +341,9 @@ public class LowestVolumeReversalService {
                         evaluateCandleSequence(symbol, setup.getDirection(), candles);
 
                 if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
+                    boolean newlyArmedOrTrailed =
+                            (setup.getTriggerPrice() == null
+                                    || setup.getTriggerPrice().compareTo(evaluated.getTriggerPrice()) != 0);
                     setup.setTriggerCandle(
                             evaluated.getTriggerCandle(),
                             evaluated.getTriggerPrice(),
@@ -355,6 +358,25 @@ public class LowestVolumeReversalService {
                             setup.getTriggerPrice(),
                             setup.getStopLossPrice(),
                             setup.getTarget1Price());
+
+                    if (telegramAlerts && telegramService != null && newlyArmedOrTrailed) {
+                        telegramService.sendTextMessage(
+                                String.format(
+                                        "⚡ *LVR Setup Armed / Order Trailed*\n"
+                                                + "• Symbol: *%s* (%s)\n"
+                                                + "• 5m Pullback Vol: `%d` (< day lowest `%d`)\n"
+                                                + "• Trigger Price: `₹%.2f`\n"
+                                                + "• Spot SL: `₹%.2f` | 1:4 Target: `₹%.2f`",
+                                        symbol,
+                                        setup.getDirection(),
+                                        evaluated.getTriggerCandle() != null
+                                                ? evaluated.getTriggerCandle().volume()
+                                                : 0,
+                                        evaluated.getDayLowestVolume(),
+                                        setup.getTriggerPrice().doubleValue(),
+                                        setup.getStopLossPrice().doubleValue(),
+                                        setup.getTarget1Price().doubleValue()));
+                    }
                 }
             } catch (Exception e) {
                 log.error("[LVR] Error processing 5m candles for {}: {}", symbol, e.getMessage());
@@ -622,6 +644,18 @@ public class LowestVolumeReversalService {
             LowestVolumeSetup setup = activeSetups.get(symbol);
             if (setup != null) {
                 setup.transitionTo(LowestVolumeSetupState.CLOSED_TRAIL_EXIT, "15:15 EOD Exit");
+            }
+
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                "🏁 *LVR 15:15 IST Hard EOD Exit*\n"
+                                        + "• Symbol: *%s*\n"
+                                        + "• Exit Premium: `₹%.2f` (Total P&L: `₹%.2f`)\n"
+                                        + "• Reason: Market Close Square-Off",
+                                symbol,
+                                optionPremium.doubleValue(),
+                                pos.getTotalRealizedPnl().doubleValue()));
             }
         }
         openPositions.clear();
