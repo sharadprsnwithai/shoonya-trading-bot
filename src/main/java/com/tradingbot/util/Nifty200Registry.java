@@ -222,6 +222,10 @@ public final class Nifty200Registry {
         return NIFTY_200_SYMBOLS;
     }
 
+    public static List<String> getNifty200Symbols() {
+        return NIFTY_200_SYMBOLS;
+    }
+
     public static StockMetadata getMetadata(String symbol) {
         if (symbol == null) return null;
         return STOCKS.get(symbol.toUpperCase().trim());

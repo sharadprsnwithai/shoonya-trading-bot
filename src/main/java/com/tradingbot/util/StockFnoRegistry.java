@@ -239,6 +239,11 @@ public final class StockFnoRegistry {
         return Collections.unmodifiableMap(INSTRUMENTS);
     }
 
+    public static InstrumentInfo get(String symbol) {
+        if (symbol == null) return null;
+        return INSTRUMENTS.get(symbol.toUpperCase().trim());
+    }
+
     /** Returns true if symbol is an Index underlying (NIFTY, SENSEX, BANKNIFTY, etc.). */
     public static boolean isIndex(String symbol) {
         if (symbol == null) return false;

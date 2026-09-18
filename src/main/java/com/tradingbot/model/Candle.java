@@ -29,6 +29,25 @@ public record Candle(
     private static final DateTimeFormatter FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Kolkata"));
 
+    public boolean isGreen() {
+        return close.compareTo(open) > 0;
+    }
+
+    public boolean isRed() {
+        return close.compareTo(open) < 0;
+    }
+
+    public static Candle of5m(
+            String symbol,
+            Instant timestamp,
+            BigDecimal open,
+            BigDecimal high,
+            BigDecimal low,
+            BigDecimal close,
+            long volume) {
+        return new Candle(symbol, "5", timestamp, open, high, low, close, volume);
+    }
+
     public String formattedTime() {
         return FORMATTER.format(timestamp);
     }

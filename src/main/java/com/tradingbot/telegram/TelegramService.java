@@ -723,6 +723,11 @@ public class TelegramService {
         sendAsync(text);
     }
 
+    /** Sends a plain/markdown text message via Telegram. */
+    public void sendTextMessage(String message) {
+        sendAsync(message);
+    }
+
     /** Sends an interactive message with inline keyboard buttons for user confirmation. */
     public void sendInteractiveMessage(
             String text,
