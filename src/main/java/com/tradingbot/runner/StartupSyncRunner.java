@@ -27,14 +27,17 @@ public class StartupSyncRunner implements CommandLineRunner {
     private final ShoonyaConfig config;
     private final ShoonyaAuthenticator authenticator;
     private final ShoonyaMarketDataService marketDataService;
+    private final com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService;
 
     public StartupSyncRunner(
             ShoonyaConfig config,
             ShoonyaAuthenticator authenticator,
-            ShoonyaMarketDataService marketDataService) {
+            ShoonyaMarketDataService marketDataService,
+            com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService) {
         this.config = config;
         this.authenticator = authenticator;
         this.marketDataService = marketDataService;
+        this.ohlcCacheService = ohlcCacheService;
     }
 
     @Override
@@ -88,6 +91,18 @@ public class StartupSyncRunner implements CommandLineRunner {
                 displayCandleSummary(target.symbol(), target.timeframe(), candles);
                 // Respect Shoonya API rate limit (350ms between requests)
                 Thread.sleep(350);
+            }
+
+            // 3. Verify Historical OHLC Local Cache
+            log.info("[3/3] Checking Yahoo Finance Historical OHLC Cache status...");
+            if (ohlcCacheService.getCachedSymbolCount() == 0) {
+                log.info("[3/3] OHLC Cache is empty. Initiating background historical data sync...");
+                new Thread(() -> ohlcCacheService.syncAll(false), "ohlc-startup-sync").start();
+            } else {
+                log.info(
+                        "[3/3] OHLC Cache loaded: {} symbols cached (valid for today: {})",
+                        ohlcCacheService.getCachedSymbolCount(),
+                        ohlcCacheService.isCacheValidForToday());
             }
 
         } catch (Exception e) {
