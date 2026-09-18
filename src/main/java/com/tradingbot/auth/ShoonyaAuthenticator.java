@@ -193,13 +193,18 @@ public class ShoonyaAuthenticator {
             genAcsPayload.put("code", authCode);
             genAcsPayload.put("checksum", checksum);
 
-            String genAcsBody = "jData=" + objectMapper.writeValueAsString(genAcsPayload);
+            String genAcsBody =
+                    "jData="
+                            + java.net.URLEncoder.encode(
+                                    objectMapper.writeValueAsString(genAcsPayload),
+                                    StandardCharsets.UTF_8);
 
             HttpRequest genAcsReq =
                     HttpRequest.newBuilder()
                             .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/GenAcsTok"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Forwarded-For", publicIp)
+                            .timeout(Duration.ofSeconds(10))
                             .POST(
                                     HttpRequest.BodyPublishers.ofString(
                                             genAcsBody, StandardCharsets.UTF_8))

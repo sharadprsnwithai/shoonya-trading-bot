@@ -51,7 +51,7 @@ public class ShoonyaOptionChainService {
                 config,
                 authenticator,
                 new ObjectMapper(),
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
     }
 
     public ShoonyaOptionChainService(
@@ -185,10 +185,8 @@ public class ShoonyaOptionChainService {
                 ocPayload.put("cnt", String.valueOf(count));
 
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(ocPayload)
-                                + "&jKey="
-                                + sessionToken;
+                        ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(ocPayload), sessionToken);
 
                 HttpRequest req =
                         HttpRequest.newBuilder()
@@ -198,6 +196,7 @@ public class ShoonyaOptionChainService {
                                                         + "/NorenWClientAPI/GetOptionChain"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -449,13 +448,15 @@ public class ShoonyaOptionChainService {
                             "exch", exchange,
                             "token", token);
             String body =
-                    "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + sessionToken;
+                    ShoonyaMarketDataService.buildFormBody(
+                            objectMapper.writeValueAsString(payload), sessionToken);
 
             HttpRequest req =
                     HttpRequest.newBuilder()
                             .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/GetQuotes"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Forwarded-For", config.resolvePublicIp())
+                            .timeout(Duration.ofSeconds(10))
                             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                             .build();
 

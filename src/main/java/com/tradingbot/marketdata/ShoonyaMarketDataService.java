@@ -51,7 +51,16 @@ public class ShoonyaMarketDataService {
                 config,
                 authenticator,
                 new ObjectMapper(),
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+    }
+
+    public static String buildFormBody(String jDataStr, String sessionToken) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("jData=").append(java.net.URLEncoder.encode(jDataStr != null ? jDataStr : "", StandardCharsets.UTF_8));
+        if (sessionToken != null) {
+            sb.append("&jKey=").append(java.net.URLEncoder.encode(sessionToken, StandardCharsets.UTF_8));
+        }
+        return sb.toString();
     }
 
     public ShoonyaMarketDataService(
@@ -248,17 +257,14 @@ public class ShoonyaMarketDataService {
                                 exchange != null ? exchange : "NSE",
                                 "token",
                                 token);
-                String body =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                String body = buildFormBody(objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest req =
                         HttpRequest.newBuilder()
                                 .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/GetQuotes"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 body, StandardCharsets.UTF_8))
@@ -320,7 +326,7 @@ public class ShoonyaMarketDataService {
                 payload.put("stext", searchText);
 
                 String jDataStr = objectMapper.writeValueAsString(payload);
-                String formBody = "jData=" + jDataStr + "&jKey=" + sessionToken;
+                String formBody = buildFormBody(jDataStr, sessionToken);
 
                 HttpRequest request =
                         HttpRequest.newBuilder()
@@ -330,6 +336,7 @@ public class ShoonyaMarketDataService {
                                                         + "/NorenWClientAPI/SearchScrip"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -431,13 +438,14 @@ public class ShoonyaMarketDataService {
                 payload.put("intrv", timeframe);
 
                 String jDataStr = objectMapper.writeValueAsString(payload);
-                String formBody = "jData=" + jDataStr + "&jKey=" + sessionToken;
+                String formBody = buildFormBody(jDataStr, sessionToken);
 
                 HttpRequest request =
                         HttpRequest.newBuilder()
                                 .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/TPSeries"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))

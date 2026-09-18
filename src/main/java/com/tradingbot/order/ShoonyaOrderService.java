@@ -42,7 +42,7 @@ public class ShoonyaOrderService {
                 config,
                 authenticator,
                 new ObjectMapper(),
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
     }
 
     public ShoonyaOrderService(
@@ -101,10 +101,8 @@ public class ShoonyaOrderService {
                 }
 
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
@@ -114,6 +112,7 @@ public class ShoonyaOrderService {
                                                         + "/NorenWClientAPI/PlaceOrder"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -210,10 +209,8 @@ public class ShoonyaOrderService {
                 }
 
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
@@ -223,6 +220,7 @@ public class ShoonyaOrderService {
                                                         + "/NorenWClientAPI/ModifyOrder"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -293,10 +291,8 @@ public class ShoonyaOrderService {
                         Map.of("uid", config.getUserId(), "norenordno", orderId);
 
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
@@ -306,6 +302,7 @@ public class ShoonyaOrderService {
                                                         + "/NorenWClientAPI/CancelOrder"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -390,16 +387,15 @@ public class ShoonyaOrderService {
             try {
                 String sessionToken = authenticator.getOrAuthenticateToken();
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
                                 .uri(URI.create(config.getBaseUrl() + endpoint))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
