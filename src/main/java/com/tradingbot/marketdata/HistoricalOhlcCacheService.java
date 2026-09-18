@@ -147,14 +147,15 @@ public class HistoricalOhlcCacheService {
     }
 
     /**
-     * Synchronizes all universe symbols (Nifty 500 + F&O + Nifty Index) from Yahoo Finance.
+     * Synchronizes universe symbols (Nifty 500 + F&O + Nifty Index) from Yahoo Finance.
+     * Skips symbols that already have fresh daily, weekly, and monthly data in JSON unless force is true.
      *
-     * @param force If false and cache is already valid for today, skips download.
-     * @return Number of symbols successfully updated
+     * @param force If false, skips download for all symbols that already have fresh data.
+     * @return Number of total symbols in cache
      */
     public int syncAll(boolean force) {
         if (!force && isCacheValidForToday()) {
-            log.info("[OHLC-CACHE] Cache is already valid and up-to-date for today. Skipping sync.");
+            log.info("[OHLC-CACHE] Cache file is already globally valid for today. Skipping full sync.");
             return cache.size();
         }
 
@@ -163,15 +164,30 @@ public class HistoricalOhlcCacheService {
         allSymbols.addAll(StockFnoRegistry.getAllInstruments().keySet());
         allSymbols.addAll(Nifty500Registry.getAllMetadata().keySet());
 
-        log.info("[OHLC-CACHE] Starting Historical OHLC sync for {} symbols from Yahoo Finance...", allSymbols.size());
+        List<String> symbolsToFetch = new ArrayList<>();
+        for (String sym : allSymbols) {
+            if (force || !isSymbolFresh(sym)) {
+                symbolsToFetch.add(sym);
+            }
+        }
+
+        if (symbolsToFetch.isEmpty()) {
+            log.info(
+                    "[OHLC-CACHE] All {} symbols already have fresh historical data in JSON. Skipping network calls.",
+                    allSymbols.size());
+            return cache.size();
+        }
+
+        log.info(
+                "[OHLC-CACHE] Fetching historical OHLC data for {} missing or stale symbols (out of {} total)...",
+                symbolsToFetch.size(),
+                allSymbols.size());
 
         int poolSize = 5;
         ExecutorService executor = Executors.newFixedThreadPool(poolSize);
-        List<String> symbolList = new ArrayList<>(allSymbols);
-        int successCount = 0;
 
         try {
-            for (String sym : symbolList) {
+            for (String sym : symbolsToFetch) {
                 executor.submit(() -> {
                     syncSymbol(sym, 2);
                 });
@@ -192,9 +208,47 @@ public class HistoricalOhlcCacheService {
         }
 
         saveToFile();
-        successCount = cache.size();
+        int successCount = cache.size();
         log.info("[OHLC-CACHE] OHLC Sync completed. Total active cached symbols: {}", successCount);
         return successCount;
+    }
+
+    /**
+     * Checks if a symbol's historical data is already present in cache and fresh (i.e. contains
+     * the latest closed trading day/week/month data).
+     *
+     * @param symbol Symbol name (e.g. "RELIANCE", "NIFTY 50")
+     * @return true if the symbol is present and its latest candle timestamp is up to date
+     */
+    public boolean isSymbolFresh(String symbol) {
+        String clean = normalizeSymbol(symbol);
+        SymbolOhlcBundle bundle = cache.get(clean);
+        if (bundle == null || bundle.daily() == null || bundle.daily().isEmpty()) {
+            return false;
+        }
+
+        List<Candle> daily = bundle.daily();
+        Candle latest = daily.get(daily.size() - 1);
+        if (latest.timestamp() == null) {
+            return false;
+        }
+
+        LocalDate latestDate = latest.timestamp().atZone(IST).toLocalDate();
+        LocalDate today = LocalDate.now(IST);
+
+        // If today is Monday: latest candle from Friday (within 3 calendar days) is fresh
+        if (today.getDayOfWeek().getValue() == 1) {
+            return !latestDate.isBefore(today.minusDays(3));
+        }
+        // If today is weekend (Saturday/Sunday): Friday's candle is fresh
+        if (today.getDayOfWeek().getValue() == 6) { // Saturday
+            return !latestDate.isBefore(today.minusDays(1));
+        }
+        if (today.getDayOfWeek().getValue() == 7) { // Sunday
+            return !latestDate.isBefore(today.minusDays(2));
+        }
+        // Tuesday through Friday: yesterday's or today's candle is fresh
+        return !latestDate.isBefore(today.minusDays(1));
     }
 
     /** Checks if the cache was updated within the last 18 hours or matches today's trading date. */
@@ -219,17 +273,38 @@ public class HistoricalOhlcCacheService {
     }
 
     public List<Candle> getDailyCandles(String symbol) {
-        SymbolOhlcBundle bundle = cache.get(normalizeSymbol(symbol));
+        String clean = normalizeSymbol(symbol);
+        SymbolOhlcBundle bundle = cache.get(clean);
+        if (bundle == null || bundle.daily() == null || bundle.daily().isEmpty()) {
+            if (syncSymbol(clean, 2)) {
+                saveToFile();
+                bundle = cache.get(clean);
+            }
+        }
         return bundle != null ? bundle.daily() : Collections.emptyList();
     }
 
     public List<Candle> getWeeklyCandles(String symbol) {
-        SymbolOhlcBundle bundle = cache.get(normalizeSymbol(symbol));
+        String clean = normalizeSymbol(symbol);
+        SymbolOhlcBundle bundle = cache.get(clean);
+        if (bundle == null || bundle.weekly() == null || bundle.weekly().isEmpty()) {
+            if (syncSymbol(clean, 2)) {
+                saveToFile();
+                bundle = cache.get(clean);
+            }
+        }
         return bundle != null ? bundle.weekly() : Collections.emptyList();
     }
 
     public List<Candle> getMonthlyCandles(String symbol) {
-        SymbolOhlcBundle bundle = cache.get(normalizeSymbol(symbol));
+        String clean = normalizeSymbol(symbol);
+        SymbolOhlcBundle bundle = cache.get(clean);
+        if (bundle == null || bundle.monthly() == null || bundle.monthly().isEmpty()) {
+            if (syncSymbol(clean, 2)) {
+                saveToFile();
+                bundle = cache.get(clean);
+            }
+        }
         return bundle != null ? bundle.monthly() : Collections.emptyList();
     }
 

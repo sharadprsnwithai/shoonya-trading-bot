@@ -73,4 +73,30 @@ public class HistoricalOhlcCacheServiceTest {
         assertNotNull(monthly);
         assertFalse(monthly.isEmpty(), "Monthly candles should be computed");
     }
+
+    @Test
+    void testIsSymbolFresh() {
+        assertFalse(cacheService.isSymbolFresh("INFY"), "Missing symbol should not be fresh");
+
+        // Fresh candle (today or yesterday)
+        Instant recent = Instant.now().minusSeconds(3600 * 12);
+        Candle c1 = new Candle("INFY", "D", recent, BigDecimal.valueOf(1500), BigDecimal.valueOf(1520), BigDecimal.valueOf(1490), BigDecimal.valueOf(1510), 200000L);
+        when(yahooService.fetchDailyCandles("INFY", 2)).thenReturn(List.of(c1));
+
+        cacheService.syncSymbol("INFY", 2);
+        assertTrue(cacheService.isSymbolFresh("INFY"), "Symbol with recent candle should be fresh");
+    }
+
+    @Test
+    void testLazyOnDemandFetchForMissingSymbol() {
+        Candle c1 = new Candle("WIPRO", "D", Instant.now(), BigDecimal.valueOf(500), BigDecimal.valueOf(510), BigDecimal.valueOf(495), BigDecimal.valueOf(505), 80000L);
+        when(yahooService.fetchDailyCandles("WIPRO", 2)).thenReturn(List.of(c1));
+
+        // WIPRO is not initially cached, requesting getDailyCandles should trigger lazy fetch
+        List<Candle> daily = cacheService.getDailyCandles("WIPRO");
+        assertNotNull(daily);
+        assertEquals(1, daily.size());
+        assertEquals("WIPRO", daily.get(0).symbol());
+        verify(yahooService, times(1)).fetchDailyCandles("WIPRO", 2);
+    }
 }
