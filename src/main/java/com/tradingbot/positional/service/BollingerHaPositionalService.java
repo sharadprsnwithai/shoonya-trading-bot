@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ import org.springframework.stereotype.Service;
 public class BollingerHaPositionalService {
 
     private static final Logger log = LoggerFactory.getLogger(BollingerHaPositionalService.class);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final BollingerHaIndicatorService indicatorService;
     private final ShoonyaMarketDataService marketDataService;
@@ -243,7 +245,7 @@ public class BollingerHaPositionalService {
             // Reversal from Upper Band -> SELL Alert (Bear Call Spread)
             PositionalAlert alert =
                     new PositionalAlert(
-                            LocalDate.now(),
+                            LocalDate.now(IST),
                             "SELL",
                             today.normalHigh(),
                             today.normalLow(),
@@ -282,7 +284,7 @@ public class BollingerHaPositionalService {
             // Reversal from Lower Band -> BUY Alert (Bull Put Spread)
             PositionalAlert alert =
                     new PositionalAlert(
-                            LocalDate.now(),
+                            LocalDate.now(IST),
                             "BUY",
                             today.normalHigh(),
                             today.normalLow(),
@@ -328,7 +330,7 @@ public class BollingerHaPositionalService {
 
         // 1. Invalidation by Timeout (> 5 trading days / 7 calendar days)
         if (alert.alertDate() != null) {
-            long daysOld = java.time.temporal.ChronoUnit.DAYS.between(alert.alertDate(), LocalDate.now());
+            long daysOld = java.time.temporal.ChronoUnit.DAYS.between(alert.alertDate(), LocalDate.now(IST));
             if (daysOld > 7) {
                 log.info("Positional Alert timed out ({} days old). Resetting to FLAT.", daysOld);
                 telegramService.sendAlert(
@@ -441,7 +443,7 @@ public class BollingerHaPositionalService {
                         optionType,
                         hedgeStrike,
                         "MONTHLY",
-                        LocalDate.now(),
+                        LocalDate.now(IST),
                         spotPrice,
                         BigDecimal.ZERO,
                         BigDecimal.ZERO,

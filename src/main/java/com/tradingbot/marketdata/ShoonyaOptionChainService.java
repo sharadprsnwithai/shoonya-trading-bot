@@ -18,6 +18,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -37,6 +38,7 @@ import org.springframework.stereotype.Service;
 public class ShoonyaOptionChainService {
 
     private static final Logger log = LoggerFactory.getLogger(ShoonyaOptionChainService.class);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     public static final String DEFAULT_NIFTY_FUT_SYMBOL = "NIFTY29SEP26F";
     public static final String DEFAULT_NIFTY_FUT_TOKEN = "68407";
 
@@ -494,7 +496,7 @@ public class ShoonyaOptionChainService {
         long totalCallOi = 0;
         long totalPutOi = 0;
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(IST);
         boolean isWeekly = StockFnoRegistry.isIndex(underlying);
         LocalDate expiry = StockFnoRegistry.calculateTargetExpiry(underlying, today, isWeekly, 1);
         double dteDays = Math.max(1.0, java.time.temporal.ChronoUnit.DAYS.between(today, expiry));

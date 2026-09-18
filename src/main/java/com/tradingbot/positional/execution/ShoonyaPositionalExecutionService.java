@@ -15,6 +15,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
 
     private static final Logger log =
             LoggerFactory.getLogger(ShoonyaPositionalExecutionService.class);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final ShoonyaOrderService orderService;
     private final ShoonyaOptionChainService optionChainService;
@@ -173,7 +175,7 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                 trade.buyHedgeOptionType(),
                 trade.buyHedgeStrike(),
                 resolvedExpiry,
-                trade.entryDate() != null ? trade.entryDate() : LocalDate.now(),
+                trade.entryDate() != null ? trade.entryDate() : LocalDate.now(IST),
                 trade.entrySpot(),
                 sellFillPremium,
                 buyHedgeFillPremium,
@@ -209,7 +211,7 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
         int daysHeld = 0;
         if (trade.entryDate() != null) {
             daysHeld =
-                    (int) Math.max(0, ChronoUnit.DAYS.between(trade.entryDate(), LocalDate.now()));
+                    (int) Math.max(0, ChronoUnit.DAYS.between(trade.entryDate(), LocalDate.now(IST)));
         }
 
         if (mode == ExecutionMode.LIVE && orderService != null) {
@@ -324,7 +326,7 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                 trade.quantity(),
                 mode,
                 "CLOSED",
-                LocalDate.now(),
+                LocalDate.now(IST),
                 exitSpot,
                 sellExitPremium,
                 buyHedgeExitPremium,
@@ -378,7 +380,7 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
     }
 
     private LocalDate resolveNextMonthlyExpiry() {
-        LocalDate now = LocalDate.now();
+        LocalDate now = LocalDate.now(IST);
         LocalDate lastThuThisMonth = now.with(TemporalAdjusters.lastInMonth(DayOfWeek.THURSDAY));
         // If within 15 days of this month's expiry, roll to next month for positional trades (> 20 DTE target)
         if (now.isAfter(lastThuThisMonth.minusDays(15))) {

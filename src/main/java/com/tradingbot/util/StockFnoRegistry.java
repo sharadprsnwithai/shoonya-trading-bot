@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Collections;
@@ -18,6 +19,8 @@ import java.util.Map;
  * TORNTPHARM, BHEL, HINDALCO).
  */
 public final class StockFnoRegistry {
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     public record InstrumentInfo(
             String symbol,
@@ -353,7 +356,7 @@ public final class StockFnoRegistry {
     public static LocalDate calculateWeeklyTargetExpiry(
             String symbol, LocalDate entryDate, int minDteThreshold) {
         if (entryDate == null) {
-            entryDate = LocalDate.now();
+            entryDate = LocalDate.now(IST);
         }
         DayOfWeek expiryDay =
                 (symbol != null
@@ -382,7 +385,7 @@ public final class StockFnoRegistry {
     public static LocalDate calculateMonthlyTargetExpiry(
             String symbol, LocalDate entryDate, int minDteThreshold) {
         if (entryDate == null) {
-            entryDate = LocalDate.now();
+            entryDate = LocalDate.now(IST);
         }
         DayOfWeek expiryDay =
                 (symbol != null
@@ -450,7 +453,7 @@ public final class StockFnoRegistry {
         }
 
         if (expiryDate == null) {
-            expiryDate = LocalDate.now();
+            expiryDate = LocalDate.now(IST);
         }
 
         String yearStr = String.valueOf(expiryDate.getYear()).substring(2);
