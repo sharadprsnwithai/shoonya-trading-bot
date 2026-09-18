@@ -30,51 +30,11 @@
 **Interfaces:**
 - Produces: Correctly URL-encoded POST request bodies for all Shoonya API endpoints, handling special characters like `&` in `ARE&M`.
 
-- [ ] **Step 1: Write failing unit test for URL encoding with special characters**
-
-```java
-package com.tradingbot.marketdata;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import org.junit.jupiter.api.Test;
-
-public class ShoonyaMarketDataServiceEncodingTest {
-
-    @Test
-    void testFormBodyEncodingHandlesAmpersand() {
-        String jData = "{\"uid\":\"FA12345\",\"stext\":\"ARE&M\"}";
-        String sessionToken = "TOKEN123";
-        String formBody = ShoonyaMarketDataService.buildFormBody(jData, sessionToken);
-
-        assertTrue(formBody.contains("jData="));
-        assertTrue(formBody.contains("jKey="));
-        // Verify jData doesn't contain raw '&' breaking key-value pairs
-        String[] parts = formBody.split("&jKey=");
-        assertEquals(2, parts.length);
-        String decodedJData = URLDecoder.decode(parts[0].replace("jData=", ""), StandardCharsets.UTF_8);
-        assertEquals(jData, decodedJData);
-    }
-}
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `./gradlew test --tests com.tradingbot.marketdata.ShoonyaMarketDataServiceEncodingTest`
-Expected: FAIL (method `buildFormBody` does not exist)
-
-- [ ] **Step 3: Implement helper `buildFormBody` and update all form body building in Shoonya services**
-
-In `ShoonyaMarketDataService.java`, add `public static String buildFormBody(String jDataStr, String sessionToken)` using `URLEncoder.encode(..., StandardCharsets.UTF_8)` and replace all direct `formBody` string concatenations. Ensure HTTP connection timeout is set to 10 seconds.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `./gradlew test --tests com.tradingbot.marketdata.ShoonyaMarketDataServiceEncodingTest`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing unit test for URL encoding with special characters**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement helper `buildFormBody` and update all form body building in Shoonya services**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/marketdata/ShoonyaMarketDataService.java src/test/java/com/tradingbot/marketdata/ShoonyaMarketDataServiceEncodingTest.java
@@ -333,21 +293,10 @@ public class HistoricalOhlcCacheServiceTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `./gradlew test --tests com.tradingbot.marketdata.HistoricalOhlcCacheServiceTest`
-Expected: FAIL
-
-- [ ] **Step 3: Implement `HistoricalOhlcCacheService` and data models**
-
-Implement models and cache service with atomic disk persistence, weekly/monthly resampling via `CandleResamplingUtil`, and universe resolution.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `./gradlew test --tests com.tradingbot.marketdata.HistoricalOhlcCacheServiceTest`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement `HistoricalOhlcCacheService` and data models**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/marketdata/HistoricalOhlcCacheService.java src/main/java/com/tradingbot/marketdata/model/ src/test/java/com/tradingbot/marketdata/HistoricalOhlcCacheServiceTest.java
@@ -415,21 +364,10 @@ public class HistoricalOhlcControllerTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `./gradlew test --tests com.tradingbot.controller.HistoricalOhlcControllerTest`
-Expected: FAIL (Controller not mapped)
-
-- [ ] **Step 3: Implement `HistoricalOhlcController`, `HistoricalOhlcScheduler`, and update `StartupSyncRunner`**
-
-Implement the REST controller, schedule the 08:00 AM weekday job, and ensure `StartupSyncRunner` initializes cache on startup.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `./gradlew test --tests com.tradingbot.controller.HistoricalOhlcControllerTest`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement `HistoricalOhlcController`, `HistoricalOhlcScheduler`, and update `StartupSyncRunner`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/controller/HistoricalOhlcController.java src/main/java/com/tradingbot/scheduler/HistoricalOhlcScheduler.java src/main/java/com/tradingbot/runner/StartupSyncRunner.java src/test/java/com/tradingbot/controller/HistoricalOhlcControllerTest.java
@@ -488,16 +426,9 @@ public class RsiHighwaySwingServiceCacheTest {
 }
 ```
 
-- [ ] **Step 2: Update `RsiHighwaySwingService` and `BollingerHaPositionalService` to use `HistoricalOhlcCacheService`**
-
-Wire `HistoricalOhlcCacheService` in both services. For historical daily/weekly candles, query cache first. Fall back to broker only if cache is unavailable.
-
-- [ ] **Step 3: Run all test suites across the whole project**
-
-Run: `./gradlew test`
-Expected: ALL TESTS PASS
-
-- [ ] **Step 4: Commit**
+- [x] **Step 2: Update `RsiHighwaySwingService` and `BollingerHaPositionalService` to use `HistoricalOhlcCacheService`**
+- [x] **Step 3: Run all test suites across the whole project**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/strategy/rsihighway/service/RsiHighwaySwingService.java src/main/java/com/tradingbot/positional/service/BollingerHaPositionalService.java src/test/java/com/tradingbot/strategy/rsihighway/service/RsiHighwaySwingServiceCacheTest.java
