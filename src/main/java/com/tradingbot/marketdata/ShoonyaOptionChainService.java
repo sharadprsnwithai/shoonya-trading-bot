@@ -8,6 +8,7 @@ import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionContract;
 import com.tradingbot.model.OptionStrike;
 import com.tradingbot.util.StockFnoRegistry;
+import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
@@ -579,6 +580,16 @@ public class ShoonyaOptionChainService {
         if ("BHEL".equalsIgnoreCase(underlying)) return new BigDecimal("270");
         if ("HINDALCO".equalsIgnoreCase(underlying)) return new BigDecimal("680");
         return new BigDecimal("24000");
+    }
+
+    @PreDestroy
+    public void cleanup() {
+        try {
+            executor.shutdownNow();
+            log.info("[OPTION-CHAIN] Executor shutdown complete.");
+        } catch (Exception e) {
+            log.debug("[OPTION-CHAIN] Error shutting down executor: {}", e.getMessage());
+        }
     }
 
     private static class OptionContractDraft {

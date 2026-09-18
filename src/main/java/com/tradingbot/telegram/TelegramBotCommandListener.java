@@ -411,6 +411,7 @@ public class TelegramBotCommandListener {
             HttpRequest req =
                     HttpRequest.newBuilder()
                             .uri(URI.create(url))
+                            .timeout(Duration.ofSeconds(10))
                             .POST(HttpRequest.BodyPublishers.noBody())
                             .build();
 

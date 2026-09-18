@@ -98,7 +98,10 @@ public class ShoonyaConfig {
             HttpClient client =
                     HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
             HttpRequest req =
-                    HttpRequest.newBuilder().uri(URI.create("https://api.ipify.org")).build();
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("https://api.ipify.org"))
+                            .timeout(Duration.ofSeconds(3))
+                            .build();
             HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
             String ip = resp.body().trim();
             if (!ip.isBlank()) {

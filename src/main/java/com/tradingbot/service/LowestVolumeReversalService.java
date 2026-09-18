@@ -63,7 +63,6 @@ public class LowestVolumeReversalService {
     private final LowestVolumeReversalScanner scanner;
 
     private java.time.Clock clock = java.time.Clock.system(IST);
-    private final ExecutorService executor = Executors.newFixedThreadPool(8);
 
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
     private boolean enabled = true;
@@ -100,8 +99,8 @@ public class LowestVolumeReversalService {
     private final List<StockQuoteSnapshot> currentTopLoserSnapshots =
             new java.util.concurrent.CopyOnWriteArrayList<>();
 
-    private LowestVolumeSectorState sectorState = LowestVolumeSectorState.empty();
-    private boolean niftyBullish = true;
+    private volatile LowestVolumeSectorState sectorState = LowestVolumeSectorState.empty();
+    private volatile boolean niftyBullish = true;
     private volatile boolean universeScanCompletedToday = false;
     private final AtomicInteger tradeCounter = new AtomicInteger(1);
 

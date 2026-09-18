@@ -18,8 +18,8 @@ public class TaskSchedulingConfig implements SchedulingConfigurer {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(5);
         scheduler.setThreadNamePrefix("trading-task-");
-        scheduler.setAwaitTerminationSeconds(30);
-        scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        scheduler.setAwaitTerminationSeconds(3);
+        scheduler.setWaitForTasksToCompleteOnShutdown(false);
         scheduler.initialize();
         return scheduler;
     }

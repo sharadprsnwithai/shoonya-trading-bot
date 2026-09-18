@@ -109,6 +109,7 @@ public class ShoonyaAuthenticator {
                             .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/UserDetails"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Forwarded-For", config.resolvePublicIp())
+                            .timeout(Duration.ofSeconds(10))
                             .POST(
                                     HttpRequest.BodyPublishers.ofString(
                                             formBody, StandardCharsets.UTF_8))
@@ -164,6 +165,7 @@ public class ShoonyaAuthenticator {
                                     "https://api.shoonya.com/OAuthlogin/authorize/oauth?client_id="
                                             + config.getClientId())
                             .header("X-Forwarded-For", publicIp)
+                            .timeout(Duration.ofSeconds(10))
                             .POST(
                                     HttpRequest.BodyPublishers.ofString(
                                             quickAuthBody, StandardCharsets.UTF_8))

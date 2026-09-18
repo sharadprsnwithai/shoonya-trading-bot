@@ -7,6 +7,7 @@ import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
+import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
@@ -761,6 +762,7 @@ public class TelegramService {
                                 HttpRequest.newBuilder()
                                         .uri(URI.create(url))
                                         .header("Content-Type", "application/x-www-form-urlencoded")
+                                        .timeout(Duration.ofSeconds(10))
                                         .POST(
                                                 HttpRequest.BodyPublishers.ofString(
                                                         formBody, StandardCharsets.UTF_8))
@@ -806,6 +808,7 @@ public class TelegramService {
                                 HttpRequest.newBuilder()
                                         .uri(URI.create(url))
                                         .header("Content-Type", "application/x-www-form-urlencoded")
+                                        .timeout(Duration.ofSeconds(10))
                                         .POST(
                                                 HttpRequest.BodyPublishers.ofString(
                                                         formBody, StandardCharsets.UTF_8))
@@ -826,5 +829,15 @@ public class TelegramService {
                     }
                 },
                 asyncExecutor);
+    }
+
+    @PreDestroy
+    public void cleanup() {
+        try {
+            asyncExecutor.shutdownNow();
+            log.info("[TELEGRAM] Telegram async executor shutdown complete.");
+        } catch (Exception e) {
+            log.debug("[TELEGRAM] Error shutting down async executor: {}", e.getMessage());
+        }
     }
 }
