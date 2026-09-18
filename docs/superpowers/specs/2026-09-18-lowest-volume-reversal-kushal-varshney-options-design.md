@@ -18,7 +18,7 @@ Trades are executed exclusively via **Stock Options Buying (ATM CE for Longs / A
   - **Bearish Sentiment:** If $\text{Declines} > \text{Advances}$ $\rightarrow$ Trading direction is strictly **BEARISH / SHORT (Buy PE)**.
   - **Bullish Sentiment:** If $\text{Advances} > \text{Declines}$ $\rightarrow$ Trading direction is strictly **BULLISH / LONG (Buy CE)**.
 
-### Step 2.3: Sectoral Index Ranking (09:25 – 09:26 IST)
+###    (09:25 – 09:26 IST)
 - Rank the 11 major NSE Sectoral Indices by percentage change from previous day close:
   1. Nifty Auto
   2. Nifty Bank

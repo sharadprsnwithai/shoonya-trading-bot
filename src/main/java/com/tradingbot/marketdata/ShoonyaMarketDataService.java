@@ -518,7 +518,13 @@ public class ShoonyaMarketDataService {
                         BigDecimal high = new BigDecimal(node.path("inth").asText("0"));
                         BigDecimal low = new BigDecimal(node.path("intl").asText("0"));
                         BigDecimal close = new BigDecimal(node.path("intc").asText("0"));
-                        long volume = node.path("v").asLong(0);
+                        long volume = 0;
+                        if (node.has("intv")) {
+                            volume = Math.abs(node.path("intv").asLong(0));
+                        }
+                        if (volume == 0 && node.has("v")) {
+                            volume = node.path("v").asLong(0);
+                        }
 
                         Instant timestamp = parseTimestamp(node);
                         if (open.compareTo(BigDecimal.ZERO) > 0 && high.compareTo(BigDecimal.ZERO) > 0
