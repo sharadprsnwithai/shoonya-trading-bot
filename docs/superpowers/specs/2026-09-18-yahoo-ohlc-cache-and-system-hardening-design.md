@@ -124,6 +124,31 @@ public class TaskSchedulingConfig implements SchedulingConfigurer {
                   + "&jKey=" + URLEncoder.encode(sessionToken, StandardCharsets.UTF_8);
   ```
 
+### 3.8 REST Endpoints (`HistoricalOhlcController`)
+- **`POST /api/v1/ohlc/sync`**:
+  - Request Params:
+    - `force` (boolean, optional, default: `false`) - Force re-download even if cache is fresh.
+    - `symbol` (string, optional) - Target a specific symbol or all if omitted.
+  - Response:
+    ```json
+    {
+      "status": "SUCCESS",
+      "message": "OHLC sync completed successfully",
+      "symbolsUpdated": 520,
+      "syncTime": "2026-09-18T08:00:00Z"
+    }
+    ```
+- **`GET /api/v1/ohlc/status`**:
+  - Response:
+    ```json
+    {
+      "cachedSymbols": 520,
+      "lastUpdated": "2026-09-18T08:00:00Z",
+      "cacheValidForToday": true,
+      "stateFilePath": "data/historical_ohlc.json"
+    }
+    ```
+
 ---
 
 ## 4. Testing & Verification Plan
