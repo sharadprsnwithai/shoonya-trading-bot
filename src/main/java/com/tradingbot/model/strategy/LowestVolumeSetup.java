@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * Tracks the life-cycle and state variables of an individual stock setup under the Lowest Volume
- * Reversal & Continuation Strategy.
+ * Reversal & Continuation Strategy (Kushal Varshney 5m Framework).
  */
 public class LowestVolumeSetup {
 
@@ -24,7 +24,9 @@ public class LowestVolumeSetup {
     private double atr14;
     private BigDecimal initialLegMove = BigDecimal.ZERO;
     private long triggerCandleVolume;
+    private long dayLowestVolume = Long.MAX_VALUE;
     private int armedCandlesElapsed = 0;
+    private int tradeAttempts = 0;
     private String rejectionReason;
     private Instant updatedAt;
     private Instant setupCreatedTime;
@@ -83,6 +85,32 @@ public class LowestVolumeSetup {
         this.updatedAt = Instant.now();
     }
 
+    public synchronized void recordTradeAttempt() {
+        this.tradeAttempts++;
+    }
+
+    public synchronized int getTradeAttempts() {
+        return tradeAttempts;
+    }
+
+    public synchronized void setTradeAttempts(int tradeAttempts) {
+        this.tradeAttempts = tradeAttempts;
+    }
+
+    public synchronized long getDayLowestVolume() {
+        return dayLowestVolume;
+    }
+
+    public synchronized void setDayLowestVolume(long dayLowestVolume) {
+        this.dayLowestVolume = dayLowestVolume;
+    }
+
+    public synchronized void updateDayLowestVolume(long volume) {
+        if (volume > 0 && volume < this.dayLowestVolume) {
+            this.dayLowestVolume = volume;
+        }
+    }
+
     public String getSymbol() {
         return symbol;
     }
@@ -127,6 +155,23 @@ public class LowestVolumeSetup {
         this.atr14 = atr14;
     }
 
+    public boolean isClosed() {
+        return state == LowestVolumeSetupState.CLOSED_SL
+                || state == LowestVolumeSetupState.CLOSED_TARGET
+                || state == LowestVolumeSetupState.CLOSED_TRAIL_EXIT
+                || state == LowestVolumeSetupState.CLOSED_TIMEOUT;
+    }
+
+    public boolean isExhaustedOrRejected() {
+        return state == LowestVolumeSetupState.REJECTED_EXHAUSTED;
+    }
+
+    public boolean isInPosition() {
+        return state == LowestVolumeSetupState.IN_POSITION
+                || state == LowestVolumeSetupState.PARTIAL_BOOKED;
+    }
+
+
     public BigDecimal getInitialLegMove() {
         return initialLegMove;
     }
@@ -151,19 +196,26 @@ public class LowestVolumeSetup {
         return setupCreatedTime;
     }
 
-    public boolean isExhaustedOrRejected() {
-        return state == LowestVolumeSetupState.REJECTED_EXHAUSTED;
-    }
-
-    public boolean isInPosition() {
-        return state == LowestVolumeSetupState.IN_POSITION
-                || state == LowestVolumeSetupState.PARTIAL_BOOKED;
-    }
-
-    public boolean isClosed() {
-        return state == LowestVolumeSetupState.CLOSED_SL
-                || state == LowestVolumeSetupState.CLOSED_TARGET
-                || state == LowestVolumeSetupState.CLOSED_TRAIL_EXIT
-                || state == LowestVolumeSetupState.CLOSED_TIMEOUT;
+    @Override
+    public String toString() {
+        return "LowestVolumeSetup{"
+                + "symbol='"
+                + symbol
+                + '\''
+                + ", direction="
+                + direction
+                + ", state="
+                + state
+                + ", triggerPrice="
+                + triggerPrice
+                + ", stopLossPrice="
+                + stopLossPrice
+                + ", target1Price="
+                + target1Price
+                + ", dayLowestVolume="
+                + dayLowestVolume
+                + ", tradeAttempts="
+                + tradeAttempts
+                + '}';
     }
 }
