@@ -208,12 +208,17 @@ public class TelegramBotCommandListener {
             JsonNode message = update.path("message");
             String text = message.path("text").asText("");
             long chatId = message.path("chat").path("id").asLong();
+            String targetChatId = chatId != 0 ? String.valueOf(chatId) : null;
 
             if (text.startsWith("/")) {
                 log.info("[TELEGRAM LISTENER] Received command: '{}' from chat {}", text, chatId);
                 String responseText = processCommand(text);
                 if (responseText != null && !responseText.isBlank()) {
-                    telegramService.sendAlert(responseText);
+                    if (targetChatId != null) {
+                        telegramService.sendTextMessage(targetChatId, responseText);
+                    } else {
+                        telegramService.sendAlert(responseText);
+                    }
                 }
             }
         }
@@ -223,25 +228,33 @@ public class TelegramBotCommandListener {
             JsonNode callback = update.path("callback_query");
             String callbackId = callback.path("id").asText();
             String data = callback.path("data").asText();
-            log.info("[TELEGRAM LISTENER] Received callback query: '{}'", data);
+            long chatId = callback.path("message").path("chat").path("id").asLong();
+            String targetChatId = chatId != 0 ? String.valueOf(chatId) : null;
+            log.info(
+                    "[TELEGRAM LISTENER] Received callback query: '{}' from chat {}", data, chatId);
 
             answerCallback(callbackId, "Processing...");
 
+            String reply = null;
             if ("pos_approve".equalsIgnoreCase(data)) {
                 boolean approved = positionalService.approveStagedTrade();
-                if (approved) {
-                    telegramService.sendAlert(
-                            "✅ Staged positional trade was *APPROVED* and executed successfully!");
-                } else {
-                    telegramService.sendAlert("⚠️ No staged trade available for approval.");
-                }
+                reply =
+                        approved
+                                ? "✅ Staged positional trade was *APPROVED* and executed successfully!"
+                                : "⚠️ No staged trade available for approval.";
             } else if ("pos_reject".equalsIgnoreCase(data)) {
                 boolean rejected = positionalService.rejectStagedTrade();
-                if (rejected) {
-                    telegramService.sendAlert(
-                            "🛑 Staged positional trade was *REJECTED*. Status reset to FLAT.");
+                reply =
+                        rejected
+                                ? "🛑 Staged positional trade was *REJECTED*. Status reset to FLAT."
+                                : "⚠️ No staged trade available to reject.";
+            }
+
+            if (reply != null) {
+                if (targetChatId != null) {
+                    telegramService.sendTextMessage(targetChatId, reply);
                 } else {
-                    telegramService.sendAlert("⚠️ No staged trade available to reject.");
+                    telegramService.sendAlert(reply);
                 }
             }
         }

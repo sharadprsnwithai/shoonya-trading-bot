@@ -32,5 +32,13 @@ class CommodityRegistryTest {
         assertNotNull(copperMeta);
         assertEquals("HG=F", copperMeta.yahooTicker());
         assertEquals(2500, copperMeta.lotSize());
+        assertEquals(2.20462, copperMeta.unitMultiplier(), 0.0001);
+
+        assertEquals(1.0, CommodityRegistry.getUnitMultiplier("CRUDEOIL"), 0.0001);
+        assertEquals(0.321507, CommodityRegistry.getUnitMultiplier("GOLD"), 0.0001);
+        assertEquals(32.15075, CommodityRegistry.getUnitMultiplier("SILVER"), 0.0001);
+        assertEquals(2.20462, CommodityRegistry.getUnitMultiplier("COPPER"), 0.0001);
+        assertEquals(1.0, CommodityRegistry.getUnitMultiplier("NATURALGAS"), 0.0001);
+        assertEquals(1.0, CommodityRegistry.getUnitMultiplier("INFY"), 0.0001);
     }
 }

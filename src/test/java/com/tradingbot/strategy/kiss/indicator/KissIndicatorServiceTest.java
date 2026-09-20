@@ -152,4 +152,56 @@ class KissIndicatorServiceTest {
         assertTrue(snapshot.suggestedTarget() < snapshot.currentPrice());
         assertTrue(snapshot.suggestedSl() > snapshot.currentPrice());
     }
+
+    @Test
+    void testWeeklyTrendPreservesBullishTrendWhenPriorWeekBullish() {
+        List<Candle> hourly = new ArrayList<>();
+        Instant now = Instant.parse("2026-10-05T09:15:00Z");
+
+        for (int i = 0; i < 30; i++) {
+            double price = 5000 + (i * 25);
+            hourly.add(
+                    new Candle(
+                            "CRUDEOIL",
+                            "60",
+                            now.plusSeconds(i * 3600),
+                            BigDecimal.valueOf(price - 10),
+                            BigDecimal.valueOf(price + 20),
+                            BigDecimal.valueOf(price - 15),
+                            BigDecimal.valueOf(price + 15),
+                            1000 + i * 50));
+        }
+
+        List<Candle> weekly = new ArrayList<>();
+        // 4 strongly bullish weeks
+        for (int i = 0; i < 4; i++) {
+            double price = 5000 + (i * 100);
+            weekly.add(
+                    new Candle(
+                            "CRUDEOIL",
+                            "W",
+                            now.plusSeconds(i * 7 * 86400),
+                            BigDecimal.valueOf(price),
+                            BigDecimal.valueOf(price + 100),
+                            BigDecimal.valueOf(price - 10),
+                            BigDecimal.valueOf(price + 80),
+                            50000));
+        }
+        // In-progress 5th week has small Monday opening red tick
+        weekly.add(
+                new Candle(
+                        "CRUDEOIL",
+                        "W",
+                        now.plusSeconds(4 * 7 * 86400),
+                        BigDecimal.valueOf(5400),
+                        BigDecimal.valueOf(5405),
+                        BigDecimal.valueOf(5370),
+                        BigDecimal.valueOf(5380),
+                        5000));
+
+        KissSnapshot snapshot = kissIndicatorService.computeSnapshot("CRUDEOIL", hourly, weekly);
+        assertNotNull(snapshot);
+        // Should maintain bullish HTF gate due to prior closed bullish week
+        assertTrue(snapshot.weeklyHaBullish());
+    }
 }

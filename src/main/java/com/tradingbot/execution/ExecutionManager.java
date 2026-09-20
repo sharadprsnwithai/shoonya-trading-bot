@@ -281,6 +281,18 @@ public class ExecutionManager {
     /** Closes an active spread position (cancels broker SL-L order and executes exit orders). */
     public synchronized ActiveSpreadPosition closeSpreadPosition(
             String tradeId, String exitReason) {
+        return closeSpreadPosition(tradeId, exitReason, null, null);
+    }
+
+    /**
+     * Closes an active spread position with optional explicit exit prices. If explicit prices are
+     * omitted, queries live option quotes before falling back to ratio estimates.
+     */
+    public synchronized ActiveSpreadPosition closeSpreadPosition(
+            String tradeId,
+            String exitReason,
+            BigDecimal explicitShortExit,
+            BigDecimal explicitHedgeExit) {
         ActiveSpreadPosition pos = positions.get(tradeId);
         if (pos == null || pos.isClosed()) {
             return pos;
@@ -292,16 +304,54 @@ public class ExecutionManager {
                 pos.shortSymbol(),
                 exitReason);
 
-        BigDecimal shortExitPremium =
-                pos.shortEntryPremium()
-                        .multiply(BigDecimal.valueOf(0.80))
-                        .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal hedgeExitPremium =
-                pos.hedgeEntryPremium() != null
-                        ? pos.hedgeEntryPremium()
-                                .multiply(BigDecimal.valueOf(0.50))
-                                .setScale(2, RoundingMode.HALF_UP)
-                        : BigDecimal.ZERO;
+        BigDecimal shortExitPremium = explicitShortExit;
+        BigDecimal hedgeExitPremium = explicitHedgeExit;
+
+        // Fetch live quotes from option chain if not explicitly provided
+        if (shortExitPremium == null || shortExitPremium.compareTo(BigDecimal.ZERO) <= 0) {
+            try {
+                if (optionChainService != null) {
+                    OptionChainResponse chain =
+                            optionChainService.getNifty50OptionChain(pos.strikePrice(), 8, true);
+                    if (chain != null) {
+                        shortExitPremium =
+                                resolveOptionPremium(
+                                        chain, pos.strikePrice(), pos.optionType(), null);
+                        if (pos.hedgeSymbol() != null) {
+                            BigDecimal hedgeStrike =
+                                    "PE".equalsIgnoreCase(pos.optionType())
+                                            ? pos.strikePrice()
+                                                    .subtract(BigDecimal.valueOf(hedgeStrikeOffset))
+                                            : pos.strikePrice()
+                                                    .add(BigDecimal.valueOf(hedgeStrikeOffset));
+                            hedgeExitPremium =
+                                    resolveOptionPremium(
+                                            chain, hedgeStrike, pos.optionType(), null);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug(
+                        "[EXECUTION] Could not fetch live option chain for exit: {}",
+                        e.getMessage());
+            }
+        }
+
+        // Safe fallback if option chain quote is unavailable
+        if (shortExitPremium == null || shortExitPremium.compareTo(BigDecimal.ZERO) <= 0) {
+            shortExitPremium =
+                    pos.shortEntryPremium()
+                            .multiply(BigDecimal.valueOf(0.80))
+                            .setScale(2, RoundingMode.HALF_UP);
+        }
+        if (hedgeExitPremium == null) {
+            hedgeExitPremium =
+                    pos.hedgeEntryPremium() != null
+                            ? pos.hedgeEntryPremium()
+                                    .multiply(BigDecimal.valueOf(0.50))
+                                    .setScale(2, RoundingMode.HALF_UP)
+                            : BigDecimal.ZERO;
+        }
 
         if (executionMode == ExecutionMode.LIVE) {
             // 1. Cancel Open Broker SL-L Order

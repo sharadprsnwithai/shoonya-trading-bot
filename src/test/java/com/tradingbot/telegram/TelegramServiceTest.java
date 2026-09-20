@@ -87,4 +87,11 @@ class TelegramServiceTest {
         org.assertj.core.api.Assertions.assertThat(TelegramService.escapeMarkdown(null))
                 .isEqualTo("");
     }
+
+    @Test
+    void testSendTextMessageWithChatIdWhenDisabled() {
+        // Should gracefully handle target chatId when disabled
+        telegramService.sendTextMessage("987654321", "Test custom chat alert");
+        telegramService.sendAlert("987654321", "Test custom alert");
+    }
 }

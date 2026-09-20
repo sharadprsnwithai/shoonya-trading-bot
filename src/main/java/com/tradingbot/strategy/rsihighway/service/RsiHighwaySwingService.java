@@ -17,7 +17,9 @@ import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.Nifty500Registry;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -518,38 +520,37 @@ public class RsiHighwaySwingService {
                 RsiHighwayPosition position = state.getPositions().get(sym);
                 if (position == null || !position.isActive()) continue;
 
+                // 1. Fetch live quote price first
+                double liveLtp = 0.0;
+                try {
+                    String token = marketDataService.resolveToken(sym);
+                    if (token != null) {
+                        var quoteNode = marketDataService.fetchQuote("NSE", token);
+                        if (quoteNode != null && quoteNode.has("lp")) {
+                            double lp = quoteNode.path("lp").asDouble(0.0);
+                            if (lp > 0) {
+                                liveLtp = lp;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug(
+                            "[RSI-HIGHWAY] Live quote fetch failed for {}: {}",
+                            sym,
+                            e.getMessage());
+                }
+
                 List<Candle> candles =
                         marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
                 if (candles == null || candles.isEmpty()) continue;
 
-                MultiTimeframeRsiSnapshot snap =
-                        multiTimeframeRsiService.computeSnapshot(sym, candles);
-                if (snap == null) continue;
-
-                double currentPrice = snap.currentPrice();
+                double currentPrice =
+                        liveLtp > 0
+                                ? liveLtp
+                                : candles.get(candles.size() - 1).close().doubleValue();
                 position.updateMarketPrice(currentPrice);
-                position.setHighestDailyRsiSeen(
-                        Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
 
-                // Emergency plunge RSI < 45
-                if (snap.dailyRsi() < config.getMorningEmergencyRsi()) {
-                    log.warn(
-                            "[RSI-HIGHWAY] EMERGENCY PLUNGE EXIT for {}: Daily RSI {} < {}",
-                            sym,
-                            snap.dailyRsi(),
-                            config.getMorningEmergencyRsi());
-                    if (executionService.executeExit(
-                            position, currentPrice, "Emergency Morning Plunge Exit")) {
-                        archivePosition(position, currentPrice, "Emergency Morning Plunge Exit");
-                        notifyTelegram(
-                                String.format(
-                                        "🚨 *RSI Highway EMERGENCY PLUNGE Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f",
-                                        sym, snap.dailyRsi(), currentPrice));
-                    }
-                    continue;
-                }
-
-                // Stop loss breach
+                // Stop loss breach check on live price
                 if (currentPrice < position.getCurrentSlPrice()) {
                     log.warn(
                             "[RSI-HIGHWAY] Morning SL Breach Exit for {}: Current ₹{} < SL ₹{}",
@@ -563,6 +564,68 @@ public class RsiHighwaySwingService {
                                 String.format(
                                         "🛑 *RSI Highway Morning SL Exit*\nSymbol: %s\nExit Price: ₹%.2f",
                                         sym, currentPrice));
+                    }
+                    continue;
+                }
+
+                // Prepare candles with live price for RSI evaluation
+                List<Candle> candlesForRsi = new ArrayList<>(candles);
+                Candle lastCandle = candlesForRsi.get(candlesForRsi.size() - 1);
+                LocalDate today = LocalDate.now(IST);
+                LocalDate lastDate =
+                        lastCandle.timestamp() != null
+                                ? lastCandle.timestamp().atZone(IST).toLocalDate()
+                                : null;
+
+                if (today.equals(lastDate)) {
+                    // Update today's in-progress candle close with live quote
+                    candlesForRsi.set(
+                            candlesForRsi.size() - 1,
+                            new Candle(
+                                    lastCandle.symbol(),
+                                    lastCandle.timeframe(),
+                                    lastCandle.timestamp(),
+                                    lastCandle.open(),
+                                    lastCandle.high().max(BigDecimal.valueOf(currentPrice)),
+                                    lastCandle.low().min(BigDecimal.valueOf(currentPrice)),
+                                    BigDecimal.valueOf(currentPrice),
+                                    lastCandle.volume()));
+                } else {
+                    // Append today's synthetic candle
+                    candlesForRsi.add(
+                            new Candle(
+                                    sym,
+                                    "D",
+                                    Instant.now(),
+                                    BigDecimal.valueOf(currentPrice),
+                                    BigDecimal.valueOf(currentPrice),
+                                    BigDecimal.valueOf(currentPrice),
+                                    BigDecimal.valueOf(currentPrice),
+                                    0L));
+                }
+
+                MultiTimeframeRsiSnapshot snap =
+                        multiTimeframeRsiService.computeSnapshot(sym, candlesForRsi);
+                if (snap == null) continue;
+
+                position.setHighestDailyRsiSeen(
+                        Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
+
+                // Emergency plunge: Daily RSI < 45 on live price AND price is down from entry
+                if (snap.dailyRsi() < config.getMorningEmergencyRsi()
+                        && (currentPrice < position.getAveragePrice() || snap.dailyRsi() < 40.0)) {
+                    log.warn(
+                            "[RSI-HIGHWAY] EMERGENCY PLUNGE EXIT for {}: Daily RSI {} < {}",
+                            sym,
+                            snap.dailyRsi(),
+                            config.getMorningEmergencyRsi());
+                    if (executionService.executeExit(
+                            position, currentPrice, "Emergency Morning Plunge Exit")) {
+                        archivePosition(position, currentPrice, "Emergency Morning Plunge Exit");
+                        notifyTelegram(
+                                String.format(
+                                        "🚨 *RSI Highway EMERGENCY PLUNGE Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f",
+                                        sym, snap.dailyRsi(), currentPrice));
                     }
                 }
             } catch (Exception e) {

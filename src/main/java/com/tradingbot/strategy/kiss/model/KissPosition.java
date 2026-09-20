@@ -18,6 +18,8 @@ public class KissPosition {
     private double highestPriceSeen;
     private double lowestPriceSeen;
     private double fxMultiplier = 1.0; // 1.0 for INR, ~86.5 for USD commodity feeds
+    private double unitMultiplier =
+            1.0; // Contract unit conversion factor (e.g. oz to kg, lb to kg)
     private double unrealizedPnl;
     private double unrealizedPnlPct;
     private double realizedPnl;
@@ -38,6 +40,7 @@ public class KissPosition {
             int quantity,
             int lotSize,
             double fxMultiplier,
+            double unitMultiplier,
             Instant enteredAt) {
         this.symbol = symbol;
         this.signalType = signalType;
@@ -47,12 +50,36 @@ public class KissPosition {
         this.quantity = quantity;
         this.lotSize = lotSize;
         this.fxMultiplier = fxMultiplier > 0 ? fxMultiplier : 1.0;
+        this.unitMultiplier = unitMultiplier > 0 ? unitMultiplier : 1.0;
         this.currentLtp = entryPrice;
         this.highestPriceSeen = entryPrice;
         this.lowestPriceSeen = entryPrice;
         this.enteredAt = enteredAt;
         this.lastEvaluatedAt = enteredAt;
         this.active = true;
+    }
+
+    public KissPosition(
+            String symbol,
+            KissSignalType signalType,
+            double entryPrice,
+            double stopLoss,
+            double targetPrice,
+            int quantity,
+            int lotSize,
+            double fxMultiplier,
+            Instant enteredAt) {
+        this(
+                symbol,
+                signalType,
+                entryPrice,
+                stopLoss,
+                targetPrice,
+                quantity,
+                lotSize,
+                fxMultiplier,
+                1.0,
+                enteredAt);
     }
 
     public KissPosition(
@@ -73,6 +100,7 @@ public class KissPosition {
                 quantity,
                 lotSize,
                 1.0,
+                1.0,
                 enteredAt);
     }
 
@@ -83,12 +111,16 @@ public class KissPosition {
         this.lowestPriceSeen = Math.min(this.lowestPriceSeen, ltp);
         this.lastEvaluatedAt = Instant.now();
 
+        double effectiveMult =
+                (fxMultiplier > 0 ? fxMultiplier : 1.0)
+                        * (unitMultiplier > 0 ? unitMultiplier : 1.0);
+
         if (signalType == KissSignalType.BUY_SIGNAL) {
-            this.unrealizedPnl = (ltp - entryPrice) * quantity * fxMultiplier;
+            this.unrealizedPnl = (ltp - entryPrice) * quantity * effectiveMult;
             this.unrealizedPnlPct =
                     entryPrice > 0 ? ((ltp - entryPrice) / entryPrice) * 100.0 : 0.0;
         } else {
-            this.unrealizedPnl = (entryPrice - ltp) * quantity * fxMultiplier;
+            this.unrealizedPnl = (entryPrice - ltp) * quantity * effectiveMult;
             this.unrealizedPnlPct =
                     entryPrice > 0 ? ((entryPrice - ltp) / entryPrice) * 100.0 : 0.0;
         }
@@ -99,10 +131,13 @@ public class KissPosition {
         this.currentLtp = exitPrice;
         this.exitReason = reason;
         this.exitedAt = exitedAt;
+        double effectiveMult =
+                (fxMultiplier > 0 ? fxMultiplier : 1.0)
+                        * (unitMultiplier > 0 ? unitMultiplier : 1.0);
         if (signalType == KissSignalType.BUY_SIGNAL) {
-            this.realizedPnl = (exitPrice - entryPrice) * quantity * fxMultiplier;
+            this.realizedPnl = (exitPrice - entryPrice) * quantity * effectiveMult;
         } else {
-            this.realizedPnl = (entryPrice - exitPrice) * quantity * fxMultiplier;
+            this.realizedPnl = (entryPrice - exitPrice) * quantity * effectiveMult;
         }
     }
 
@@ -112,6 +147,14 @@ public class KissPosition {
 
     public void setFxMultiplier(double fxMultiplier) {
         this.fxMultiplier = fxMultiplier;
+    }
+
+    public double getUnitMultiplier() {
+        return unitMultiplier;
+    }
+
+    public void setUnitMultiplier(double unitMultiplier) {
+        this.unitMultiplier = unitMultiplier;
     }
 
     // Getters and Setters

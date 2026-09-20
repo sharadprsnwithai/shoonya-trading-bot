@@ -324,15 +324,16 @@ public class KissSwingService {
 
         boolean isComm = CommodityRegistry.isCommodity(signal.symbol());
         double fxRate = isComm ? 86.5 : 1.0;
+        double unitMultiplier = CommodityRegistry.getUnitMultiplier(signal.symbol());
         String curSymbol = isComm ? "$" : "₹";
 
         int lotSize = resolveLotSize(signal.symbol());
         double accountEquity = state.getTotalPortfolioEquity();
         double maxRiskBudget = accountEquity * config.getMaxRiskPerTradePct();
-        double riskBudgetInCurrency = maxRiskBudget / fxRate;
         double riskPerUnit = Math.max(0.01, signal.riskAmount());
 
-        int calculatedUnits = (int) (riskBudgetInCurrency / (riskPerUnit * lotSize));
+        double riskPerLotInINR = riskPerUnit * (lotSize * unitMultiplier) * fxRate;
+        int calculatedUnits = (int) (maxRiskBudget / riskPerLotInINR);
         int lots = Math.max(1, calculatedUnits);
         int totalQty = lots * lotSize;
 
@@ -346,6 +347,7 @@ public class KissSwingService {
                         totalQty,
                         lotSize,
                         fxRate,
+                        unitMultiplier,
                         Instant.now());
 
         state.getPositions().put(signal.symbol(), position);

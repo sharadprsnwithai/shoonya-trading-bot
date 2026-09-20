@@ -724,9 +724,19 @@ public class TelegramService {
         sendAsync(text);
     }
 
+    /** Sends a generic text alert to a specific chat ID. */
+    public void sendAlert(String chatId, String text) {
+        sendAsync(chatId, text);
+    }
+
     /** Sends a plain/markdown text message via Telegram. */
     public void sendTextMessage(String message) {
         sendAsync(message);
+    }
+
+    /** Sends a plain/markdown text message via Telegram to a specific chat ID. */
+    public void sendTextMessage(String chatId, String message) {
+        sendAsync(chatId, message);
     }
 
     /** Escapes reserved Markdown v1 characters. */
@@ -820,13 +830,34 @@ public class TelegramService {
                 asyncExecutor);
     }
 
-    /** Sends a raw message asynchronously to avoid blocking execution threads. */
+    /**
+     * Sends a raw message asynchronously to default chat ID to avoid blocking execution threads.
+     */
     public void sendAsync(String text) {
+        sendAsync(config != null ? config.getTelegramChatId() : null, text);
+    }
+
+    /**
+     * Sends a raw message asynchronously to a specific chat ID to avoid blocking execution threads.
+     */
+    public void sendAsync(String targetChatId, String text) {
         CompletableFuture.runAsync(
                 () -> {
                     try {
-                        String token = config.getTelegramBotToken().trim();
-                        String chatId = config.getTelegramChatId().trim();
+                        if (config == null) return;
+                        String token =
+                                config.getTelegramBotToken() != null
+                                        ? config.getTelegramBotToken().trim()
+                                        : "";
+                        String chatId =
+                                targetChatId != null && !targetChatId.isBlank()
+                                        ? targetChatId.trim()
+                                        : (config.getTelegramChatId() != null
+                                                ? config.getTelegramChatId().trim()
+                                                : "");
+                        if (token.isBlank() || chatId.isBlank() || text == null || text.isBlank()) {
+                            return;
+                        }
 
                         String url = "https://api.telegram.org/bot" + token + "/sendMessage";
                         String formBody =

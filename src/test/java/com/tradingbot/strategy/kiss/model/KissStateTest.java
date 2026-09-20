@@ -63,4 +63,32 @@ class KissStateTest {
         assertEquals(0.0, pos.getUnrealizedPnl(), 0.001);
         assertEquals(0.0, pos.getUnrealizedPnlPct(), 0.001);
     }
+
+    @Test
+    void testCommodityUnitMultiplierCalculations() {
+        // Silver: 1 lot = 30 kg, unitMultiplier = 32.15075 (oz/kg), FX = 86.5
+        KissPosition silverPos =
+                new KissPosition(
+                        "SILVER",
+                        KissSignalType.BUY_SIGNAL,
+                        30.00, // $30.00 / oz
+                        29.50,
+                        32.00,
+                        30, // 30 kg
+                        30,
+                        86.5,
+                        32.15075,
+                        Instant.now());
+
+        // Price rises from $30.00 to $31.00 (+ $1.00/oz)
+        silverPos.updateMarketPrice(31.00);
+        // PnL = (31 - 30) * 30 * 86.5 * 32.15075 = 1 * 30 * 86.5 * 32.15075 = 83431.196
+        double expectedPnl = 1.0 * 30 * 86.5 * 32.15075;
+        assertEquals(expectedPnl, silverPos.getUnrealizedPnl(), 0.1);
+
+        // Close position at $31.50
+        silverPos.closePosition(31.50, "TARGET_HIT", Instant.now());
+        double expectedRealized = 1.5 * 30 * 86.5 * 32.15075;
+        assertEquals(expectedRealized, silverPos.getRealizedPnl(), 0.1);
+    }
 }

@@ -306,7 +306,18 @@ public class KissIndicatorService {
             return false;
         }
 
+        // Anchor trend filter to latest weekly bar, reinforced by prior closed weekly bar if
+        // available
         HeikinAshiCandle latestWeeklyHa = weeklyHa.get(weeklyHa.size() - 1);
-        return latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0;
+        boolean latestGreen = latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0;
+
+        if (weeklyHa.size() >= 2) {
+            HeikinAshiCandle prevWeeklyHa = weeklyHa.get(weeklyHa.size() - 2);
+            boolean prevGreen = prevWeeklyHa.close().compareTo(prevWeeklyHa.open()) >= 0;
+            // Bullish if current in-progress week is green OR last closed week was confirmed green
+            return latestGreen || prevGreen;
+        }
+
+        return latestGreen;
     }
 }
