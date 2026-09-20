@@ -121,6 +121,7 @@ public class SqliteHistoricalOhlcRepository {
     public void batchUpsertCandles(String symbol, String timeframe, List<Candle> candles) {
         if (candles == null || candles.isEmpty()) return;
 
+        String normalizedTf = normalizeTimeframe(timeframe);
         String sql =
                 """
             INSERT OR REPLACE INTO historical_candles
@@ -131,7 +132,7 @@ public class SqliteHistoricalOhlcRepository {
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                addCandlesToBatch(pstmt, symbol, timeframe, candles);
+                addCandlesToBatch(pstmt, symbol, normalizedTf, candles);
                 pstmt.executeBatch();
                 conn.commit();
             } catch (SQLException e) {
@@ -204,11 +205,12 @@ public class SqliteHistoricalOhlcRepository {
 
     /** Retrieves all candles for a symbol and timeframe sorted chronologically (ASC). */
     public List<Candle> getCandles(String symbol, String timeframe) {
+        String normalizedTf = normalizeTimeframe(timeframe);
         String sql =
                 """
             SELECT symbol, timeframe, timestamp, open, high, low, close, volume
             FROM historical_candles
-            WHERE symbol = ? AND timeframe = ?
+            WHERE symbol = ? AND (timeframe = ? OR timeframe = ?)
             ORDER BY timestamp ASC
             """;
 
@@ -216,7 +218,8 @@ public class SqliteHistoricalOhlcRepository {
         try (Connection conn = getConnection();
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, symbol);
-            pstmt.setString(2, timeframe);
+            pstmt.setString(2, normalizedTf);
+            pstmt.setString(3, timeframe != null ? timeframe : normalizedTf);
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     result.add(mapRowToCandle(rs));
@@ -235,13 +238,14 @@ public class SqliteHistoricalOhlcRepository {
 
     /** Retrieves the latest N candles for a symbol and timeframe sorted chronologically (ASC). */
     public List<Candle> getLatestCandles(String symbol, String timeframe, int limit) {
+        String normalizedTf = normalizeTimeframe(timeframe);
         String sql =
                 """
             SELECT symbol, timeframe, timestamp, open, high, low, close, volume
             FROM (
                 SELECT symbol, timeframe, timestamp, open, high, low, close, volume
                 FROM historical_candles
-                WHERE symbol = ? AND timeframe = ?
+                WHERE symbol = ? AND (timeframe = ? OR timeframe = ?)
                 ORDER BY timestamp DESC
                 LIMIT ?
             )
@@ -252,8 +256,9 @@ public class SqliteHistoricalOhlcRepository {
         try (Connection conn = getConnection();
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, symbol);
-            pstmt.setString(2, timeframe);
-            pstmt.setInt(3, limit);
+            pstmt.setString(2, normalizedTf);
+            pstmt.setString(3, timeframe != null ? timeframe : normalizedTf);
+            pstmt.setInt(4, limit);
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     result.add(mapRowToCandle(rs));
@@ -268,6 +273,17 @@ public class SqliteHistoricalOhlcRepository {
                     e);
         }
         return result;
+    }
+
+    public String normalizeTimeframe(String timeframe) {
+        if (timeframe == null) return "D";
+        String tf = timeframe.trim().toUpperCase();
+        if ("1W".equals(tf) || "W".equals(tf)) return "W";
+        if ("1M".equals(tf) || "M".equals(tf)) return "M";
+        if ("1D".equals(tf) || "D".equals(tf)) return "D";
+        if ("1H".equals(tf) || "60".equals(tf)) return "60";
+        if ("5M".equals(tf) || "5".equals(tf)) return "5";
+        return tf;
     }
 
     /** Retrieves the full daily, weekly, and monthly bundle for a symbol from SQLite. */

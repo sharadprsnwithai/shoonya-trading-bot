@@ -443,7 +443,11 @@ public class ExecutionManager {
         if (expiryPart.endsWith("F")) {
             expiryPart = expiryPart.substring(0, expiryPart.length() - 1);
         }
-        return expiryPart + strike.intValue() + optionType.toUpperCase();
+        String formattedStrike =
+                strike.stripTrailingZeros().scale() <= 0
+                        ? String.valueOf(strike.intValue())
+                        : strike.stripTrailingZeros().toPlainString();
+        return expiryPart + formattedStrike + optionType.toUpperCase();
     }
 
     private BigDecimal resolveOptionPremium(

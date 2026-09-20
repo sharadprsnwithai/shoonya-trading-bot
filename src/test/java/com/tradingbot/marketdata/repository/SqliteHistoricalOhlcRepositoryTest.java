@@ -189,4 +189,29 @@ public class SqliteHistoricalOhlcRepositoryTest {
         assertEquals(3014.0, latest3.get(1).close().doubleValue(), 0.001);
         assertEquals(3015.0, latest3.get(2).close().doubleValue(), 0.001);
     }
+
+    @Test
+    void testTimeframeAliasRetrieval() {
+        Candle weeklyCandle =
+                new Candle(
+                        "WIPRO",
+                        "1W",
+                        Instant.parse("2026-09-14T09:15:00Z"),
+                        BigDecimal.valueOf(500.0),
+                        BigDecimal.valueOf(520.0),
+                        BigDecimal.valueOf(490.0),
+                        BigDecimal.valueOf(510.0),
+                        800000L);
+
+        repository.batchUpsertCandles("WIPRO", "1W", List.of(weeklyCandle));
+
+        // Both "W" and "1W" query aliases must successfully retrieve the candle
+        List<Candle> byW = repository.getCandles("WIPRO", "W");
+        List<Candle> by1W = repository.getCandles("WIPRO", "1W");
+
+        assertEquals(1, byW.size());
+        assertEquals(1, by1W.size());
+        assertEquals(510.0, byW.get(0).close().doubleValue(), 0.001);
+        assertEquals(510.0, by1W.get(0).close().doubleValue(), 0.001);
+    }
 }
