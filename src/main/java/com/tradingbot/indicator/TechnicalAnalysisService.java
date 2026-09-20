@@ -432,4 +432,55 @@ public class TechnicalAnalysisService {
         }
         return (double) sum / period;
     }
+
+    /**
+     * Calculates MACD series (MACD Line, Signal Line, Histogram) using TA-Lib.
+     *
+     * @param close close prices array
+     * @param fastPeriod fast EMA period (typically 12)
+     * @param slowPeriod slow EMA period (typically 26)
+     * @param signalPeriod signal EMA period (typically 9)
+     * @return array of MacdResult corresponding to input bars
+     */
+    public com.tradingbot.model.indicator.MacdResult[] calculateMacdSeries(
+            double[] close, int fastPeriod, int slowPeriod, int signalPeriod) {
+        int len = close != null ? close.length : 0;
+        com.tradingbot.model.indicator.MacdResult[] results =
+                new com.tradingbot.model.indicator.MacdResult[len];
+        Arrays.fill(results, com.tradingbot.model.indicator.MacdResult.empty());
+
+        if (close == null || len < slowPeriod + signalPeriod) {
+            return results;
+        }
+
+        MInteger outBegIdx = new MInteger();
+        MInteger outNBElement = new MInteger();
+        double[] outMacd = new double[len];
+        double[] outSignal = new double[len];
+        double[] outHist = new double[len];
+
+        RetCode retCode =
+                TA_LIB.macd(
+                        0,
+                        len - 1,
+                        close,
+                        fastPeriod,
+                        slowPeriod,
+                        signalPeriod,
+                        outBegIdx,
+                        outNBElement,
+                        outMacd,
+                        outSignal,
+                        outHist);
+
+        if (retCode == RetCode.Success && outNBElement.value > 0) {
+            int start = outBegIdx.value;
+            for (int i = 0; i < outNBElement.value; i++) {
+                results[start + i] =
+                        new com.tradingbot.model.indicator.MacdResult(
+                                outMacd[i], outSignal[i], outHist[i]);
+            }
+        }
+        return results;
+    }
 }

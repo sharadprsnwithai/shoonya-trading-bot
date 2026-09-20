@@ -114,6 +114,10 @@ public class YahooFinanceService {
             return "OBEROIRLTY.NS";
         }
 
+        if ("SAMVARDHNA".equalsIgnoreCase(clean) || "MOTHERSON".equalsIgnoreCase(clean)) {
+            return "MOTHERSON.NS";
+        }
+
         if ("SENSEX".equalsIgnoreCase(clean)
                 || "BSESN".equalsIgnoreCase(clean)
                 || "^BSESN".equalsIgnoreCase(clean)
@@ -121,7 +125,29 @@ public class YahooFinanceService {
             return "%5EBSESN";
         }
 
-        if (clean.startsWith("^")) {
+        if ("CRUDEOIL".equalsIgnoreCase(clean)
+                || "CRUDE".equalsIgnoreCase(clean)
+                || "CRUDE OIL".equalsIgnoreCase(clean)) {
+            return "CL=F";
+        }
+
+        if ("GOLD".equalsIgnoreCase(clean) || "GOLDM".equalsIgnoreCase(clean)) {
+            return "GC=F";
+        }
+
+        if ("SILVER".equalsIgnoreCase(clean) || "SILVERM".equalsIgnoreCase(clean)) {
+            return "SI=F";
+        }
+
+        if ("COPPER".equalsIgnoreCase(clean) || "COPPERM".equalsIgnoreCase(clean)) {
+            return "HG=F";
+        }
+
+        if ("NATURALGAS".equalsIgnoreCase(clean) || "NATGAS".equalsIgnoreCase(clean)) {
+            return "NG=F";
+        }
+
+        if (clean.startsWith("^") || clean.endsWith("=F")) {
             return "%5E" + clean.substring(1);
         }
 
@@ -141,6 +167,21 @@ public class YahooFinanceService {
         int boundedYears = Math.max(1, Math.min(yearsBack, 5));
         String url = YAHOO_CHART_URL_PREFIX + ticker + "?range=" + boundedYears + "y&interval=1d";
         return fetchCandlesInternal(symbol, "D", ticker, url);
+    }
+
+    /**
+     * Fetches 1-hour intraday OHLC candles for the specified number of days back from Yahoo
+     * Finance.
+     *
+     * @param symbol Symbol name (e.g. "RELIANCE", "CRUDEOIL", "GOLD")
+     * @param daysBack Range in days (e.g. 30 to 730 days)
+     * @return Chronological list of 1-Hour Candle objects, or empty list on failure
+     */
+    public List<Candle> fetchHourlyCandles(String symbol, int daysBack) {
+        String ticker = toYahooTicker(symbol);
+        int boundedDays = Math.max(1, Math.min(daysBack, 730));
+        String url = YAHOO_CHART_URL_PREFIX + ticker + "?range=" + boundedDays + "d&interval=1h";
+        return fetchCandlesInternal(symbol, "60", ticker, url);
     }
 
     /**

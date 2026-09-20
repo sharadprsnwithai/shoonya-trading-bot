@@ -212,4 +212,126 @@ public final class CandleResamplingUtil {
         resampled.sort(Comparator.comparing(Candle::timestamp));
         return resampled;
     }
+
+    /**
+     * Resamples a chronological list of 5-minute candles into 1-Hour (60m) candles.
+     *
+     * @param fiveMinCandles chronological list of 5m candles
+     * @return chronological list of 1H candles
+     */
+    public static List<Candle> resample5MinTo1Hour(List<Candle> fiveMinCandles) {
+        if (fiveMinCandles == null || fiveMinCandles.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, List<Candle>> groupedBy1Hour = new LinkedHashMap<>();
+
+        for (Candle c : fiveMinCandles) {
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
+            // Group by 60-minute slot
+            long epochMinutes = c.timestamp().getEpochSecond() / 60;
+            long intervalKey = (epochMinutes / 60) * 60;
+            groupedBy1Hour.computeIfAbsent(intervalKey, k -> new ArrayList<>()).add(c);
+        }
+
+        List<Candle> resampled = new ArrayList<>();
+        for (List<Candle> bucket : groupedBy1Hour.values()) {
+            if (bucket.isEmpty()) continue;
+            bucket.sort(Comparator.comparing(Candle::timestamp));
+            Candle first = bucket.get(0);
+            Candle last = bucket.get(bucket.size() - 1);
+
+            BigDecimal open = first.open();
+            BigDecimal close = last.close();
+            BigDecimal high = first.high();
+            BigDecimal low = first.low();
+            long totalVolume = 0;
+
+            for (Candle b : bucket) {
+                if (b.high().compareTo(high) > 0) high = b.high();
+                if (b.low().compareTo(low) < 0) low = b.low();
+                totalVolume += b.volume();
+            }
+
+            resampled.add(
+                    new Candle(
+                            first.symbol(),
+                            "60",
+                            last.timestamp(),
+                            open,
+                            high,
+                            low,
+                            close,
+                            totalVolume));
+        }
+
+        resampled.sort(Comparator.comparing(Candle::timestamp));
+        return resampled;
+    }
+
+    /**
+     * Resamples a chronological list of 5-minute candles into 4-Hour (240m) candles.
+     *
+     * @param fiveMinCandles chronological list of 5m candles
+     * @return chronological list of 4H candles
+     */
+    public static List<Candle> resample5MinTo4Hour(List<Candle> fiveMinCandles) {
+        if (fiveMinCandles == null || fiveMinCandles.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, List<Candle>> groupedBy4Hour = new LinkedHashMap<>();
+
+        for (Candle c : fiveMinCandles) {
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
+            // Group by 240-minute slot
+            long epochMinutes = c.timestamp().getEpochSecond() / 60;
+            long intervalKey = (epochMinutes / 240) * 240;
+            groupedBy4Hour.computeIfAbsent(intervalKey, k -> new ArrayList<>()).add(c);
+        }
+
+        List<Candle> resampled = new ArrayList<>();
+        for (List<Candle> bucket : groupedBy4Hour.values()) {
+            if (bucket.isEmpty()) continue;
+            bucket.sort(Comparator.comparing(Candle::timestamp));
+            Candle first = bucket.get(0);
+            Candle last = bucket.get(bucket.size() - 1);
+
+            BigDecimal open = first.open();
+            BigDecimal close = last.close();
+            BigDecimal high = first.high();
+            BigDecimal low = first.low();
+            long totalVolume = 0;
+
+            for (Candle b : bucket) {
+                if (b.high().compareTo(high) > 0) high = b.high();
+                if (b.low().compareTo(low) < 0) low = b.low();
+                totalVolume += b.volume();
+            }
+
+            resampled.add(
+                    new Candle(
+                            first.symbol(),
+                            "240",
+                            last.timestamp(),
+                            open,
+                            high,
+                            low,
+                            close,
+                            totalVolume));
+        }
+
+        resampled.sort(Comparator.comparing(Candle::timestamp));
+        return resampled;
+    }
 }

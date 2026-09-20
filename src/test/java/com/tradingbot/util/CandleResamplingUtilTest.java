@@ -251,4 +251,28 @@ class CandleResamplingUtilTest {
         assertThat(monthly.get(1).close()).isEqualByComparingTo(BigDecimal.valueOf(3720));
         assertThat(monthly.get(1).volume()).isEqualTo(1500L);
     }
+
+    @Test
+    void testResample5MinTo1Hour() {
+        List<Candle> fiveMin = new ArrayList<>();
+        Instant start = Instant.parse("2026-10-05T09:15:00Z");
+
+        for (int i = 0; i < 12; i++) { // 12 * 5m = 60m
+            fiveMin.add(
+                    new Candle(
+                            "CRUDEOIL",
+                            "5",
+                            start.plusSeconds(i * 300),
+                            BigDecimal.valueOf(6000 + i),
+                            BigDecimal.valueOf(6050 + i),
+                            BigDecimal.valueOf(5980),
+                            BigDecimal.valueOf(6020 + i),
+                            500));
+        }
+
+        List<Candle> hourly = CandleResamplingUtil.resample5MinTo1Hour(fiveMin);
+        assertThat(hourly).isNotEmpty();
+        assertThat(hourly.get(0).symbol()).isEqualTo("CRUDEOIL");
+        assertThat(hourly.get(0).timeframe()).isEqualTo("60");
+    }
 }
