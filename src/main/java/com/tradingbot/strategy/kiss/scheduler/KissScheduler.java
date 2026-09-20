@@ -24,24 +24,30 @@ public class KissScheduler {
         this.swingService = swingService;
     }
 
-    /** Hourly scan at the 15-minute mark of every market hour (09:15 - 15:15 IST). */
+    /**
+     * Hourly scan for NSE Equities at the 15-minute mark of every market hour (10:15 - 15:15 IST).
+     */
     @Scheduled(
-            cron = "${trading-bot.strategy.kiss.nse-hourly-cron:0 15 9-15 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.kiss.nse-hourly-cron:0 15 10-15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void runNseHourlyScan() {
         if (!config.isEnabled()) return;
         log.info("Triggering Scheduled KISS Strategy NSE Hourly Scan...");
-        swingService.scanAndExecute();
+        swingService.scanNseUniverse();
     }
 
-    /** Commodity evening hourly scans (16:00 - 23:00 IST). */
+    /**
+     * Hourly scan for MCX Commodities across the entire commodity trading session (10:00 AM - 11:00
+     * PM IST). Since MCX market opens at 09:00 AM IST, the first 1-hour candle completes at 10:00
+     * AM IST.
+     */
     @Scheduled(
-            cron = "${trading-bot.strategy.kiss.mcx-hourly-cron:0 0 16-23 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.kiss.mcx-hourly-cron:0 0 10-23 ? * MON-FRI}",
             zone = "Asia/Kolkata")
-    public void runMcxEveningScan() {
+    public void runMcxHourlyScan() {
         if (!config.isEnabled()) return;
-        log.info("Triggering Scheduled KISS Strategy MCX Evening Scan...");
-        swingService.scanAndExecute();
+        log.info("Triggering Scheduled KISS Strategy MCX Hourly Scan (09:00 - 23:00 session)...");
+        swingService.scanMcxUniverse();
     }
 
     /** Friday 15:15 IST weekend risk check. */

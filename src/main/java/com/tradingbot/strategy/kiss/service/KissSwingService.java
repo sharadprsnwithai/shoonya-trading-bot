@@ -76,6 +76,21 @@ public class KissSwingService {
      * and manages existing open positions.
      */
     public List<KissSignal> scanAndExecute() {
+        return scanUniverse(getScanUniverse(), "ALL");
+    }
+
+    /** Executes an hourly scan across the NSE Nifty 200 universe. */
+    public List<KissSignal> scanNseUniverse() {
+        return scanUniverse(Nifty200Registry.getNifty200Symbols(), "NSE Equities");
+    }
+
+    /** Executes an hourly scan across the MCX Commodities universe (09:00 - 23:00 IST). */
+    public List<KissSignal> scanMcxUniverse() {
+        return scanUniverse(CommodityRegistry.getAllSymbols(), "MCX Commodities");
+    }
+
+    /** Scans a specific list of symbols and manages open positions. */
+    public List<KissSignal> scanUniverse(List<String> symbols, String universeLabel) {
         if (!config.isEnabled()) {
             log.debug("KISS strategy is disabled in configuration.");
             return List.of();
@@ -83,15 +98,17 @@ public class KissSwingService {
 
         lock.lock();
         try {
-            log.info("Starting KISS Multi-Timeframe Strategy Scan...");
+            log.info(
+                    "Starting KISS Multi-Timeframe Strategy Scan for {} ({} symbols)...",
+                    universeLabel,
+                    symbols.size());
             List<KissSignal> emittedSignals = new ArrayList<>();
 
             // 1. Manage active positions first
             manageOpenPositions();
 
             // 2. Scan Universe for new setups
-            List<String> universe = getScanUniverse();
-            for (String symbol : universe) {
+            for (String symbol : symbols) {
                 try {
                     KissSignal signal = evaluateSymbol(symbol);
                     if (signal != null) {
@@ -115,7 +132,8 @@ public class KissSwingService {
             state.setLastScanTime(Instant.now());
             persistState();
             log.info(
-                    "KISS scan completed. Active positions: {}, New signals: {}",
+                    "KISS {} scan completed. Active positions: {}, New signals: {}",
+                    universeLabel,
                     state.getPositions().size(),
                     emittedSignals.size());
             return emittedSignals;
