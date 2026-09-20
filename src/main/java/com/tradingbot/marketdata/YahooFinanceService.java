@@ -147,8 +147,12 @@ public class YahooFinanceService {
             return "NG=F";
         }
 
-        if (clean.startsWith("^") || clean.endsWith("=F")) {
+        if (clean.startsWith("^")) {
             return "%5E" + clean.substring(1);
+        }
+
+        if (clean.endsWith("=F")) {
+            return clean;
         }
 
         String encodedSymbol = URLEncoder.encode(clean, StandardCharsets.UTF_8).replace("+", "%20");

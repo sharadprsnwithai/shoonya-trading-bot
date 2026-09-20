@@ -176,9 +176,20 @@ public class KissIndicatorService {
         // 6. Envelope Consolidation / Chop Check
         boolean inBand = haCloseVal >= currentEmaLow && haCloseVal <= currentEmaHigh;
 
-        // 7. Entry Setup Logic
-        // Long Condition: Weekly HA Green + 1H HA Close > 55 EMA High + 55 Slope Rising + MACD Line
-        // >= Signal & MACD > 0
+        // 7. Entry Setup Logic (Breakout / Retest / Fresh Momentum - not overextended)
+        double prevHaClose = haList.get(prev).close().doubleValue();
+        double prevEmaHigh = emaHighSeries[prev];
+        double prevEmaLow = emaLowSeries[prev];
+
+        boolean freshBullishBreakout = prevHaClose <= prevEmaHigh * 1.005;
+        boolean withinBullishBandProximity = haCloseVal <= currentEmaHigh * 1.04;
+        boolean freshMacdBullishCross =
+                macdLine >= macdSignal
+                        && (macdSeries[prev].macd() <= macdSeries[prev].signal()
+                                || (prev > 0
+                                        && macdSeries[prev - 1].macd()
+                                                <= macdSeries[prev - 1].signal()));
+
         boolean isBullishSetup =
                 weeklyHaBullish
                         && (haCloseVal > currentEmaHigh)
@@ -186,7 +197,19 @@ public class KissIndicatorService {
                         && !Double.isNaN(macdLine)
                         && !Double.isNaN(macdSignal)
                         && (macdLine >= macdSignal)
-                        && (macdLine > 0);
+                        && (macdLine > 0)
+                        && (freshBullishBreakout
+                                || withinBullishBandProximity
+                                || freshMacdBullishCross);
+
+        boolean freshBearishBreakdown = prevHaClose >= prevEmaLow * 0.995;
+        boolean withinBearishBandProximity = haCloseVal >= currentEmaLow * 0.96;
+        boolean freshMacdBearishCross =
+                macdLine <= macdSignal
+                        && (macdSeries[prev].macd() >= macdSeries[prev].signal()
+                                || (prev > 0
+                                        && macdSeries[prev - 1].macd()
+                                                >= macdSeries[prev - 1].signal()));
 
         // Short Condition: Weekly HA Red + 1H HA Close < 55 EMA Low + 55 Slope Falling + MACD Line
         // <= Signal & MACD < 0
@@ -197,7 +220,10 @@ public class KissIndicatorService {
                         && !Double.isNaN(macdLine)
                         && !Double.isNaN(macdSignal)
                         && (macdLine <= macdSignal)
-                        && (macdLine < 0);
+                        && (macdLine < 0)
+                        && (freshBearishBreakdown
+                                || withinBearishBandProximity
+                                || freshMacdBearishCross);
 
         // 8. Stop Loss & Target Calculation
         double suggestedSl;
@@ -260,7 +286,7 @@ public class KissIndicatorService {
 
     private boolean evaluateWeeklyTrend(List<Candle> dailyOrWeeklyCandles) {
         if (dailyOrWeeklyCandles == null || dailyOrWeeklyCandles.isEmpty()) {
-            return true; // Default neutral/bullish if data not available
+            return false; // Fail-safe: require valid trend confirmation
         }
 
         List<Candle> weekly;
@@ -272,12 +298,12 @@ public class KissIndicatorService {
         }
 
         if (weekly.isEmpty()) {
-            return true;
+            return false;
         }
 
         List<HeikinAshiCandle> weeklyHa = calculateHeikinAshi(weekly);
         if (weeklyHa.isEmpty()) {
-            return true;
+            return false;
         }
 
         HeikinAshiCandle latestWeeklyHa = weeklyHa.get(weeklyHa.size() - 1);

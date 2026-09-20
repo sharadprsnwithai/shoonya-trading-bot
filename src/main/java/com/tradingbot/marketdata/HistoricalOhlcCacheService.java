@@ -6,6 +6,7 @@ import com.tradingbot.marketdata.model.SymbolOhlcBundle;
 import com.tradingbot.marketdata.repository.SqliteHistoricalOhlcRepository;
 import com.tradingbot.model.Candle;
 import com.tradingbot.util.CandleResamplingUtil;
+import com.tradingbot.util.CommodityRegistry;
 import com.tradingbot.util.Nifty500Registry;
 import com.tradingbot.util.StockFnoRegistry;
 import jakarta.annotation.PostConstruct;
@@ -253,6 +254,7 @@ public class HistoricalOhlcCacheService {
     public int syncAll(boolean force) {
         Set<String> allSymbols = new LinkedHashSet<>();
         allSymbols.add("NIFTY 50");
+        allSymbols.addAll(CommodityRegistry.getAllSymbols());
         allSymbols.addAll(StockFnoRegistry.getAllInstruments().keySet());
         allSymbols.addAll(Nifty500Registry.getAllMetadata().keySet());
 

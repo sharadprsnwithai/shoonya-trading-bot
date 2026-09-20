@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.positional.config.PositionalStrategyConfig;
 import com.tradingbot.positional.service.BollingerHaPositionalService;
+import com.tradingbot.util.CommodityRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
@@ -377,13 +378,18 @@ public class TelegramBotCommandListener {
                             .values()
                             .forEach(
                                     p -> {
+                                        boolean isComm =
+                                                CommodityRegistry.isCommodity(p.getSymbol());
+                                        String curSymbol = isComm ? "$" : "₹";
                                         kissSb.append(
                                                 String.format(
-                                                        "• `%s` (%s) | Qty: %d | Entry: ₹%.2f | LTP: ₹%.2f | PnL: ₹%.2f (%.2f%%)\n",
+                                                        "• `%s` (%s) | Qty: %d | Entry: %s%.2f | LTP: %s%.2f | PnL: ₹%.2f (%.2f%%)\n",
                                                         p.getSymbol(),
                                                         p.getSignalType(),
                                                         p.getQuantity(),
+                                                        curSymbol,
                                                         p.getEntryPrice(),
+                                                        curSymbol,
                                                         p.getCurrentLtp(),
                                                         p.getUnrealizedPnl(),
                                                         p.getUnrealizedPnlPct()));

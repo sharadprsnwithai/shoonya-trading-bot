@@ -18,6 +18,7 @@ import com.tradingbot.util.StockFnoRegistry;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -219,6 +220,7 @@ public class KissSwingService {
                         && !nowIst.toLocalTime().isBefore(java.time.LocalTime.of(15, 15));
 
         Map<String, KissPosition> activePositions = new LinkedHashMap<>(state.getPositions());
+        boolean stateChanged = false;
 
         for (Map.Entry<String, KissPosition> entry : activePositions.entrySet()) {
             String symbol = entry.getKey();
@@ -242,6 +244,7 @@ public class KissSwingService {
                         currentLtp,
                         "Friday 15:15 IST Weekend Risk Protection",
                         KissSignalType.EXIT_WEEKEND);
+                stateChanged = true;
                 continue;
             }
 
@@ -253,11 +256,13 @@ public class KissSwingService {
                             currentLtp,
                             "Target 1:3 Hit (+Profit)",
                             KissSignalType.EXIT_TARGET);
+                    stateChanged = true;
                 }
                 // Long Stop Loss Hit (Hourly candle close below SL)
                 else if (currentLtp <= pos.getStopLoss()) {
                     closePosition(
                             pos, currentLtp, "Stop Loss Breached", KissSignalType.EXIT_STOP_LOSS);
+                    stateChanged = true;
                 }
                 // Long MACD Reversal (MACD Line crossed below Signal Line)
                 else if (snapshot != null && snapshot.macdLine() < snapshot.macdSignal()) {
@@ -266,6 +271,7 @@ public class KissSwingService {
                             currentLtp,
                             "MACD Momentum Reversal Cross",
                             KissSignalType.EXIT_MACD_REVERSAL);
+                    stateChanged = true;
                 }
             } else if (pos.getSignalType() == KissSignalType.SHORT_SIGNAL) {
                 // Short Target Hit
@@ -275,11 +281,13 @@ public class KissSwingService {
                             currentLtp,
                             "Target 1:3 Hit (+Profit)",
                             KissSignalType.EXIT_TARGET);
+                    stateChanged = true;
                 }
                 // Short Stop Loss Hit (Hourly candle close above SL)
                 else if (currentLtp >= pos.getStopLoss()) {
                     closePosition(
                             pos, currentLtp, "Stop Loss Breached", KissSignalType.EXIT_STOP_LOSS);
+                    stateChanged = true;
                 }
                 // Short MACD Reversal (MACD Line crossed above Signal Line)
                 else if (snapshot != null && snapshot.macdLine() > snapshot.macdSignal()) {
@@ -288,8 +296,13 @@ public class KissSwingService {
                             currentLtp,
                             "MACD Momentum Reversal Cross",
                             KissSignalType.EXIT_MACD_REVERSAL);
+                    stateChanged = true;
                 }
             }
+        }
+
+        if (stateChanged) {
+            persistState();
         }
     }
 
@@ -410,7 +423,11 @@ public class KissSwingService {
         if (ohlcCacheService.getSqliteRepository() != null) {
             List<Candle> cached = ohlcCacheService.getSqliteRepository().getCandles(symbol, "60");
             if (cached != null && cached.size() >= 30) {
-                return cached;
+                Candle latest = cached.get(cached.size() - 1);
+                Instant cutoff = Instant.now().minus(Duration.ofHours(3));
+                if (latest.timestamp() != null && latest.timestamp().isAfter(cutoff)) {
+                    return cached;
+                }
             }
         }
         // Fallback to Yahoo Finance 1-Hour
@@ -419,7 +436,11 @@ public class KissSwingService {
             ohlcCacheService.getSqliteRepository().batchUpsertCandles(symbol, "60", fetched);
             return fetched;
         }
-        return fetched != null ? fetched : List.of();
+        return (fetched != null && !fetched.isEmpty())
+                ? fetched
+                : (ohlcCacheService.getSqliteRepository() != null
+                        ? ohlcCacheService.getSqliteRepository().getCandles(symbol, "60")
+                        : List.of());
     }
 
     public List<Candle> loadDailyCandles(String symbol) {
@@ -427,7 +448,7 @@ public class KissSwingService {
         if (cached != null && cached.size() >= 30) {
             return cached;
         }
-        List<Candle> fetched = yahooFinanceService.fetchDailyCandles(symbol, 180);
+        List<Candle> fetched = yahooFinanceService.fetchDailyCandles(symbol, 2);
         return fetched != null ? fetched : List.of();
     }
 

@@ -36,6 +36,9 @@ public class YahooFinanceServiceTest {
         assertEquals("GC=F", service.toYahooTicker("GOLD"));
         assertEquals("SI=F", service.toYahooTicker("SILVER"));
         assertEquals("HG=F", service.toYahooTicker("COPPER"));
+        assertEquals("CL=F", service.toYahooTicker("CL=F"));
+        assertEquals("GC=F", service.toYahooTicker("GC=F"));
+        assertEquals("SI=F", service.toYahooTicker("SI=F"));
     }
 
     @Test
