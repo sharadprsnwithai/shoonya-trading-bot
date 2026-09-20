@@ -275,4 +275,31 @@ class CandleResamplingUtilTest {
         assertThat(hourly.get(0).symbol()).isEqualTo("CRUDEOIL");
         assertThat(hourly.get(0).timeframe()).isEqualTo("60");
     }
+
+    @Test
+    void testResample5MinTo1HourNormalized() {
+        List<Candle> fiveMin = new ArrayList<>();
+        // 6 5-minute ticks = 30-minute bucket (e.g. 15:00 - 15:30)
+        Instant start = Instant.parse("2026-10-05T09:30:00Z");
+
+        for (int i = 0; i < 6; i++) {
+            fiveMin.add(
+                    new Candle(
+                            "CRUDEOIL",
+                            "5",
+                            start.plusSeconds(i * 300),
+                            BigDecimal.valueOf(6000 + i),
+                            BigDecimal.valueOf(6050 + i),
+                            BigDecimal.valueOf(5980),
+                            BigDecimal.valueOf(6020 + i),
+                            100)); // Total 600
+        }
+
+        List<Candle> hourlyUnscaled = CandleResamplingUtil.resample5MinTo1Hour(fiveMin, false);
+        assertThat(hourlyUnscaled.get(0).volume()).isEqualTo(600L);
+
+        List<Candle> hourlyScaled = CandleResamplingUtil.resample5MinTo1Hour(fiveMin, true);
+        // 600 * (12 / 6) = 1200
+        assertThat(hourlyScaled.get(0).volume()).isEqualTo(1200L);
+    }
 }

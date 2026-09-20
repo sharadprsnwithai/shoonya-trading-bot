@@ -221,6 +221,21 @@ public final class CandleResamplingUtil {
      * @return chronological list of 1H candles
      */
     public static List<Candle> resample5MinTo1Hour(List<Candle> fiveMinCandles) {
+        return resample5MinTo1Hour(fiveMinCandles, false);
+    }
+
+    /**
+     * Resamples a chronological list of 5-minute candles into 1-Hour (60m) candles aligned with IST
+     * market hours, with optional volume scaling for partial session boundary bars (e.g.
+     * 09:15-10:00 and 15:00-15:30).
+     *
+     * @param fiveMinCandles chronological list of 5m candles
+     * @param normalizePartialVolume whether to scale volume for partial hourly buckets (12 ticks
+     *     per standard 1H bar)
+     * @return chronological list of 1H candles
+     */
+    public static List<Candle> resample5MinTo1Hour(
+            List<Candle> fiveMinCandles, boolean normalizePartialVolume) {
         if (fiveMinCandles == null || fiveMinCandles.isEmpty()) {
             return List.of();
         }
@@ -258,6 +273,10 @@ public final class CandleResamplingUtil {
                 if (b.high().compareTo(high) > 0) high = b.high();
                 if (b.low().compareTo(low) < 0) low = b.low();
                 totalVolume += b.volume();
+            }
+
+            if (normalizePartialVolume && !bucket.isEmpty() && bucket.size() < 12) {
+                totalVolume = Math.round((double) totalVolume * 12.0 / bucket.size());
             }
 
             resampled.add(

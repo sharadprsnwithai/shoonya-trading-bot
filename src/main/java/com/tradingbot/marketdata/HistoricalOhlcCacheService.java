@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -347,11 +346,12 @@ public class HistoricalOhlcCacheService {
         if (today.getDayOfWeek().getValue() >= 6) {
             return !latestDate.isBefore(today.minusDays(3));
         }
-        // Tuesday through Friday: allows for mid-week market holidays (up to 3 calendar days)
-        return !latestDate.isBefore(today.minusDays(3));
+        // Tuesday through Friday: must be at least yesterday (minusDays(1)) or 2 days ago if
+        // mid-week holiday
+        return !latestDate.isBefore(today.minusDays(2));
     }
 
-    /** Checks if the cache was updated within the last 18 hours or matches today's trading date. */
+    /** Checks if the cache has already been synchronized today or is valid over the weekend. */
     public boolean isCacheValidForToday() {
         if (cache.isEmpty() || lastUpdated == null) {
             return false;
@@ -359,18 +359,13 @@ public class HistoricalOhlcCacheService {
         LocalDate lastUpdateDate = lastUpdated.atZone(IST).toLocalDate();
         LocalDate today = LocalDate.now(clock);
 
-        // If today is Monday, Thursday/Friday's cache is still valid
-        if (today.getDayOfWeek().getValue() == 1 && !lastUpdateDate.isBefore(today.minusDays(4))) {
-            return true;
-        }
-        // If today is weekend
+        // If today is weekend (Saturday/Sunday), Friday's update is valid
         if (today.getDayOfWeek().getValue() >= 6) {
-            return true;
+            return !lastUpdateDate.isBefore(
+                    today.minusDays(today.getDayOfWeek().getValue() == 6 ? 1 : 2));
         }
-        // Same date, recent update, or within holiday tolerance
-        return lastUpdateDate.equals(today)
-                || Duration.between(lastUpdated, Instant.now(clock)).toHours() < 24
-                || !lastUpdateDate.isBefore(today.minusDays(3));
+        // On trading days (Monday - Friday): cache is only valid for today if synchronized today
+        return lastUpdateDate.equals(today);
     }
 
     public void setClock(Clock clock) {

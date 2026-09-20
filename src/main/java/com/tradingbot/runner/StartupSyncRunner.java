@@ -103,13 +103,31 @@ public class StartupSyncRunner implements CommandLineRunner {
             if (ohlcCacheService.getCachedSymbolCount() == 0
                     || !ohlcCacheService.isCacheValidForToday()) {
                 log.info(
-                        "[3/3] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating background sync & revalidation...",
+                        "[3/3] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating managed background sync & revalidation...",
                         ohlcCacheService.getCachedSymbolCount(),
                         ohlcCacheService.isCacheValidForToday());
-                Thread syncThread =
-                        new Thread(() -> ohlcCacheService.syncAll(false), "ohlc-startup-sync");
-                syncThread.setDaemon(true);
-                syncThread.start();
+                java.util.concurrent.CompletableFuture.runAsync(
+                                () -> {
+                                    try {
+                                        int syncedCount = ohlcCacheService.syncAll(false);
+                                        log.info(
+                                                "[STARTUP-SYNC] Background OHLC sync finished. Total cached symbols: {}",
+                                                syncedCount);
+                                    } catch (Exception ex) {
+                                        log.error(
+                                                "[STARTUP-SYNC] Background OHLC sync error: {}",
+                                                ex.getMessage(),
+                                                ex);
+                                    }
+                                })
+                        .whenComplete(
+                                (res, ex) -> {
+                                    if (ex != null) {
+                                        log.warn(
+                                                "[STARTUP-SYNC] Background OHLC sync completed with exception: {}",
+                                                ex.getMessage());
+                                    }
+                                });
             } else {
                 log.info(
                         "[3/3] OHLC Database loaded: {} symbols cached (valid for today: {})",

@@ -163,8 +163,8 @@ public class RsiHighwaySwingService {
         // 1. Fetch candles & evaluate Market Breadth
         Map<String, List<Candle>> candlesMap = new HashMap<>();
         long delayMs = symbols.size() > 1 ? config.getScanDelayMs() : 0L;
-        int consecutiveBrokerFailures = 0;
-        final int MAX_CONSECUTIVE_FAILURES = 3;
+        int consecutiveBrokerExceptions = 0;
+        final int MAX_CONSECUTIVE_EXCEPTIONS = 15;
 
         for (String sym : symbols) {
             try {
@@ -175,25 +175,12 @@ public class RsiHighwaySwingService {
 
                 if (candles == null || candles.isEmpty()) {
                     candles = marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
-                    if (candles == null || candles.isEmpty()) {
-                        consecutiveBrokerFailures++;
-                        if (consecutiveBrokerFailures >= MAX_CONSECUTIVE_FAILURES
-                                && symbols.size() > 10) {
-                            String msg =
-                                    String.format(
-                                            "[RSI-HIGHWAY] Fast-fail circuit breaker triggered: %d consecutive broker fetch failures. Aborting EOD scan.",
-                                            consecutiveBrokerFailures);
-                            log.error(msg);
-                            notifyTelegram("⚠️ " + msg);
-                            break;
-                        }
-                    } else {
-                        consecutiveBrokerFailures = 0;
-                    }
                     if (delayMs > 0) {
                         Thread.sleep(delayMs);
                     }
                 }
+
+                consecutiveBrokerExceptions = 0; // Reset exception counter on successful execution
 
                 if (candles != null && !candles.isEmpty()) {
                     candlesMap.put(sym, candles);
@@ -203,10 +190,22 @@ public class RsiHighwaySwingService {
                 log.warn("[RSI-HIGHWAY] EOD scan interrupted during symbol fetch loop");
                 break;
             } catch (Exception e) {
+                consecutiveBrokerExceptions++;
                 log.warn(
-                        "[RSI-HIGHWAY] Failed fetching daily candles for {}: {}",
+                        "[RSI-HIGHWAY] Failed fetching daily candles for {} (consecutive errors: {}): {}",
                         sym,
+                        consecutiveBrokerExceptions,
                         e.getMessage());
+                if (consecutiveBrokerExceptions >= MAX_CONSECUTIVE_EXCEPTIONS
+                        && symbols.size() > 20) {
+                    String msg =
+                            String.format(
+                                    "[RSI-HIGHWAY] Circuit breaker triggered: %d consecutive broker API exceptions. Aborting EOD scan.",
+                                    consecutiveBrokerExceptions);
+                    log.error(msg);
+                    notifyTelegram("⚠️ " + msg);
+                    break;
+                }
             }
         }
 

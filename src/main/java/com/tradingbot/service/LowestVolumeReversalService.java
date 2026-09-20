@@ -56,6 +56,7 @@ public class LowestVolumeReversalService {
     private final TechnicalAnalysisService taService;
     private final TelegramService telegramService;
     private final ShoonyaConfig config;
+    private final com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService;
     private final LowestVolumeReversalScanner scanner;
 
     private java.time.Clock clock = java.time.Clock.system(IST);
@@ -107,12 +108,24 @@ public class LowestVolumeReversalService {
             TechnicalAnalysisService taService,
             TelegramService telegramService,
             ShoonyaConfig config,
+            @Autowired(required = false)
+                    com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService,
             @Autowired(required = false) LowestVolumeReversalScanner scanner) {
         this.marketDataService = marketDataService;
         this.taService = taService;
         this.telegramService = telegramService;
         this.config = config;
+        this.optionChainService = optionChainService;
         this.scanner = (scanner != null) ? scanner : new LowestVolumeReversalScanner();
+    }
+
+    public LowestVolumeReversalService(
+            ShoonyaMarketDataService marketDataService,
+            TechnicalAnalysisService taService,
+            TelegramService telegramService,
+            ShoonyaConfig config,
+            LowestVolumeReversalScanner scanner) {
+        this(marketDataService, taService, telegramService, config, null, scanner);
     }
 
     /**
@@ -454,7 +467,10 @@ public class LowestVolumeReversalService {
         String optSymbol = symbol + " ATM " + atmStrike + optType;
 
         double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
-        BigDecimal entryPremium = BigDecimal.valueOf(optLtp > 0 ? optLtp : 20.0);
+        double fallbackPrem = Math.max(0.50, spotPrice.doubleValue() * 0.018);
+        BigDecimal entryPremium =
+                BigDecimal.valueOf(optLtp > 0 ? optLtp : fallbackPrem)
+                        .setScale(2, RoundingMode.HALF_UP);
 
         int totalQty = defaultLots * lotSize;
         BigDecimal plannedRisk =
@@ -795,8 +811,31 @@ public class LowestVolumeReversalService {
     }
 
     private double fetchOptionLtp(String symbol, String optionType, BigDecimal strike) {
-        if (marketDataService == null) return 0.0;
-        return 0.0; // In live trading, option chain service resolves exact contract LTP
+        if (optionChainService != null) {
+            try {
+                var chain = optionChainService.getIndexOptionChain(symbol, strike, 2, true);
+                if (chain != null && chain.strikes() != null) {
+                    for (var s : chain.strikes()) {
+                        if (s.strikePrice() != null && s.strikePrice().compareTo(strike) == 0) {
+                            var contract = "PE".equalsIgnoreCase(optionType) ? s.put() : s.call();
+                            if (contract != null
+                                    && contract.ltp() != null
+                                    && contract.ltp().doubleValue() > 0) {
+                                return contract.ltp().doubleValue();
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug(
+                        "[LVR] Live option quote fetch failed for {} {} {}: {}",
+                        symbol,
+                        strike,
+                        optionType,
+                        e.getMessage());
+            }
+        }
+        return 0.0;
     }
 
     private List<StockQuoteSnapshot> fetchNifty50Quotes() {
