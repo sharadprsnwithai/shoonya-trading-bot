@@ -166,4 +166,58 @@ public class HistoricalOhlcCacheServiceTest {
         assertEquals("WIPRO", daily.get(0).symbol());
         verify(yahooService, times(1)).fetchDailyCandles("WIPRO", 2);
     }
+
+    @Test
+    void testSqliteIntegrationAndMigrationFromJson() {
+        File dbFile = new File(tempDir, "migration_test.db");
+        com.tradingbot.marketdata.repository.SqliteHistoricalOhlcRepository sqliteRepo =
+                new com.tradingbot.marketdata.repository.SqliteHistoricalOhlcRepository(
+                        dbFile.getAbsolutePath());
+        sqliteRepo.init();
+
+        // 1. First service saves to JSON
+        Candle c1 =
+                new Candle(
+                        "INFY",
+                        "D",
+                        Instant.parse("2026-09-17T03:45:00Z"),
+                        BigDecimal.valueOf(1500),
+                        BigDecimal.valueOf(1520),
+                        BigDecimal.valueOf(1490),
+                        BigDecimal.valueOf(1510),
+                        200000L);
+        when(yahooService.fetchDailyCandles("INFY", 2)).thenReturn(List.of(c1));
+        cacheService.syncSymbol("INFY", 2);
+        cacheService.saveToFile();
+
+        // 2. Second service starts with empty SQLite and existing JSON -> should trigger
+        // auto-migration
+        HistoricalOhlcCacheService migratingService =
+                new HistoricalOhlcCacheService(
+                        yahooService,
+                        new ObjectMapper().findAndRegisterModules(),
+                        sqliteRepo,
+                        cacheFile.getAbsolutePath(),
+                        true);
+        migratingService.init();
+
+        // Verify SQLite contains the migrated data
+        assertEquals(1, sqliteRepo.getSymbolCount());
+        List<Candle> sqliteCandles = sqliteRepo.getCandles("INFY", "D");
+        assertEquals(1, sqliteCandles.size());
+        assertEquals(1500.0, sqliteCandles.get(0).open().doubleValue(), 0.001);
+
+        // 3. Third service initializes purely from SQLite (even if JSON is deleted)
+        cacheFile.delete();
+        HistoricalOhlcCacheService sqliteOnlyService =
+                new HistoricalOhlcCacheService(
+                        yahooService,
+                        new ObjectMapper().findAndRegisterModules(),
+                        sqliteRepo,
+                        cacheFile.getAbsolutePath(),
+                        false);
+        sqliteOnlyService.init();
+        assertEquals(1, sqliteOnlyService.getCachedSymbolCount());
+        assertEquals(1, sqliteOnlyService.getDailyCandles("INFY").size());
+    }
 }

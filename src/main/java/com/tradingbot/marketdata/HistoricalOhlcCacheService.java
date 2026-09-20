@@ -3,6 +3,7 @@ package com.tradingbot.marketdata;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.marketdata.model.HistoricalOhlcData;
 import com.tradingbot.marketdata.model.SymbolOhlcBundle;
+import com.tradingbot.marketdata.repository.SqliteHistoricalOhlcRepository;
 import com.tradingbot.model.Candle;
 import com.tradingbot.util.CandleResamplingUtil;
 import com.tradingbot.util.Nifty500Registry;
@@ -34,8 +35,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Manages in-memory and disk-persisted daily, weekly, and monthly historical OHLC candles.
- * Populates from Yahoo Finance and resamples higher timeframe candles.
+ * Manages in-memory and SQLite-persisted daily, weekly, and monthly historical OHLC candles.
+ * Populates from Yahoo Finance and resamples higher timeframe candles. Supports transparent
+ * migration from legacy JSON file to SQLite database.
  */
 @Service
 public class HistoricalOhlcCacheService {
@@ -45,7 +47,10 @@ public class HistoricalOhlcCacheService {
 
     private final YahooFinanceService yahooService;
     private final ObjectMapper objectMapper;
+    private final SqliteHistoricalOhlcRepository sqliteRepository;
     private final String stateFilePath;
+    private final boolean jsonBackupEnabled;
+
     private final Map<String, SymbolOhlcBundle> cache = new ConcurrentHashMap<>();
     private volatile Instant lastUpdated;
     private Clock clock = Clock.system(IST);
@@ -54,24 +59,83 @@ public class HistoricalOhlcCacheService {
     public HistoricalOhlcCacheService(
             YahooFinanceService yahooService,
             ObjectMapper objectMapper,
+            @Autowired(required = false) SqliteHistoricalOhlcRepository sqliteRepository,
             @Value("${trading-bot.ohlc.cache-file-path:data/historical_ohlc.json}")
-                    String stateFilePath) {
+                    String stateFilePath,
+            @Value("${trading-bot.ohlc.json-backup-enabled:true}") boolean jsonBackupEnabled) {
         this.yahooService = yahooService;
         this.objectMapper = objectMapper.copy().findAndRegisterModules();
+        this.sqliteRepository = sqliteRepository;
         this.stateFilePath = stateFilePath;
+        this.jsonBackupEnabled = jsonBackupEnabled;
+    }
+
+    public HistoricalOhlcCacheService(
+            YahooFinanceService yahooService, ObjectMapper objectMapper, String stateFilePath) {
+        this(yahooService, objectMapper, null, stateFilePath, true);
     }
 
     @PostConstruct
     public synchronized void init() {
-        loadFromFile();
+        if (sqliteRepository != null) {
+            int sqliteSymbols = sqliteRepository.getSymbolCount();
+            if (sqliteSymbols > 0) {
+                log.info(
+                        "[OHLC-CACHE] Loading historical OHLC data from SQLite repository ({} symbols)...",
+                        sqliteSymbols);
+                Set<String> symbols = sqliteRepository.getAllCachedSymbols();
+                for (String sym : symbols) {
+                    SymbolOhlcBundle bundle = sqliteRepository.getSymbolBundle(sym);
+                    if (bundle != null) {
+                        cache.put(sym, bundle);
+                    }
+                }
+                String lastUpdatedStr = sqliteRepository.getMetadata("LAST_UPDATED");
+                if (lastUpdatedStr != null && !lastUpdatedStr.isBlank()) {
+                    try {
+                        this.lastUpdated = Instant.parse(lastUpdatedStr);
+                    } catch (Exception ignored) {
+                        this.lastUpdated = Instant.now(clock);
+                    }
+                } else {
+                    this.lastUpdated = Instant.now(clock);
+                }
+                log.info(
+                        "[OHLC-CACHE] Successfully loaded {} symbols from SQLite DB (lastUpdated: {})",
+                        cache.size(),
+                        lastUpdated);
+                return;
+            }
+        }
+
+        // If SQLite is empty or not configured, load from JSON state file
+        loadFromJsonFile();
+
+        // Migrate loaded JSON data to SQLite if repository is available
+        if (sqliteRepository != null && !cache.isEmpty()) {
+            log.info(
+                    "[OHLC-CACHE] Migrating {} symbols from JSON to SQLite database...",
+                    cache.size());
+            for (Map.Entry<String, SymbolOhlcBundle> entry : cache.entrySet()) {
+                sqliteRepository.saveSymbolBundle(entry.getKey(), entry.getValue());
+            }
+            if (lastUpdated != null) {
+                sqliteRepository.setMetadata("LAST_UPDATED", lastUpdated.toString());
+            }
+            log.info(
+                    "[OHLC-CACHE] Successfully migrated {} symbols to SQLite database at {}",
+                    cache.size(),
+                    sqliteRepository.getDbPath());
+        }
     }
 
     /** Loads cached OHLC data from the JSON state file. */
-    public synchronized void loadFromFile() {
+    public synchronized void loadFromJsonFile() {
+        if (stateFilePath == null || stateFilePath.isBlank()) return;
         File file = new File(stateFilePath);
         if (!file.exists()) {
             log.info(
-                    "No historical OHLC cache file found at {}. Cache initialized empty.",
+                    "No historical OHLC cache JSON file found at {}. Cache initialized empty.",
                     stateFilePath);
             return;
         }
@@ -83,7 +147,7 @@ public class HistoricalOhlcCacheService {
                 this.cache.putAll(data.symbols());
                 this.lastUpdated = data.lastUpdated();
                 log.info(
-                        "[OHLC-CACHE] Loaded {} cached symbols from {} (lastUpdated: {})",
+                        "[OHLC-CACHE] Loaded {} cached symbols from JSON {} (lastUpdated: {})",
                         cache.size(),
                         stateFilePath,
                         lastUpdated);
@@ -94,35 +158,59 @@ public class HistoricalOhlcCacheService {
         }
     }
 
-    /** Atomically saves in-memory cache to the JSON state file. */
+    /** Backwards-compatible loadFromFile wrapper. */
+    public synchronized void loadFromFile() {
+        init();
+    }
+
+    /** Atomically saves in-memory cache to SQLite and optionally to JSON backup. */
     public synchronized void saveToFile() {
-        try {
-            File file = new File(stateFilePath);
-            if (file.getParentFile() != null && !file.getParentFile().exists()) {
-                file.getParentFile().mkdirs();
+        Instant now = Instant.now(clock);
+        this.lastUpdated = now;
+
+        if (sqliteRepository != null) {
+            for (Map.Entry<String, SymbolOhlcBundle> entry : cache.entrySet()) {
+                sqliteRepository.saveSymbolBundle(entry.getKey(), entry.getValue());
             }
-
-            File tempFile = new File(file.getAbsolutePath() + ".tmp");
-            HistoricalOhlcData data = new HistoricalOhlcData(Instant.now(), cache.size(), cache);
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, data);
-
-            try {
-                Files.move(
-                        tempFile.toPath(),
-                        file.toPath(),
-                        StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
-            } catch (Exception ex) {
-                Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            this.lastUpdated = data.lastUpdated();
+            sqliteRepository.setMetadata("LAST_UPDATED", now.toString());
             log.info(
-                    "[OHLC-CACHE] Successfully persisted {} symbols to {}",
+                    "[OHLC-CACHE] Persisted {} symbols to SQLite database at {}",
                     cache.size(),
-                    stateFilePath);
-        } catch (IOException e) {
-            log.error("[OHLC-CACHE] Failed to save historical OHLC cache to {}", stateFilePath, e);
+                    sqliteRepository.getDbPath());
+        }
+
+        if (jsonBackupEnabled && stateFilePath != null && !stateFilePath.isBlank()) {
+            try {
+                File file = new File(stateFilePath);
+                if (file.getParentFile() != null && !file.getParentFile().exists()) {
+                    file.getParentFile().mkdirs();
+                }
+
+                File tempFile = new File(file.getAbsolutePath() + ".tmp");
+                HistoricalOhlcData data = new HistoricalOhlcData(now, cache.size(), cache);
+                objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, data);
+
+                try {
+                    Files.move(
+                            tempFile.toPath(),
+                            file.toPath(),
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                } catch (Exception ex) {
+                    Files.move(
+                            tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+
+                log.info(
+                        "[OHLC-CACHE] Successfully saved {} symbols to JSON backup {}",
+                        cache.size(),
+                        stateFilePath);
+            } catch (IOException e) {
+                log.error(
+                        "[OHLC-CACHE] Failed to save historical OHLC cache to {}",
+                        stateFilePath,
+                        e);
+            }
         }
     }
 
@@ -144,6 +232,10 @@ public class HistoricalOhlcCacheService {
 
             SymbolOhlcBundle bundle = new SymbolOhlcBundle(daily, weekly, monthly);
             cache.put(clean, bundle);
+
+            if (sqliteRepository != null) {
+                sqliteRepository.saveSymbolBundle(clean, bundle);
+            }
             return true;
         } catch (Exception e) {
             log.warn("[OHLC-CACHE] Error syncing symbol {}: {}", clean, e.getMessage());
@@ -153,15 +245,14 @@ public class HistoricalOhlcCacheService {
 
     /**
      * Synchronizes universe symbols (Nifty 500 + F&O + Nifty Index) from Yahoo Finance. Skips
-     * symbols that already have fresh daily, weekly, and monthly data in JSON unless force is true.
+     * symbols that already have fresh daily, weekly, and monthly data unless force is true.
      *
      * @param force If false, skips download for all symbols that already have fresh data.
      * @return Number of total symbols in cache
      */
     public int syncAll(boolean force) {
         if (!force && isCacheValidForToday()) {
-            log.info(
-                    "[OHLC-CACHE] Cache file is already globally valid for today. Skipping full sync.");
+            log.info("[OHLC-CACHE] Cache is already globally valid for today. Skipping full sync.");
             return cache.size();
         }
 
@@ -179,7 +270,7 @@ public class HistoricalOhlcCacheService {
 
         if (symbolsToFetch.isEmpty()) {
             log.info(
-                    "[OHLC-CACHE] All {} symbols already have fresh historical data in JSON. Skipping network calls.",
+                    "[OHLC-CACHE] All {} symbols already have fresh historical data. Skipping network calls.",
                     allSymbols.size());
             return cache.size();
         }
@@ -328,6 +419,10 @@ public class HistoricalOhlcCacheService {
 
     public String getStateFilePath() {
         return stateFilePath;
+    }
+
+    public SqliteHistoricalOhlcRepository getSqliteRepository() {
+        return sqliteRepository;
     }
 
     private String normalizeSymbol(String symbol) {
