@@ -77,6 +77,7 @@ public class KissPosition {
     }
 
     public void updateMarketPrice(double ltp) {
+        if (ltp <= 0.0) return;
         this.currentLtp = ltp;
         this.highestPriceSeen = Math.max(this.highestPriceSeen, ltp);
         this.lowestPriceSeen = Math.min(this.lowestPriceSeen, ltp);
@@ -195,6 +196,9 @@ public class KissPosition {
     }
 
     public double getUnrealizedPnl() {
+        if (currentLtp <= 0.0) {
+            return 0.0;
+        }
         return unrealizedPnl;
     }
 
@@ -203,6 +207,9 @@ public class KissPosition {
     }
 
     public double getUnrealizedPnlPct() {
+        if (currentLtp <= 0.0) {
+            return 0.0;
+        }
         return unrealizedPnlPct;
     }
 

@@ -424,7 +424,7 @@ public class KissSwingService {
             List<Candle> cached = ohlcCacheService.getSqliteRepository().getCandles(symbol, "60");
             if (cached != null && cached.size() >= 30) {
                 Candle latest = cached.get(cached.size() - 1);
-                Instant cutoff = Instant.now().minus(Duration.ofHours(3));
+                Instant cutoff = Instant.now().minus(Duration.ofMinutes(65));
                 if (latest.timestamp() != null && latest.timestamp().isAfter(cutoff)) {
                     return cached;
                 }

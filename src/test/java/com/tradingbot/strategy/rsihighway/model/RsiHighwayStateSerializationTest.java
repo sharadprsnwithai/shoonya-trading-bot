@@ -47,4 +47,31 @@ class RsiHighwayStateSerializationTest {
         // 3600.0
         assertThat(pos.getAveragePrice()).isEqualTo(3600.0);
     }
+
+    @Test
+    void testMarkToMarketPortfolioEquityAndClosePosition() {
+        RsiHighwayState state = new RsiHighwayState();
+        state.setAvailableCapital(500000.0);
+
+        RsiHighwayPosition pos = new RsiHighwayPosition("INFY", "NSE", 1500.0, 1400.0);
+        pos.addTranche(new RsiHighwayTranche(1, 100, 1500.0, Instant.now(), "ORD_T1"));
+        state.getPositions().put("INFY", pos);
+
+        // Before update: pos value is 100 * 1500 = 150,000, Total Equity = 650,000
+        assertThat(state.getTotalPortfolioEquity()).isEqualTo(650000.0);
+
+        // Stock goes up to 1650
+        pos.updateMarketPrice(1650.0);
+        assertThat(pos.getUnrealizedPnl()).isEqualTo(15000.0);
+        // Mark-to-market total portfolio equity reflects appreciation: 500,000 + 100 * 1650 =
+        // 665,000
+        assertThat(state.getTotalPortfolioEquity()).isEqualTo(665000.0);
+
+        // Close position at 1700
+        pos.closePosition(1700.0, "Target Hit", Instant.now());
+        assertThat(pos.isActive()).isFalse();
+        assertThat(pos.getExitPrice()).isEqualTo(1700.0);
+        assertThat(pos.getExitReason()).isEqualTo("Target Hit");
+        assertThat(pos.getRealizedPnl()).isEqualTo(20000.0);
+    }
 }

@@ -24,6 +24,11 @@ public class RsiHighwayPosition {
     private Instant createdAt = Instant.now();
     private Instant lastEvaluatedAt = Instant.now();
     private boolean active = true;
+    private double currentLtp = 0.0;
+    private double exitPrice = 0.0;
+    private Instant exitTime;
+    private String exitReason;
+    private double realizedPnl = 0.0;
 
     public RsiHighwayPosition() {}
 
@@ -32,6 +37,7 @@ public class RsiHighwayPosition {
         this.symbol = symbol;
         this.exchange = exchange;
         this.averagePrice = initialPrice;
+        this.currentLtp = initialPrice;
         this.initialSlPrice = initialSlPrice;
         this.currentSlPrice = initialSlPrice;
         this.highestPriceSeen = initialPrice;
@@ -50,7 +56,33 @@ public class RsiHighwayPosition {
         this.averagePrice = totalCost / this.totalQuantity;
         this.tranches.add(tranche);
         this.highestPriceSeen = Math.max(this.highestPriceSeen, tranche.entryPrice());
+        this.currentLtp = Math.max(this.currentLtp, tranche.entryPrice());
         this.lastEvaluatedAt = Instant.now();
+    }
+
+    public synchronized void updateMarketPrice(double ltp) {
+        if (ltp > 0) {
+            this.currentLtp = ltp;
+            this.highestPriceSeen = Math.max(this.highestPriceSeen, ltp);
+            this.lastEvaluatedAt = Instant.now();
+        }
+    }
+
+    public synchronized void closePosition(double exitPrice, String exitReason, Instant exitTime) {
+        this.active = false;
+        this.exitPrice = exitPrice;
+        this.currentLtp = exitPrice;
+        this.exitReason = exitReason;
+        this.exitTime = exitTime != null ? exitTime : Instant.now();
+        this.lastEvaluatedAt = this.exitTime;
+        this.realizedPnl = (exitPrice - this.averagePrice) * this.totalQuantity;
+    }
+
+    public double getUnrealizedPnl() {
+        if (!active || currentLtp <= 0.0 || totalQuantity <= 0) {
+            return 0.0;
+        }
+        return (currentLtp - averagePrice) * totalQuantity;
     }
 
     public int getTrancheCount() {
@@ -152,5 +184,45 @@ public class RsiHighwayPosition {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public double getCurrentLtp() {
+        return currentLtp;
+    }
+
+    public void setCurrentLtp(double currentLtp) {
+        this.currentLtp = currentLtp;
+    }
+
+    public double getExitPrice() {
+        return exitPrice;
+    }
+
+    public void setExitPrice(double exitPrice) {
+        this.exitPrice = exitPrice;
+    }
+
+    public Instant getExitTime() {
+        return exitTime;
+    }
+
+    public void setExitTime(Instant exitTime) {
+        this.exitTime = exitTime;
+    }
+
+    public String getExitReason() {
+        return exitReason;
+    }
+
+    public void setExitReason(String exitReason) {
+        this.exitReason = exitReason;
+    }
+
+    public double getRealizedPnl() {
+        return realizedPnl;
+    }
+
+    public void setRealizedPnl(double realizedPnl) {
+        this.realizedPnl = realizedPnl;
     }
 }

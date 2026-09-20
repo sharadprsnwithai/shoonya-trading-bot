@@ -94,7 +94,14 @@ public class RsiHighwayState {
         double posValue =
                 positions.values().stream()
                         .filter(p -> p != null && p.isActive())
-                        .mapToDouble(p -> p.getTotalQuantity() * p.getAveragePrice())
+                        .mapToDouble(
+                                p -> {
+                                    double price =
+                                            p.getCurrentLtp() > 0
+                                                    ? p.getCurrentLtp()
+                                                    : p.getAveragePrice();
+                                    return p.getTotalQuantity() * price;
+                                })
                         .sum();
         return Math.max(0.0, availableCapital) + posValue;
     }

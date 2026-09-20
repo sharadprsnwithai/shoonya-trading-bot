@@ -76,6 +76,22 @@ public class PriceActionPatternDetector {
             }
         }
 
+        // 5. Inside Bar Breakout (curr breaks out above previous inside bar's mother high)
+        if (size >= 3 && isGreen) {
+            Candle mother = candles.get(size - 3);
+            double motherHigh = mother.high().doubleValue();
+            double motherLow = mother.low().doubleValue();
+            double prevHigh = prev.high().doubleValue();
+            double prevLow = prev.low().doubleValue();
+            boolean isInsideBar =
+                    prevHigh <= motherHigh
+                            && prevLow >= motherLow
+                            && (prevHigh < motherHigh || prevLow > motherLow);
+            if (isInsideBar && currClose > motherHigh) {
+                return Optional.of(PriceActionPattern.INSIDE_BAR_BREAKOUT);
+            }
+        }
+
         return Optional.empty();
     }
 

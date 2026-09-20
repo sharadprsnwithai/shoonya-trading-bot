@@ -187,6 +187,47 @@ class PriceActionPatternDetectorTest {
     }
 
     @Test
+    void testInsideBarBreakoutPattern() {
+        // Mother bar: High 100, Low 90
+        Candle mother =
+                new Candle(
+                        "RELIANCE",
+                        "D",
+                        Instant.parse("2026-03-01T10:00:00Z"),
+                        BigDecimal.valueOf(92),
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(90),
+                        BigDecimal.valueOf(98),
+                        1000L);
+        // Inside bar: High 98 (<=100), Low 92 (>=90)
+        Candle inside =
+                new Candle(
+                        "RELIANCE",
+                        "D",
+                        Instant.parse("2026-03-02T10:00:00Z"),
+                        BigDecimal.valueOf(95),
+                        BigDecimal.valueOf(98),
+                        BigDecimal.valueOf(92),
+                        BigDecimal.valueOf(96),
+                        800L);
+        // Breakout bar: Closes at 105 (> mother high 100)
+        Candle breakout =
+                new Candle(
+                        "RELIANCE",
+                        "D",
+                        Instant.parse("2026-03-03T10:00:00Z"),
+                        BigDecimal.valueOf(97),
+                        BigDecimal.valueOf(106),
+                        BigDecimal.valueOf(96),
+                        BigDecimal.valueOf(105),
+                        2500L);
+
+        Optional<PriceActionPattern> pattern =
+                detector.detectPattern(List.of(mother, inside, breakout), 15.0);
+        assertThat(pattern).isPresent().contains(PriceActionPattern.INSIDE_BAR_BREAKOUT);
+    }
+
+    @Test
     void testRsi50RejectedWhenOverbought() {
         // Previous dipped to 51, but current spiked to 72 (overbought)
         List<Double> rsiSeries = List.of(60.0, 51.0, 72.0);

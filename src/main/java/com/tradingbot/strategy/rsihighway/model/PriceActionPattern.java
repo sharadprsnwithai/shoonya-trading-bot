@@ -5,7 +5,8 @@ public enum PriceActionPattern {
     BULLISH_ENGULFING("Bullish Engulfing"),
     HAMMER("Hammer / Pin Bar"),
     MOMENTUM_EXPANSION("Momentum Expansion"),
-    HORIZONTAL_BREAKOUT("Horizontal Breakout");
+    HORIZONTAL_BREAKOUT("Horizontal Breakout"),
+    INSIDE_BAR_BREAKOUT("Inside Bar Breakout");
 
     private final String displayName;
 

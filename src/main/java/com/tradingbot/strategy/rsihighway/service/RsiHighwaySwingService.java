@@ -269,11 +269,9 @@ public class RsiHighwaySwingService {
                 if (snap == null) continue;
 
                 double currentPrice = snap.currentPrice();
-                position.setHighestPriceSeen(
-                        Math.max(position.getHighestPriceSeen(), currentPrice));
+                position.updateMarketPrice(currentPrice);
                 position.setHighestDailyRsiSeen(
                         Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
-                position.setLastEvaluatedAt(Instant.now());
 
                 // Stop loss breach exit
                 if (currentPrice < position.getCurrentSlPrice()) {
@@ -283,7 +281,7 @@ public class RsiHighwaySwingService {
                             currentPrice,
                             position.getCurrentSlPrice());
                     if (executionService.executeExit(position, currentPrice, "SL Breach Exit")) {
-                        archivePosition(position, currentPrice);
+                        archivePosition(position, currentPrice, "SL Breach Exit");
                         notifyTelegram(
                                 String.format(
                                         "🛑 *RSI Highway SL Exit*\nSymbol: %s\nPrice: ₹%.2f\nAvg Entry: ₹%.2f",
@@ -301,7 +299,7 @@ public class RsiHighwaySwingService {
                             config.getDailyRsiExit());
                     if (executionService.executeExit(
                             position, currentPrice, "Daily RSI < 50 Close Exit")) {
-                        archivePosition(position, currentPrice);
+                        archivePosition(position, currentPrice, "Daily RSI < 50 Close Exit");
                         notifyTelegram(
                                 String.format(
                                         "🚪 *RSI Highway RSI 50 Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f\nAvg Entry: ₹%.2f",
@@ -529,11 +527,9 @@ public class RsiHighwaySwingService {
                 if (snap == null) continue;
 
                 double currentPrice = snap.currentPrice();
-                position.setHighestPriceSeen(
-                        Math.max(position.getHighestPriceSeen(), currentPrice));
+                position.updateMarketPrice(currentPrice);
                 position.setHighestDailyRsiSeen(
                         Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
-                position.setLastEvaluatedAt(Instant.now());
 
                 // Emergency plunge RSI < 45
                 if (snap.dailyRsi() < config.getMorningEmergencyRsi()) {
@@ -544,7 +540,7 @@ public class RsiHighwaySwingService {
                             config.getMorningEmergencyRsi());
                     if (executionService.executeExit(
                             position, currentPrice, "Emergency Morning Plunge Exit")) {
-                        archivePosition(position, currentPrice);
+                        archivePosition(position, currentPrice, "Emergency Morning Plunge Exit");
                         notifyTelegram(
                                 String.format(
                                         "🚨 *RSI Highway EMERGENCY PLUNGE Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f",
@@ -562,7 +558,7 @@ public class RsiHighwaySwingService {
                             position.getCurrentSlPrice());
                     if (executionService.executeExit(
                             position, currentPrice, "Morning SL Breach Exit")) {
-                        archivePosition(position, currentPrice);
+                        archivePosition(position, currentPrice, "Morning SL Breach Exit");
                         notifyTelegram(
                                 String.format(
                                         "🛑 *RSI Highway Morning SL Exit*\nSymbol: %s\nExit Price: ₹%.2f",
@@ -604,9 +600,8 @@ public class RsiHighwaySwingService {
         }
     }
 
-    private void archivePosition(RsiHighwayPosition position, double exitPrice) {
-        position.setActive(false);
-        position.setLastEvaluatedAt(Instant.now());
+    private void archivePosition(RsiHighwayPosition position, double exitPrice, String exitReason) {
+        position.closePosition(exitPrice, exitReason, Instant.now());
         double returnedCapital = position.getTotalQuantity() * exitPrice;
         state.setAvailableCapital(state.getAvailableCapital() + returnedCapital);
         state.getPositions().remove(position.getSymbol());

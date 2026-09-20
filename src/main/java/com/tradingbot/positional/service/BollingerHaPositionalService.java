@@ -684,13 +684,26 @@ public class BollingerHaPositionalService {
         }
         BigDecimal currentSpot = state.getActiveTrade().entrySpot();
         try {
-            List<Candle> recent = fetchDailyCandles(config.getSymbol(), 5);
-            if (recent != null && !recent.isEmpty()) {
-                currentSpot = recent.get(recent.size() - 1).close();
+            if (marketDataService != null) {
+                String token = marketDataService.resolveToken(config.getSymbol());
+                com.fasterxml.jackson.databind.JsonNode quote =
+                        marketDataService.fetchQuote("NSE", token);
+                if (quote != null && quote.has("lp")) {
+                    double lpVal = Double.parseDouble(quote.path("lp").asText());
+                    if (lpVal > 0) {
+                        currentSpot = BigDecimal.valueOf(lpVal);
+                    }
+                }
+            }
+            if (currentSpot.compareTo(state.getActiveTrade().entrySpot()) == 0) {
+                List<Candle> recent = fetchDailyCandles(config.getSymbol(), 5);
+                if (recent != null && !recent.isEmpty()) {
+                    currentSpot = recent.get(recent.size() - 1).close();
+                }
             }
         } catch (Exception e) {
             log.debug(
-                    "Failed to fetch recent candles for spot exit, using entry spot: {}",
+                    "Failed to fetch live quote or recent candles for spot exit, using entry spot: {}",
                     e.getMessage());
         }
 

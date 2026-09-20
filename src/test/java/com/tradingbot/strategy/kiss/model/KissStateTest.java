@@ -41,4 +41,26 @@ class KissStateTest {
         assertTrue(restored.getPositions().containsKey("CRUDEOIL"));
         assertEquals(6150.0, restored.getPositions().get("CRUDEOIL").getCurrentLtp(), 0.01);
     }
+
+    @Test
+    void testZeroLtpGuardsUnrealizedPnl() {
+        KissPosition pos =
+                new KissPosition(
+                        "RELIANCE",
+                        KissSignalType.BUY_SIGNAL,
+                        2500.0,
+                        2450.0,
+                        2650.0,
+                        250,
+                        250,
+                        Instant.now());
+
+        // Newly created position has currentLtp == entryPrice, so unrealized PnL is 0
+        assertEquals(0.0, pos.getUnrealizedPnl(), 0.001);
+
+        // If deserialized with currentLtp = 0.0
+        pos.setCurrentLtp(0.0);
+        assertEquals(0.0, pos.getUnrealizedPnl(), 0.001);
+        assertEquals(0.0, pos.getUnrealizedPnlPct(), 0.001);
+    }
 }
