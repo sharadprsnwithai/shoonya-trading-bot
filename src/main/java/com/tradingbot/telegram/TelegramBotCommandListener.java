@@ -40,6 +40,7 @@ public class TelegramBotCommandListener {
     private final PositionalStrategyConfig positionalConfig;
     private final com.tradingbot.service.LowestVolumeReversalService lvrService;
     private final com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService;
+    private final com.tradingbot.strategy.kiss.service.KissSwingService kissService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -57,6 +58,8 @@ public class TelegramBotCommandListener {
                     com.tradingbot.service.LowestVolumeReversalService lvrService,
             @Autowired(required = false)
                     com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.kiss.service.KissSwingService kissService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
@@ -65,6 +68,7 @@ public class TelegramBotCommandListener {
                 positionalConfig,
                 lvrService,
                 swingService,
+                kissService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -76,6 +80,7 @@ public class TelegramBotCommandListener {
             PositionalStrategyConfig positionalConfig,
             com.tradingbot.service.LowestVolumeReversalService lvrService,
             com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
+            com.tradingbot.strategy.kiss.service.KissSwingService kissService,
             TelegramService telegramService,
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
@@ -84,6 +89,7 @@ public class TelegramBotCommandListener {
         this.positionalConfig = positionalConfig;
         this.lvrService = lvrService;
         this.swingService = swingService;
+        this.kissService = kissService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
@@ -100,6 +106,7 @@ public class TelegramBotCommandListener {
         this(
                 positionalService,
                 positionalConfig,
+                null,
                 null,
                 null,
                 telegramService,
@@ -287,7 +294,17 @@ public class TelegramBotCommandListener {
                             .append(
                                     String.format(
                                             "%.2f", swingService.getState().getAvailableCapital()))
-                            .append("\n");
+                            .append("\n\n");
+                }
+                if (kissService != null) {
+                    var kissState = kissService.getState();
+                    sb.append("🎯 *KISS Multi-Timeframe Strategy (Nifty 200 + MCX):*\n")
+                            .append(
+                                    String.format(
+                                            "• Equity: ₹%.2f | Active Positions: %d | Closed: %d\n",
+                                            kissState.getTotalPortfolioEquity(),
+                                            kissState.getPositions().size(),
+                                            kissState.getClosedPositions().size()));
                 }
                 return sb.toString();
 
@@ -335,6 +352,64 @@ public class TelegramBotCommandListener {
                         swingState.getAvailableCapital(),
                         swingState.getPositions().size(),
                         swingState.getClosedPositions().size());
+
+            case "/kiss":
+            case "/kiss_status":
+                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
+                var kissState = kissService.getState();
+                StringBuilder kissSb = new StringBuilder();
+                kissSb.append("🎯 *KISS Multi-Timeframe Strategy Status*\n");
+                kissSb.append(
+                        String.format(
+                                "• Total Equity: ₹%.2f\n", kissState.getTotalPortfolioEquity()));
+                kissSb.append(
+                        String.format(
+                                "• Available Capital: ₹%.2f\n", kissState.getAvailableCapital()));
+                kissSb.append(
+                        String.format("• Active Positions: %d\n", kissState.getPositions().size()));
+                kissSb.append(
+                        String.format(
+                                "• Closed Trades: %d\n", kissState.getClosedPositions().size()));
+                if (!kissState.getPositions().isEmpty()) {
+                    kissSb.append("\n*Active Positions:*\n");
+                    kissState
+                            .getPositions()
+                            .values()
+                            .forEach(
+                                    p -> {
+                                        kissSb.append(
+                                                String.format(
+                                                        "• `%s` (%s) | Qty: %d | Entry: ₹%.2f | LTP: ₹%.2f | PnL: ₹%.2f (%.2f%%)\n",
+                                                        p.getSymbol(),
+                                                        p.getSignalType(),
+                                                        p.getQuantity(),
+                                                        p.getEntryPrice(),
+                                                        p.getCurrentLtp(),
+                                                        p.getUnrealizedPnl(),
+                                                        p.getUnrealizedPnlPct()));
+                                    });
+                }
+                return kissSb.toString();
+
+            case "/kiss_scan":
+                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
+                var kissSignals = kissService.scanAndExecute();
+                return String.format(
+                        "🎯 KISS Full Scan Completed! Generated %d new actionable signals.",
+                        kissSignals.size());
+
+            case "/kiss_mcx":
+                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
+                var mcxSignals = kissService.scanMcxUniverse();
+                return String.format(
+                        "🛢️ KISS MCX Commodity Scan Completed! Found %d signals.",
+                        mcxSignals.size());
+
+            case "/kiss_nse":
+                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
+                var nseSignals = kissService.scanNseUniverse();
+                return String.format(
+                        "📊 KISS NSE Equity Scan Completed! Found %d signals.", nseSignals.size());
 
             case "/pos_status":
                 return positionalService.getSummaryStatus();
@@ -388,7 +463,13 @@ public class TelegramBotCommandListener {
                         🤖 *Shoonya Trading Bot Commands:*
 
                         📊 *Overall & Multi-Strategy:*
-                        • `/status` or `/all` - View status across all 3 strategies
+                        • `/status` or `/all` - View status across all strategies
+
+                        🎯 *KISS Multi-Timeframe Strategy (Nifty 200 + MCX Commodities):*
+                        • `/kiss` or `/kiss_status` - View active paper positions & PnL
+                        • `/kiss_scan` - Trigger manual full universe scan
+                        • `/kiss_mcx` - Scan MCX commodities (Crude, Gold, Silver, Copper, NatGas)
+                        • `/kiss_nse` - Scan Nifty 200 equity futures
 
                         ⚡ *LVR (Lowest Volume Reversal 5m Options):*
                         • `/lvr` - View LVR winning sector & candidate setups
