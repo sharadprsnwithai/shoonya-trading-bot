@@ -17,11 +17,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 public class HistoricalOhlcControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    @Autowired private MockMvc mockMvc;
 
-    @MockBean
-    private HistoricalOhlcCacheService cacheService;
+    @MockBean private HistoricalOhlcCacheService cacheService;
 
     @Test
     void testGetOhlcStatus() throws Exception {

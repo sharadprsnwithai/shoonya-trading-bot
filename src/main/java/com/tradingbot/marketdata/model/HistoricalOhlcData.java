@@ -8,9 +8,7 @@ import java.util.Map;
 /** Consolidated JSON persistence structure for all historical OHLC candles across all symbols. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record HistoricalOhlcData(
-        Instant lastUpdated,
-        int symbolCount,
-        Map<String, SymbolOhlcBundle> symbols) {
+        Instant lastUpdated, int symbolCount, Map<String, SymbolOhlcBundle> symbols) {
 
     public HistoricalOhlcData {
         lastUpdated = lastUpdated != null ? lastUpdated : Instant.now();

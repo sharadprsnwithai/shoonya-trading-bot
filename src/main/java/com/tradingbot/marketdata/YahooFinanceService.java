@@ -29,7 +29,8 @@ import org.springframework.stereotype.Service;
 public class YahooFinanceService {
 
     private static final Logger log = LoggerFactory.getLogger(YahooFinanceService.class);
-    private static final String YAHOO_CHART_URL_PREFIX = "https://query1.finance.yahoo.com/v8/finance/chart/";
+    private static final String YAHOO_CHART_URL_PREFIX =
+            "https://query1.finance.yahoo.com/v8/finance/chart/";
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -121,7 +122,26 @@ public class YahooFinanceService {
         String ticker = toYahooTicker(symbol);
         int boundedYears = Math.max(1, Math.min(yearsBack, 5));
         String url = YAHOO_CHART_URL_PREFIX + ticker + "?range=" + boundedYears + "y&interval=1d";
+        return fetchCandlesInternal(symbol, "D", ticker, url);
+    }
 
+    /**
+     * Fetches 5-minute intraday OHLC candles for the specified number of days back from Yahoo
+     * Finance.
+     *
+     * @param symbol Symbol name (e.g. "RELIANCE", "NIFTY 50", "TATASTEEL")
+     * @param daysBack Range in days (e.g. 5 or 7 days)
+     * @return Chronological list of 5-minute Candle objects, or empty list on failure
+     */
+    public List<Candle> fetch5MinCandles(String symbol, int daysBack) {
+        String ticker = toYahooTicker(symbol);
+        int boundedDays = Math.max(1, Math.min(daysBack, 60));
+        String url = YAHOO_CHART_URL_PREFIX + ticker + "?range=" + boundedDays + "d&interval=5m";
+        return fetchCandlesInternal(symbol, "5", ticker, url);
+    }
+
+    private List<Candle> fetchCandlesInternal(
+            String symbol, String timeframe, String ticker, String url) {
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
                 HttpRequest req =
@@ -137,7 +157,7 @@ public class YahooFinanceService {
                         httpClient.send(req, HttpResponse.BodyHandlers.ofString());
 
                 if (resp.statusCode() == 200) {
-                    List<Candle> candles = parseChartResponse(symbol, resp.body());
+                    List<Candle> candles = parseChartResponse(symbol, timeframe, resp.body());
                     if (!candles.isEmpty()) {
                         return candles;
                     }
@@ -170,6 +190,14 @@ public class YahooFinanceService {
 
     /** Parses Yahoo Finance v8 chart JSON response into a sorted list of daily Candle objects. */
     public List<Candle> parseChartResponse(String symbol, String json) {
+        return parseChartResponse(symbol, "D", json);
+    }
+
+    /**
+     * Parses Yahoo Finance v8 chart JSON response into a sorted list of Candle objects for a
+     * specific timeframe.
+     */
+    public List<Candle> parseChartResponse(String symbol, String timeframe, String json) {
         if (json == null || json.isBlank()) {
             return Collections.emptyList();
         }
@@ -218,11 +246,16 @@ public class YahooFinanceService {
                 JsonNode cNode = closes.get(i);
                 JsonNode vNode = volumes.get(i);
 
-                if (tsNode == null || tsNode.isNull()
-                        || oNode == null || oNode.isNull()
-                        || hNode == null || hNode.isNull()
-                        || lNode == null || lNode.isNull()
-                        || cNode == null || cNode.isNull()) {
+                if (tsNode == null
+                        || tsNode.isNull()
+                        || oNode == null
+                        || oNode.isNull()
+                        || hNode == null
+                        || hNode.isNull()
+                        || lNode == null
+                        || lNode.isNull()
+                        || cNode == null
+                        || cNode.isNull()) {
                     continue; // Skip holidays / empty slots
                 }
 
@@ -234,14 +267,18 @@ public class YahooFinanceService {
                 BigDecimal close = BigDecimal.valueOf(cNode.asDouble());
                 long volume = (vNode != null && !vNode.isNull()) ? vNode.asLong() : 0L;
 
-                candles.add(new Candle(symbol, "D", instant, open, high, low, close, volume));
+                candles.add(new Candle(symbol, timeframe, instant, open, high, low, close, volume));
             }
 
             candles.sort(Comparator.comparing(Candle::timestamp));
             return candles;
 
         } catch (Exception e) {
-            log.error("[YAHOO-FINANCE] Failed to parse chart response for {}: {}", symbol, e.getMessage(), e);
+            log.error(
+                    "[YAHOO-FINANCE] Failed to parse chart response for {}: {}",
+                    symbol,
+                    e.getMessage(),
+                    e);
             return Collections.emptyList();
         }
     }

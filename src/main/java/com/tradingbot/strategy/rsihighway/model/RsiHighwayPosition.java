@@ -6,8 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Aggregate model tracking an active swing position, its executed tranches,
- * average price, stop losses, and trailing state.
+ * Aggregate model tracking an active swing position, its executed tranches, average price, stop
+ * losses, and trailing state.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RsiHighwayPosition {
@@ -27,7 +27,8 @@ public class RsiHighwayPosition {
 
     public RsiHighwayPosition() {}
 
-    public RsiHighwayPosition(String symbol, String exchange, double initialPrice, double initialSlPrice) {
+    public RsiHighwayPosition(
+            String symbol, String exchange, double initialPrice, double initialSlPrice) {
         this.symbol = symbol;
         this.exchange = exchange;
         this.averagePrice = initialPrice;
@@ -42,7 +43,9 @@ public class RsiHighwayPosition {
     public synchronized void addTranche(RsiHighwayTranche tranche) {
         if (tranche == null || tranche.quantity() <= 0) return;
 
-        double totalCost = (this.averagePrice * this.totalQuantity) + (tranche.entryPrice() * tranche.quantity());
+        double totalCost =
+                (this.averagePrice * this.totalQuantity)
+                        + (tranche.entryPrice() * tranche.quantity());
         this.totalQuantity += tranche.quantity();
         this.averagePrice = totalCost / this.totalQuantity;
         this.tranches.add(tranche);

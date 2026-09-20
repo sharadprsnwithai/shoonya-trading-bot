@@ -19,8 +19,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Handles position sizing, paper execution simulation, and live Shoonya CNC order placement
- * for the RSI Highway Multi-Timeframe Swing Strategy.
+ * Handles position sizing, paper execution simulation, and live Shoonya CNC order placement for the
+ * RSI Highway Multi-Timeframe Swing Strategy.
  */
 @Service
 public class RsiHighwayExecutionService {
@@ -75,12 +75,14 @@ public class RsiHighwayExecutionService {
      * @param availableCapital Capital available for sizing
      * @return Executed RsiHighwayTranche or empty on failure
      */
-    public Optional<RsiHighwayTranche> executeEntrySignal(RsiHighwaySignal signal, double availableCapital) {
+    public Optional<RsiHighwayTranche> executeEntrySignal(
+            RsiHighwaySignal signal, double availableCapital) {
         return executeEntrySignal(signal, availableCapital, availableCapital);
     }
 
     /**
-     * Executes an entry signal (Tranche 1, 2, or 3) sized by total portfolio equity and constrained by available cash.
+     * Executes an entry signal (Tranche 1, 2, or 3) sized by total portfolio equity and constrained
+     * by available cash.
      *
      * @param signal Generated buy signal
      * @param portfolioEquity Total portfolio equity for percentage-based position sizing
@@ -88,25 +90,26 @@ public class RsiHighwayExecutionService {
      * @return Executed RsiHighwayTranche or empty on failure
      */
     public Optional<RsiHighwayTranche> executeEntrySignal(
-            RsiHighwaySignal signal,
-            double portfolioEquity,
-            double availableCash) {
+            RsiHighwaySignal signal, double portfolioEquity, double availableCash) {
         if (signal == null) return Optional.empty();
 
         double equity = portfolioEquity > 0 ? portfolioEquity : config.getPaperCapital();
         double cash = availableCash > 0 ? availableCash : equity;
 
-        int baseQty = calculatePositionSize(
-                signal.triggerPrice(),
-                signal.initialSlPrice(),
-                equity,
-                config.getRiskPerTradePercent(),
-                config.getMaxCapitalPerStockPercent()
-        );
+        int baseQty =
+                calculatePositionSize(
+                        signal.triggerPrice(),
+                        signal.initialSlPrice(),
+                        equity,
+                        config.getRiskPerTradePercent(),
+                        config.getMaxCapitalPerStockPercent());
 
         if (baseQty <= 0) {
-            log.warn("[RSI-HIGHWAY] Position size computed as 0 for {} (Equity ₹{}, Price ₹{}). Skipping entry.",
-                    signal.symbol(), equity, signal.triggerPrice());
+            log.warn(
+                    "[RSI-HIGHWAY] Position size computed as 0 for {} (Equity ₹{}, Price ₹{}). Skipping entry.",
+                    signal.symbol(),
+                    equity,
+                    signal.triggerPrice());
             return Optional.empty();
         }
 
@@ -123,12 +126,19 @@ public class RsiHighwayExecutionService {
         if (totalRequiredCapital > cash) {
             int affordableQty = (int) Math.floor(cash / signal.triggerPrice());
             if (affordableQty <= 0) {
-                log.warn("[RSI-HIGHWAY] Required capital ₹{} exceeds available cash ₹{} for {}. Skipping entry.",
-                        totalRequiredCapital, cash, signal.symbol());
+                log.warn(
+                        "[RSI-HIGHWAY] Required capital ₹{} exceeds available cash ₹{} for {}. Skipping entry.",
+                        totalRequiredCapital,
+                        cash,
+                        signal.symbol());
                 return Optional.empty();
             }
-            log.info("[RSI-HIGHWAY] Capping tranche qty from {} to {} based on available cash ₹{} for {}",
-                    trancheQty, affordableQty, cash, signal.symbol());
+            log.info(
+                    "[RSI-HIGHWAY] Capping tranche qty from {} to {} based on available cash ₹{} for {}",
+                    trancheQty,
+                    affordableQty,
+                    cash,
+                    signal.symbol());
             trancheQty = affordableQty;
         }
 
@@ -136,34 +146,60 @@ public class RsiHighwayExecutionService {
         Instant executionTime = signal.generatedAt() != null ? signal.generatedAt() : Instant.now();
 
         if (config.isPaperTrading()) {
-            log.info("[PAPER-EXECUTION] Filled {} Tranche {} for {} shares @ ₹{} (SL: ₹{}). OrderId: {}",
-                    signal.symbol(), signal.trancheNumber(), trancheQty, signal.triggerPrice(), signal.initialSlPrice(), orderId);
-            return Optional.of(new RsiHighwayTranche(signal.trancheNumber(), trancheQty, signal.triggerPrice(), executionTime, orderId));
+            log.info(
+                    "[PAPER-EXECUTION] Filled {} Tranche {} for {} shares @ ₹{} (SL: ₹{}). OrderId: {}",
+                    signal.symbol(),
+                    signal.trancheNumber(),
+                    trancheQty,
+                    signal.triggerPrice(),
+                    signal.initialSlPrice(),
+                    orderId);
+            return Optional.of(
+                    new RsiHighwayTranche(
+                            signal.trancheNumber(),
+                            trancheQty,
+                            signal.triggerPrice(),
+                            executionTime,
+                            orderId));
         }
 
         // Live Execution on Shoonya (CNC / Delivery)
         try {
             String tradingSymbol = resolveTradingSymbol(signal.symbol(), "NSE");
-            OrderRequest req = new OrderRequest(
-                    tradingSymbol,
-                    "NSE",
-                    TransactionType.BUY,
-                    OrderType.MKT,
-                    ProductType.CNC,
-                    trancheQty,
-                    BigDecimal.valueOf(signal.triggerPrice()),
-                    null,
-                    "RSI_HIGHWAY"
-            );
+            OrderRequest req =
+                    new OrderRequest(
+                            tradingSymbol,
+                            "NSE",
+                            TransactionType.BUY,
+                            OrderType.MKT,
+                            ProductType.CNC,
+                            trancheQty,
+                            BigDecimal.valueOf(signal.triggerPrice()),
+                            null,
+                            "RSI_HIGHWAY");
 
             OrderResponse resp = orderService.placeOrder(req);
             if (resp != null && resp.success()) {
                 String brokerOrderId = resp.orderId() != null ? resp.orderId() : orderId;
-                log.info("[LIVE-EXECUTION] Placed Shoonya CNC Buy for {} ({}) qty {} @ ₹{}. Broker OrderId: {}",
-                        signal.symbol(), tradingSymbol, trancheQty, signal.triggerPrice(), brokerOrderId);
-                return Optional.of(new RsiHighwayTranche(signal.trancheNumber(), trancheQty, signal.triggerPrice(), executionTime, brokerOrderId));
+                log.info(
+                        "[LIVE-EXECUTION] Placed Shoonya CNC Buy for {} ({}) qty {} @ ₹{}. Broker OrderId: {}",
+                        signal.symbol(),
+                        tradingSymbol,
+                        trancheQty,
+                        signal.triggerPrice(),
+                        brokerOrderId);
+                return Optional.of(
+                        new RsiHighwayTranche(
+                                signal.trancheNumber(),
+                                trancheQty,
+                                signal.triggerPrice(),
+                                executionTime,
+                                brokerOrderId));
             } else {
-                log.error("[LIVE-EXECUTION] Order placement failed for {}: {}", signal.symbol(), resp != null ? resp.message() : "null response");
+                log.error(
+                        "[LIVE-EXECUTION] Order placement failed for {}: {}",
+                        signal.symbol(),
+                        resp != null ? resp.message() : "null response");
                 return Optional.empty();
             }
         } catch (Exception e) {
@@ -188,7 +224,8 @@ public class RsiHighwayExecutionService {
         if (config.isPaperTrading()) {
             position.setActive(false);
             position.setLastEvaluatedAt(Instant.now());
-            log.info("[PAPER-EXIT] Closed 100% position in {} ({} shares) @ ₹{}. Reason: {}. OrderId: {}",
+            log.info(
+                    "[PAPER-EXIT] Closed 100% position in {} ({} shares) @ ₹{}. Reason: {}. OrderId: {}",
                     position.getSymbol(), position.getTotalQuantity(), exitPrice, reason, orderId);
             return true;
         }
@@ -197,31 +234,40 @@ public class RsiHighwayExecutionService {
         try {
             String exchange = position.getExchange() != null ? position.getExchange() : "NSE";
             String tradingSymbol = resolveTradingSymbol(position.getSymbol(), exchange);
-            OrderRequest req = new OrderRequest(
-                    tradingSymbol,
-                    exchange,
-                    TransactionType.SELL,
-                    OrderType.MKT,
-                    ProductType.CNC,
-                    position.getTotalQuantity(),
-                    BigDecimal.valueOf(exitPrice),
-                    null,
-                    "RSI_HIGHWAY_EXIT"
-            );
+            OrderRequest req =
+                    new OrderRequest(
+                            tradingSymbol,
+                            exchange,
+                            TransactionType.SELL,
+                            OrderType.MKT,
+                            ProductType.CNC,
+                            position.getTotalQuantity(),
+                            BigDecimal.valueOf(exitPrice),
+                            null,
+                            "RSI_HIGHWAY_EXIT");
 
             OrderResponse resp = orderService.placeOrder(req);
             if (resp != null && resp.success()) {
                 position.setActive(false);
                 position.setLastEvaluatedAt(Instant.now());
-                log.info("[LIVE-EXIT] Shoonya Sell filled for {} ({}) ({} shares) @ ₹{}. Broker OrderId: {}",
-                        position.getSymbol(), tradingSymbol, position.getTotalQuantity(), exitPrice, resp.orderId());
+                log.info(
+                        "[LIVE-EXIT] Shoonya Sell filled for {} ({}) ({} shares) @ ₹{}. Broker OrderId: {}",
+                        position.getSymbol(),
+                        tradingSymbol,
+                        position.getTotalQuantity(),
+                        exitPrice,
+                        resp.orderId());
                 return true;
             } else {
-                log.error("[LIVE-EXIT] Failed to place Shoonya Sell for {}: {}", position.getSymbol(), resp != null ? resp.message() : "null");
+                log.error(
+                        "[LIVE-EXIT] Failed to place Shoonya Sell for {}: {}",
+                        position.getSymbol(),
+                        resp != null ? resp.message() : "null");
                 return false;
             }
         } catch (Exception e) {
-            log.error("[LIVE-EXIT] Exception closing live position for {}", position.getSymbol(), e);
+            log.error(
+                    "[LIVE-EXIT] Exception closing live position for {}", position.getSymbol(), e);
             return false;
         }
     }
@@ -232,7 +278,9 @@ public class RsiHighwayExecutionService {
         if (clean.startsWith("NSE:")) {
             clean = clean.substring(4);
         }
-        if ("NSE".equalsIgnoreCase(exchange) && !clean.endsWith("-EQ") && !clean.startsWith("NIFTY")) {
+        if ("NSE".equalsIgnoreCase(exchange)
+                && !clean.endsWith("-EQ")
+                && !clean.startsWith("NIFTY")) {
             return clean + "-EQ";
         }
         return clean;

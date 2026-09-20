@@ -17,7 +17,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Service that resamples daily candles into weekly and monthly bars, calculates Wilder's RSI(14)
- * across all three timeframes, computes daily ATR(14), and detects price action confirmation patterns.
+ * across all three timeframes, computes daily ATR(14), and detects price action confirmation
+ * patterns.
  */
 @Service
 public class MultiTimeframeRsiService {
@@ -32,8 +33,7 @@ public class MultiTimeframeRsiService {
     private final RsiHighwayConfig config;
 
     public MultiTimeframeRsiService(
-            TechnicalAnalysisService taService,
-            PriceActionPatternDetector patternDetector) {
+            TechnicalAnalysisService taService, PriceActionPatternDetector patternDetector) {
         this(taService, patternDetector, null);
     }
 
@@ -56,7 +56,9 @@ public class MultiTimeframeRsiService {
      */
     public MultiTimeframeRsiSnapshot computeSnapshot(String symbol, List<Candle> dailyCandles) {
         if (dailyCandles == null || dailyCandles.size() < MIN_DAILY_CANDLES) {
-            log.debug("[RSI-HIGHWAY] Insufficient daily candles for {}: {}", symbol,
+            log.debug(
+                    "[RSI-HIGHWAY] Insufficient daily candles for {}: {}",
+                    symbol,
                     dailyCandles != null ? dailyCandles.size() : 0);
             return null;
         }
@@ -80,7 +82,8 @@ public class MultiTimeframeRsiService {
 
         // 3. Compute Daily RSI series & Daily ATR
         double[] dailyRsiSeries = taService.calculateRsiSeries(dailyClose, RSI_PERIOD);
-        double[] dailyAtrSeries = taService.calculateAtrSeries(dailyHigh, dailyLow, dailyClose, ATR_PERIOD);
+        double[] dailyAtrSeries =
+                taService.calculateAtrSeries(dailyHigh, dailyLow, dailyClose, ATR_PERIOD);
 
         double latestDailyRsi = getLatestValidValue(dailyRsiSeries);
         double latestDailyAtr = getLatestValidValue(dailyAtrSeries);
@@ -88,14 +91,16 @@ public class MultiTimeframeRsiService {
         // 4. Compute Weekly RSI
         double latestWeeklyRsi = Double.NaN;
         if (weeklyCandles != null && weeklyCandles.size() >= RSI_PERIOD + 1) {
-            double[] weeklyClose = weeklyCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
+            double[] weeklyClose =
+                    weeklyCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
             latestWeeklyRsi = taService.calculateLatestRsi(weeklyClose, RSI_PERIOD);
         }
 
         // 5. Compute Monthly RSI
         double latestMonthlyRsi = Double.NaN;
         if (monthlyCandles != null && monthlyCandles.size() >= RSI_PERIOD + 1) {
-            double[] monthlyClose = monthlyCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
+            double[] monthlyClose =
+                    monthlyCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
             latestMonthlyRsi = taService.calculateLatestRsi(monthlyClose, RSI_PERIOD);
         }
 
@@ -113,8 +118,11 @@ public class MultiTimeframeRsiService {
         double dailyLower = config != null ? config.getDailyRsiLower() : 48.0;
         double dailyUpper = config != null ? config.getDailyRsiUpper() : 55.0;
 
-        Optional<PriceActionPattern> pattern = patternDetector.detectPattern(dailyCandles, latestDailyAtr);
-        boolean isRsiBounceOrCross = patternDetector.isRsi50BounceOrCross(validDailyRsis, dailyLower, dailyUpper, 50.0, 65.0);
+        Optional<PriceActionPattern> pattern =
+                patternDetector.detectPattern(dailyCandles, latestDailyAtr);
+        boolean isRsiBounceOrCross =
+                patternDetector.isRsi50BounceOrCross(
+                        validDailyRsis, dailyLower, dailyUpper, 50.0, 65.0);
 
         Candle signalCandle = dailyCandles.get(dailySize - 1);
         double currentPrice = signalCandle.close().doubleValue();
@@ -122,8 +130,9 @@ public class MultiTimeframeRsiService {
         double signalLow = signalCandle.low().doubleValue();
         Instant timestamp = signalCandle.timestamp();
 
-        boolean isHighwayCandidate = (!Double.isNaN(latestMonthlyRsi) && latestMonthlyRsi >= minMonthly)
-                && (!Double.isNaN(latestWeeklyRsi) && latestWeeklyRsi >= minWeekly);
+        boolean isHighwayCandidate =
+                (!Double.isNaN(latestMonthlyRsi) && latestMonthlyRsi >= minMonthly)
+                        && (!Double.isNaN(latestWeeklyRsi) && latestWeeklyRsi >= minWeekly);
 
         boolean isDailySetupValid = isRsiBounceOrCross && pattern.isPresent();
 
@@ -139,8 +148,7 @@ public class MultiTimeframeRsiService {
                 pattern,
                 isHighwayCandidate,
                 isDailySetupValid,
-                timestamp
-        );
+                timestamp);
     }
 
     private double getLatestValidValue(double[] series) {

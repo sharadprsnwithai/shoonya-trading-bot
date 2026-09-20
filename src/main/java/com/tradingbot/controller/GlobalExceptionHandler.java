@@ -39,10 +39,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(
                         Map.of(
-                                "timestamp", Instant.now().toString(),
-                                "status", HttpStatus.BAD_REQUEST.value(),
-                                "error", "Missing Parameter",
-                                "message", ex.getMessage() != null ? ex.getMessage() : "Missing required parameter"));
+                                "timestamp",
+                                Instant.now().toString(),
+                                "status",
+                                HttpStatus.BAD_REQUEST.value(),
+                                "error",
+                                "Missing Parameter",
+                                "message",
+                                ex.getMessage() != null
+                                        ? ex.getMessage()
+                                        : "Missing required parameter"));
     }
 
     @ExceptionHandler(IllegalStateException.class)

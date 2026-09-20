@@ -21,8 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 public class RsiHighwaySwingServiceCacheTest {
 
-    @TempDir
-    File tempDir;
+    @TempDir File tempDir;
 
     private HistoricalOhlcCacheService cacheService;
     private ShoonyaMarketDataService marketDataService;
@@ -44,23 +43,32 @@ public class RsiHighwaySwingServiceCacheTest {
         config = new RsiHighwayConfig();
         config.setStateFilePath(new File(tempDir, "state.json").getAbsolutePath());
 
-        swingService = new RsiHighwaySwingService(
-                marketDataService,
-                cacheService,
-                multiTimeframeRsiService,
-                breadthService,
-                executionService,
-                telegramService,
-                config,
-                new ObjectMapper().findAndRegisterModules());
+        swingService =
+                new RsiHighwaySwingService(
+                        marketDataService,
+                        cacheService,
+                        multiTimeframeRsiService,
+                        breadthService,
+                        executionService,
+                        telegramService,
+                        config,
+                        new ObjectMapper().findAndRegisterModules());
     }
 
     @Test
     void testEodScanUsesOhlcCacheServiceWithoutBrokerCalls() {
         List<Candle> dummyCandles = new ArrayList<>();
         for (int i = 0; i < 50; i++) {
-            dummyCandles.add(new Candle("RELIANCE", "D", Instant.now().minusSeconds(86400L * (50 - i)),
-                    BigDecimal.valueOf(2500 + i), BigDecimal.valueOf(2520 + i), BigDecimal.valueOf(2490 + i), BigDecimal.valueOf(2510 + i), 500000L));
+            dummyCandles.add(
+                    new Candle(
+                            "RELIANCE",
+                            "D",
+                            Instant.now().minusSeconds(86400L * (50 - i)),
+                            BigDecimal.valueOf(2500 + i),
+                            BigDecimal.valueOf(2520 + i),
+                            BigDecimal.valueOf(2490 + i),
+                            BigDecimal.valueOf(2510 + i),
+                            500000L));
         }
 
         when(cacheService.getDailyCandles("RELIANCE")).thenReturn(dummyCandles);

@@ -7,8 +7,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 
 /**
- * Configures multi-threaded task scheduling to prevent slow EOD scans or long network requests
- * from blocking other critical strategy schedulers.
+ * Configures multi-threaded task scheduling to prevent slow EOD scans or long network requests from
+ * blocking other critical strategy schedulers.
  */
 @Configuration
 public class TaskSchedulingConfig implements SchedulingConfigurer {

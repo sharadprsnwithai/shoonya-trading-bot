@@ -10,8 +10,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 @SpringBootTest
 public class TaskSchedulingConfigTest {
 
-    @Autowired
-    private ThreadPoolTaskScheduler taskScheduler;
+    @Autowired private ThreadPoolTaskScheduler taskScheduler;
 
     @Test
     void testTaskSchedulerPoolSize() {

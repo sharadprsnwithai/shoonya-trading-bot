@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /** Utility to resample intraday or daily candles into higher timeframe bars (e.g. Weekly, 15m). */
@@ -35,7 +34,12 @@ public final class CandleResamplingUtil {
         Map<Integer, List<Candle>> groupedByWeek = new LinkedHashMap<>();
 
         for (Candle c : dailyCandles) {
-            if (c == null || c.timestamp() == null || c.open() == null || c.high() == null || c.low() == null || c.close() == null) continue;
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
             var localDate = c.timestamp().atZone(IST).toLocalDate();
             int year = localDate.get(WEEK_FIELDS.weekBasedYear());
             int week = localDate.get(WEEK_FIELDS.weekOfWeekBasedYear());
@@ -97,7 +101,12 @@ public final class CandleResamplingUtil {
         Map<Integer, List<Candle>> groupedByMonth = new LinkedHashMap<>();
 
         for (Candle c : dailyCandles) {
-            if (c == null || c.timestamp() == null || c.open() == null || c.high() == null || c.low() == null || c.close() == null) continue;
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
             var localDate = c.timestamp().atZone(IST).toLocalDate();
             int year = localDate.getYear();
             int month = localDate.getMonthValue();
@@ -157,7 +166,12 @@ public final class CandleResamplingUtil {
         Map<Long, List<Candle>> groupedBy15Min = new LinkedHashMap<>();
 
         for (Candle c : fiveMinCandles) {
-            if (c == null || c.timestamp() == null || c.open() == null || c.high() == null || c.low() == null || c.close() == null) continue;
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
             // Group by 15-minute slot: epochMinute / 15
             long epochMinutes = c.timestamp().getEpochSecond() / 60;
             long intervalKey = (epochMinutes / 15) * 15;

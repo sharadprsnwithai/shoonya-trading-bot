@@ -12,8 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Evaluates macro market breadth and leadership strength across the Nifty 500 universe
- * and enforces the market regime gate before permitting new long swing entries.
+ * Evaluates macro market breadth and leadership strength across the Nifty 500 universe and enforces
+ * the market regime gate before permitting new long swing entries.
  */
 @Service
 public class RsiHighwayMarketBreadthService {
@@ -26,7 +26,8 @@ public class RsiHighwayMarketBreadthService {
      * Evaluates market breadth across all stocks and benchmark index candles.
      *
      * @param universeDailyCandles Map of symbol -> chronological daily candles
-     * @param indexDailyCandles Chronological daily candles for broader index (e.g. NIFTY MIDCAP 150 / SMALLCAP 250)
+     * @param indexDailyCandles Chronological daily candles for broader index (e.g. NIFTY MIDCAP 150
+     *     / SMALLCAP 250)
      * @param minLeadersThreshold Minimum number of stocks near 52W high required (e.g. 5)
      * @param maxIndexDrawdownPct Maximum allowed drawdown from index 52W high (e.g. 0.20 for 20%)
      * @return MarketBreadthSnapshot
@@ -73,20 +74,33 @@ public class RsiHighwayMarketBreadthService {
 
         if (indexDrawdown > maxIndexDrawdownPct) {
             open = false;
-            reason.append(String.format("Index Drawdown (%.1f%%) exceeds max limit (%.1f%%). ", indexDrawdown * 100, maxIndexDrawdownPct * 100));
+            reason.append(
+                    String.format(
+                            "Index Drawdown (%.1f%%) exceeds max limit (%.1f%%). ",
+                            indexDrawdown * 100, maxIndexDrawdownPct * 100));
         }
 
         if (leaders.size() < minLeadersThreshold) {
             open = false;
-            reason.append(String.format("Insufficient 52-Week High Leaders (%d < %d required). ", leaders.size(), minLeadersThreshold));
+            reason.append(
+                    String.format(
+                            "Insufficient 52-Week High Leaders (%d < %d required). ",
+                            leaders.size(), minLeadersThreshold));
         }
 
         if (open) {
-            reason.append(String.format("Healthy Momentum Regime: %d leaders near 52-week highs, Index Drawdown %.1f%%.", leaders.size(), indexDrawdown * 100));
+            reason.append(
+                    String.format(
+                            "Healthy Momentum Regime: %d leaders near 52-week highs, Index Drawdown %.1f%%.",
+                            leaders.size(), indexDrawdown * 100));
         }
 
-        log.info("[MARKET-BREADTH] Evaluated {} stocks -> {} leaders. Highway Open: {}. Reason: {}",
-                totalScanned, leaders.size(), open, reason);
+        log.info(
+                "[MARKET-BREADTH] Evaluated {} stocks -> {} leaders. Highway Open: {}. Reason: {}",
+                totalScanned,
+                leaders.size(),
+                open,
+                reason);
 
         return new MarketBreadthSnapshot(
                 open,
@@ -95,8 +109,7 @@ public class RsiHighwayMarketBreadthService {
                 Collections.unmodifiableList(leaders),
                 indexDrawdown,
                 reason.toString().trim(),
-                Instant.now()
-        );
+                Instant.now());
     }
 
     private boolean isNear52WeekHigh(List<Candle> candles) {

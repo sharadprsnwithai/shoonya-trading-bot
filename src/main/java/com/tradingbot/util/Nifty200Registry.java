@@ -134,7 +134,7 @@ public final class Nifty200Registry {
                     "MAXHEALTH",
                     "MAZDOCK",
                     "MFSL",
-                    "MPASIS",
+                    "MPHASIS",
                     "MUTHOOTFIN",
                     "NHPC",
                     "NMDC",

@@ -107,7 +107,8 @@ class LowestVolumeCandleEngineTest {
         assertNotNull(setup);
         assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
         assertEquals(0, BigDecimal.valueOf(96.95).compareTo(setup.getTriggerPrice())); // Low - 0.05
-        assertEquals(0, BigDecimal.valueOf(102.05).compareTo(setup.getStopLossPrice())); // High + 0.05
+        assertEquals(
+                0, BigDecimal.valueOf(102.05).compareTo(setup.getStopLossPrice())); // High + 0.05
         // Spot Risk = 102.05 - 96.95 = 5.10. 1:4 Target = 96.95 - (4 * 5.10) = 76.55
         assertEquals(0, BigDecimal.valueOf(76.55).compareTo(setup.getTarget1Price()));
         assertEquals(4500L, setup.getDayLowestVolume());
@@ -155,7 +156,8 @@ class LowestVolumeCandleEngineTest {
                                 BigDecimal.valueOf(97),
                                 BigDecimal.valueOf(101),
                                 4500),
-                        // C5: Higher Green candle without breaking Low (O=101, H=105, L=100, C=104), Vol = 3000 (< 4500)
+                        // C5: Higher Green candle without breaking Low (O=101, H=105, L=100,
+                        // C=104), Vol = 3000 (< 4500)
                         Candle.of5m(
                                 "PVRINOX",
                                 t0.plus(20, ChronoUnit.MINUTES),
@@ -171,7 +173,8 @@ class LowestVolumeCandleEngineTest {
         assertNotNull(setup);
         assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
         assertEquals(0, BigDecimal.valueOf(99.95).compareTo(setup.getTriggerPrice())); // Low - 0.05
-        assertEquals(0, BigDecimal.valueOf(105.05).compareTo(setup.getStopLossPrice())); // High + 0.05
+        assertEquals(
+                0, BigDecimal.valueOf(105.05).compareTo(setup.getStopLossPrice())); // High + 0.05
         // Spot Risk = 105.05 - 99.95 = 5.10. 1:4 Target = 99.95 - (4 * 5.10) = 79.55
         assertEquals(0, BigDecimal.valueOf(79.55).compareTo(setup.getTarget1Price()));
         assertEquals(3000L, setup.getDayLowestVolume());
@@ -225,8 +228,10 @@ class LowestVolumeCandleEngineTest {
 
         assertNotNull(setup);
         assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
-        assertEquals(0, BigDecimal.valueOf(516.05).compareTo(setup.getTriggerPrice())); // High + 0.05
-        assertEquals(0, BigDecimal.valueOf(507.95).compareTo(setup.getStopLossPrice())); // Low - 0.05
+        assertEquals(
+                0, BigDecimal.valueOf(516.05).compareTo(setup.getTriggerPrice())); // High + 0.05
+        assertEquals(
+                0, BigDecimal.valueOf(507.95).compareTo(setup.getStopLossPrice())); // Low - 0.05
         // Spot Risk = 516.05 - 507.95 = 8.10. 1:4 Target = 516.05 + (4 * 8.10) = 548.45
         assertEquals(0, BigDecimal.valueOf(548.45).compareTo(setup.getTarget1Price()));
         assertEquals(4000L, setup.getDayLowestVolume());

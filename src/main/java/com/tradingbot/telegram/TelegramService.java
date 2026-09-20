@@ -128,7 +128,7 @@ public class TelegramService {
                                 + "🛡️ *Hedge Leg:* `%s`\n"
                                 + "   • *Entry:* ₹%.2f ➔ *Exit:* ₹%.2f\n\n"
                                 + "%s *Realized P&L:* *%s₹%.2f*\n"
-                                + "ℹ️ *Exit Reason:* %s\n"
+                                + "ℹ️ *Exit Reason:* `%s`\n"
                                 + "⏰ *Exit Time:* %s IST",
                         modeBadge,
                         strategyName != null ? strategyName : pos.strategyId(),
@@ -246,7 +246,7 @@ public class TelegramService {
                                 + "   • *Option Entry Premium:* ₹%.2f\n"
                                 + "   • *Option Exit Premium:* ₹%.2f\n"
                                 + "   • %s *Est. Option P&L:* *%s₹%.2f* / share\n\n"
-                                + "ℹ️ *Exit Reason:* %s\n"
+                                + "ℹ️ *Exit Reason:* `%s`\n"
                                 + "⏰ *Exit Time:* %s IST",
                         strategyName != null ? strategyName : "Intraday Strategy",
                         underlying != null ? underlying : "NIFTY 50",
@@ -308,7 +308,7 @@ public class TelegramService {
                                 + "   • *Option Entry Premium:* ₹%.2f\n"
                                 + "   • *Option Exit Premium:* ₹%.2f\n"
                                 + "   • %s *Realized P&L:* *%s₹%.2f* / share\n\n"
-                                + "ℹ️ *Exit Reason:* %s\n"
+                                + "ℹ️ *Exit Reason:* `%s`\n"
                                 + "⏰ *Exit Time:* %s IST",
                         strategyName != null ? strategyName : "Option Buying Strategy",
                         underlying != null ? underlying : "NIFTY 50",
@@ -548,7 +548,7 @@ public class TelegramService {
                                 + "   • *Partial Booking P&L:* ₹%.2f\n"
                                 + "   • *Runner P&L:* ₹%.2f\n"
                                 + "   • %s *Total Realized P&L:* *%s₹%.2f*\n\n"
-                                + "ℹ️ *Exit Reason:* %s\n"
+                                + "ℹ️ *Exit Reason:* `%s`\n"
                                 + "⏰ *Exit Time:* %s IST",
                         pos.getTradeId(),
                         pos.getSymbol(),
@@ -729,6 +729,12 @@ public class TelegramService {
         sendAsync(message);
     }
 
+    /** Escapes reserved Markdown v1 characters. */
+    public static String escapeMarkdown(String text) {
+        if (text == null) return "";
+        return text.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[");
+    }
+
     /** Sends an interactive message with inline keyboard buttons for user confirmation. */
     public void sendInteractiveMessage(
             String text,
@@ -774,6 +780,32 @@ public class TelegramService {
                             log.info(
                                     "[TELEGRAM] Interactive alert sent successfully to chat {}",
                                     chatId);
+                        } else if (response.statusCode() == 400
+                                && response.body() != null
+                                && response.body().contains("can't parse entities")) {
+                            log.warn(
+                                    "[TELEGRAM] Markdown parse error from Telegram ({}). Retrying as plain text...",
+                                    response.body());
+                            String plainBody =
+                                    "chat_id="
+                                            + URLEncoder.encode(chatId, StandardCharsets.UTF_8)
+                                            + "&text="
+                                            + URLEncoder.encode(text, StandardCharsets.UTF_8)
+                                            + "&reply_markup="
+                                            + URLEncoder.encode(
+                                                    keyboardJson, StandardCharsets.UTF_8);
+                            HttpRequest plainReq =
+                                    HttpRequest.newBuilder()
+                                            .uri(URI.create(url))
+                                            .header(
+                                                    "Content-Type",
+                                                    "application/x-www-form-urlencoded")
+                                            .timeout(Duration.ofSeconds(10))
+                                            .POST(
+                                                    HttpRequest.BodyPublishers.ofString(
+                                                            plainBody, StandardCharsets.UTF_8))
+                                            .build();
+                            httpClient.send(plainReq, HttpResponse.BodyHandlers.ofString());
                         } else {
                             log.warn(
                                     "[TELEGRAM] Failed to send interactive alert (HTTP {}): {}",
@@ -818,6 +850,29 @@ public class TelegramService {
                                 httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                         if (response.statusCode() == 200) {
                             log.info("[TELEGRAM] Alert sent successfully to chat {}", chatId);
+                        } else if (response.statusCode() == 400
+                                && response.body() != null
+                                && response.body().contains("can't parse entities")) {
+                            log.warn(
+                                    "[TELEGRAM] Markdown parse error from Telegram ({}). Retrying as plain text...",
+                                    response.body());
+                            String plainBody =
+                                    "chat_id="
+                                            + URLEncoder.encode(chatId, StandardCharsets.UTF_8)
+                                            + "&text="
+                                            + URLEncoder.encode(text, StandardCharsets.UTF_8);
+                            HttpRequest plainReq =
+                                    HttpRequest.newBuilder()
+                                            .uri(URI.create(url))
+                                            .header(
+                                                    "Content-Type",
+                                                    "application/x-www-form-urlencoded")
+                                            .timeout(Duration.ofSeconds(10))
+                                            .POST(
+                                                    HttpRequest.BodyPublishers.ofString(
+                                                            plainBody, StandardCharsets.UTF_8))
+                                            .build();
+                            httpClient.send(plainReq, HttpResponse.BodyHandlers.ofString());
                         } else {
                             log.warn(
                                     "[TELEGRAM] Failed to send alert (HTTP {}): {}",

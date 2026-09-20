@@ -18,7 +18,6 @@ import com.tradingbot.util.Nifty500Registry;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,8 +31,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Core Strategy Service orchestrating the RSI Highway Multi-Timeframe Swing Strategy.
- * Executes daily scans at 15:00 IST and morning plunge risk checks at 09:30 IST.
+ * Core Strategy Service orchestrating the RSI Highway Multi-Timeframe Swing Strategy. Executes
+ * daily scans at 15:00 IST and morning plunge risk checks at 09:30 IST.
  */
 @Service
 public class RsiHighwaySwingService {
@@ -102,15 +101,20 @@ public class RsiHighwaySwingService {
             File file = new File(config.getStateFilePath());
             if (file.exists() && file.length() > 0) {
                 this.state = objectMapper.readValue(file, RsiHighwayState.class);
-                log.info("[RSI-HIGHWAY] Loaded state with {} active positions from {}",
-                        state.getPositions().size(), config.getStateFilePath());
+                log.info(
+                        "[RSI-HIGHWAY] Loaded state with {} active positions from {}",
+                        state.getPositions().size(),
+                        config.getStateFilePath());
             } else {
                 this.state = new RsiHighwayState();
                 this.state.setAvailableCapital(config.getPaperCapital());
                 log.info("[RSI-HIGHWAY] Initialized fresh state at {}", config.getStateFilePath());
             }
         } catch (Exception e) {
-            log.error("[RSI-HIGHWAY] Error loading state from {}, initializing empty state", config.getStateFilePath(), e);
+            log.error(
+                    "[RSI-HIGHWAY] Error loading state from {}, initializing empty state",
+                    config.getStateFilePath(),
+                    e);
             this.state = new RsiHighwayState();
             this.state.setAvailableCapital(config.getPaperCapital());
         }
@@ -125,9 +129,16 @@ public class RsiHighwaySwingService {
             File tempFile = new File(config.getStateFilePath() + ".tmp");
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, state);
             try {
-                java.nio.file.Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                java.nio.file.Files.move(
+                        tempFile.toPath(),
+                        file.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
-                java.nio.file.Files.move(tempFile.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                java.nio.file.Files.move(
+                        tempFile.toPath(),
+                        file.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (Exception e) {
             log.error("[RSI-HIGHWAY] Failed to save state to {}", config.getStateFilePath(), e);
@@ -164,10 +175,12 @@ public class RsiHighwaySwingService {
                     candles = marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
                     if (candles == null || candles.isEmpty()) {
                         consecutiveBrokerFailures++;
-                        if (consecutiveBrokerFailures >= MAX_CONSECUTIVE_FAILURES && symbols.size() > 10) {
-                            String msg = String.format(
-                                    "[RSI-HIGHWAY] Fast-fail circuit breaker triggered: %d consecutive broker fetch failures. Aborting EOD scan.",
-                                    consecutiveBrokerFailures);
+                        if (consecutiveBrokerFailures >= MAX_CONSECUTIVE_FAILURES
+                                && symbols.size() > 10) {
+                            String msg =
+                                    String.format(
+                                            "[RSI-HIGHWAY] Fast-fail circuit breaker triggered: %d consecutive broker fetch failures. Aborting EOD scan.",
+                                            consecutiveBrokerFailures);
                             log.error(msg);
                             notifyTelegram("⚠️ " + msg);
                             break;
@@ -188,7 +201,10 @@ public class RsiHighwaySwingService {
                 log.warn("[RSI-HIGHWAY] EOD scan interrupted during symbol fetch loop");
                 break;
             } catch (Exception e) {
-                log.warn("[RSI-HIGHWAY] Failed fetching daily candles for {}: {}", sym, e.getMessage());
+                log.warn(
+                        "[RSI-HIGHWAY] Failed fetching daily candles for {}: {}",
+                        sym,
+                        e.getMessage());
             }
         }
 
@@ -199,28 +215,40 @@ public class RsiHighwaySwingService {
                     indexCandles = ohlcCacheService.getDailyCandles("NIFTY 50");
                 }
                 if (indexCandles == null || indexCandles.isEmpty()) {
-                    indexCandles = marketDataService.fetchDailyCandles("NIFTY 50", CANDLES_HISTORY_DAYS);
+                    indexCandles =
+                            marketDataService.fetchDailyCandles("NIFTY 50", CANDLES_HISTORY_DAYS);
                 }
             } catch (Exception e) {
-                log.warn("[RSI-HIGHWAY] Failed fetching NIFTY 50 index candles: {}", e.getMessage());
+                log.warn(
+                        "[RSI-HIGHWAY] Failed fetching NIFTY 50 index candles: {}", e.getMessage());
             }
         }
 
         MarketBreadthSnapshot breadth;
         if (symbols.size() >= config.getMin52wLeaders()) {
-            breadth = breadthService.evaluateBreadth(
-                    candlesMap,
-                    indexCandles,
-                    config.getMin52wLeaders(),
-                    config.getMaxIndexDrawdownPct()
-            );
+            breadth =
+                    breadthService.evaluateBreadth(
+                            candlesMap,
+                            indexCandles,
+                            config.getMin52wLeaders(),
+                            config.getMaxIndexDrawdownPct());
             state.setLastBreadthSnapshot(breadth);
         } else if (state.getLastBreadthSnapshot() != null) {
             breadth = state.getLastBreadthSnapshot();
-            log.info("[RSI-HIGHWAY] Reusing active market breadth snapshot for partial scan of {} symbols (Highway Open: {})",
-                    symbols.size(), breadth.isHighwayOpen());
+            log.info(
+                    "[RSI-HIGHWAY] Reusing active market breadth snapshot for partial scan of {} symbols (Highway Open: {})",
+                    symbols.size(),
+                    breadth.isHighwayOpen());
         } else {
-            breadth = new MarketBreadthSnapshot(true, symbols.size(), symbols.size(), symbols, 0.0, "Manual single-stock scan bypass", Instant.now());
+            breadth =
+                    new MarketBreadthSnapshot(
+                            true,
+                            symbols.size(),
+                            symbols.size(),
+                            symbols,
+                            0.0,
+                            "Manual single-stock scan bypass",
+                            Instant.now());
         }
 
         // 2. Evaluate Exits & Pyramids for Existing Positions
@@ -236,32 +264,51 @@ public class RsiHighwaySwingService {
                 }
                 if (candles == null || candles.isEmpty()) continue;
 
-                MultiTimeframeRsiSnapshot snap = multiTimeframeRsiService.computeSnapshot(sym, candles);
+                MultiTimeframeRsiSnapshot snap =
+                        multiTimeframeRsiService.computeSnapshot(sym, candles);
                 if (snap == null) continue;
 
                 double currentPrice = snap.currentPrice();
-                position.setHighestPriceSeen(Math.max(position.getHighestPriceSeen(), currentPrice));
-                position.setHighestDailyRsiSeen(Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
+                position.setHighestPriceSeen(
+                        Math.max(position.getHighestPriceSeen(), currentPrice));
+                position.setHighestDailyRsiSeen(
+                        Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
                 position.setLastEvaluatedAt(Instant.now());
 
                 // Stop loss breach exit
                 if (currentPrice < position.getCurrentSlPrice()) {
-                    log.warn("[RSI-HIGHWAY] SL Breach Exit for {}: Current ₹{} < SL ₹{}", sym, currentPrice, position.getCurrentSlPrice());
+                    log.warn(
+                            "[RSI-HIGHWAY] SL Breach Exit for {}: Current ₹{} < SL ₹{}",
+                            sym,
+                            currentPrice,
+                            position.getCurrentSlPrice());
                     if (executionService.executeExit(position, currentPrice, "SL Breach Exit")) {
                         archivePosition(position, currentPrice);
-                        notifyTelegram(String.format("🛑 *RSI Highway SL Exit*\nSymbol: %s\nPrice: ₹%.2f\nAvg Entry: ₹%.2f",
-                                sym, currentPrice, position.getAveragePrice()));
+                        notifyTelegram(
+                                String.format(
+                                        "🛑 *RSI Highway SL Exit*\nSymbol: %s\nPrice: ₹%.2f\nAvg Entry: ₹%.2f",
+                                        sym, currentPrice, position.getAveragePrice()));
                     }
                     continue;
                 }
 
                 // Daily RSI < 50 Close Exit
                 if (snap.dailyRsi() < config.getDailyRsiExit()) {
-                    log.info("[RSI-HIGHWAY] RSI 50 Trailing Exit for {}: Daily RSI {} < {}", sym, snap.dailyRsi(), config.getDailyRsiExit());
-                    if (executionService.executeExit(position, currentPrice, "Daily RSI < 50 Close Exit")) {
+                    log.info(
+                            "[RSI-HIGHWAY] RSI 50 Trailing Exit for {}: Daily RSI {} < {}",
+                            sym,
+                            snap.dailyRsi(),
+                            config.getDailyRsiExit());
+                    if (executionService.executeExit(
+                            position, currentPrice, "Daily RSI < 50 Close Exit")) {
                         archivePosition(position, currentPrice);
-                        notifyTelegram(String.format("🚪 *RSI Highway RSI 50 Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f\nAvg Entry: ₹%.2f",
-                                sym, snap.dailyRsi(), currentPrice, position.getAveragePrice()));
+                        notifyTelegram(
+                                String.format(
+                                        "🚪 *RSI Highway RSI 50 Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f\nAvg Entry: ₹%.2f",
+                                        sym,
+                                        snap.dailyRsi(),
+                                        currentPrice,
+                                        position.getAveragePrice()));
                     }
                     continue;
                 }
@@ -274,57 +321,77 @@ public class RsiHighwaySwingService {
                         && canAddPyramidTranche(position, currentPrice, snap.timestamp())) {
 
                     int nextTranche = position.getTrancheCount() + 1;
-                    RsiHighwaySignalType sigType = (nextTranche == 2)
-                            ? RsiHighwaySignalType.PYRAMID_TRANCHE_2
-                            : RsiHighwaySignalType.PYRAMID_TRANCHE_3;
+                    RsiHighwaySignalType sigType =
+                            (nextTranche == 2)
+                                    ? RsiHighwaySignalType.PYRAMID_TRANCHE_2
+                                    : RsiHighwaySignalType.PYRAMID_TRANCHE_3;
 
                     double pyramidSl = Math.max(snap.signalCandleLow() - 0.05, currentPrice * 0.92);
-                    RsiHighwaySignal pyramidSignal = new RsiHighwaySignal(
-                            sym,
-                            sigType,
-                            currentPrice,
-                            Math.max(position.getCurrentSlPrice(), pyramidSl),
-                            nextTranche,
-                            snap.monthlyRsi(),
-                            snap.weeklyRsi(),
-                            snap.dailyRsi(),
-                            snap.dailyAtr(),
-                            snap.pattern().orElse(null),
-                            "Pyramid Tranche " + nextTranche + " Bounce",
-                            snap.timestamp() != null ? snap.timestamp() : Instant.now()
-                    );
+                    RsiHighwaySignal pyramidSignal =
+                            new RsiHighwaySignal(
+                                    sym,
+                                    sigType,
+                                    currentPrice,
+                                    Math.max(position.getCurrentSlPrice(), pyramidSl),
+                                    nextTranche,
+                                    snap.monthlyRsi(),
+                                    snap.weeklyRsi(),
+                                    snap.dailyRsi(),
+                                    snap.dailyAtr(),
+                                    snap.pattern().orElse(null),
+                                    "Pyramid Tranche " + nextTranche + " Bounce",
+                                    snap.timestamp() != null ? snap.timestamp() : Instant.now());
 
-                    Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(
-                            pyramidSignal,
-                            state.getTotalPortfolioEquity(),
-                            state.getAvailableCapital()
-                    );
+                    Optional<RsiHighwayTranche> tranche =
+                            executionService.executeEntrySignal(
+                                    pyramidSignal,
+                                    state.getTotalPortfolioEquity(),
+                                    state.getAvailableCapital());
                     if (tranche.isPresent()) {
                         RsiHighwayTranche t = tranche.get();
-                        state.setAvailableCapital(Math.max(0.0, state.getAvailableCapital() - (t.quantity() * t.entryPrice())));
+                        state.setAvailableCapital(
+                                Math.max(
+                                        0.0,
+                                        state.getAvailableCapital()
+                                                - (t.quantity() * t.entryPrice())));
                         position.addTranche(t);
                         // Trail SL up to the new swing bounce low
-                        position.setCurrentSlPrice(Math.max(position.getCurrentSlPrice(), pyramidSl));
+                        position.setCurrentSlPrice(
+                                Math.max(position.getCurrentSlPrice(), pyramidSl));
                         addRecentSignal(pyramidSignal);
-                        notifyTelegram(String.format("🚀 *RSI Highway Pyramid Tranche %d*\nSymbol: %s\nPrice: ₹%.2f\nQty: %d\nNew Avg: ₹%.2f",
-                            nextTranche, sym, currentPrice, t.quantity(), position.getAveragePrice()));
+                        notifyTelegram(
+                                String.format(
+                                        "🚀 *RSI Highway Pyramid Tranche %d*\nSymbol: %s\nPrice: ₹%.2f\nQty: %d\nNew Avg: ₹%.2f",
+                                        nextTranche,
+                                        sym,
+                                        currentPrice,
+                                        t.quantity(),
+                                        position.getAveragePrice()));
                     }
                 }
             } catch (Exception e) {
-                log.error("[RSI-HIGHWAY] Error evaluating active position for {}: {}", sym, e.getMessage(), e);
+                log.error(
+                        "[RSI-HIGHWAY] Error evaluating active position for {}: {}",
+                        sym,
+                        e.getMessage(),
+                        e);
             }
         }
 
         // 3. Screen Universe for New Initial Entries (if Highway Open & Slot available)
         if (!breadth.isHighwayOpen()) {
-            log.info("[RSI-HIGHWAY] Market Highway is CLOSED ({}). Skipping new entries.", breadth.reason());
+            log.info(
+                    "[RSI-HIGHWAY] Market Highway is CLOSED ({}). Skipping new entries.",
+                    breadth.reason());
             saveState();
             return;
         }
 
         int availableSlots = config.getMaxConcurrentPositions() - state.getPositions().size();
         if (availableSlots <= 0) {
-            log.info("[RSI-HIGHWAY] Max concurrent positions ({}) reached. Skipping new entries.", config.getMaxConcurrentPositions());
+            log.info(
+                    "[RSI-HIGHWAY] Max concurrent positions ({}) reached. Skipping new entries.",
+                    config.getMaxConcurrentPositions());
             saveState();
             return;
         }
@@ -337,8 +404,11 @@ public class RsiHighwaySwingService {
                 List<Candle> candles = candlesMap.get(sym);
                 if (candles == null || candles.isEmpty()) continue;
 
-                MultiTimeframeRsiSnapshot optSnap = multiTimeframeRsiService.computeSnapshot(sym, candles);
-                if (optSnap != null && optSnap.isHighwayCandidate() && optSnap.isDailySetupValid()) {
+                MultiTimeframeRsiSnapshot optSnap =
+                        multiTimeframeRsiService.computeSnapshot(sym, candles);
+                if (optSnap != null
+                        && optSnap.isHighwayCandidate()
+                        && optSnap.isDailySetupValid()) {
                     candidates.add(optSnap);
                 }
             } catch (Exception e) {
@@ -346,66 +416,102 @@ public class RsiHighwaySwingService {
             }
         }
 
-        log.info("[RSI-HIGHWAY] Found {} valid entry setups for {} available portfolio slots.",
-                candidates.size(), availableSlots);
+        log.info(
+                "[RSI-HIGHWAY] Found {} valid entry setups for {} available portfolio slots.",
+                candidates.size(),
+                availableSlots);
 
-        // Sort candidates by Daily RSI proximity to 50 (ascending), breaking ties by MTF RSI momentum strength
-        candidates.sort(Comparator.comparingDouble((MultiTimeframeRsiSnapshot s) -> Math.abs(s.dailyRsi() - 50.0))
-                .thenComparing((a, b) -> Double.compare(b.monthlyRsi() + b.weeklyRsi(), a.monthlyRsi() + a.weeklyRsi())));
+        // Sort candidates by Daily RSI proximity to 50 (ascending), breaking ties by MTF RSI
+        // momentum strength
+        candidates.sort(
+                Comparator.comparingDouble(
+                                (MultiTimeframeRsiSnapshot s) -> Math.abs(s.dailyRsi() - 50.0))
+                        .thenComparing(
+                                (a, b) ->
+                                        Double.compare(
+                                                b.monthlyRsi() + b.weeklyRsi(),
+                                                a.monthlyRsi() + a.weeklyRsi())));
 
         int slotsToFill = Math.min(availableSlots, candidates.size());
         for (int i = 0; i < slotsToFill; i++) {
             try {
                 MultiTimeframeRsiSnapshot snap = candidates.get(i);
-                double maxPermissibleSl = snap.currentPrice() * 0.92; // 8% maximum permissible risk SL
-                double priceActionSl = snap.signalCandleLow() - 0.05; // Low of signal candle - 1 tick
+                double maxPermissibleSl =
+                        snap.currentPrice() * 0.92; // 8% maximum permissible risk SL
+                double priceActionSl =
+                        snap.signalCandleLow() - 0.05; // Low of signal candle - 1 tick
                 double slPrice = Math.max(priceActionSl, maxPermissibleSl);
 
-                RsiHighwaySignal entrySignal = new RsiHighwaySignal(
-                        snap.symbol(),
-                        RsiHighwaySignalType.INITIAL_ENTRY,
-                        snap.currentPrice(),
-                        slPrice,
-                        1,
-                        snap.monthlyRsi(),
-                        snap.weeklyRsi(),
-                        snap.dailyRsi(),
-                        snap.dailyAtr(),
-                        snap.pattern().orElse(null),
-                        "Initial Setup Confirmation (" + snap.pattern().map(PriceActionPattern::getDisplayName).orElse("Bounce") + ")",
-                        snap.timestamp() != null ? snap.timestamp() : Instant.now()
-                );
+                RsiHighwaySignal entrySignal =
+                        new RsiHighwaySignal(
+                                snap.symbol(),
+                                RsiHighwaySignalType.INITIAL_ENTRY,
+                                snap.currentPrice(),
+                                slPrice,
+                                1,
+                                snap.monthlyRsi(),
+                                snap.weeklyRsi(),
+                                snap.dailyRsi(),
+                                snap.dailyAtr(),
+                                snap.pattern().orElse(null),
+                                "Initial Setup Confirmation ("
+                                        + snap.pattern()
+                                                .map(PriceActionPattern::getDisplayName)
+                                                .orElse("Bounce")
+                                        + ")",
+                                snap.timestamp() != null ? snap.timestamp() : Instant.now());
 
-                Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(
-                        entrySignal,
-                        state.getTotalPortfolioEquity(),
-                        state.getAvailableCapital()
-                );
+                Optional<RsiHighwayTranche> tranche =
+                        executionService.executeEntrySignal(
+                                entrySignal,
+                                state.getTotalPortfolioEquity(),
+                                state.getAvailableCapital());
                 if (tranche.isPresent()) {
                     RsiHighwayTranche t = tranche.get();
-                    state.setAvailableCapital(Math.max(0.0, state.getAvailableCapital() - (t.quantity() * t.entryPrice())));
-                    RsiHighwayPosition position = new RsiHighwayPosition(snap.symbol(), "NSE", snap.currentPrice(), slPrice);
+                    state.setAvailableCapital(
+                            Math.max(
+                                    0.0,
+                                    state.getAvailableCapital() - (t.quantity() * t.entryPrice())));
+                    RsiHighwayPosition position =
+                            new RsiHighwayPosition(
+                                    snap.symbol(), "NSE", snap.currentPrice(), slPrice);
                     position.addTranche(t);
                     state.getPositions().put(snap.symbol(), position);
                     addRecentSignal(entrySignal);
 
-                    notifyTelegram(String.format("🟢 *RSI Highway New Entry*\nSymbol: %s\nEntry: ₹%.2f\nSL: ₹%.2f\nMonthly RSI: %.1f | Weekly: %.1f | Daily: %.1f\nPattern: %s",
-                            snap.symbol(), snap.currentPrice(), slPrice, snap.monthlyRsi(), snap.weeklyRsi(), snap.dailyRsi(),
-                            snap.pattern().map(PriceActionPattern::getDisplayName).orElse("RSI 50 Bounce")));
+                    notifyTelegram(
+                            String.format(
+                                    "🟢 *RSI Highway New Entry*\nSymbol: %s\nEntry: ₹%.2f\nSL: ₹%.2f\nMonthly RSI: %.1f | Weekly: %.1f | Daily: %.1f\nPattern: %s",
+                                    snap.symbol(),
+                                    snap.currentPrice(),
+                                    slPrice,
+                                    snap.monthlyRsi(),
+                                    snap.weeklyRsi(),
+                                    snap.dailyRsi(),
+                                    snap.pattern()
+                                            .map(PriceActionPattern::getDisplayName)
+                                            .orElse("RSI 50 Bounce")));
                 }
             } catch (Exception e) {
-                log.error("[RSI-HIGHWAY] Error executing initial entry candidate: {}", e.getMessage(), e);
+                log.error(
+                        "[RSI-HIGHWAY] Error executing initial entry candidate: {}",
+                        e.getMessage(),
+                        e);
             }
         }
 
         saveState();
-        log.info("[RSI-HIGHWAY] EOD Scan complete. Active positions: {}", state.getPositions().size());
+        log.info(
+                "[RSI-HIGHWAY] EOD Scan complete. Active positions: {}",
+                state.getPositions().size());
     }
 
     public synchronized void evaluateMorningPlungeCheck() {
         if (!config.isEnabled()) return;
 
-        log.info("[RSI-HIGHWAY] Starting 09:30 IST Morning Plunge Check for {} positions...", state.getPositions().size());
+        log.info(
+                "[RSI-HIGHWAY] Starting 09:30 IST Morning Plunge Check for {} positions...",
+                state.getPositions().size());
         state.setLastMorningCheckTime(Instant.now());
 
         List<String> activeSymbols = new ArrayList<>(state.getPositions().keySet());
@@ -414,50 +520,72 @@ public class RsiHighwaySwingService {
                 RsiHighwayPosition position = state.getPositions().get(sym);
                 if (position == null || !position.isActive()) continue;
 
-                List<Candle> candles = marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
+                List<Candle> candles =
+                        marketDataService.fetchDailyCandles(sym, CANDLES_HISTORY_DAYS);
                 if (candles == null || candles.isEmpty()) continue;
 
-                MultiTimeframeRsiSnapshot snap = multiTimeframeRsiService.computeSnapshot(sym, candles);
+                MultiTimeframeRsiSnapshot snap =
+                        multiTimeframeRsiService.computeSnapshot(sym, candles);
                 if (snap == null) continue;
 
                 double currentPrice = snap.currentPrice();
-                position.setHighestPriceSeen(Math.max(position.getHighestPriceSeen(), currentPrice));
-                position.setHighestDailyRsiSeen(Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
+                position.setHighestPriceSeen(
+                        Math.max(position.getHighestPriceSeen(), currentPrice));
+                position.setHighestDailyRsiSeen(
+                        Math.max(position.getHighestDailyRsiSeen(), snap.dailyRsi()));
                 position.setLastEvaluatedAt(Instant.now());
 
                 // Emergency plunge RSI < 45
                 if (snap.dailyRsi() < config.getMorningEmergencyRsi()) {
-                    log.warn("[RSI-HIGHWAY] EMERGENCY PLUNGE EXIT for {}: Daily RSI {} < {}",
-                            sym, snap.dailyRsi(), config.getMorningEmergencyRsi());
-                    if (executionService.executeExit(position, currentPrice, "Emergency Morning Plunge Exit")) {
+                    log.warn(
+                            "[RSI-HIGHWAY] EMERGENCY PLUNGE EXIT for {}: Daily RSI {} < {}",
+                            sym,
+                            snap.dailyRsi(),
+                            config.getMorningEmergencyRsi());
+                    if (executionService.executeExit(
+                            position, currentPrice, "Emergency Morning Plunge Exit")) {
                         archivePosition(position, currentPrice);
-                        notifyTelegram(String.format("🚨 *RSI Highway EMERGENCY PLUNGE Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f",
-                                sym, snap.dailyRsi(), currentPrice));
+                        notifyTelegram(
+                                String.format(
+                                        "🚨 *RSI Highway EMERGENCY PLUNGE Exit*\nSymbol: %s\nDaily RSI: %.2f\nExit Price: ₹%.2f",
+                                        sym, snap.dailyRsi(), currentPrice));
                     }
                     continue;
                 }
 
                 // Stop loss breach
                 if (currentPrice < position.getCurrentSlPrice()) {
-                    log.warn("[RSI-HIGHWAY] Morning SL Breach Exit for {}: Current ₹{} < SL ₹{}",
-                            sym, currentPrice, position.getCurrentSlPrice());
-                    if (executionService.executeExit(position, currentPrice, "Morning SL Breach Exit")) {
+                    log.warn(
+                            "[RSI-HIGHWAY] Morning SL Breach Exit for {}: Current ₹{} < SL ₹{}",
+                            sym,
+                            currentPrice,
+                            position.getCurrentSlPrice());
+                    if (executionService.executeExit(
+                            position, currentPrice, "Morning SL Breach Exit")) {
                         archivePosition(position, currentPrice);
-                        notifyTelegram(String.format("🛑 *RSI Highway Morning SL Exit*\nSymbol: %s\nExit Price: ₹%.2f",
-                                sym, currentPrice));
+                        notifyTelegram(
+                                String.format(
+                                        "🛑 *RSI Highway Morning SL Exit*\nSymbol: %s\nExit Price: ₹%.2f",
+                                        sym, currentPrice));
                     }
                 }
             } catch (Exception e) {
-                log.error("[RSI-HIGHWAY] Error checking morning plunge for symbol {}: {}", sym, e.getMessage(), e);
+                log.error(
+                        "[RSI-HIGHWAY] Error checking morning plunge for symbol {}: {}",
+                        sym,
+                        e.getMessage(),
+                        e);
             }
         }
 
         saveState();
     }
 
-    private boolean canAddPyramidTranche(RsiHighwayPosition position, double currentPrice, Instant candleTimestamp) {
+    private boolean canAddPyramidTranche(
+            RsiHighwayPosition position, double currentPrice, Instant candleTimestamp) {
         if (position.getTranches().isEmpty()) return true;
-        RsiHighwayTranche lastTranche = position.getTranches().get(position.getTranches().size() - 1);
+        RsiHighwayTranche lastTranche =
+                position.getTranches().get(position.getTranches().size() - 1);
         if (lastTranche.entryTime() != null && candleTimestamp != null) {
             var lastDate = lastTranche.entryTime().atZone(IST).toLocalDate();
             var candleDate = candleTimestamp.atZone(IST).toLocalDate();

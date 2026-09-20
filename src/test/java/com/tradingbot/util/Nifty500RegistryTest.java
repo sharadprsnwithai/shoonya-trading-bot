@@ -18,7 +18,8 @@ class Nifty500RegistryTest {
         assertThat(Nifty500Registry.containsSymbol("RELIANCE")).isTrue();
         assertThat(Nifty500Registry.containsSymbol("TCS")).isTrue();
         assertThat(Nifty500Registry.containsSymbol("HDFCBANK")).isTrue();
-        assertThat(Nifty500Registry.containsSymbol("ZOMATO")).isFalse(); // Not in list unless listed under different name
+        assertThat(Nifty500Registry.containsSymbol("ZOMATO"))
+                .isFalse(); // Not in list unless listed under different name
         assertThat(Nifty500Registry.containsSymbol("SWIGGY")).isTrue();
         assertThat(Nifty500Registry.containsSymbol("ECLERX")).isTrue();
         assertThat(Nifty500Registry.containsSymbol("ZYDUSWELL")).isTrue();

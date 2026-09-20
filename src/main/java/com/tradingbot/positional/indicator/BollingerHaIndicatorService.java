@@ -21,7 +21,11 @@ public class BollingerHaIndicatorService {
      */
     public List<BollingerBandSnapshot> calculate(
             List<Candle> candles, int period, double multiplier) {
-        if (candles == null || candles.isEmpty() || period <= 0 || multiplier < 0 || Double.isNaN(multiplier)) {
+        if (candles == null
+                || candles.isEmpty()
+                || period <= 0
+                || multiplier < 0
+                || Double.isNaN(multiplier)) {
             return List.of();
         }
 

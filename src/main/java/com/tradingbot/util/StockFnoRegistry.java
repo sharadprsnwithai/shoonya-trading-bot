@@ -53,7 +53,7 @@ public final class StockFnoRegistry {
         register("LAURUSLABS", "19234", 5.0, 1100, "NSE", "NFO");
         register("SAIL", "2963", 2.5, 4700, "NSE", "NFO");
         register("POLYCAB", "9590", 50.0, 125, "NSE", "NFO");
-        register("ADANIENSOL", "1023", 20.0, 675, "NSE", "NFO");
+        register("ADANIENSOL", "14927", 20.0, 675, "NSE", "NFO");
         register("MCX", "31181", 50.0, 125, "NSE", "NFO");
         register("ADANIGREEN", "3563", 20.0, 500, "NSE", "NFO");
         register("TORNTPHARM", "3518", 50.0, 250, "NSE", "NFO");
@@ -149,6 +149,7 @@ public final class StockFnoRegistry {
         register("COFORGE", "11543", 50.0, 150, "NSE", "NFO");
         register("PERSISTENT", "18365", 50.0, 100, "NSE", "NFO");
         register("LTM", "17818", 50.0, 150, "NSE", "NFO");
+        register("MPHASIS", "4503", 20.0, 275, "NSE", "NFO");
         register("MPASIS", "4503", 20.0, 275, "NSE", "NFO");
         register("OFSS", "10738", 100.0, 100, "NSE", "NFO");
         register("TATACOMM", "3426", 20.0, 500, "NSE", "NFO");

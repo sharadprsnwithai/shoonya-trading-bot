@@ -85,7 +85,9 @@ public final class CryptoUtil {
             int otp = binary % 1000000;
             return String.format("%06d", otp);
         } catch (Exception e) {
-            log.warn("Failed generating TOTP from secret, returning raw input fallback: {}", e.getMessage());
+            log.warn(
+                    "Failed generating TOTP from secret, returning raw input fallback: {}",
+                    e.getMessage());
             return cleanSecret;
         }
     }

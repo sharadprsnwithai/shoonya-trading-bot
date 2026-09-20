@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST Controller for inspecting state, query market breadth, and trigger manual evaluation
- * for the RSI Highway Multi-Timeframe Strategy.
+ * REST Controller for inspecting state, query market breadth, and trigger manual evaluation for the
+ * RSI Highway Multi-Timeframe Strategy.
  */
 @RestController
 @RequestMapping("/api/strategy/rsi-highway")

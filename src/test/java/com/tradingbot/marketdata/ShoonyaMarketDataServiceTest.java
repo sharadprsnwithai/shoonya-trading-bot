@@ -70,6 +70,53 @@ class ShoonyaMarketDataServiceTest {
     }
 
     @Test
+    void testParseShoonyaDailyCandles_DateOnlyTimeFormat() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
+        ShoonyaMarketDataService service = new ShoonyaMarketDataService(config, auth);
+
+        String dailyResponse =
+                """
+            [
+              {
+                "stat": "Ok",
+                "time": "08-01-2024",
+                "into": "21500.00",
+                "inth": "21600.00",
+                "intl": "21450.00",
+                "intc": "21550.00",
+                "v": "500000"
+              },
+              {
+                "stat": "Ok",
+                "time": "09-01-2024",
+                "into": "21560.00",
+                "inth": "21650.00",
+                "intl": "21520.00",
+                "intc": "21620.00",
+                "v": "600000"
+              }
+            ]
+            """;
+
+        List<Candle> candles = service.parseShoonyaCandles(dailyResponse, "NIFTY 50", "D");
+        assertThat(candles).hasSize(2);
+        assertThat(candles.get(0).timestamp()).isBefore(candles.get(1).timestamp());
+        java.time.LocalDate d1 =
+                candles.get(0)
+                        .timestamp()
+                        .atZone(java.time.ZoneId.of("Asia/Kolkata"))
+                        .toLocalDate();
+        java.time.LocalDate d2 =
+                candles.get(1)
+                        .timestamp()
+                        .atZone(java.time.ZoneId.of("Asia/Kolkata"))
+                        .toLocalDate();
+        assertThat(d1).isEqualTo(java.time.LocalDate.of(2024, 1, 8));
+        assertThat(d2).isEqualTo(java.time.LocalDate.of(2024, 1, 9));
+    }
+
+    @Test
     void testWarmTokenCache_PopulatesMajorFnoTokens() {
         ShoonyaConfig config = new ShoonyaConfig();
         ShoonyaAuthenticator auth = mock(ShoonyaAuthenticator.class);

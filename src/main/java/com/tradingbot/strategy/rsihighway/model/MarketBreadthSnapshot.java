@@ -3,9 +3,7 @@ package com.tradingbot.strategy.rsihighway.model;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Snapshot representing the broader market regime and 52-week high leadership breadth.
- */
+/** Snapshot representing the broader market regime and 52-week high leadership breadth. */
 public record MarketBreadthSnapshot(
         boolean isHighwayOpen,
         int totalUniverseScanned,
@@ -13,5 +11,4 @@ public record MarketBreadthSnapshot(
         List<String> leadersList,
         double indexDrawdownPct,
         String reason,
-        Instant evaluatedAt
-) {}
+        Instant evaluatedAt) {}

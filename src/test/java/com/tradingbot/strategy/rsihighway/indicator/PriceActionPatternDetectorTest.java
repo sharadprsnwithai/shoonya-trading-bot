@@ -16,22 +16,56 @@ class PriceActionPatternDetectorTest {
 
     @Test
     void testBullishEngulfingPattern() {
-        Candle prevRed = new Candle("TATAMOTORS", "D", Instant.parse("2026-03-01T10:00:00Z"),
-                BigDecimal.valueOf(100), BigDecimal.valueOf(102), BigDecimal.valueOf(95), BigDecimal.valueOf(96), 1000L);
-        Candle currGreen = new Candle("TATAMOTORS", "D", Instant.parse("2026-03-02T10:00:00Z"),
-                BigDecimal.valueOf(95), BigDecimal.valueOf(105), BigDecimal.valueOf(94), BigDecimal.valueOf(104), 2000L);
+        Candle prevRed =
+                new Candle(
+                        "TATAMOTORS",
+                        "D",
+                        Instant.parse("2026-03-01T10:00:00Z"),
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(102),
+                        BigDecimal.valueOf(95),
+                        BigDecimal.valueOf(96),
+                        1000L);
+        Candle currGreen =
+                new Candle(
+                        "TATAMOTORS",
+                        "D",
+                        Instant.parse("2026-03-02T10:00:00Z"),
+                        BigDecimal.valueOf(95),
+                        BigDecimal.valueOf(105),
+                        BigDecimal.valueOf(94),
+                        BigDecimal.valueOf(104),
+                        2000L);
 
-        Optional<PriceActionPattern> pattern = detector.detectPattern(List.of(prevRed, currGreen), 5.0);
+        Optional<PriceActionPattern> pattern =
+                detector.detectPattern(List.of(prevRed, currGreen), 5.0);
         assertThat(pattern).isPresent().contains(PriceActionPattern.BULLISH_ENGULFING);
     }
 
     @Test
     void testHammerPinbarPattern() {
-        Candle prev = new Candle("INFY", "D", Instant.parse("2026-03-01T10:00:00Z"),
-                BigDecimal.valueOf(1500), BigDecimal.valueOf(1510), BigDecimal.valueOf(1490), BigDecimal.valueOf(1495), 1000L);
-        // Hammer: Open 1490, High 1502, Low 1450, Close 1500 -> Body = 10, Lower Wick = 40 (4x body), Upper Wick = 2
-        Candle hammer = new Candle("INFY", "D", Instant.parse("2026-03-02T10:00:00Z"),
-                BigDecimal.valueOf(1490), BigDecimal.valueOf(1502), BigDecimal.valueOf(1450), BigDecimal.valueOf(1500), 2500L);
+        Candle prev =
+                new Candle(
+                        "INFY",
+                        "D",
+                        Instant.parse("2026-03-01T10:00:00Z"),
+                        BigDecimal.valueOf(1500),
+                        BigDecimal.valueOf(1510),
+                        BigDecimal.valueOf(1490),
+                        BigDecimal.valueOf(1495),
+                        1000L);
+        // Hammer: Open 1490, High 1502, Low 1450, Close 1500 -> Body = 10, Lower Wick = 40 (4x
+        // body), Upper Wick = 2
+        Candle hammer =
+                new Candle(
+                        "INFY",
+                        "D",
+                        Instant.parse("2026-03-02T10:00:00Z"),
+                        BigDecimal.valueOf(1490),
+                        BigDecimal.valueOf(1502),
+                        BigDecimal.valueOf(1450),
+                        BigDecimal.valueOf(1500),
+                        2500L);
 
         Optional<PriceActionPattern> pattern = detector.detectPattern(List.of(prev, hammer), 20.0);
         assertThat(pattern).isPresent().contains(PriceActionPattern.HAMMER);
@@ -39,27 +73,93 @@ class PriceActionPatternDetectorTest {
 
     @Test
     void testMomentumExpansionPattern() {
-        Candle prev = new Candle("SBIN", "D", Instant.parse("2026-03-01T10:00:00Z"),
-                BigDecimal.valueOf(800), BigDecimal.valueOf(805), BigDecimal.valueOf(795), BigDecimal.valueOf(802), 1000L);
-        // ATR = 10. Range = 830 - 800 = 30 (3.0x ATR >= 1.2x). Close 828 is in top 25% (range: 800 to 830)
-        Candle expansion = new Candle("SBIN", "D", Instant.parse("2026-03-02T10:00:00Z"),
-                BigDecimal.valueOf(801), BigDecimal.valueOf(830), BigDecimal.valueOf(800), BigDecimal.valueOf(828), 5000L);
+        Candle prev =
+                new Candle(
+                        "SBIN",
+                        "D",
+                        Instant.parse("2026-03-01T10:00:00Z"),
+                        BigDecimal.valueOf(800),
+                        BigDecimal.valueOf(805),
+                        BigDecimal.valueOf(795),
+                        BigDecimal.valueOf(802),
+                        1000L);
+        // ATR = 10. Range = 830 - 800 = 30 (3.0x ATR >= 1.2x). Close 828 is in top 25% (range: 800
+        // to 830)
+        Candle expansion =
+                new Candle(
+                        "SBIN",
+                        "D",
+                        Instant.parse("2026-03-02T10:00:00Z"),
+                        BigDecimal.valueOf(801),
+                        BigDecimal.valueOf(830),
+                        BigDecimal.valueOf(800),
+                        BigDecimal.valueOf(828),
+                        5000L);
 
-        Optional<PriceActionPattern> pattern = detector.detectPattern(List.of(prev, expansion), 10.0);
+        Optional<PriceActionPattern> pattern =
+                detector.detectPattern(List.of(prev, expansion), 10.0);
         assertThat(pattern).isPresent().contains(PriceActionPattern.MOMENTUM_EXPANSION);
     }
 
     @Test
     void testHorizontalBreakoutPattern() {
-        List<Candle> candles = List.of(
-                new Candle("HDFC", "D", Instant.parse("2026-03-01T10:00:00Z"), BigDecimal.valueOf(100), BigDecimal.valueOf(105), BigDecimal.valueOf(98), BigDecimal.valueOf(102), 1000L),
-                new Candle("HDFC", "D", Instant.parse("2026-03-02T10:00:00Z"), BigDecimal.valueOf(102), BigDecimal.valueOf(104), BigDecimal.valueOf(99), BigDecimal.valueOf(101), 1000L),
-                new Candle("HDFC", "D", Instant.parse("2026-03-03T10:00:00Z"), BigDecimal.valueOf(101), BigDecimal.valueOf(105), BigDecimal.valueOf(100), BigDecimal.valueOf(103), 1000L),
-                new Candle("HDFC", "D", Instant.parse("2026-03-04T10:00:00Z"), BigDecimal.valueOf(103), BigDecimal.valueOf(104), BigDecimal.valueOf(100), BigDecimal.valueOf(102), 1000L),
-                new Candle("HDFC", "D", Instant.parse("2026-03-05T10:00:00Z"), BigDecimal.valueOf(102), BigDecimal.valueOf(105), BigDecimal.valueOf(101), BigDecimal.valueOf(104), 1000L),
-                // Breakout above max high (105)
-                new Candle("HDFC", "D", Instant.parse("2026-03-06T10:00:00Z"), BigDecimal.valueOf(104), BigDecimal.valueOf(110), BigDecimal.valueOf(103), BigDecimal.valueOf(108), 3000L)
-        );
+        List<Candle> candles =
+                List.of(
+                        new Candle(
+                                "HDFC",
+                                "D",
+                                Instant.parse("2026-03-01T10:00:00Z"),
+                                BigDecimal.valueOf(100),
+                                BigDecimal.valueOf(105),
+                                BigDecimal.valueOf(98),
+                                BigDecimal.valueOf(102),
+                                1000L),
+                        new Candle(
+                                "HDFC",
+                                "D",
+                                Instant.parse("2026-03-02T10:00:00Z"),
+                                BigDecimal.valueOf(102),
+                                BigDecimal.valueOf(104),
+                                BigDecimal.valueOf(99),
+                                BigDecimal.valueOf(101),
+                                1000L),
+                        new Candle(
+                                "HDFC",
+                                "D",
+                                Instant.parse("2026-03-03T10:00:00Z"),
+                                BigDecimal.valueOf(101),
+                                BigDecimal.valueOf(105),
+                                BigDecimal.valueOf(100),
+                                BigDecimal.valueOf(103),
+                                1000L),
+                        new Candle(
+                                "HDFC",
+                                "D",
+                                Instant.parse("2026-03-04T10:00:00Z"),
+                                BigDecimal.valueOf(103),
+                                BigDecimal.valueOf(104),
+                                BigDecimal.valueOf(100),
+                                BigDecimal.valueOf(102),
+                                1000L),
+                        new Candle(
+                                "HDFC",
+                                "D",
+                                Instant.parse("2026-03-05T10:00:00Z"),
+                                BigDecimal.valueOf(102),
+                                BigDecimal.valueOf(105),
+                                BigDecimal.valueOf(101),
+                                BigDecimal.valueOf(104),
+                                1000L),
+                        // Breakout above max high (105)
+                        new Candle(
+                                "HDFC",
+                                "D",
+                                Instant.parse("2026-03-06T10:00:00Z"),
+                                BigDecimal.valueOf(104),
+                                BigDecimal.valueOf(110),
+                                BigDecimal.valueOf(103),
+                                BigDecimal.valueOf(108),
+                                3000L));
 
         Optional<PriceActionPattern> pattern = detector.detectPattern(candles, 3.0);
         assertThat(pattern).isPresent();

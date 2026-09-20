@@ -53,8 +53,10 @@ public class TelegramBotCommandListener {
     public TelegramBotCommandListener(
             BollingerHaPositionalService positionalService,
             PositionalStrategyConfig positionalConfig,
-            @Autowired(required = false) com.tradingbot.service.LowestVolumeReversalService lvrService,
-            @Autowired(required = false) com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
+            @Autowired(required = false)
+                    com.tradingbot.service.LowestVolumeReversalService lvrService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
@@ -261,9 +263,14 @@ public class TelegramBotCommandListener {
                 if (lvrService != null) {
                     sb.append("⚡ *LVR Strategy (5m Options):*\n")
                             .append("• Winning Sector: ")
-                            .append(lvrService.getSectorState().topSector() != null && !lvrService.getSectorState().topSector().isBlank()
-                                    ? lvrService.getSectorState().topSector()
-                                    : "None")
+                            .append(
+                                    lvrService.getSectorState().topSector() != null
+                                                    && !lvrService
+                                                            .getSectorState()
+                                                            .topSector()
+                                                            .isBlank()
+                                            ? lvrService.getSectorState().topSector()
+                                            : "None")
                             .append("\n• Active Setups: ")
                             .append(lvrService.getActiveSetups().size())
                             .append(" | Open Positions: ")
@@ -277,7 +284,9 @@ public class TelegramBotCommandListener {
                             .append("• Active Positions: ")
                             .append(swingService.getActivePositions().size())
                             .append("\n• Available Capital: ₹")
-                            .append(String.format("%.2f", swingService.getState().getAvailableCapital()))
+                            .append(
+                                    String.format(
+                                            "%.2f", swingService.getState().getAvailableCapital()))
                             .append("\n");
                 }
                 return sb.toString();
@@ -295,17 +304,22 @@ public class TelegramBotCommandListener {
                         sec.sentiment(),
                         sec.advances(),
                         sec.declines(),
-                        sec.topSector() != null && !sec.topSector().isBlank() ? sec.topSector() : "None",
+                        sec.topSector() != null && !sec.topSector().isBlank()
+                                ? sec.topSector()
+                                : "None",
                         sec.sectorPctChange(),
                         sec.candidateSymbols() != null ? sec.candidateSymbols().size() : 0,
-                        sec.candidateSymbols() != null ? String.join(", ", sec.candidateSymbols()) : "None",
+                        sec.candidateSymbols() != null
+                                ? String.join(", ", sec.candidateSymbols())
+                                : "None",
                         lvrService.getOpenPositions().size(),
                         lvrService.getTradeHistory().size());
 
             case "/lvr_scan":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
                 lvrService.runMorningUniverseScan();
-                return "🔍 LVR Morning Universe Scan completed!\n\n" + processCommand("/lvr_status");
+                return "🔍 LVR Morning Universe Scan completed!\n\n"
+                        + processCommand("/lvr_status");
 
             case "/swing":
             case "/swing_status":

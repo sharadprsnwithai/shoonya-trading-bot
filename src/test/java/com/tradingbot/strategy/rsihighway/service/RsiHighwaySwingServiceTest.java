@@ -28,7 +28,6 @@ import java.nio.file.Files;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -67,31 +66,31 @@ class RsiHighwaySwingServiceTest {
 
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
-        swingService = new RsiHighwaySwingService(
-                marketDataService,
-                multiTimeframeRsiService,
-                breadthService,
-                executionService,
-                telegramService,
-                config,
-                objectMapper
-        );
+        swingService =
+                new RsiHighwaySwingService(
+                        marketDataService,
+                        multiTimeframeRsiService,
+                        breadthService,
+                        executionService,
+                        telegramService,
+                        config,
+                        objectMapper);
     }
 
     private List<Candle> createDummyDailyCandles(int count, double closePrice) {
         List<Candle> list = new ArrayList<>();
         Instant now = Instant.parse("2026-01-01T10:00:00Z");
         for (int i = 0; i < count; i++) {
-            list.add(new Candle(
-                    "TEST",
-                    "D",
-                    now.plusSeconds(i * 86400L),
-                    BigDecimal.valueOf(closePrice - 10),
-                    BigDecimal.valueOf(closePrice + 10),
-                    BigDecimal.valueOf(closePrice - 15),
-                    BigDecimal.valueOf(closePrice),
-                    100000L
-            ));
+            list.add(
+                    new Candle(
+                            "TEST",
+                            "D",
+                            now.plusSeconds(i * 86400L),
+                            BigDecimal.valueOf(closePrice - 10),
+                            BigDecimal.valueOf(closePrice + 10),
+                            BigDecimal.valueOf(closePrice - 15),
+                            BigDecimal.valueOf(closePrice),
+                            100000L));
         }
         return list;
     }
@@ -99,7 +98,15 @@ class RsiHighwaySwingServiceTest {
     @Test
     void testEvaluateEodScanWhenHighwayIsClosed() {
         when(breadthService.evaluateBreadth(any(), any(), anyInt(), anyDouble()))
-                .thenReturn(new MarketBreadthSnapshot(false, 500, 2, List.of(), 0.25, "Drawdown too high", Instant.now()));
+                .thenReturn(
+                        new MarketBreadthSnapshot(
+                                false,
+                                500,
+                                2,
+                                List.of(),
+                                0.25,
+                                "Drawdown too high",
+                                Instant.now()));
 
         swingService.evaluateEodScan();
 
@@ -109,19 +116,34 @@ class RsiHighwaySwingServiceTest {
     @Test
     void testSingleStockScanPreservesPriorBreadth() {
         // Cached breadth is open
-        MarketBreadthSnapshot cachedBreadth = new MarketBreadthSnapshot(true, 500, 30, List.of("TCS"), 0.03, "Healthy", Instant.now());
+        MarketBreadthSnapshot cachedBreadth =
+                new MarketBreadthSnapshot(
+                        true, 500, 30, List.of("TCS"), 0.03, "Healthy", Instant.now());
         swingService.getState().setLastBreadthSnapshot(cachedBreadth);
 
         List<Candle> candles = createDummyDailyCandles(300, 3500.0);
         when(marketDataService.fetchDailyCandles(eq("TCS"), anyInt())).thenReturn(candles);
 
-        MultiTimeframeRsiSnapshot rsiSnapshot = new MultiTimeframeRsiSnapshot(
-                "TCS", 65.0, 62.0, 51.5, 60.0, 3500.0, 3520.0, 3450.0,
-                Optional.of(PriceActionPattern.BULLISH_ENGULFING), true, true, Instant.now()
-        );
+        MultiTimeframeRsiSnapshot rsiSnapshot =
+                new MultiTimeframeRsiSnapshot(
+                        "TCS",
+                        65.0,
+                        62.0,
+                        51.5,
+                        60.0,
+                        3500.0,
+                        3520.0,
+                        3450.0,
+                        Optional.of(PriceActionPattern.BULLISH_ENGULFING),
+                        true,
+                        true,
+                        Instant.now());
         when(multiTimeframeRsiService.computeSnapshot(eq("TCS"), any())).thenReturn(rsiSnapshot);
         when(executionService.executeEntrySignal(any(), anyDouble(), anyDouble()))
-                .thenReturn(Optional.of(new RsiHighwayTranche(1, 10, 3500.0, Instant.now(), "ORD_TEST_01")));
+                .thenReturn(
+                        Optional.of(
+                                new RsiHighwayTranche(
+                                        1, 10, 3500.0, Instant.now(), "ORD_TEST_01")));
 
         // Execute scan for single stock
         swingService.evaluateEodScanForSymbols(List.of("TCS"));
@@ -133,29 +155,40 @@ class RsiHighwaySwingServiceTest {
     @Test
     void testEvaluateEodScanGeneratesInitialEntry() {
         when(breadthService.evaluateBreadth(any(), any(), anyInt(), anyDouble()))
-                .thenReturn(new MarketBreadthSnapshot(true, 500, 25, List.of("TCS"), 0.05, "Healthy regime", Instant.now()));
+                .thenReturn(
+                        new MarketBreadthSnapshot(
+                                true,
+                                500,
+                                25,
+                                List.of("TCS"),
+                                0.05,
+                                "Healthy regime",
+                                Instant.now()));
 
         List<Candle> candles = createDummyDailyCandles(300, 3500.0);
         when(marketDataService.fetchDailyCandles(eq("TCS"), anyInt())).thenReturn(candles);
 
-        MultiTimeframeRsiSnapshot rsiSnapshot = new MultiTimeframeRsiSnapshot(
-                "TCS",
-                65.0, // Monthly
-                62.0, // Weekly
-                51.5, // Daily
-                60.0, // Daily ATR
-                3500.0, // currentPrice
-                3520.0, // high
-                3450.0, // low
-                Optional.of(PriceActionPattern.BULLISH_ENGULFING),
-                true,
-                true,
-                Instant.now()
-        );
+        MultiTimeframeRsiSnapshot rsiSnapshot =
+                new MultiTimeframeRsiSnapshot(
+                        "TCS",
+                        65.0, // Monthly
+                        62.0, // Weekly
+                        51.5, // Daily
+                        60.0, // Daily ATR
+                        3500.0, // currentPrice
+                        3520.0, // high
+                        3450.0, // low
+                        Optional.of(PriceActionPattern.BULLISH_ENGULFING),
+                        true,
+                        true,
+                        Instant.now());
         when(multiTimeframeRsiService.computeSnapshot(eq("TCS"), any())).thenReturn(rsiSnapshot);
 
         when(executionService.executeEntrySignal(any(), anyDouble(), anyDouble()))
-                .thenReturn(Optional.of(new RsiHighwayTranche(1, 10, 3500.0, Instant.now(), "ORD_TEST_01")));
+                .thenReturn(
+                        Optional.of(
+                                new RsiHighwayTranche(
+                                        1, 10, 3500.0, Instant.now(), "ORD_TEST_01")));
 
         swingService.evaluateEodScanForSymbols(List.of("TCS"));
 
@@ -176,26 +209,28 @@ class RsiHighwaySwingServiceTest {
         swingService.getState().getPositions().put("INFY", existingPos);
 
         when(breadthService.evaluateBreadth(any(), any(), anyInt(), anyDouble()))
-                .thenReturn(new MarketBreadthSnapshot(true, 500, 20, List.of(), 0.05, "Healthy", Instant.now()));
+                .thenReturn(
+                        new MarketBreadthSnapshot(
+                                true, 500, 20, List.of(), 0.05, "Healthy", Instant.now()));
 
         List<Candle> candles = createDummyDailyCandles(300, 1450.0);
         when(marketDataService.fetchDailyCandles(eq("INFY"), anyInt())).thenReturn(candles);
 
         // Daily RSI drops to 47.0 (< 50.0)
-        MultiTimeframeRsiSnapshot rsiSnapshot = new MultiTimeframeRsiSnapshot(
-                "INFY",
-                62.0,
-                58.0,
-                47.0,
-                30.0,
-                1450.0,
-                1470.0,
-                1440.0,
-                Optional.empty(),
-                false,
-                false,
-                Instant.now()
-        );
+        MultiTimeframeRsiSnapshot rsiSnapshot =
+                new MultiTimeframeRsiSnapshot(
+                        "INFY",
+                        62.0,
+                        58.0,
+                        47.0,
+                        30.0,
+                        1450.0,
+                        1470.0,
+                        1440.0,
+                        Optional.empty(),
+                        false,
+                        false,
+                        Instant.now());
         when(multiTimeframeRsiService.computeSnapshot(eq("INFY"), any())).thenReturn(rsiSnapshot);
         when(executionService.executeExit(any(), anyDouble(), anyString())).thenReturn(true);
 
@@ -203,7 +238,8 @@ class RsiHighwaySwingServiceTest {
 
         assertThat(swingService.getActivePositions()).doesNotContainKey("INFY");
         assertThat(swingService.getState().getClosedPositions()).hasSize(1);
-        assertThat(swingService.getState().getClosedPositions().get(0).getSymbol()).isEqualTo("INFY");
+        assertThat(swingService.getState().getClosedPositions().get(0).getSymbol())
+                .isEqualTo("INFY");
     }
 
     @Test
@@ -216,20 +252,20 @@ class RsiHighwaySwingServiceTest {
         when(marketDataService.fetchDailyCandles(eq("WIPRO"), anyInt())).thenReturn(candles);
 
         // Daily RSI plunged to 42.0 (< 45.0 emergency)
-        MultiTimeframeRsiSnapshot rsiSnapshot = new MultiTimeframeRsiSnapshot(
-                "WIPRO",
-                61.0,
-                55.0,
-                42.0,
-                15.0,
-                440.0,
-                460.0,
-                435.0,
-                Optional.empty(),
-                false,
-                false,
-                Instant.now()
-        );
+        MultiTimeframeRsiSnapshot rsiSnapshot =
+                new MultiTimeframeRsiSnapshot(
+                        "WIPRO",
+                        61.0,
+                        55.0,
+                        42.0,
+                        15.0,
+                        440.0,
+                        460.0,
+                        435.0,
+                        Optional.empty(),
+                        false,
+                        false,
+                        Instant.now());
         when(multiTimeframeRsiService.computeSnapshot(eq("WIPRO"), any())).thenReturn(rsiSnapshot);
         when(executionService.executeExit(any(), anyDouble(), anyString())).thenReturn(true);
 
@@ -247,15 +283,27 @@ class RsiHighwaySwingServiceTest {
         swingService.getState().getPositions().put("INFY", pos);
 
         when(breadthService.evaluateBreadth(any(), any(), anyInt(), anyDouble()))
-                .thenReturn(new MarketBreadthSnapshot(true, 500, 20, List.of(), 0.05, "Healthy", Instant.now()));
+                .thenReturn(
+                        new MarketBreadthSnapshot(
+                                true, 500, 20, List.of(), 0.05, "Healthy", Instant.now()));
 
         List<Candle> candles = createDummyDailyCandles(300, 1550.0);
         when(marketDataService.fetchDailyCandles(eq("INFY"), anyInt())).thenReturn(candles);
 
-        MultiTimeframeRsiSnapshot snap = new MultiTimeframeRsiSnapshot(
-                "INFY", 65.0, 62.0, 52.0, 20.0, 1550.0, 1560.0, 1520.0,
-                Optional.of(PriceActionPattern.BULLISH_ENGULFING), true, true, Instant.now()
-        );
+        MultiTimeframeRsiSnapshot snap =
+                new MultiTimeframeRsiSnapshot(
+                        "INFY",
+                        65.0,
+                        62.0,
+                        52.0,
+                        20.0,
+                        1550.0,
+                        1560.0,
+                        1520.0,
+                        Optional.of(PriceActionPattern.BULLISH_ENGULFING),
+                        true,
+                        true,
+                        Instant.now());
         when(multiTimeframeRsiService.computeSnapshot(eq("INFY"), any())).thenReturn(snap);
 
         swingService.evaluateEodScanForSymbols(List.of("INFY"));

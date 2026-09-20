@@ -36,6 +36,10 @@ class StockFnoRegistryTest {
         assertThat(StockFnoRegistry.getToken("WIPRO")).isEqualTo("3787");
         assertThat(StockFnoRegistry.getToken("ITC")).isEqualTo("1660");
         assertThat(StockFnoRegistry.getToken("TATASTEEL")).isEqualTo("3499");
+        assertThat(StockFnoRegistry.getToken("ADANIENSOL")).isEqualTo("14927");
+        assertThat(StockFnoRegistry.getToken("FEDERALBNK")).isEqualTo("1023");
+        assertThat(StockFnoRegistry.getToken("MPHASIS")).isEqualTo("4503");
+        assertThat(StockFnoRegistry.getToken("MPASIS")).isEqualTo("4503");
     }
 
     @Test

@@ -171,7 +171,6 @@ public class LowestVolumeSetup {
                 || state == LowestVolumeSetupState.PARTIAL_BOOKED;
     }
 
-
     public BigDecimal getInitialLegMove() {
         return initialLegMove;
     }

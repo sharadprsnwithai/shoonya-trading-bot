@@ -174,7 +174,10 @@ public class BollingerHaPositionalService {
                     }
                 }
             } catch (Exception e) {
-                log.debug("Live spot LTP quote fetch failed for {}, using last candle close: {}", config.getSymbol(), e.getMessage());
+                log.debug(
+                        "Live spot LTP quote fetch failed for {}, using last candle close: {}",
+                        config.getSymbol(),
+                        e.getMessage());
             }
 
             evaluateSnapshots(snapshots, currentSpot);
@@ -228,13 +231,19 @@ public class BollingerHaPositionalService {
         }
         int n = snapshots.size();
         BollingerBandSnapshot today = snapshots.get(n - 1);
-        if (today.bbUpper() == null || today.bbLower() == null || today.haHigh() == null || today.haLow() == null) {
+        if (today.bbUpper() == null
+                || today.bbLower() == null
+                || today.haHigh() == null
+                || today.haLow() == null) {
             return;
         }
 
         // The immediate previous bar (n - 2) must have touched or exceeded the Bollinger Band
         BollingerBandSnapshot prior = snapshots.get(n - 2);
-        if (prior.bbUpper() == null || prior.bbLower() == null || prior.haHigh() == null || prior.haLow() == null) {
+        if (prior.bbUpper() == null
+                || prior.bbLower() == null
+                || prior.haHigh() == null
+                || prior.haLow() == null) {
             return;
         }
 
@@ -330,11 +339,15 @@ public class BollingerHaPositionalService {
 
         // 1. Invalidation by Timeout (> 5 trading days / 7 calendar days)
         if (alert.alertDate() != null) {
-            long daysOld = java.time.temporal.ChronoUnit.DAYS.between(alert.alertDate(), LocalDate.now(IST));
+            long daysOld =
+                    java.time.temporal.ChronoUnit.DAYS.between(
+                            alert.alertDate(), LocalDate.now(IST));
             if (daysOld > 7) {
                 log.info("Positional Alert timed out ({} days old). Resetting to FLAT.", daysOld);
                 telegramService.sendAlert(
-                        String.format("⌛ Positional %s Alert timed out (> 5 trading days). State reset to FLAT.", alert.direction()));
+                        String.format(
+                                "⌛ Positional %s Alert timed out (> 5 trading days). State reset to FLAT.",
+                                alert.direction()));
                 state.setStatus(PositionalStatus.FLAT);
                 state.setActiveAlert(null);
                 return;
@@ -343,9 +356,12 @@ public class BollingerHaPositionalService {
 
         if ("BUY".equalsIgnoreCase(alert.direction())) {
             // Invalidation by re-touching the Lower BB
-            if (today.bbLower() != null && today.haLow() != null && today.haLow().compareTo(today.bbLower()) <= 0) {
+            if (today.bbLower() != null
+                    && today.haLow() != null
+                    && today.haLow().compareTo(today.bbLower()) <= 0) {
                 log.info("BUY Alert invalidated: Price touched Lower BB again.");
-                telegramService.sendAlert("❌ BUY Alert invalidated (Price re-touched Lower BB). State reset to FLAT.");
+                telegramService.sendAlert(
+                        "❌ BUY Alert invalidated (Price re-touched Lower BB). State reset to FLAT.");
                 state.setStatus(PositionalStatus.FLAT);
                 state.setActiveAlert(null);
                 return;
@@ -377,9 +393,12 @@ public class BollingerHaPositionalService {
             }
         } else if ("SELL".equalsIgnoreCase(alert.direction())) {
             // Invalidation by re-touching the Upper BB
-            if (today.bbUpper() != null && today.haHigh() != null && today.haHigh().compareTo(today.bbUpper()) >= 0) {
+            if (today.bbUpper() != null
+                    && today.haHigh() != null
+                    && today.haHigh().compareTo(today.bbUpper()) >= 0) {
                 log.info("SELL Alert invalidated: Price touched Upper BB again.");
-                telegramService.sendAlert("❌ SELL Alert invalidated (Price re-touched Upper BB). State reset to FLAT.");
+                telegramService.sendAlert(
+                        "❌ SELL Alert invalidated (Price re-touched Upper BB). State reset to FLAT.");
                 state.setStatus(PositionalStatus.FLAT);
                 state.setActiveAlert(null);
                 return;
@@ -478,13 +497,9 @@ public class BollingerHaPositionalService {
         BigDecimal entrySpot = trade.entrySpot() != null ? trade.entrySpot() : BigDecimal.ZERO;
         BigDecimal slSpot = trade.slSpot() != null ? trade.slSpot() : entrySpot;
         BigDecimal estAtm =
-                entrySpot
-                        .multiply(BigDecimal.valueOf(0.015))
-                        .setScale(2, RoundingMode.HALF_UP);
+                entrySpot.multiply(BigDecimal.valueOf(0.015)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal estHedge =
-                entrySpot
-                        .multiply(BigDecimal.valueOf(0.0038))
-                        .setScale(2, RoundingMode.HALF_UP);
+                entrySpot.multiply(BigDecimal.valueOf(0.0038)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal estNetCredit = estAtm.subtract(estHedge);
         BigDecimal estTotalCredit =
                 estNetCredit
@@ -663,7 +678,8 @@ public class BollingerHaPositionalService {
             state.setActiveAlert(null);
             state.setStatus(PositionalStatus.FLAT);
             persistState();
-            telegramService.sendAlert("🛑 Active positional alert was canceled. Strategy status reset to FLAT.");
+            telegramService.sendAlert(
+                    "🛑 Active positional alert was canceled. Strategy status reset to FLAT.");
             return;
         }
         BigDecimal currentSpot = state.getActiveTrade().entrySpot();
@@ -673,7 +689,9 @@ public class BollingerHaPositionalService {
                 currentSpot = recent.get(recent.size() - 1).close();
             }
         } catch (Exception e) {
-            log.debug("Failed to fetch recent candles for spot exit, using entry spot: {}", e.getMessage());
+            log.debug(
+                    "Failed to fetch recent candles for spot exit, using entry spot: {}",
+                    e.getMessage());
         }
 
         exitActiveTrade(currentSpot, exitReason != null ? exitReason : "MANUAL_EXIT");
@@ -775,7 +793,10 @@ public class BollingerHaPositionalService {
                     return cached;
                 }
             } catch (Exception e) {
-                log.debug("[POSITIONAL] HistoricalOhlcCache lookup failed for {}: {}", symbol, e.getMessage());
+                log.debug(
+                        "[POSITIONAL] HistoricalOhlcCache lookup failed for {}: {}",
+                        symbol,
+                        e.getMessage());
             }
         }
         if (marketDataService != null) {

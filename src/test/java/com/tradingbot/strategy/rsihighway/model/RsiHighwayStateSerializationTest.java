@@ -7,12 +7,12 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.io.File;
 import java.nio.file.Files;
 import java.time.Instant;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class RsiHighwayStateSerializationTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private final ObjectMapper objectMapper =
+            new ObjectMapper().registerModule(new JavaTimeModule());
 
     @Test
     void testSaveAndLoadStateJson() throws Exception {
@@ -43,7 +43,8 @@ class RsiHighwayStateSerializationTest {
         // Tranche 2 (Pyramid): 50 shares @ 3800
         pos.addTranche(new RsiHighwayTranche(2, 50, 3800.0, Instant.now(), "ORD_T2"));
         assertThat(pos.getTotalQuantity()).isEqualTo(150);
-        // Weighted Avg = (100 * 3500 + 50 * 3800) / 150 = (350000 + 190000) / 150 = 540000 / 150 = 3600.0
+        // Weighted Avg = (100 * 3500 + 50 * 3800) / 150 = (350000 + 190000) / 150 = 540000 / 150 =
+        // 3600.0
         assertThat(pos.getAveragePrice()).isEqualTo(3600.0);
     }
 }

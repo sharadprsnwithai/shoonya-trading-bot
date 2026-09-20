@@ -9,15 +9,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * POSIX Cron Schedulers for the RSI Highway Multi-Timeframe Strategy.
- * Triggers the 15:00 IST EOD scan & execution and the 09:30 IST morning plunge health check.
+ * POSIX Cron Schedulers for the RSI Highway Multi-Timeframe Strategy. Triggers the 15:00 IST EOD
+ * scan & execution and the 09:30 IST morning plunge health check.
  */
 @Component
 @ConditionalOnProperty(
         name = "trading-bot.strategy.rsi-highway.enabled",
         havingValue = "true",
-        matchIfMissing = true
-)
+        matchIfMissing = true)
 public class RsiHighwayScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(RsiHighwayScheduler.class);
@@ -30,13 +29,10 @@ public class RsiHighwayScheduler {
         this.config = config;
     }
 
-    /**
-     * Daily 15:00 IST EOD scan & execution window on Indian trading days (Mon-Fri).
-     */
+    /** Daily 15:00 IST EOD scan & execution window on Indian trading days (Mon-Fri). */
     @Scheduled(
             cron = "${trading-bot.strategy.rsi-highway.eod-scan-cron:0 0 15 * * MON-FRI}",
-            zone = "Asia/Kolkata"
-    )
+            zone = "Asia/Kolkata")
     public void runDailyEodScan() {
         log.info("[RSI-HIGHWAY SCHEDULER] Triggered 15:00 IST EOD Strategy Scan");
         try {
@@ -46,13 +42,10 @@ public class RsiHighwayScheduler {
         }
     }
 
-    /**
-     * Morning 09:30 IST plunge health check on Indian trading days (Mon-Fri).
-     */
+    /** Morning 09:30 IST plunge health check on Indian trading days (Mon-Fri). */
     @Scheduled(
             cron = "${trading-bot.strategy.rsi-highway.morning-check-cron:0 30 9 * * MON-FRI}",
-            zone = "Asia/Kolkata"
-    )
+            zone = "Asia/Kolkata")
     public void runMorningPlungeCheck() {
         log.info("[RSI-HIGHWAY SCHEDULER] Triggered 09:30 IST Morning Plunge Check");
         try {

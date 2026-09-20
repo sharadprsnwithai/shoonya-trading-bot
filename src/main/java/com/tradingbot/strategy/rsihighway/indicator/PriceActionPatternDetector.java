@@ -6,14 +6,13 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 
-/**
- * Detector for candlestick confirmation patterns and RSI 50 bounce/crossover dynamics.
- */
+/** Detector for candlestick confirmation patterns and RSI 50 bounce/crossover dynamics. */
 @Component
 public class PriceActionPatternDetector {
 
     /**
-     * Detects if the latest completed candle satisfies one of the supported bullish price action patterns.
+     * Detects if the latest completed candle satisfies one of the supported bullish price action
+     * patterns.
      *
      * @param candles Chronological list of daily candles (must contain at least 2 candles)
      * @param dailyAtr 14-period daily ATR value for range expansion checks
@@ -91,7 +90,8 @@ public class PriceActionPatternDetector {
     }
 
     /**
-     * Checks if the recent Daily RSI series exhibits an RSI 50 bounce or crossover with custom bounds.
+     * Checks if the recent Daily RSI series exhibits an RSI 50 bounce or crossover with custom
+     * bounds.
      *
      * @param rsiSeries Chronological list of Daily RSI(14) values
      * @param lowerBound Lower bound of the pullback dip zone (e.g. 48.0)
@@ -124,8 +124,12 @@ public class PriceActionPatternDetector {
         }
 
         // Setup A: RSI 50 Pullback & Bounce
-        // Previous RSI dipped into [lowerBound, upperBound] and current RSI turns up and is >= minTrigger
-        if (prevRsi >= lowerBound && prevRsi <= upperBound && currRsi > prevRsi && currRsi >= minTrigger) {
+        // Previous RSI dipped into [lowerBound, upperBound] and current RSI turns up and is >=
+        // minTrigger
+        if (prevRsi >= lowerBound
+                && prevRsi <= upperBound
+                && currRsi > prevRsi
+                && currRsi >= minTrigger) {
             return true;
         }
 
@@ -138,7 +142,11 @@ public class PriceActionPatternDetector {
         // 2-bar lag bounce check (e.g. dipped 2 bars ago)
         if (size >= 3) {
             double prevPrevRsi = rsiSeries.get(size - 3);
-            if (!Double.isNaN(prevPrevRsi) && prevPrevRsi >= lowerBound && prevPrevRsi <= upperBound && currRsi >= minTrigger && currRsi > prevRsi) {
+            if (!Double.isNaN(prevPrevRsi)
+                    && prevPrevRsi >= lowerBound
+                    && prevPrevRsi <= upperBound
+                    && currRsi >= minTrigger
+                    && currRsi > prevRsi) {
                 return true;
             }
         }

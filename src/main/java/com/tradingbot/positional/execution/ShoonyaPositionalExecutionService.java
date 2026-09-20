@@ -102,7 +102,9 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                 OrderResponse hedgeResp = orderService.placeOrder(hedgeOrder);
                 if (hedgeResp == null || !hedgeResp.success()) {
                     String err = hedgeResp != null ? hedgeResp.message() : "Null response";
-                    log.error("[POSITIONAL LIVE] Hedge leg placement failed: {}. Aborting sell leg.", err);
+                    log.error(
+                            "[POSITIONAL LIVE] Hedge leg placement failed: {}. Aborting sell leg.",
+                            err);
                     throw new RuntimeException("Hedge leg order failed: " + err);
                 }
                 buyHedgeFillPremium = estimate02DeltaPremium(trade.entrySpot());
@@ -162,7 +164,9 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                 sellFillPremium.subtract(buyHedgeFillPremium).setScale(2, RoundingMode.HALF_UP);
 
         String resolvedExpiry =
-                (trade.expiryDate() != null && !trade.expiryDate().isBlank() && !"MONTHLY".equalsIgnoreCase(trade.expiryDate()))
+                (trade.expiryDate() != null
+                                && !trade.expiryDate().isBlank()
+                                && !"MONTHLY".equalsIgnoreCase(trade.expiryDate()))
                         ? trade.expiryDate()
                         : resolveNextMonthlyExpiry().toString();
 
@@ -211,7 +215,10 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
         int daysHeld = 0;
         if (trade.entryDate() != null) {
             daysHeld =
-                    (int) Math.max(0, ChronoUnit.DAYS.between(trade.entryDate(), LocalDate.now(IST)));
+                    (int)
+                            Math.max(
+                                    0,
+                                    ChronoUnit.DAYS.between(trade.entryDate(), LocalDate.now(IST)));
         }
 
         if (mode == ExecutionMode.LIVE && orderService != null) {
@@ -281,17 +288,25 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
         }
 
         // PnL Calculation
-        BigDecimal sellEntryPrem = trade.sellEntryPremium() != null ? trade.sellEntryPremium() : BigDecimal.ZERO;
-        BigDecimal buyHedgeEntryPrem = trade.buyHedgeEntryPremium() != null ? trade.buyHedgeEntryPremium() : BigDecimal.ZERO;
+        BigDecimal sellEntryPrem =
+                trade.sellEntryPremium() != null ? trade.sellEntryPremium() : BigDecimal.ZERO;
+        BigDecimal buyHedgeEntryPrem =
+                trade.buyHedgeEntryPremium() != null
+                        ? trade.buyHedgeEntryPremium()
+                        : BigDecimal.ZERO;
         BigDecimal soldLegPnl = sellEntryPrem.subtract(sellExitPremium);
         BigDecimal hedgeLegPnl = buyHedgeExitPremium.subtract(buyHedgeEntryPrem);
         BigDecimal netPnlPts = soldLegPnl.add(hedgeLegPnl);
 
         // Cap PnL between Max Profit (Net Credit) and Max Loss (Spread Width - Net Credit)
         BigDecimal sellStrike = trade.sellStrike() != null ? trade.sellStrike() : BigDecimal.ZERO;
-        BigDecimal buyHedgeStrike = trade.buyHedgeStrike() != null ? trade.buyHedgeStrike() : BigDecimal.ZERO;
+        BigDecimal buyHedgeStrike =
+                trade.buyHedgeStrike() != null ? trade.buyHedgeStrike() : BigDecimal.ZERO;
         BigDecimal spreadWidth = sellStrike.subtract(buyHedgeStrike).abs();
-        BigDecimal netCredit = trade.netCredit() != null ? trade.netCredit() : sellEntryPrem.subtract(buyHedgeEntryPrem);
+        BigDecimal netCredit =
+                trade.netCredit() != null
+                        ? trade.netCredit()
+                        : sellEntryPrem.subtract(buyHedgeEntryPrem);
         BigDecimal maxProfit = netCredit;
         BigDecimal maxLoss = spreadWidth.subtract(netCredit).negate();
 
@@ -382,7 +397,8 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
     private LocalDate resolveNextMonthlyExpiry() {
         LocalDate now = LocalDate.now(IST);
         LocalDate lastThuThisMonth = now.with(TemporalAdjusters.lastInMonth(DayOfWeek.THURSDAY));
-        // If within 15 days of this month's expiry, roll to next month for positional trades (> 20 DTE target)
+        // If within 15 days of this month's expiry, roll to next month for positional trades (> 20
+        // DTE target)
         if (now.isAfter(lastThuThisMonth.minusDays(15))) {
             return now.plusMonths(1).with(TemporalAdjusters.lastInMonth(DayOfWeek.THURSDAY));
         }
@@ -408,7 +424,8 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
             int year = expDate.getYear() % 100;
             String month =
                     expDate.getMonth()
-                            .getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+                            .getDisplayName(
+                                    java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
                             .toUpperCase(java.util.Locale.ENGLISH);
             return String.format("%02d%s", year, month);
         }
@@ -420,11 +437,15 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
             int year = expDate.getYear() % 100;
             String month =
                     expDate.getMonth()
-                            .getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+                            .getDisplayName(
+                                    java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
                             .toUpperCase(java.util.Locale.ENGLISH);
             return String.format("%02d%s", year, month);
         } catch (Exception e) {
-            log.debug("Failed parsing expiry string '{}', defaulting to uppercase fallback: {}", expiry, e.getMessage());
+            log.debug(
+                    "Failed parsing expiry string '{}', defaulting to uppercase fallback: {}",
+                    expiry,
+                    e.getMessage());
             return expiry.toUpperCase();
         }
     }

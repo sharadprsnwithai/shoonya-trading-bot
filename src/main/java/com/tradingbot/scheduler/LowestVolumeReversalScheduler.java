@@ -88,15 +88,16 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
-     * Dedicated 15:15 IST Market Hard Exit on trading weekdays to ensure all open intraday paper/live
-     * positions are strictly squared off before market close.
+     * Dedicated 15:15 IST Market Hard Exit on trading weekdays to ensure all open intraday
+     * paper/live positions are strictly squared off before market close.
      */
     @Scheduled(cron = "0 15 15 ? * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledHardExit() {
         if (!schedulerEnabled) {
             return;
         }
-        log.info("[LVR-SCHEDULER] 15:15 IST Market Hard Exit reached. Executing position closures.");
+        log.info(
+                "[LVR-SCHEDULER] 15:15 IST Market Hard Exit reached. Executing position closures.");
         try {
             strategyService.executeHardExit(LocalTime.of(15, 15));
         } catch (Exception e) {

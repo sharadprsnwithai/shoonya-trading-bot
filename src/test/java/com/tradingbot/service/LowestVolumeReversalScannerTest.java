@@ -45,11 +45,17 @@ class LowestVolumeReversalScannerTest {
         Map<String, List<StockQuoteSnapshot>> sectorData =
                 Map.of(
                         "NIFTY MEDIA",
-                                List.of(new StockQuoteSnapshot("PVRINOX", 1500.0, 1600.0, 1550.0, -4.75)),
+                                List.of(
+                                        new StockQuoteSnapshot(
+                                                "PVRINOX", 1500.0, 1600.0, 1550.0, -4.75)),
                         "NIFTY IT",
-                                List.of(new StockQuoteSnapshot("INFY", 1800.0, 1850.0, 1820.0, -2.7)),
+                                List.of(
+                                        new StockQuoteSnapshot(
+                                                "INFY", 1800.0, 1850.0, 1820.0, -2.7)),
                         "NIFTY PHARMA",
-                                List.of(new StockQuoteSnapshot("SUNPHARMA", 1700.0, 1680.0, 1690.0, 1.2)));
+                                List.of(
+                                        new StockQuoteSnapshot(
+                                                "SUNPHARMA", 1700.0, 1680.0, 1690.0, 1.2)));
         var ranked = scanner.rankSectors(sectorData, LowestVolumeDirection.SHORT);
         assertFalse(ranked.isEmpty());
         assertEquals("NIFTY MEDIA", ranked.get(0).sectorName());
@@ -62,11 +68,17 @@ class LowestVolumeReversalScannerTest {
         Map<String, List<StockQuoteSnapshot>> sectorData =
                 Map.of(
                         "NIFTY MEDIA",
-                                List.of(new StockQuoteSnapshot("PVRINOX", 1500.0, 1600.0, 1550.0, -4.75)),
+                                List.of(
+                                        new StockQuoteSnapshot(
+                                                "PVRINOX", 1500.0, 1600.0, 1550.0, -4.75)),
                         "NIFTY IT",
-                                List.of(new StockQuoteSnapshot("INFY", 1800.0, 1850.0, 1820.0, -2.7)),
+                                List.of(
+                                        new StockQuoteSnapshot(
+                                                "INFY", 1800.0, 1850.0, 1820.0, -2.7)),
                         "NIFTY PHARMA",
-                                List.of(new StockQuoteSnapshot("SUNPHARMA", 1700.0, 1680.0, 1690.0, 1.2)));
+                                List.of(
+                                        new StockQuoteSnapshot(
+                                                "SUNPHARMA", 1700.0, 1680.0, 1690.0, 1.2)));
         var ranked = scanner.rankSectors(sectorData, LowestVolumeDirection.LONG);
         assertFalse(ranked.isEmpty());
         assertEquals("NIFTY PHARMA", ranked.get(0).sectorName());
@@ -82,7 +94,8 @@ class LowestVolumeReversalScannerTest {
                         new StockQuoteSnapshot("SUNTV", 780.0, 800.0, 790.0, -2.50),
                         new StockQuoteSnapshot("OVEREXTENDED", 90.0, 100.0, 95.0, -10.0),
                         new StockQuoteSnapshot("TOO_FAR", 94.0, 100.0, 96.0, -6.0));
-        List<String> candidates = scanner.filterCandidateStocks(quotes, LowestVolumeDirection.SHORT);
+        List<String> candidates =
+                scanner.filterCandidateStocks(quotes, LowestVolumeDirection.SHORT);
         assertEquals(2, candidates.size());
         assertTrue(candidates.contains("PVRINOX"));
         assertTrue(candidates.contains("SUNTV"));

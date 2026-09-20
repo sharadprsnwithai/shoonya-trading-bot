@@ -1,9 +1,7 @@
 package com.tradingbot.strategy.rsihighway.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.tradingbot.order.ShoonyaOrderService;
 import com.tradingbot.strategy.rsihighway.config.RsiHighwayConfig;
@@ -39,7 +37,8 @@ class RsiHighwayExecutionServiceTest {
         // Account Capital: 1,000,000
         // RPT: 1.0% = 10,000 max risk
         // Max Capital per Stock: 10% = 100,000 max allocation
-        // Entry: 1000, SL: 950 (Risk = 50/share) -> By Risk: 10000 / 50 = 200 shares -> Cost = 200,000 (exceeds 100,000 cap)
+        // Entry: 1000, SL: 950 (Risk = 50/share) -> By Risk: 10000 / 50 = 200 shares -> Cost =
+        // 200,000 (exceeds 100,000 cap)
         // Expected shares capped by 100,000 / 1000 = 100 shares
         int qty = executionService.calculatePositionSize(1000.0, 950.0, 1000000.0, 1.0, 10.0);
         assertThat(qty).isEqualTo(100);
@@ -63,20 +62,20 @@ class RsiHighwayExecutionServiceTest {
 
     @Test
     void testExecuteEntrySignalReturnsEmptyWhenCapitalInsufficient() {
-        RsiHighwaySignal signal = new RsiHighwaySignal(
-                "MRF",
-                RsiHighwaySignalType.INITIAL_ENTRY,
-                120000.0,
-                115000.0,
-                1,
-                65.0,
-                62.0,
-                52.0,
-                20.0,
-                PriceActionPattern.BULLISH_ENGULFING,
-                "Initial Setup",
-                Instant.now()
-        );
+        RsiHighwaySignal signal =
+                new RsiHighwaySignal(
+                        "MRF",
+                        RsiHighwaySignalType.INITIAL_ENTRY,
+                        120000.0,
+                        115000.0,
+                        1,
+                        65.0,
+                        62.0,
+                        52.0,
+                        20.0,
+                        PriceActionPattern.BULLISH_ENGULFING,
+                        "Initial Setup",
+                        Instant.now());
 
         // Account capital 10,000 is way below MRF share price 120,000
         Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(signal, 10000.0);
@@ -85,22 +84,23 @@ class RsiHighwayExecutionServiceTest {
 
     @Test
     void testExecutePaperEntrySignal() {
-        RsiHighwaySignal signal = new RsiHighwaySignal(
-                "INFY",
-                RsiHighwaySignalType.INITIAL_ENTRY,
-                1500.0,
-                1450.0,
-                1,
-                65.0,
-                62.0,
-                52.0,
-                20.0,
-                PriceActionPattern.BULLISH_ENGULFING,
-                "Initial Setup",
-                Instant.now()
-        );
+        RsiHighwaySignal signal =
+                new RsiHighwaySignal(
+                        "INFY",
+                        RsiHighwaySignalType.INITIAL_ENTRY,
+                        1500.0,
+                        1450.0,
+                        1,
+                        65.0,
+                        62.0,
+                        52.0,
+                        20.0,
+                        PriceActionPattern.BULLISH_ENGULFING,
+                        "Initial Setup",
+                        Instant.now());
 
-        Optional<RsiHighwayTranche> tranche = executionService.executeEntrySignal(signal, 1000000.0);
+        Optional<RsiHighwayTranche> tranche =
+                executionService.executeEntrySignal(signal, 1000000.0);
         assertThat(tranche).isPresent();
         assertThat(tranche.get().trancheNumber()).isEqualTo(1);
         assertThat(tranche.get().entryPrice()).isEqualTo(1500.0);

@@ -3,9 +3,7 @@ package com.tradingbot.strategy.rsihighway.model;
 import java.time.Instant;
 import java.util.Optional;
 
-/**
- * Signal record representing an entry or exit instruction produced by the strategy engine.
- */
+/** Signal record representing an entry or exit instruction produced by the strategy engine. */
 public record RsiHighwaySignal(
         String symbol,
         RsiHighwaySignalType signalType,
@@ -18,8 +16,7 @@ public record RsiHighwaySignal(
         double dailyAtr,
         PriceActionPattern pattern,
         String reason,
-        Instant generatedAt
-) {
+        Instant generatedAt) {
     public Optional<PriceActionPattern> optionalPattern() {
         return Optional.ofNullable(pattern);
     }

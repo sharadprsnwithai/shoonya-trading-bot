@@ -23,9 +23,8 @@ public class LowestVolumeReversalScanner {
     public record SectorRankResult(String sectorName, double pctChange, int stockCount) {}
 
     /**
-     * Evaluates Nifty 50 constituent performance at 09:25 IST.
-     * Declines > Advances -> SHORT (Bearish)
-     * Advances > Declines -> LONG (Bullish)
+     * Evaluates Nifty 50 constituent performance at 09:25 IST. Declines > Advances -> SHORT
+     * (Bearish) Advances > Declines -> LONG (Bullish)
      */
     public LowestVolumeDirection evaluateMarketSentiment(List<StockQuoteSnapshot> nifty50Quotes) {
         if (nifty50Quotes == null || nifty50Quotes.isEmpty()) {
@@ -60,9 +59,9 @@ public class LowestVolumeReversalScanner {
     }
 
     /**
-     * Ranks the 11 NSE Sectoral groups based on average % change of constituents.
-     * Bearish (SHORT) -> Top Loser Sector first (ascending pctChange).
-     * Bullish (LONG) -> Top Gainer Sector first (descending pctChange).
+     * Ranks the 11 NSE Sectoral groups based on average % change of constituents. Bearish (SHORT)
+     * -> Top Loser Sector first (ascending pctChange). Bullish (LONG) -> Top Gainer Sector first
+     * (descending pctChange).
      */
     public List<SectorRankResult> rankSectors(
             Map<String, List<StockQuoteSnapshot>> sectorQuotes, LowestVolumeDirection sentiment) {
@@ -81,7 +80,10 @@ public class LowestVolumeReversalScanner {
             }
 
             double avgPctChange =
-                    quotes.stream().mapToDouble(StockQuoteSnapshot::pctChange).average().orElse(0.0);
+                    quotes.stream()
+                            .mapToDouble(StockQuoteSnapshot::pctChange)
+                            .average()
+                            .orElse(0.0);
 
             results.add(new SectorRankResult(sector, avgPctChange, quotes.size()));
         }
@@ -96,10 +98,9 @@ public class LowestVolumeReversalScanner {
     }
 
     /**
-     * Filters candidate stocks within the selected sector:
-     * 1. Exclude stocks with |pctChange| >= 10.0% (circuit locked / extreme crash)
-     * 2. Exclude stocks with |pctChange| > 5.0% (exhausted move)
-     * 3. Select top 2-3 stocks in the direction of the trend (or all if <= 3).
+     * Filters candidate stocks within the selected sector: 1. Exclude stocks with |pctChange| >=
+     * 10.0% (circuit locked / extreme crash) 2. Exclude stocks with |pctChange| > 5.0% (exhausted
+     * move) 3. Select top 2-3 stocks in the direction of the trend (or all if <= 3).
      */
     public List<String> filterCandidateStocks(
             List<StockQuoteSnapshot> sectorStockQuotes, LowestVolumeDirection sentiment) {

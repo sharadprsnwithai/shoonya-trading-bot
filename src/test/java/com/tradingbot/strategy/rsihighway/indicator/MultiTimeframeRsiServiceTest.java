@@ -31,16 +31,16 @@ class MultiTimeframeRsiServiceTest {
         // Generate 600 daily candles in steady uptrend (approx 20 months)
         for (int i = 0; i < 600; i++) {
             double price = 100.0 + i * 2.0;
-            dailyCandles.add(new Candle(
-                    "BEL",
-                    "D",
-                    baseTime.plusSeconds(i * 86400L),
-                    BigDecimal.valueOf(price - 1),
-                    BigDecimal.valueOf(price + 2),
-                    BigDecimal.valueOf(price - 2),
-                    BigDecimal.valueOf(price),
-                    10000L
-            ));
+            dailyCandles.add(
+                    new Candle(
+                            "BEL",
+                            "D",
+                            baseTime.plusSeconds(i * 86400L),
+                            BigDecimal.valueOf(price - 1),
+                            BigDecimal.valueOf(price + 2),
+                            BigDecimal.valueOf(price - 2),
+                            BigDecimal.valueOf(price),
+                            10000L));
         }
 
         MultiTimeframeRsiSnapshot snapshot = rsiService.computeSnapshot("BEL", dailyCandles);
@@ -59,17 +59,24 @@ class MultiTimeframeRsiServiceTest {
         var config = new com.tradingbot.strategy.rsihighway.config.RsiHighwayConfig();
         config.setMonthlyRsiThreshold(70.0);
         config.setWeeklyRsiThreshold(70.0);
-        var configuredService = new MultiTimeframeRsiService(new TechnicalAnalysisService(), new PriceActionPatternDetector(), config);
+        var configuredService =
+                new MultiTimeframeRsiService(
+                        new TechnicalAnalysisService(), new PriceActionPatternDetector(), config);
 
         List<Candle> dailyCandles = new ArrayList<>();
         Instant baseTime = Instant.parse("2024-01-01T10:00:00Z");
         for (int i = 0; i < 600; i++) {
             double price = 100.0 + i * 2.0;
-            dailyCandles.add(new Candle(
-                    "BEL", "D", baseTime.plusSeconds(i * 86400L),
-                    BigDecimal.valueOf(price - 1), BigDecimal.valueOf(price + 2),
-                    BigDecimal.valueOf(price - 2), BigDecimal.valueOf(price), 10000L
-            ));
+            dailyCandles.add(
+                    new Candle(
+                            "BEL",
+                            "D",
+                            baseTime.plusSeconds(i * 86400L),
+                            BigDecimal.valueOf(price - 1),
+                            BigDecimal.valueOf(price + 2),
+                            BigDecimal.valueOf(price - 2),
+                            BigDecimal.valueOf(price),
+                            10000L));
         }
 
         MultiTimeframeRsiSnapshot snapshot = configuredService.computeSnapshot("BEL", dailyCandles);
@@ -82,9 +89,17 @@ class MultiTimeframeRsiServiceTest {
 
     @Test
     void testComputeSnapshotHandlesInsufficientData() {
-        List<Candle> smallList = List.of(
-                new Candle("BEL", "D", Instant.now(), BigDecimal.valueOf(100), BigDecimal.valueOf(105), BigDecimal.valueOf(95), BigDecimal.valueOf(102), 1000L)
-        );
+        List<Candle> smallList =
+                List.of(
+                        new Candle(
+                                "BEL",
+                                "D",
+                                Instant.now(),
+                                BigDecimal.valueOf(100),
+                                BigDecimal.valueOf(105),
+                                BigDecimal.valueOf(95),
+                                BigDecimal.valueOf(102),
+                                1000L));
         MultiTimeframeRsiSnapshot snapshot = rsiService.computeSnapshot("BEL", smallList);
         assertThat(snapshot).isNull();
     }

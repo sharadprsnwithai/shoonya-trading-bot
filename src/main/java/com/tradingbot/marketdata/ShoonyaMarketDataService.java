@@ -174,7 +174,9 @@ public class ShoonyaMarketDataService {
         }
         String clean = symbol.toUpperCase().trim();
         if (clean.startsWith("NSE:")) clean = clean.substring(4);
-        if ("NIFTY".equalsIgnoreCase(clean) || "NIFTY 50".equalsIgnoreCase(clean) || "NIFTY_50".equalsIgnoreCase(clean)) {
+        if ("NIFTY".equalsIgnoreCase(clean)
+                || "NIFTY 50".equalsIgnoreCase(clean)
+                || "NIFTY_50".equalsIgnoreCase(clean)) {
             clean = "NIFTY50";
         }
 
@@ -283,8 +285,13 @@ public class ShoonyaMarketDataService {
                     continue;
                 }
 
-                if (resp.statusCode() == 400 && respBody != null && respBody.contains("exceeds Limit 10")) {
-                    log.warn("[QUOTE] Rate limit reached fetching token {}. Backing off 250ms (attempt {})...", token, attempt);
+                if (resp.statusCode() == 400
+                        && respBody != null
+                        && respBody.contains("exceeds Limit 10")) {
+                    log.warn(
+                            "[QUOTE] Rate limit reached fetching token {}. Backing off 250ms (attempt {})...",
+                            token,
+                            attempt);
                     Thread.sleep(250);
                     continue;
                 }
@@ -356,7 +363,9 @@ public class ShoonyaMarketDataService {
                     continue;
                 }
 
-                if (response.statusCode() == 400 && body != null && body.contains("exceeds Limit 10")) {
+                if (response.statusCode() == 400
+                        && body != null
+                        && body.contains("exceeds Limit 10")) {
                     log.warn(
                             "[SEARCH-SCRIP] Rate limit reached searching for {}. Backing off 250ms (attempt {})...",
                             searchText,
@@ -465,7 +474,9 @@ public class ShoonyaMarketDataService {
                     continue;
                 }
 
-                if (response.statusCode() == 400 && body != null && body.contains("exceeds Limit 10")) {
+                if (response.statusCode() == 400
+                        && body != null
+                        && body.contains("exceeds Limit 10")) {
                     log.warn(
                             "Rate limit reached fetching TPSeries for {}. Backing off 250ms (attempt {})...",
                             symbol,
@@ -527,8 +538,10 @@ public class ShoonyaMarketDataService {
                         }
 
                         Instant timestamp = parseTimestamp(node);
-                        if (open.compareTo(BigDecimal.ZERO) > 0 && high.compareTo(BigDecimal.ZERO) > 0
-                                && low.compareTo(BigDecimal.ZERO) > 0 && close.compareTo(BigDecimal.ZERO) > 0) {
+                        if (open.compareTo(BigDecimal.ZERO) > 0
+                                && high.compareTo(BigDecimal.ZERO) > 0
+                                && low.compareTo(BigDecimal.ZERO) > 0
+                                && close.compareTo(BigDecimal.ZERO) > 0) {
                             candles.add(
                                     new Candle(
                                             symbol, timeframe, timestamp, open, high, low, close,
@@ -573,15 +586,56 @@ public class ShoonyaMarketDataService {
         }
         String timeStr = node.path("time").asText("");
         if (!timeStr.isEmpty()) {
+            String clean = timeStr.trim();
+            // Handle date-only "dd-MM-yyyy", "dd/MM/yyyy", "yyyy-MM-dd"
+            if (clean.length() == 10) {
+                try {
+                    if (clean.charAt(2) == '-' || clean.charAt(2) == '/') {
+                        DateTimeFormatter fmt =
+                                clean.charAt(2) == '-'
+                                        ? DateTimeFormatter.ofPattern("dd-MM-yyyy")
+                                        : DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                        return java.time.LocalDate.parse(clean, fmt).atStartOfDay(IST).toInstant();
+                    } else if (clean.charAt(4) == '-') {
+                        return java.time.LocalDate.parse(clean, DateTimeFormatter.ISO_LOCAL_DATE)
+                                .atStartOfDay(IST)
+                                .toInstant();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
             try {
-                LocalDateTime ldt = LocalDateTime.parse(timeStr, FORMATTER_SLASH);
+                LocalDateTime ldt = LocalDateTime.parse(clean, FORMATTER_SLASH);
                 return ldt.atZone(IST).toInstant();
             } catch (Exception e1) {
                 try {
-                    LocalDateTime ldt = LocalDateTime.parse(timeStr, FORMATTER_DASH);
+                    LocalDateTime ldt = LocalDateTime.parse(clean, FORMATTER_DASH);
                     return ldt.atZone(IST).toInstant();
                 } catch (Exception e2) {
-                    log.debug("Failed parsing Shoonya candle time string '{}', defaulting to now", timeStr);
+                    try {
+                        LocalDateTime ldt =
+                                LocalDateTime.parse(
+                                        clean, DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"));
+                        return ldt.atZone(IST).toInstant();
+                    } catch (Exception e3) {
+                        try {
+                            LocalDateTime ldt =
+                                    LocalDateTime.parse(
+                                            clean, DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+                            return ldt.atZone(IST).toInstant();
+                        } catch (Exception e4) {
+                            try {
+                                LocalDateTime ldt =
+                                        LocalDateTime.parse(
+                                                clean, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                                return ldt.atZone(IST).toInstant();
+                            } catch (Exception e5) {
+                                log.debug(
+                                        "Failed parsing Shoonya candle time string '{}', defaulting to now",
+                                        timeStr);
+                            }
+                        }
+                    }
                 }
             }
         }

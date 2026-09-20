@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -47,6 +48,7 @@ public class HistoricalOhlcCacheService {
     private final String stateFilePath;
     private final Map<String, SymbolOhlcBundle> cache = new ConcurrentHashMap<>();
     private volatile Instant lastUpdated;
+    private Clock clock = Clock.system(IST);
 
     @Autowired
     public HistoricalOhlcCacheService(
@@ -68,7 +70,9 @@ public class HistoricalOhlcCacheService {
     public synchronized void loadFromFile() {
         File file = new File(stateFilePath);
         if (!file.exists()) {
-            log.info("No historical OHLC cache file found at {}. Cache initialized empty.", stateFilePath);
+            log.info(
+                    "No historical OHLC cache file found at {}. Cache initialized empty.",
+                    stateFilePath);
             return;
         }
 
@@ -85,7 +89,8 @@ public class HistoricalOhlcCacheService {
                         lastUpdated);
             }
         } catch (Exception e) {
-            log.error("[OHLC-CACHE] Failed to load historical OHLC cache from {}", stateFilePath, e);
+            log.error(
+                    "[OHLC-CACHE] Failed to load historical OHLC cache from {}", stateFilePath, e);
         }
     }
 
@@ -108,14 +113,14 @@ public class HistoricalOhlcCacheService {
                         StandardCopyOption.ATOMIC_MOVE,
                         StandardCopyOption.REPLACE_EXISTING);
             } catch (Exception ex) {
-                Files.move(
-                        tempFile.toPath(),
-                        file.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING);
+                Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
 
             this.lastUpdated = data.lastUpdated();
-            log.info("[OHLC-CACHE] Successfully persisted {} symbols to {}", cache.size(), stateFilePath);
+            log.info(
+                    "[OHLC-CACHE] Successfully persisted {} symbols to {}",
+                    cache.size(),
+                    stateFilePath);
         } catch (IOException e) {
             log.error("[OHLC-CACHE] Failed to save historical OHLC cache to {}", stateFilePath, e);
         }
@@ -147,15 +152,16 @@ public class HistoricalOhlcCacheService {
     }
 
     /**
-     * Synchronizes universe symbols (Nifty 500 + F&O + Nifty Index) from Yahoo Finance.
-     * Skips symbols that already have fresh daily, weekly, and monthly data in JSON unless force is true.
+     * Synchronizes universe symbols (Nifty 500 + F&O + Nifty Index) from Yahoo Finance. Skips
+     * symbols that already have fresh daily, weekly, and monthly data in JSON unless force is true.
      *
      * @param force If false, skips download for all symbols that already have fresh data.
      * @return Number of total symbols in cache
      */
     public int syncAll(boolean force) {
         if (!force && isCacheValidForToday()) {
-            log.info("[OHLC-CACHE] Cache file is already globally valid for today. Skipping full sync.");
+            log.info(
+                    "[OHLC-CACHE] Cache file is already globally valid for today. Skipping full sync.");
             return cache.size();
         }
 
@@ -188,15 +194,17 @@ public class HistoricalOhlcCacheService {
 
         try {
             for (String sym : symbolsToFetch) {
-                executor.submit(() -> {
-                    syncSymbol(sym, 2);
-                });
+                executor.submit(
+                        () -> {
+                            syncSymbol(sym, 2);
+                        });
             }
 
             executor.shutdown();
             boolean completed = executor.awaitTermination(3, TimeUnit.MINUTES);
             if (!completed) {
-                log.warn("[OHLC-CACHE] Sync timed out waiting for all symbols to finish downloading");
+                log.warn(
+                        "[OHLC-CACHE] Sync timed out waiting for all symbols to finish downloading");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -214,8 +222,8 @@ public class HistoricalOhlcCacheService {
     }
 
     /**
-     * Checks if a symbol's historical data is already present in cache and fresh (i.e. contains
-     * the latest closed trading day/week/month data).
+     * Checks if a symbol's historical data is already present in cache and fresh (i.e. contains the
+     * latest closed trading day/week/month data).
      *
      * @param symbol Symbol name (e.g. "RELIANCE", "NIFTY 50")
      * @return true if the symbol is present and its latest candle timestamp is up to date
@@ -234,21 +242,18 @@ public class HistoricalOhlcCacheService {
         }
 
         LocalDate latestDate = latest.timestamp().atZone(IST).toLocalDate();
-        LocalDate today = LocalDate.now(IST);
+        LocalDate today = LocalDate.now(clock);
 
-        // If today is Monday: latest candle from Friday (within 3 calendar days) is fresh
+        // If today is Monday: latest candle from Thursday/Friday (within 4 calendar days) is fresh
         if (today.getDayOfWeek().getValue() == 1) {
+            return !latestDate.isBefore(today.minusDays(4));
+        }
+        // If today is weekend (Saturday/Sunday): Thursday/Friday's candle is fresh
+        if (today.getDayOfWeek().getValue() >= 6) {
             return !latestDate.isBefore(today.minusDays(3));
         }
-        // If today is weekend (Saturday/Sunday): Friday's candle is fresh
-        if (today.getDayOfWeek().getValue() == 6) { // Saturday
-            return !latestDate.isBefore(today.minusDays(1));
-        }
-        if (today.getDayOfWeek().getValue() == 7) { // Sunday
-            return !latestDate.isBefore(today.minusDays(2));
-        }
-        // Tuesday through Friday: yesterday's or today's candle is fresh
-        return !latestDate.isBefore(today.minusDays(1));
+        // Tuesday through Friday: allows for mid-week market holidays (up to 3 calendar days)
+        return !latestDate.isBefore(today.minusDays(3));
     }
 
     /** Checks if the cache was updated within the last 18 hours or matches today's trading date. */
@@ -257,19 +262,24 @@ public class HistoricalOhlcCacheService {
             return false;
         }
         LocalDate lastUpdateDate = lastUpdated.atZone(IST).toLocalDate();
-        LocalDate today = LocalDate.now(IST);
+        LocalDate today = LocalDate.now(clock);
 
-        // If today is Monday, Friday's cache is still valid until market close
-        if (today.getDayOfWeek().getValue() == 1 && lastUpdateDate.equals(today.minusDays(3))) {
+        // If today is Monday, Thursday/Friday's cache is still valid
+        if (today.getDayOfWeek().getValue() == 1 && !lastUpdateDate.isBefore(today.minusDays(4))) {
             return true;
         }
         // If today is weekend
         if (today.getDayOfWeek().getValue() >= 6) {
             return true;
         }
-        // Same date or updated within last 18 hours
+        // Same date, recent update, or within holiday tolerance
         return lastUpdateDate.equals(today)
-                || Duration.between(lastUpdated, Instant.now()).toHours() < 18;
+                || Duration.between(lastUpdated, Instant.now(clock)).toHours() < 24
+                || !lastUpdateDate.isBefore(today.minusDays(3));
+    }
+
+    public void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     public List<Candle> getDailyCandles(String symbol) {

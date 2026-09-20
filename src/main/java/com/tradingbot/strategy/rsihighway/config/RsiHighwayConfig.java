@@ -3,9 +3,7 @@ package com.tradingbot.strategy.rsihighway.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Configuration properties for the RSI Highway Multi-Timeframe Swing Strategy.
- */
+/** Configuration properties for the RSI Highway Multi-Timeframe Swing Strategy. */
 @Configuration
 @ConfigurationProperties(prefix = "trading-bot.strategy.rsi-highway")
 public class RsiHighwayConfig {

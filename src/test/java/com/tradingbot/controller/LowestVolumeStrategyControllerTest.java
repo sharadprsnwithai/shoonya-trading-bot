@@ -23,14 +23,11 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(LowestVolumeStrategyController.class)
 class LowestVolumeStrategyControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    @Autowired private MockMvc mockMvc;
 
-    @MockBean
-    private LowestVolumeReversalService strategyService;
+    @MockBean private LowestVolumeReversalService strategyService;
 
-    @MockBean
-    private LowestVolumeReversalScheduler scheduler;
+    @MockBean private LowestVolumeReversalScheduler scheduler;
 
     @Test
     @DisplayName("GET /api/strategy/lowest-volume/status returns complete status metrics")
@@ -41,7 +38,12 @@ class LowestVolumeStrategyControllerTest {
         when(strategyService.getSectorState())
                 .thenReturn(
                         new LowestVolumeSectorState(
-                                35, 15, LowestVolumeDirection.LONG, "NIFTY PHARMA", 1.5, List.of("SUNPHARMA", "CIPLA")));
+                                35,
+                                15,
+                                LowestVolumeDirection.LONG,
+                                "NIFTY PHARMA",
+                                1.5,
+                                List.of("SUNPHARMA", "CIPLA")));
         when(strategyService.getPaperCapital()).thenReturn(1000000.0);
         when(strategyService.getRiskPerTradePercent()).thenReturn(1.0);
         when(strategyService.getRiskPerTradeAmount()).thenReturn(10000.0);

@@ -91,6 +91,8 @@ class ExecutionManagerTest {
 
         assertThat(pos).isNotNull();
         assertThat(pos.optionType()).isEqualTo("PE");
+        assertThat(pos.shortSymbol()).isEqualTo("NIFTY29SEP2624000PE");
+        assertThat(pos.hedgeSymbol()).isEqualTo("NIFTY29SEP2623850PE");
         assertThat(pos.shortEntryPremium()).isEqualByComparingTo(new BigDecimal("100.00"));
         assertThat(pos.hedgeEntryPremium()).isEqualByComparingTo(new BigDecimal("5.00"));
         // SL Trigger = 100 * 1.40 = 140.00

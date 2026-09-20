@@ -31,7 +31,8 @@ public class YahooFinanceServiceTest {
 
     @Test
     void testParseYahooChartResponse() throws Exception {
-        String json = """
+        String json =
+                """
         {
           "chart": {
             "result": [
@@ -73,7 +74,8 @@ public class YahooFinanceServiceTest {
 
     @Test
     void testParseYahooChartResponseWithNulls() throws Exception {
-        String json = """
+        String json =
+                """
         {
           "chart": {
             "result": [

@@ -76,4 +76,15 @@ class TelegramServiceTest {
         telegramService.sendLvrScanRetryAlert(true, java.time.LocalTime.of(9, 30), 0);
         telegramService.sendLvrScanRetryAlert(false, null, 2);
     }
+
+    @Test
+    void testEscapeMarkdown() {
+        org.assertj.core.api.Assertions.assertThat(TelegramService.escapeMarkdown("SPOT_SL_HIT"))
+                .isEqualTo("SPOT\\_SL\\_HIT");
+        org.assertj.core.api.Assertions.assertThat(
+                        TelegramService.escapeMarkdown("TRD_1*test_2`3[4"))
+                .isEqualTo("TRD\\_1\\*test\\_2\\`3\\[4");
+        org.assertj.core.api.Assertions.assertThat(TelegramService.escapeMarkdown(null))
+                .isEqualTo("");
+    }
 }

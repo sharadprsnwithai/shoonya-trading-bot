@@ -2,15 +2,14 @@ package com.tradingbot.strategy.rsihighway.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Aggregate persistence state holding active positions, closed positions,
- * recent signals, and market breadth status for JSON file persistence.
+ * Aggregate persistence state holding active positions, closed positions, recent signals, and
+ * market breadth status for JSON file persistence.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RsiHighwayState {
@@ -30,7 +29,8 @@ public class RsiHighwayState {
     }
 
     public void setPositions(Map<String, RsiHighwayPosition> positions) {
-        this.positions = positions != null ? new ConcurrentHashMap<>(positions) : new ConcurrentHashMap<>();
+        this.positions =
+                positions != null ? new ConcurrentHashMap<>(positions) : new ConcurrentHashMap<>();
     }
 
     public List<RsiHighwayPosition> getClosedPositions() {
@@ -38,7 +38,10 @@ public class RsiHighwayState {
     }
 
     public void setClosedPositions(List<RsiHighwayPosition> closedPositions) {
-        this.closedPositions = closedPositions != null ? new CopyOnWriteArrayList<>(closedPositions) : new CopyOnWriteArrayList<>();
+        this.closedPositions =
+                closedPositions != null
+                        ? new CopyOnWriteArrayList<>(closedPositions)
+                        : new CopyOnWriteArrayList<>();
     }
 
     public List<RsiHighwaySignal> getRecentSignals() {
@@ -46,7 +49,10 @@ public class RsiHighwayState {
     }
 
     public void setRecentSignals(List<RsiHighwaySignal> recentSignals) {
-        this.recentSignals = recentSignals != null ? new CopyOnWriteArrayList<>(recentSignals) : new CopyOnWriteArrayList<>();
+        this.recentSignals =
+                recentSignals != null
+                        ? new CopyOnWriteArrayList<>(recentSignals)
+                        : new CopyOnWriteArrayList<>();
     }
 
     public MarketBreadthSnapshot getLastBreadthSnapshot() {
@@ -85,10 +91,11 @@ public class RsiHighwayState {
         if (positions == null || positions.isEmpty()) {
             return Math.max(0.0, availableCapital);
         }
-        double posValue = positions.values().stream()
-                .filter(p -> p != null && p.isActive())
-                .mapToDouble(p -> p.getTotalQuantity() * p.getAveragePrice())
-                .sum();
+        double posValue =
+                positions.values().stream()
+                        .filter(p -> p != null && p.isActive())
+                        .mapToDouble(p -> p.getTotalQuantity() * p.getAveragePrice())
+                        .sum();
         return Math.max(0.0, availableCapital) + posValue;
     }
 }

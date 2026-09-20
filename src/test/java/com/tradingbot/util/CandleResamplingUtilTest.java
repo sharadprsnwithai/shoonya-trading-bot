@@ -204,11 +204,35 @@ class CandleResamplingUtilTest {
 
     @Test
     void testResampleDailyToMonthly() {
-        List<Candle> daily = List.of(
-                new Candle("TCS", "D", Instant.parse("2026-01-05T10:00:00Z"), BigDecimal.valueOf(3500), BigDecimal.valueOf(3600), BigDecimal.valueOf(3480), BigDecimal.valueOf(3550), 1000L),
-                new Candle("TCS", "D", Instant.parse("2026-01-20T10:00:00Z"), BigDecimal.valueOf(3550), BigDecimal.valueOf(3700), BigDecimal.valueOf(3540), BigDecimal.valueOf(3680), 2000L),
-                new Candle("TCS", "D", Instant.parse("2026-02-02T10:00:00Z"), BigDecimal.valueOf(3680), BigDecimal.valueOf(3750), BigDecimal.valueOf(3650), BigDecimal.valueOf(3720), 1500L)
-        );
+        List<Candle> daily =
+                List.of(
+                        new Candle(
+                                "TCS",
+                                "D",
+                                Instant.parse("2026-01-05T10:00:00Z"),
+                                BigDecimal.valueOf(3500),
+                                BigDecimal.valueOf(3600),
+                                BigDecimal.valueOf(3480),
+                                BigDecimal.valueOf(3550),
+                                1000L),
+                        new Candle(
+                                "TCS",
+                                "D",
+                                Instant.parse("2026-01-20T10:00:00Z"),
+                                BigDecimal.valueOf(3550),
+                                BigDecimal.valueOf(3700),
+                                BigDecimal.valueOf(3540),
+                                BigDecimal.valueOf(3680),
+                                2000L),
+                        new Candle(
+                                "TCS",
+                                "D",
+                                Instant.parse("2026-02-02T10:00:00Z"),
+                                BigDecimal.valueOf(3680),
+                                BigDecimal.valueOf(3750),
+                                BigDecimal.valueOf(3650),
+                                BigDecimal.valueOf(3720),
+                                1500L));
 
         List<Candle> monthly = CandleResamplingUtil.resampleDailyToMonthly(daily);
 

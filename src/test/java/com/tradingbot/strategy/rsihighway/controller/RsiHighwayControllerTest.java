@@ -10,15 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.tradingbot.strategy.rsihighway.config.RsiHighwayConfig;
 import com.tradingbot.strategy.rsihighway.model.MarketBreadthSnapshot;
-import com.tradingbot.strategy.rsihighway.model.RsiHighwayPosition;
 import com.tradingbot.strategy.rsihighway.model.RsiHighwayState;
 import com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -49,8 +46,9 @@ class RsiHighwayControllerTest {
 
     @Test
     void testGetBreadth() throws Exception {
-        MarketBreadthSnapshot snapshot = new MarketBreadthSnapshot(
-                true, 500, 25, List.of("TCS"), 0.05, "Regime Open", Instant.now());
+        MarketBreadthSnapshot snapshot =
+                new MarketBreadthSnapshot(
+                        true, 500, 25, List.of("TCS"), 0.05, "Regime Open", Instant.now());
         when(swingService.getLastBreadthSnapshot()).thenReturn(snapshot);
 
         mockMvc.perform(get("/api/strategy/rsi-highway/breadth"))
@@ -64,8 +62,7 @@ class RsiHighwayControllerTest {
         RsiHighwayState state = new RsiHighwayState();
         when(swingService.getState()).thenReturn(state);
 
-        mockMvc.perform(post("/api/strategy/rsi-highway/scan"))
-                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/strategy/rsi-highway/scan")).andExpect(status().isOk());
 
         verify(swingService).evaluateEodScan();
     }
@@ -86,8 +83,7 @@ class RsiHighwayControllerTest {
         RsiHighwayState state = new RsiHighwayState();
         when(swingService.getState()).thenReturn(state);
 
-        mockMvc.perform(post("/api/strategy/rsi-highway/morning-check"))
-                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/strategy/rsi-highway/morning-check")).andExpect(status().isOk());
 
         verify(swingService).evaluateMorningPlungeCheck();
     }

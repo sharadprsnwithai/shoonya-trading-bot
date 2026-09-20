@@ -391,7 +391,7 @@ public class ExecutionManager {
         if (expiryPart.endsWith("F")) {
             expiryPart = expiryPart.substring(0, expiryPart.length() - 1);
         }
-        return expiryPart + optionType.toUpperCase() + strike.intValue();
+        return expiryPart + strike.intValue() + optionType.toUpperCase();
     }
 
     private BigDecimal resolveOptionPremium(

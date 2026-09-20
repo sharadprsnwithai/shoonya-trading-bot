@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** REST Controller for querying and triggering Yahoo Finance historical OHLC cache synchronizations. */
+/**
+ * REST Controller for querying and triggering Yahoo Finance historical OHLC cache synchronizations.
+ */
 @RestController
 @RequestMapping("/api/v1/historical-ohlc")
 public class HistoricalOhlcController {
@@ -51,7 +53,9 @@ public class HistoricalOhlcController {
             cacheService.saveToFile();
             resp.put("status", success ? "SUCCESS" : "FAILED");
             resp.put("symbol", symbol.toUpperCase().trim());
-            resp.put("message", success ? "Symbol OHLC synced successfully" : "Failed to sync symbol");
+            resp.put(
+                    "message",
+                    success ? "Symbol OHLC synced successfully" : "Failed to sync symbol");
             resp.put("syncTime", Instant.now());
             return ResponseEntity.ok(resp);
         }
