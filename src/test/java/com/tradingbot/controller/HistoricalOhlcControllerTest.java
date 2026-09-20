@@ -5,7 +5,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.tradingbot.marketdata.HistoricalOhlcCacheService;
+import com.tradingbot.marketdata.repository.SqliteBackupService;
+import java.io.File;
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -20,6 +24,7 @@ public class HistoricalOhlcControllerTest {
     @Autowired private MockMvc mockMvc;
 
     @MockBean private HistoricalOhlcCacheService cacheService;
+    @MockBean private SqliteBackupService backupService;
 
     @Test
     void testGetOhlcStatus() throws Exception {
@@ -57,5 +62,27 @@ public class HistoricalOhlcControllerTest {
                 .andExpect(jsonPath("$.symbol").value("RELIANCE"));
 
         verify(cacheService, times(1)).syncSymbol("RELIANCE", 2);
+    }
+
+    @Test
+    void testTriggerBackupEndpoint() throws Exception {
+        File dummyBackup = new File("data/backups/trading_bot_backup_2026-09-20.db");
+        when(backupService.createDailyBackup()).thenReturn(Optional.of(dummyBackup));
+
+        mockMvc.perform(post("/api/v1/historical-ohlc/backup"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.backupFile").value("trading_bot_backup_2026-09-20.db"));
+    }
+
+    @Test
+    void testListBackupsEndpoint() throws Exception {
+        File dummyBackup = new File("data/backups/trading_bot_backup_2026-09-20.db");
+        when(backupService.getAvailableBackups()).thenReturn(List.of(dummyBackup));
+
+        mockMvc.perform(get("/api/v1/historical-ohlc/backups"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.backups[0].name").value("trading_bot_backup_2026-09-20.db"));
     }
 }
