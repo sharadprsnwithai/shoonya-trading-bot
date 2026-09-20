@@ -53,7 +53,7 @@ public final class StockFnoRegistry {
         register("LAURUSLABS", "19234", 5.0, 1100, "NSE", "NFO");
         register("SAIL", "2963", 2.5, 4700, "NSE", "NFO");
         register("POLYCAB", "9590", 50.0, 125, "NSE", "NFO");
-        register("ADANIENSOL", "14927", 20.0, 675, "NSE", "NFO");
+        register("ADANIENSOL", "10217", 20.0, 675, "NSE", "NFO");
         register("MCX", "31181", 50.0, 125, "NSE", "NFO");
         register("ADANIGREEN", "3563", 20.0, 500, "NSE", "NFO");
         register("TORNTPHARM", "3518", 50.0, 250, "NSE", "NFO");
@@ -115,7 +115,7 @@ public final class StockFnoRegistry {
         register("MUTHOOTFIN", "23650", 20.0, 350, "NSE", "NFO");
         register("SRF", "3273", 20.0, 250, "NSE", "NFO");
         register("TRENT", "1964", 50.0, 100, "NSE", "NFO");
-        register("VBL", "16669", 10.0, 1000, "NSE", "NFO");
+        register("VBL", "18921", 10.0, 1000, "NSE", "NFO");
         register("VOLTAS", "3718", 10.0, 300, "NSE", "NFO");
         register("BEL", "383", 5.0, 2850, "NSE", "NFO");
         register("HAL", "2303", 50.0, 150, "NSE", "NFO");
@@ -145,14 +145,14 @@ public final class StockFnoRegistry {
         register("AUROPHARMA", "275", 10.0, 550, "NSE", "NFO");
         register("LUPIN", "10440", 20.0, 425, "NSE", "NFO");
         register("GLENMARK", "7406", 10.0, 450, "NSE", "NFO");
-        register("ZYDUSLIFE", "4144", 10.0, 900, "NSE", "NFO");
+        register("ZYDUSLIFE", "7929", 10.0, 900, "NSE", "NFO");
         register("COFORGE", "11543", 50.0, 150, "NSE", "NFO");
         register("PERSISTENT", "18365", 50.0, 100, "NSE", "NFO");
         register("LTM", "17818", 50.0, 150, "NSE", "NFO");
         register("MPHASIS", "4503", 20.0, 275, "NSE", "NFO");
         register("MPASIS", "4503", 20.0, 275, "NSE", "NFO");
         register("OFSS", "10738", 100.0, 100, "NSE", "NFO");
-        register("TATACOMM", "3426", 20.0, 500, "NSE", "NFO");
+        register("TATACOMM", "3721", 20.0, 500, "NSE", "NFO");
         register("NAUKRI", "13751", 50.0, 125, "NSE", "NFO");
         register("JUBLFOOD", "18096", 5.0, 1250, "NSE", "NFO");
         register("TATACONSUM", "3432", 10.0, 900, "NSE", "NFO");
@@ -179,7 +179,7 @@ public final class StockFnoRegistry {
         register("PVRINOX", "13147", 10.0, 450, "NSE", "NFO");
         register("MOTHERSON", "4204", 1.0, 6200, "NSE", "NFO");
         register("TATAELXSI", "3417", 50.0, 100, "NSE", "NFO");
-        register("TATAPOWER", "3440", 2.5, 2000, "NSE", "NFO");
+        register("TATAPOWER", "3426", 2.5, 2000, "NSE", "NFO");
         register("JSWENERGY", "17869", 5.0, 1000, "NSE", "NFO");
         register("SUZLON", "12018", 1.0, 7000, "NSE", "NFO");
         register("RVNL", "17870", 5.0, 2500, "NSE", "NFO");
@@ -194,13 +194,42 @@ public final class StockFnoRegistry {
         register("MAZDOCK", "20786", 20.0, 250, "NSE", "NFO");
         register("BDL", "21644", 10.0, 400, "NSE", "NFO");
         register("PATANJALI", "21406", 10.0, 500, "NSE", "NFO");
-        register("PRESTIGE", "20396", 10.0, 600, "NSE", "NFO");
+        register("PRESTIGE", "20302", 10.0, 600, "NSE", "NFO");
         register("LODHA", "2245", 10.0, 500, "NSE", "NFO");
-        register("PHOENIXLTD", "17463", 10.0, 350, "NSE", "NFO");
+        register("PHOENIXLTD", "14552", 10.0, 350, "NSE", "NFO");
         register("PBFINTECH", "20688", 10.0, 350, "NSE", "NFO");
         register("FEDERALBNK", "1023", 2.0, 5000, "NSE", "NFO");
         register("YESBANK", "11915", 0.5, 10000, "NSE", "NFO");
         register("IDEA", "14366", 0.25, 40000, "NSE", "NFO");
+
+        // Sectoral Constituents & Liquid Midcaps
+        register("M&MFIN", "13285", 10.0, 2000, "NSE", "NFO");
+        register("ZEEL", "3812", 5.0, 3000, "NSE", "NFO");
+        register("LTTS", "18564", 50.0, 100, "NSE", "NFO");
+        register("IPCALAB", "1633", 20.0, 325, "NSE", "NFO");
+        register("ABBOTINDIA", "17903", 250.0, 20, "NSE", "NFO");
+        register("GRANULES", "11872", 10.0, 1000, "NSE", "NFO");
+        register("BAJAJ-AUTO", "16669", 100.0, 75, "NSE", "NFO");
+        register("TVSMOTOR", "8479", 20.0, 175, "NSE", "NFO");
+        register("BOSCHLTD", "2181", 250.0, 25, "NSE", "NFO");
+        register("MRF", "2277", 500.0, 5, "NSE", "NFO");
+        register("BALKRISIND", "335", 20.0, 200, "NSE", "NFO");
+        register("APOLLOTYRE", "163", 5.0, 1700, "NSE", "NFO");
+        register("HINDZINC", "1424", 5.0, 1050, "NSE", "NFO");
+        register("APLAPOLLO", "25780", 20.0, 350, "NSE", "NFO");
+        register("BANDHANBNK", "2263", 2.5, 2500, "NSE", "NFO");
+        register("RBLBANK", "18391", 2.5, 2500, "NSE", "NFO");
+        register("ICICIPRULI", "18652", 10.0, 900, "NSE", "NFO");
+        register("HDFCAMC", "4244", 50.0, 150, "NSE", "NFO");
+        register("HINDUNILVR", "1394", 20.0, 300, "NSE", "NFO");
+        register("UBL", "16713", 20.0, 400, "NSE", "NFO");
+        register("BALRAMCHIN", "341", 5.0, 1600, "NSE", "NFO");
+        register("UNIONBANK", "10753", 1.0, 4500, "NSE", "NFO");
+        register("INDIANB", "14309", 5.0, 1000, "NSE", "NFO");
+        register("OBEROIRLTY", "20242", 20.0, 350, "NSE", "NFO");
+        register("BRIGADE", "15184", 10.0, 500, "NSE", "NFO");
+        register("IGL", "11262", 2.5, 1375, "NSE", "NFO");
+        register("MGL", "17534", 20.0, 400, "NSE", "NFO");
     }
 
     private static void register(

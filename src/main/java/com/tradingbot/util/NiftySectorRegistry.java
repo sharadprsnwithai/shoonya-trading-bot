@@ -222,7 +222,7 @@ public final class NiftySectorRegistry {
                         "TATAPOWER",
                         "IGL",
                         "MGL",
-                        "GUJGASLTD"));
+                        "PETRONET"));
     }
 
     private static void registerSector(String sectorName, List<String> symbols) {

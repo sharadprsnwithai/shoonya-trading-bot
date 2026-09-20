@@ -70,23 +70,57 @@ class ShoonyaTodayLvrReplayRunnerTest {
                         + allUniverseSymbols.size()
                         + " sector F&O stocks from Shoonya...");
 
-        LocalDate today = LocalDate.now(IST);
+        try {
+            System.out.println("=== SHOONYA SCRIP TOKEN VERIFICATION AUDIT (SECTORS) ===");
+            for (String sym : allUniverseSymbols) {
+                String regToken = StockFnoRegistry.getToken(sym);
+                try {
+                    com.fasterxml.jackson.databind.JsonNode root =
+                            marketDataService.searchScrip("NSE", sym.replace("&", "%26"));
+                    if (root != null && root.isArray()) {
+                        for (com.fasterxml.jackson.databind.JsonNode node : root) {
+                            String tsym = node.path("tsym").asText("");
+                            String instname = node.path("instname").asText("");
+                            if (tsym.equalsIgnoreCase(sym + "-EQ")
+                                    || ("EQ".equalsIgnoreCase(instname)
+                                            && sym.equalsIgnoreCase(
+                                                    node.path("symname").asText("")))) {
+                                String shoToken = node.path("token").asText("");
+                                if (!shoToken.equals(regToken)) {
+                                    System.out.printf(
+                                            "TOKEN MISMATCH: Symbol %-12s | RegToken=%-8s | ShoonyaToken=%-8s (tsym=%s)\n",
+                                            sym, regToken, shoToken, tsym);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    Thread.sleep(60);
+                } catch (Exception err) {
+                    System.out.println("Error searching " + sym + ": " + err.getMessage());
+                }
+            }
+            System.out.println("=== END SHOONYA SCRIP TOKEN VERIFICATION AUDIT ===");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         for (String sym : allUniverseSymbols) {
             try {
-                List<Candle> candles = marketDataService.fetch5MinCandles(sym, 1);
-                if (candles != null && !candles.isEmpty()) {
-                    List<Candle> todayList =
-                            candles.stream()
+                List<Candle> rawCandles = marketDataService.fetch5MinCandles(sym, 8);
+                if (rawCandles != null && !rawCandles.isEmpty()) {
+                    LocalDate targetDate =
+                            LocalDate.ofInstant(
+                                    rawCandles.get(rawCandles.size() - 1).timestamp(), IST);
+                    List<Candle> sessionCandles =
+                            rawCandles.stream()
                                     .filter(
                                             c ->
                                                     LocalDate.ofInstant(c.timestamp(), IST)
-                                                                    .equals(today)
-                                                            || today.getDayOfWeek().getValue() > 5)
+                                                            .equals(targetDate))
                                     .toList();
-
-                    if (!todayList.isEmpty()) {
-                        stockCandlesToday.put(sym, todayList);
+                    if (!sessionCandles.isEmpty()) {
+                        stockCandlesToday.put(sym, sessionCandles);
                     }
                 }
                 Thread.sleep(20);

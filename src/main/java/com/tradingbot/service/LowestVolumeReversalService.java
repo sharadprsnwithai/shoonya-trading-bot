@@ -17,6 +17,7 @@ import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -344,8 +345,27 @@ public class LowestVolumeReversalService {
             }
 
             try {
-                List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 1);
-                if (candles == null || candles.size() < 3) continue;
+                List<Candle> rawCandles = marketDataService.fetch5MinCandles(symbol, 5);
+                if (rawCandles == null || rawCandles.isEmpty()) continue;
+
+                LocalDate today = LocalDate.now(IST);
+                List<Candle> candles =
+                        rawCandles.stream()
+                                .filter(c -> LocalDate.ofInstant(c.timestamp(), IST).equals(today))
+                                .toList();
+                if (candles.isEmpty()) {
+                    LocalDate lastDate =
+                            LocalDate.ofInstant(
+                                    rawCandles.get(rawCandles.size() - 1).timestamp(), IST);
+                    candles =
+                            rawCandles.stream()
+                                    .filter(
+                                            c ->
+                                                    LocalDate.ofInstant(c.timestamp(), IST)
+                                                            .equals(lastDate))
+                                    .toList();
+                }
+                if (candles.size() < 3) continue;
 
                 LowestVolumeSetup evaluated =
                         evaluateCandleSequence(symbol, setup.getDirection(), candles);

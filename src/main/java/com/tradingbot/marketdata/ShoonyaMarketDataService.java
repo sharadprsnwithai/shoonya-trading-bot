@@ -56,7 +56,8 @@ public class ShoonyaMarketDataService {
 
     public static String buildFormBody(String jDataStr, String sessionToken) {
         StringBuilder sb = new StringBuilder();
-        sb.append("jData=").append(jDataStr != null ? jDataStr : "");
+        String safeJData = jDataStr != null ? jDataStr.replace("&", "%26") : "";
+        sb.append("jData=").append(safeJData);
         if (sessionToken != null) {
             sb.append("&jKey=").append(sessionToken);
         }
@@ -136,7 +137,7 @@ public class ShoonyaMarketDataService {
     public List<Candle> fetch5MinCandles(String symbol, int daysBack) {
         String token = resolveToken(symbol);
         String exchange = resolveExchange(symbol);
-        int boundedDays = Math.max(1, Math.min(daysBack, 10));
+        int boundedDays = Math.max(5, Math.min(daysBack, 15));
         return fetchHistoricalCandles(exchange, token, symbol, "5", boundedDays);
     }
 
