@@ -251,15 +251,17 @@ public class HistoricalOhlcCacheService {
      * @return Number of total symbols in cache
      */
     public int syncAll(boolean force) {
-        if (!force && isCacheValidForToday()) {
-            log.info("[OHLC-CACHE] Cache is already globally valid for today. Skipping full sync.");
-            return cache.size();
-        }
-
         Set<String> allSymbols = new LinkedHashSet<>();
         allSymbols.add("NIFTY 50");
         allSymbols.addAll(StockFnoRegistry.getAllInstruments().keySet());
         allSymbols.addAll(Nifty500Registry.getAllMetadata().keySet());
+
+        if (!force && isCacheValidForToday() && cache.size() >= allSymbols.size()) {
+            log.info(
+                    "[OHLC-CACHE] Cache is already globally valid and complete ({} symbols). Skipping full sync.",
+                    cache.size());
+            return cache.size();
+        }
 
         List<String> symbolsToFetch = new ArrayList<>();
         for (String sym : allSymbols) {

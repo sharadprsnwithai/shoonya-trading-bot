@@ -98,18 +98,21 @@ public class StartupSyncRunner implements CommandLineRunner {
         }
 
         try {
-            // 3. Verify Historical OHLC Local Cache
-            log.info("[3/3] Checking Yahoo Finance Historical OHLC Cache status...");
-            if (ohlcCacheService.getCachedSymbolCount() == 0) {
+            // 3. Verify Historical OHLC Local SQLite / Memory Cache
+            log.info("[3/3] Checking Yahoo Finance Historical OHLC Database cache status...");
+            if (ohlcCacheService.getCachedSymbolCount() == 0
+                    || !ohlcCacheService.isCacheValidForToday()) {
                 log.info(
-                        "[3/3] OHLC Cache is empty. Initiating background historical data sync...");
+                        "[3/3] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating background sync & revalidation...",
+                        ohlcCacheService.getCachedSymbolCount(),
+                        ohlcCacheService.isCacheValidForToday());
                 Thread syncThread =
                         new Thread(() -> ohlcCacheService.syncAll(false), "ohlc-startup-sync");
                 syncThread.setDaemon(true);
                 syncThread.start();
             } else {
                 log.info(
-                        "[3/3] OHLC Cache loaded: {} symbols cached (valid for today: {})",
+                        "[3/3] OHLC Database loaded: {} symbols cached (valid for today: {})",
                         ohlcCacheService.getCachedSymbolCount(),
                         ohlcCacheService.isCacheValidForToday());
             }
