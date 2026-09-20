@@ -169,7 +169,6 @@ public final class Nifty500Registry {
                     "DIXON",
                     "LALPATHLAB",
                     "DRREDDY",
-                    "DUMMYHEG",
                     "EIDPARRY",
                     "EIHOTEL",
                     "EICHERMOT",

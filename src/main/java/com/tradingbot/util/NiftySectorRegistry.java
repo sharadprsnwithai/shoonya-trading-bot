@@ -205,7 +205,7 @@ public final class NiftySectorRegistry {
         // 10. NIFTY REALTY
         registerSector(
                 "NIFTY REALTY",
-                List.of("DLF", "GODREJPROP", "OBERREALTY", "PRESTIGE", "PHOENIXLTD", "BRIGADE"));
+                List.of("DLF", "GODREJPROP", "OBEROIRLTY", "PRESTIGE", "PHOENIXLTD", "BRIGADE"));
 
         // 11. NIFTY ENERGY
         registerSector(

@@ -91,9 +91,27 @@ public class YahooFinanceService {
 
         if ("MIDCPNIFTY".equalsIgnoreCase(clean)
                 || "NIFTY MID SELECT".equalsIgnoreCase(clean)
+                || "NIFTY MIDCAP 100".equalsIgnoreCase(clean)
                 || "^NSEMDCP".equalsIgnoreCase(clean)
-                || "%5ENSEMDCP".equalsIgnoreCase(clean)) {
-            return "%5ENSEMDCP";
+                || "%5ENSEMDCP".equalsIgnoreCase(clean)
+                || "NIFTY_MIDCAP_100".equalsIgnoreCase(clean)) {
+            return "NIFTY_MIDCAP_100.NS";
+        }
+
+        if ("PBFINTECH".equalsIgnoreCase(clean) || "POLICYBZR".equalsIgnoreCase(clean)) {
+            return "POLICYBZR.NS";
+        }
+
+        if ("TATAMOTORS".equalsIgnoreCase(clean)) {
+            return "TMPV.NS";
+        }
+
+        if ("MPASIS".equalsIgnoreCase(clean) || "MPHASIS".equalsIgnoreCase(clean)) {
+            return "MPHASIS.NS";
+        }
+
+        if ("OBERREALTY".equalsIgnoreCase(clean) || "OBEROIRLTY".equalsIgnoreCase(clean)) {
+            return "OBEROIRLTY.NS";
         }
 
         if ("SENSEX".equalsIgnoreCase(clean)
