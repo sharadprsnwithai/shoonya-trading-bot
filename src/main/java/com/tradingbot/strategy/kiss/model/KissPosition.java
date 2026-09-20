@@ -17,6 +17,7 @@ public class KissPosition {
     private double currentLtp;
     private double highestPriceSeen;
     private double lowestPriceSeen;
+    private double fxMultiplier = 1.0; // 1.0 for INR, ~86.5 for USD commodity feeds
     private double unrealizedPnl;
     private double unrealizedPnlPct;
     private double realizedPnl;
@@ -36,6 +37,7 @@ public class KissPosition {
             double targetPrice,
             int quantity,
             int lotSize,
+            double fxMultiplier,
             Instant enteredAt) {
         this.symbol = symbol;
         this.signalType = signalType;
@@ -44,12 +46,34 @@ public class KissPosition {
         this.targetPrice = targetPrice;
         this.quantity = quantity;
         this.lotSize = lotSize;
+        this.fxMultiplier = fxMultiplier > 0 ? fxMultiplier : 1.0;
         this.currentLtp = entryPrice;
         this.highestPriceSeen = entryPrice;
         this.lowestPriceSeen = entryPrice;
         this.enteredAt = enteredAt;
         this.lastEvaluatedAt = enteredAt;
         this.active = true;
+    }
+
+    public KissPosition(
+            String symbol,
+            KissSignalType signalType,
+            double entryPrice,
+            double stopLoss,
+            double targetPrice,
+            int quantity,
+            int lotSize,
+            Instant enteredAt) {
+        this(
+                symbol,
+                signalType,
+                entryPrice,
+                stopLoss,
+                targetPrice,
+                quantity,
+                lotSize,
+                1.0,
+                enteredAt);
     }
 
     public void updateMarketPrice(double ltp) {
@@ -59,11 +83,11 @@ public class KissPosition {
         this.lastEvaluatedAt = Instant.now();
 
         if (signalType == KissSignalType.BUY_SIGNAL) {
-            this.unrealizedPnl = (ltp - entryPrice) * quantity;
+            this.unrealizedPnl = (ltp - entryPrice) * quantity * fxMultiplier;
             this.unrealizedPnlPct =
                     entryPrice > 0 ? ((ltp - entryPrice) / entryPrice) * 100.0 : 0.0;
         } else {
-            this.unrealizedPnl = (entryPrice - ltp) * quantity;
+            this.unrealizedPnl = (entryPrice - ltp) * quantity * fxMultiplier;
             this.unrealizedPnlPct =
                     entryPrice > 0 ? ((entryPrice - ltp) / entryPrice) * 100.0 : 0.0;
         }
@@ -75,10 +99,18 @@ public class KissPosition {
         this.exitReason = reason;
         this.exitedAt = exitedAt;
         if (signalType == KissSignalType.BUY_SIGNAL) {
-            this.realizedPnl = (exitPrice - entryPrice) * quantity;
+            this.realizedPnl = (exitPrice - entryPrice) * quantity * fxMultiplier;
         } else {
-            this.realizedPnl = (entryPrice - exitPrice) * quantity;
+            this.realizedPnl = (entryPrice - exitPrice) * quantity * fxMultiplier;
         }
+    }
+
+    public double getFxMultiplier() {
+        return fxMultiplier;
+    }
+
+    public void setFxMultiplier(double fxMultiplier) {
+        this.fxMultiplier = fxMultiplier;
     }
 
     // Getters and Setters

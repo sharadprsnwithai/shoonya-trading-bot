@@ -216,8 +216,7 @@ public class KissSwingService {
         boolean isFridayAfternoon =
                 config.isEnableWeekendExit()
                         && nowIst.getDayOfWeek() == DayOfWeek.FRIDAY
-                        && nowIst.getHour() >= 15
-                        && nowIst.getMinute() >= 15;
+                        && !nowIst.toLocalTime().isBefore(java.time.LocalTime.of(15, 15));
 
         Map<String, KissPosition> activePositions = new LinkedHashMap<>(state.getPositions());
 
@@ -295,6 +294,13 @@ public class KissSwingService {
     }
 
     private void handleNewSignal(KissSignal signal) {
+        if (state.getPositions().containsKey(signal.symbol())) {
+            log.debug(
+                    "Already holding an active position for {}. Skipping duplicate signal.",
+                    signal.symbol());
+            return;
+        }
+
         if (state.getPositions().size() >= config.getMaxConcurrentPositions()) {
             log.info(
                     "Max concurrent positions reached ({}). Skipping signal for {}",
@@ -303,12 +309,17 @@ public class KissSwingService {
             return;
         }
 
+        boolean isComm = CommodityRegistry.isCommodity(signal.symbol());
+        double fxRate = isComm ? 86.5 : 1.0;
+        String curSymbol = isComm ? "$" : "₹";
+
         int lotSize = resolveLotSize(signal.symbol());
         double accountEquity = state.getTotalPortfolioEquity();
         double maxRiskBudget = accountEquity * config.getMaxRiskPerTradePct();
+        double riskBudgetInCurrency = maxRiskBudget / fxRate;
         double riskPerUnit = Math.max(0.01, signal.riskAmount());
 
-        int calculatedUnits = (int) (maxRiskBudget / (riskPerUnit * lotSize));
+        int calculatedUnits = (int) (riskBudgetInCurrency / (riskPerUnit * lotSize));
         int lots = Math.max(1, calculatedUnits);
         int totalQty = lots * lotSize;
 
@@ -321,6 +332,7 @@ public class KissSwingService {
                         signal.targetPrice(),
                         totalQty,
                         lotSize,
+                        fxRate,
                         Instant.now());
 
         state.getPositions().put(signal.symbol(), position);
@@ -334,15 +346,18 @@ public class KissSwingService {
                         "🚀 *KISS Strategy Signal*\n"
                                 + "• Symbol: `%s`\n"
                                 + "• Action: *%s*\n"
-                                + "• Entry: `₹%.2f`\n"
-                                + "• Stop Loss: `₹%.2f`\n"
-                                + "• Target: `₹%.2f`\n"
+                                + "• Entry: `%s%.2f`\n"
+                                + "• Stop Loss: `%s%.2f`\n"
+                                + "• Target: `%s%.2f`\n"
                                 + "• Lots: `%d` (Qty: %d)\n"
                                 + "• Reason: %s",
                         signal.symbol(),
                         signal.signalType(),
+                        curSymbol,
                         signal.entryPrice(),
+                        curSymbol,
                         signal.stopLoss(),
+                        curSymbol,
                         signal.targetPrice(),
                         lots,
                         totalQty,
@@ -361,16 +376,21 @@ public class KissSwingService {
 
         state.setAvailableCapital(state.getAvailableCapital() + pos.getRealizedPnl());
 
+        boolean isComm = CommodityRegistry.isCommodity(pos.getSymbol());
+        String curSymbol = isComm ? "$" : "₹";
+
         String msg =
                 String.format(
                         "🏁 *KISS Position Closed*\n"
                                 + "• Symbol: `%s` (%s)\n"
-                                + "• Exit Price: `₹%.2f` (Entry: `₹%.2f`)\n"
+                                + "• Exit Price: `%s%.2f` (Entry: `%s%.2f`)\n"
                                 + "• Realized PnL: *₹%.2f*\n"
                                 + "• Reason: %s",
                         pos.getSymbol(),
                         pos.getSignalType(),
+                        curSymbol,
                         exitPrice,
+                        curSymbol,
                         pos.getEntryPrice(),
                         pos.getRealizedPnl(),
                         reason);

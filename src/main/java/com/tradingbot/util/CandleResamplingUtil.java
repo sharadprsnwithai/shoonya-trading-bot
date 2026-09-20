@@ -214,7 +214,8 @@ public final class CandleResamplingUtil {
     }
 
     /**
-     * Resamples a chronological list of 5-minute candles into 1-Hour (60m) candles.
+     * Resamples a chronological list of 5-minute candles into 1-Hour (60m) candles aligned with IST
+     * market hours.
      *
      * @param fiveMinCandles chronological list of 5m candles
      * @return chronological list of 1H candles
@@ -225,6 +226,7 @@ public final class CandleResamplingUtil {
         }
 
         Map<Long, List<Candle>> groupedBy1Hour = new LinkedHashMap<>();
+        long istOffsetMinutes = 330; // +05:30 IST
 
         for (Candle c : fiveMinCandles) {
             if (c == null
@@ -233,8 +235,8 @@ public final class CandleResamplingUtil {
                     || c.high() == null
                     || c.low() == null
                     || c.close() == null) continue;
-            // Group by 60-minute slot
-            long epochMinutes = c.timestamp().getEpochSecond() / 60;
+            // Group by 60-minute slot in IST
+            long epochMinutes = c.timestamp().getEpochSecond() / 60 + istOffsetMinutes;
             long intervalKey = (epochMinutes / 60) * 60;
             groupedBy1Hour.computeIfAbsent(intervalKey, k -> new ArrayList<>()).add(c);
         }
@@ -275,7 +277,8 @@ public final class CandleResamplingUtil {
     }
 
     /**
-     * Resamples a chronological list of 5-minute candles into 4-Hour (240m) candles.
+     * Resamples a chronological list of 5-minute candles into 4-Hour (240m) candles aligned with
+     * IST market hours.
      *
      * @param fiveMinCandles chronological list of 5m candles
      * @return chronological list of 4H candles
@@ -286,6 +289,7 @@ public final class CandleResamplingUtil {
         }
 
         Map<Long, List<Candle>> groupedBy4Hour = new LinkedHashMap<>();
+        long istOffsetMinutes = 330; // +05:30 IST
 
         for (Candle c : fiveMinCandles) {
             if (c == null
@@ -294,8 +298,8 @@ public final class CandleResamplingUtil {
                     || c.high() == null
                     || c.low() == null
                     || c.close() == null) continue;
-            // Group by 240-minute slot
-            long epochMinutes = c.timestamp().getEpochSecond() / 60;
+            // Group by 240-minute slot in IST
+            long epochMinutes = c.timestamp().getEpochSecond() / 60 + istOffsetMinutes;
             long intervalKey = (epochMinutes / 240) * 240;
             groupedBy4Hour.computeIfAbsent(intervalKey, k -> new ArrayList<>()).add(c);
         }

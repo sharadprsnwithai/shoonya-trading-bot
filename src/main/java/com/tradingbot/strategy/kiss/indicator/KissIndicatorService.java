@@ -227,7 +227,7 @@ public class KissIndicatorService {
                 suggestedSl = currentPrice * 1.01; // 1% fallback buffer
             }
             double risk = suggestedSl - currentPrice;
-            suggestedTarget = currentPrice - (risk * rrRatio);
+            suggestedTarget = Math.max(0.05, currentPrice - (risk * rrRatio));
         } else {
             suggestedSl = 0.0;
             suggestedTarget = 0.0;
