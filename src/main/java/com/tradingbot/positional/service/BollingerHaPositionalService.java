@@ -234,7 +234,9 @@ public class BollingerHaPositionalService {
         if (today.bbUpper() == null
                 || today.bbLower() == null
                 || today.haHigh() == null
-                || today.haLow() == null) {
+                || today.haLow() == null
+                || today.haOpen() == null
+                || today.haClose() == null) {
             return;
         }
 
@@ -249,8 +251,10 @@ public class BollingerHaPositionalService {
 
         boolean priorTouchedUpper = prior.haHigh().compareTo(prior.bbUpper()) >= 0;
         boolean priorTouchedLower = prior.haLow().compareTo(prior.bbLower()) <= 0;
+        boolean isTodayRed = today.haClose().compareTo(today.haOpen()) <= 0;
+        boolean isTodayGreen = today.haClose().compareTo(today.haOpen()) >= 0;
 
-        if (priorTouchedUpper && today.haHigh().compareTo(today.bbUpper()) < 0) {
+        if (priorTouchedUpper && today.haHigh().compareTo(today.bbUpper()) < 0 && isTodayRed) {
             // Reversal from Upper Band -> SELL Alert (Bear Call Spread)
             PositionalAlert alert =
                     new PositionalAlert(
@@ -289,7 +293,9 @@ public class BollingerHaPositionalService {
                             plannedAtm,
                             plannedHedge,
                             alert.lowPrice()));
-        } else if (priorTouchedLower && today.haLow().compareTo(today.bbLower()) > 0) {
+        } else if (priorTouchedLower
+                && today.haLow().compareTo(today.bbLower()) > 0
+                && isTodayGreen) {
             // Reversal from Lower Band -> BUY Alert (Bull Put Spread)
             PositionalAlert alert =
                     new PositionalAlert(

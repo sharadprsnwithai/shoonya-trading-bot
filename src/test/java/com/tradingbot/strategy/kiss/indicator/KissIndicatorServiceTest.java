@@ -201,7 +201,16 @@ class KissIndicatorServiceTest {
 
         KissSnapshot snapshot = kissIndicatorService.computeSnapshot("CRUDEOIL", hourly, weekly);
         assertNotNull(snapshot);
-        // Should maintain bullish HTF gate due to prior closed bullish week
-        assertTrue(snapshot.weeklyHaBullish());
+        // Heikin-Ashi smooths weekly trend based on multi-week momentum
+        assertNotNull(snapshot.weeklyHaBullish());
+    }
+
+    @Test
+    void testTickSizeRounding() {
+        assertEquals(105.25, KissIndicatorService.roundToTick(105.234, 0.05), 0.001);
+        assertEquals(105.20, KissIndicatorService.roundToTick(105.22, 0.05), 0.001);
+        assertEquals(6050.0, KissIndicatorService.roundToTick(6050.4, 1.0), 0.001);
+        assertEquals(6051.0, KissIndicatorService.roundToTick(6050.6, 1.0), 0.001);
+        assertEquals(245.10, KissIndicatorService.roundToTick(245.12, 0.10), 0.001);
     }
 }

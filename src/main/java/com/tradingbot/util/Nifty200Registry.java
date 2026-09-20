@@ -172,7 +172,6 @@ public final class Nifty200Registry {
                     "SRF",
                     "MOTILALOFS",
                     "SAFARI",
-                    "MOTHERSON",
                     "SUNDARMFIN",
                     "SUNPHARMA",
                     "SUNTV",

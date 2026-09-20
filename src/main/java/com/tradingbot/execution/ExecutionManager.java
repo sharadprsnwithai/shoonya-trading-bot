@@ -99,7 +99,8 @@ public class ExecutionManager {
                 buyHedge);
 
         // 1. Resolve Contracts from Option Chain
-        OptionChainResponse chain = optionChainService.getNifty50OptionChain(atmStrike, 8, true);
+        OptionChainResponse chain =
+                optionChainService.getIndexOptionChain(underlying, atmStrike, 8, true);
         String tradingSymbol = chain != null ? chain.tradingSymbol() : "NIFTY29SEP26F";
 
         BigDecimal hedgeStrike =
@@ -312,7 +313,8 @@ public class ExecutionManager {
             try {
                 if (optionChainService != null) {
                     OptionChainResponse chain =
-                            optionChainService.getNifty50OptionChain(pos.strikePrice(), 8, true);
+                            optionChainService.getIndexOptionChain(
+                                    pos.underlying(), pos.strikePrice(), 8, true);
                     if (chain != null) {
                         shortExitPremium =
                                 resolveOptionPremium(

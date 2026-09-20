@@ -82,7 +82,7 @@ class ExecutionManagerTest {
     @Test
     void testExecuteDirectionalOptionSellingSetsHardSlLmt() {
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         ActiveSpreadPosition pos =
@@ -114,7 +114,7 @@ class ExecutionManagerTest {
     @Test
     void testCloseSpreadPositionWithExplicitExitPrices() {
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         ActiveSpreadPosition pos =
@@ -149,7 +149,7 @@ class ExecutionManagerTest {
     void testLiveMode_AbortsWhenHedgeOrderFails() {
         executionManager.setExecutionMode(ExecutionMode.LIVE);
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         // Mock hedge order failure
@@ -170,7 +170,7 @@ class ExecutionManagerTest {
     void testLiveMode_RollsBackHedgeWhenShortFails() {
         executionManager.setExecutionMode(ExecutionMode.LIVE);
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         // 1. Hedge succeeds, 2. Short fails, 3. Rollback hedge succeeds

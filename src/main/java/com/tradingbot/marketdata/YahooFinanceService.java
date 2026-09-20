@@ -103,6 +103,10 @@ public class YahooFinanceService {
         }
 
         if ("TATAMOTORS".equalsIgnoreCase(clean)) {
+            return "TATAMOTORS.NS";
+        }
+
+        if ("TMPV".equalsIgnoreCase(clean)) {
             return "TMPV.NS";
         }
 

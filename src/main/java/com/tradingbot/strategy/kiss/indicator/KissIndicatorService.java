@@ -7,6 +7,7 @@ import com.tradingbot.positional.indicator.HeikinAshiCandle;
 import com.tradingbot.strategy.kiss.config.KissStrategyConfig;
 import com.tradingbot.strategy.kiss.model.KissSnapshot;
 import com.tradingbot.util.CandleResamplingUtil;
+import com.tradingbot.util.CommodityRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -229,6 +230,7 @@ public class KissIndicatorService {
         double suggestedSl;
         double suggestedTarget;
         double rrRatio = config.getRiskRewardRatio();
+        double tickSize = resolveTickSize(symbol);
 
         if (isBullishSetup) {
             double minLast3HaLow = haLowVal;
@@ -242,6 +244,8 @@ public class KissIndicatorService {
             }
             double risk = currentPrice - suggestedSl;
             suggestedTarget = currentPrice + (risk * rrRatio);
+            suggestedSl = roundToTick(suggestedSl, tickSize);
+            suggestedTarget = roundToTick(suggestedTarget, tickSize);
         } else if (isBearishSetup) {
             double maxLast3HaHigh = haHighVal;
             for (int i = Math.max(0, last - 2); i <= last; i++) {
@@ -254,6 +258,8 @@ public class KissIndicatorService {
             }
             double risk = suggestedSl - currentPrice;
             suggestedTarget = Math.max(0.05, currentPrice - (risk * rrRatio));
+            suggestedSl = roundToTick(suggestedSl, tickSize);
+            suggestedTarget = roundToTick(suggestedTarget, tickSize);
         } else {
             suggestedSl = 0.0;
             suggestedTarget = 0.0;
@@ -306,18 +312,28 @@ public class KissIndicatorService {
             return false;
         }
 
-        // Anchor trend filter to latest weekly bar, reinforced by prior closed weekly bar if
-        // available
+        // Evaluate the latest weekly Heikin-Ashi candle
         HeikinAshiCandle latestWeeklyHa = weeklyHa.get(weeklyHa.size() - 1);
-        boolean latestGreen = latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0;
+        return latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0;
+    }
 
-        if (weeklyHa.size() >= 2) {
-            HeikinAshiCandle prevWeeklyHa = weeklyHa.get(weeklyHa.size() - 2);
-            boolean prevGreen = prevWeeklyHa.close().compareTo(prevWeeklyHa.open()) >= 0;
-            // Bullish if current in-progress week is green OR last closed week was confirmed green
-            return latestGreen || prevGreen;
+    public static double resolveTickSize(String symbol) {
+        if (CommodityRegistry.isCommodity(symbol)) {
+            var meta = CommodityRegistry.getMetadata(symbol);
+            if (meta != null && meta.tickSize() != null) {
+                return meta.tickSize().doubleValue();
+            }
         }
+        return 0.05;
+    }
 
-        return latestGreen;
+    public static double roundToTick(double value, double tickSize) {
+        if (tickSize <= 0.0) tickSize = 0.05;
+        BigDecimal tick = BigDecimal.valueOf(tickSize);
+        return BigDecimal.valueOf(value)
+                .divide(tick, 0, RoundingMode.HALF_UP)
+                .multiply(tick)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 }
