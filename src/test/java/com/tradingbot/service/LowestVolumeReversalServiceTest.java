@@ -268,6 +268,42 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Armed setup is invalidated if spot price breaches SL before hitting trigger")
+    void testArmedSetupInvalidationOnStopLossBreach() {
+        Clock marketClock = Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST); // 10:00 IST
+        service.setClock(marketClock);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "PVRINOX",
+                        Instant.now(),
+                        BigDecimal.valueOf(98),
+                        BigDecimal.valueOf(102),
+                        BigDecimal.valueOf(97),
+                        BigDecimal.valueOf(101),
+                        4500),
+                BigDecimal.valueOf(96.95),
+                BigDecimal.valueOf(102.05),
+                BigDecimal.valueOf(76.55));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("PVRINOX", setup);
+
+        // Spot price rallied above 102.05 SL (e.g. 103.00)
+        when(marketDataService.resolveToken(any())).thenReturn("13147");
+        when(marketDataService.resolveExchange(any())).thenReturn("NSE");
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "103.00"));
+
+        service.evaluateLivePriceActions();
+
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getOpenPositions()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Morning Universe Scan successfully resolves symbols and populates sector state")
     void testRunMorningUniverseScan() {
         when(marketDataService.resolveToken(any())).thenReturn("1234");

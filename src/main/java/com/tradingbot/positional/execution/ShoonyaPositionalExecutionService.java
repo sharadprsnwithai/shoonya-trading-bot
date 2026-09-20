@@ -267,20 +267,38 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                 log.info("[POSITIONAL LIVE] SELL to close hedge leg: {}", closeHedgeOrder);
                 orderService.placeOrder(closeHedgeOrder);
 
-                BigDecimal[] estExit = estimateExitPremiums(trade, exitSpot, daysHeld);
-                sellExitPremium = estExit[0];
-                buyHedgeExitPremium = estExit[1];
+                BigDecimal[] chainLtp = tryResolveOptionChainLtp(trade);
+                if (chainLtp != null) {
+                    sellExitPremium = chainLtp[0];
+                    buyHedgeExitPremium = chainLtp[1];
+                } else {
+                    BigDecimal[] estExit = estimateExitPremiums(trade, exitSpot, daysHeld);
+                    sellExitPremium = estExit[0];
+                    buyHedgeExitPremium = estExit[1];
+                }
             } catch (Exception e) {
                 log.error("[POSITIONAL LIVE] Error during live spread exit", e);
+                BigDecimal[] chainLtp = tryResolveOptionChainLtp(trade);
+                if (chainLtp != null) {
+                    sellExitPremium = chainLtp[0];
+                    buyHedgeExitPremium = chainLtp[1];
+                } else {
+                    BigDecimal[] estExit = estimateExitPremiums(trade, exitSpot, daysHeld);
+                    sellExitPremium = estExit[0];
+                    buyHedgeExitPremium = estExit[1];
+                }
+            }
+        } else {
+            // Paper mode exit
+            BigDecimal[] chainLtp = tryResolveOptionChainLtp(trade);
+            if (chainLtp != null) {
+                sellExitPremium = chainLtp[0];
+                buyHedgeExitPremium = chainLtp[1];
+            } else {
                 BigDecimal[] estExit = estimateExitPremiums(trade, exitSpot, daysHeld);
                 sellExitPremium = estExit[0];
                 buyHedgeExitPremium = estExit[1];
             }
-        } else {
-            // Paper mode exit
-            BigDecimal[] estExit = estimateExitPremiums(trade, exitSpot, daysHeld);
-            sellExitPremium = estExit[0];
-            buyHedgeExitPremium = estExit[1];
             log.info(
                     "[POSITIONAL PAPER] Simulated Spread Exit | Covered SELL Leg @ ₹{} | Closed Hedge @ ₹{}",
                     sellExitPremium,
@@ -347,6 +365,57 @@ public class ShoonyaPositionalExecutionService implements PositionalExecutionSer
                 buyHedgeExitPremium,
                 totalPnlRupees,
                 exitReason);
+    }
+
+    private BigDecimal[] tryResolveOptionChainLtp(PositionalTrade trade) {
+        if (optionChainService == null || trade == null || trade.sellStrike() == null) {
+            return null;
+        }
+        try {
+            var chain =
+                    optionChainService.getIndexOptionChain(
+                            trade.underlying(), trade.sellStrike(), 10, true);
+            if (chain != null && chain.strikes() != null) {
+                double soldLtp = 0.0;
+                double hedgeLtp = 0.0;
+
+                for (var os : chain.strikes()) {
+                    if (os.strikePrice() != null) {
+                        if (trade.sellStrike() != null
+                                && os.strikePrice().compareTo(trade.sellStrike()) == 0) {
+                            var contract =
+                                    "CE".equalsIgnoreCase(trade.sellOptionType())
+                                            ? os.call()
+                                            : os.put();
+                            if (contract != null && contract.ltp() != null) {
+                                soldLtp = contract.ltp().doubleValue();
+                            }
+                        }
+                        if (trade.buyHedgeStrike() != null
+                                && os.strikePrice().compareTo(trade.buyHedgeStrike()) == 0) {
+                            var contract =
+                                    "CE".equalsIgnoreCase(trade.buyHedgeOptionType())
+                                            ? os.call()
+                                            : os.put();
+                            if (contract != null && contract.ltp() != null) {
+                                hedgeLtp = contract.ltp().doubleValue();
+                            }
+                        }
+                    }
+                }
+
+                if (soldLtp > 0 && hedgeLtp > 0) {
+                    return new BigDecimal[] {
+                        BigDecimal.valueOf(soldLtp).setScale(2, RoundingMode.HALF_UP),
+                        BigDecimal.valueOf(hedgeLtp).setScale(2, RoundingMode.HALF_UP)
+                    };
+                }
+            }
+        } catch (Exception e) {
+            log.debug(
+                    "[POSITIONAL EXIT] Option chain quote resolution bypassed: {}", e.getMessage());
+        }
+        return null;
     }
 
     /** Estimates ATM monthly option premium (~1.5% of spot for ~30 DTE). */

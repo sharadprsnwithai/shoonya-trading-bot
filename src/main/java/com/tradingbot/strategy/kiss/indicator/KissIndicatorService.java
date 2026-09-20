@@ -31,7 +31,12 @@ public class KissIndicatorService {
         this.config = config;
     }
 
-    /** Converts standard OHLC candles to Heikin-Ashi candles. */
+    public enum WeeklyTrend {
+        BULLISH,
+        BEARISH,
+        UNKNOWN
+    }
+
     public List<HeikinAshiCandle> calculateHeikinAshi(List<Candle> candles) {
         if (candles == null || candles.isEmpty()) {
             return List.of();
@@ -109,7 +114,9 @@ public class KissIndicatorService {
         }
 
         // 1. Weekly Heikin-Ashi Trend Filter
-        boolean weeklyHaBullish = evaluateWeeklyTrend(dailyOrWeeklyCandles);
+        WeeklyTrend weeklyTrend = evaluateWeeklyTrend(dailyOrWeeklyCandles);
+        boolean weeklyHaBullish = (weeklyTrend == WeeklyTrend.BULLISH);
+        boolean weeklyHaBearish = (weeklyTrend == WeeklyTrend.BEARISH);
 
         // 2. 1-Hour Heikin-Ashi conversion
         List<HeikinAshiCandle> haList = calculateHeikinAshi(hourlyCandles);
@@ -215,7 +222,7 @@ public class KissIndicatorService {
         // Short Condition: Weekly HA Red + 1H HA Close < 55 EMA Low + 55 Slope Falling + MACD Line
         // <= Signal & MACD < 0
         boolean isBearishSetup =
-                (!weeklyHaBullish)
+                weeklyHaBearish
                         && (haCloseVal < currentEmaLow)
                         && (!emaSlopeBullish)
                         && !Double.isNaN(macdLine)
@@ -290,9 +297,9 @@ public class KissIndicatorService {
                         : Instant.now());
     }
 
-    private boolean evaluateWeeklyTrend(List<Candle> dailyOrWeeklyCandles) {
+    public WeeklyTrend evaluateWeeklyTrend(List<Candle> dailyOrWeeklyCandles) {
         if (dailyOrWeeklyCandles == null || dailyOrWeeklyCandles.isEmpty()) {
-            return false; // Fail-safe: require valid trend confirmation
+            return WeeklyTrend.UNKNOWN; // Require valid trend confirmation
         }
 
         List<Candle> weekly;
@@ -304,17 +311,19 @@ public class KissIndicatorService {
         }
 
         if (weekly.isEmpty()) {
-            return false;
+            return WeeklyTrend.UNKNOWN;
         }
 
         List<HeikinAshiCandle> weeklyHa = calculateHeikinAshi(weekly);
         if (weeklyHa.isEmpty()) {
-            return false;
+            return WeeklyTrend.UNKNOWN;
         }
 
         // Evaluate the latest weekly Heikin-Ashi candle
         HeikinAshiCandle latestWeeklyHa = weeklyHa.get(weeklyHa.size() - 1);
-        return latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0;
+        return (latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0)
+                ? WeeklyTrend.BULLISH
+                : WeeklyTrend.BEARISH;
     }
 
     public static double resolveTickSize(String symbol) {

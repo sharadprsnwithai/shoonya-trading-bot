@@ -692,8 +692,9 @@ public class BollingerHaPositionalService {
         try {
             if (marketDataService != null) {
                 String token = marketDataService.resolveToken(config.getSymbol());
+                String exchange = marketDataService.resolveExchange(config.getSymbol());
                 com.fasterxml.jackson.databind.JsonNode quote =
-                        marketDataService.fetchQuote("NSE", token);
+                        marketDataService.fetchQuote(exchange, token);
                 if (quote != null && quote.has("lp")) {
                     double lpVal = Double.parseDouble(quote.path("lp").asText());
                     if (lpVal > 0) {

@@ -430,6 +430,38 @@ public class LowestVolumeReversalService {
             if (spotLtp <= 0) return;
 
             BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
+
+            // Invalidate setup if spot breaches the proposed stop loss before hitting the entry
+            // trigger
+            if (setup.getStopLossPrice() != null) {
+                boolean slBreached = false;
+                if (setup.getDirection() == LowestVolumeDirection.SHORT) {
+                    if (spotPrice.compareTo(setup.getStopLossPrice()) >= 0) {
+                        slBreached = true;
+                    }
+                } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
+                    if (spotPrice.compareTo(setup.getStopLossPrice()) <= 0) {
+                        slBreached = true;
+                    }
+                }
+
+                if (slBreached) {
+                    log.info(
+                            "[LVR] Setup for {} invalidated prior to entry: Spot {} breached SL {}",
+                            symbol,
+                            spotPrice,
+                            setup.getStopLossPrice());
+                    setup.transitionTo(
+                            LowestVolumeSetupState.REJECTED_EXHAUSTED,
+                            "Spot "
+                                    + spotPrice
+                                    + " breached SL "
+                                    + setup.getStopLossPrice()
+                                    + " before trigger");
+                    return;
+                }
+            }
+
             boolean triggered = false;
 
             if (setup.getDirection() == LowestVolumeDirection.SHORT) {
