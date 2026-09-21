@@ -4,6 +4,7 @@ import com.tradingbot.strategy.kiss.config.KissStrategyConfig;
 import com.tradingbot.strategy.kiss.service.KissSwingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -12,6 +13,10 @@ import org.springframework.stereotype.Component;
  * commodities during trading hours.
  */
 @Component
+@ConditionalOnProperty(
+        name = "trading-bot.strategy.kiss.enabled",
+        havingValue = "true",
+        matchIfMissing = false)
 public class KissScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(KissScheduler.class);
