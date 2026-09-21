@@ -1218,6 +1218,222 @@ public class LowestVolumeReversalService {
         return exhaustedSymbols;
     }
 
+    public void setTelegramAlerts(boolean telegramAlerts) {
+        this.telegramAlerts = telegramAlerts;
+    }
+
+    /**
+     * Executes a pure session replay of historical 5-minute candles through the exact production
+     * strategy rules, state machine, and risk-reward execution engine of
+     * LowestVolumeReversalService.
+     *
+     * @param symbol Trading symbol (e.g., SUNPHARMA)
+     * @param direction Setup direction (LONG or SHORT)
+     * @param sessionCandles List of 5-minute candles for the intraday session
+     * @return List of completed LowestVolumePaperPosition trade records executed by the service
+     */
+    public List<LowestVolumePaperPosition> replaySession(
+            String symbol, LowestVolumeDirection direction, List<Candle> sessionCandles) {
+        List<LowestVolumePaperPosition> completedTrades = new ArrayList<>();
+        if (sessionCandles == null || sessionCandles.size() < 4) {
+            return completedTrades;
+        }
+
+        LowestVolumeSetup activeSetup = null;
+        LowestVolumePaperPosition openPos = null;
+        int attempt = 0;
+        Instant lastExitTime = null;
+
+        for (int i = 3; i < sessionCandles.size(); i++) {
+            Candle currentCandle = sessionCandles.get(i);
+            LocalTime candleTime = LocalTime.ofInstant(currentCandle.timestamp(), IST);
+            List<Candle> historicalSubList = sessionCandles.subList(0, i + 1);
+
+            // 1. Manage Open Position against current candle prices
+            if (openPos != null && !openPos.isClosed()) {
+                BigDecimal high = currentCandle.high();
+                BigDecimal low = currentCandle.low();
+                BigDecimal close = currentCandle.close();
+
+                // Check Stop Loss breach on spot
+                boolean slHit = false;
+                if (openPos.getDirection() == LowestVolumeDirection.SHORT) {
+                    if (high.compareTo(openPos.getCurrentStockSl()) >= 0) {
+                        slHit = true;
+                    }
+                } else if (openPos.getDirection() == LowestVolumeDirection.LONG) {
+                    if (low.compareTo(openPos.getCurrentStockSl()) <= 0) {
+                        slHit = true;
+                    }
+                }
+
+                // Check Target breach on spot
+                boolean targetHit = false;
+                if (!openPos.isPartialBooked()) {
+                    if (openPos.getDirection() == LowestVolumeDirection.SHORT) {
+                        if (low.compareTo(openPos.getTarget1StockPrice()) <= 0) {
+                            targetHit = true;
+                        }
+                    } else if (openPos.getDirection() == LowestVolumeDirection.LONG) {
+                        if (high.compareTo(openPos.getTarget1StockPrice()) >= 0) {
+                            targetHit = true;
+                        }
+                    }
+                }
+
+                if (targetHit) {
+                    LvrExitMode currentExitMode =
+                            (openPos.getExitMode() != null) ? openPos.getExitMode() : exitMode;
+                    if (currentExitMode == LvrExitMode.FULL_TARGET_1_4) {
+                        // 100% Full Exit at Target
+                        if (openPos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                            openPos.closeFullFutures(
+                                    openPos.getTarget1StockPrice(),
+                                    "TARGET_1_4_FULL_EXIT",
+                                    currentCandle.timestamp());
+                        } else {
+                            BigDecimal prem =
+                                    estimateOptionPremium(openPos, openPos.getTarget1StockPrice());
+                            openPos.close(prem, "TARGET_1_4_FULL_EXIT", currentCandle.timestamp());
+                        }
+                        completedTrades.add(openPos);
+                        lastExitTime = currentCandle.timestamp();
+                        openPos = null;
+                        activeSetup = null;
+                        break; // Exhausted for the day on target hit
+                    } else {
+                        // 50% Partial Booking
+                        BigDecimal prem =
+                                estimateOptionPremium(openPos, openPos.getTarget1StockPrice());
+                        openPos.executePartialBook(prem, currentCandle.timestamp());
+                        if (activeSetup != null) {
+                            activeSetup.transitionTo(
+                                    LowestVolumeSetupState.PARTIAL_BOOKED, "1:4 RR partial booked");
+                        }
+                    }
+                } else if (slHit) {
+                    if (openPos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                        openPos.closeFullFutures(
+                                openPos.getCurrentStockSl(),
+                                "SPOT_SL_HIT",
+                                currentCandle.timestamp());
+                    } else {
+                        BigDecimal prem =
+                                estimateOptionPremium(openPos, openPos.getCurrentStockSl());
+                        openPos.close(prem, "SPOT_SL_HIT", currentCandle.timestamp());
+                    }
+                    completedTrades.add(openPos);
+                    lastExitTime = currentCandle.timestamp();
+                    openPos = null;
+                    activeSetup = null;
+                    if (attempt >= 2) {
+                        break; // Exhausted max 2 attempts
+                    }
+                } else if (openPos.isPartialBooked()
+                        && !openPos.isClosed()
+                        && taService != null
+                        && i >= 10) {
+                    // 10 EMA trailing check
+                    double[] closes =
+                            historicalSubList.stream()
+                                    .mapToDouble(c -> c.close().doubleValue())
+                                    .toArray();
+                    double[] emaSeries = taService.calculateEmaSeries(closes, 10);
+                    double ema10 = emaSeries[emaSeries.length - 1];
+                    boolean emaTrailExit = false;
+                    if (!Double.isNaN(ema10)) {
+                        if (openPos.getDirection() == LowestVolumeDirection.SHORT
+                                && close.doubleValue() > ema10) {
+                            emaTrailExit = true;
+                        } else if (openPos.getDirection() == LowestVolumeDirection.LONG
+                                && close.doubleValue() < ema10) {
+                            emaTrailExit = true;
+                        }
+                    }
+                    if (emaTrailExit) {
+                        BigDecimal prem = estimateOptionPremium(openPos, close);
+                        openPos.close(prem, "10_EMA_TRAIL_EXIT", currentCandle.timestamp());
+                        completedTrades.add(openPos);
+                        lastExitTime = currentCandle.timestamp();
+                        openPos = null;
+                        activeSetup = null;
+                        break;
+                    }
+                }
+
+                // EOD Hard Exit at 15:15
+                if (openPos != null
+                        && !openPos.isClosed()
+                        && !candleTime.isBefore(TIME_HARD_EXIT)) {
+                    if (openPos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                        openPos.closeFullFutures(
+                                close, "EOD_1515_HARD_EXIT", currentCandle.timestamp());
+                    } else {
+                        BigDecimal prem = estimateOptionPremium(openPos, close);
+                        openPos.close(prem, "EOD_1515_HARD_EXIT", currentCandle.timestamp());
+                    }
+                    completedTrades.add(openPos);
+                    openPos = null;
+                    activeSetup = null;
+                    break;
+                }
+
+                continue;
+            }
+
+            // 2. Setup Evaluation & Trigger Arming / Trailing
+            if (candleTime.isBefore(TIME_ENTRY_CUTOFF) && attempt < 2) {
+                LowestVolumeSetup evaluated =
+                        evaluateCandleSequence(symbol, direction, historicalSubList, lastExitTime);
+                if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
+                    activeSetup = evaluated;
+                }
+            }
+
+            // 3. Intra-candle trigger execution check
+            if (activeSetup != null
+                    && activeSetup.getState() == LowestVolumeSetupState.TRIGGER_ARMED
+                    && openPos == null
+                    && attempt < 2) {
+                BigDecimal high = currentCandle.high();
+                BigDecimal low = currentCandle.low();
+                BigDecimal triggerPrice = activeSetup.getTriggerPrice();
+                BigDecimal slPrice = activeSetup.getStopLossPrice();
+
+                // Invalidate if SL breached before trigger
+                boolean slBreached = false;
+                if (direction == LowestVolumeDirection.SHORT && high.compareTo(slPrice) >= 0) {
+                    slBreached = true;
+                } else if (direction == LowestVolumeDirection.LONG && low.compareTo(slPrice) <= 0) {
+                    slBreached = true;
+                }
+
+                boolean triggered = false;
+                if (direction == LowestVolumeDirection.SHORT && low.compareTo(triggerPrice) <= 0) {
+                    triggered = true;
+                } else if (direction == LowestVolumeDirection.LONG
+                        && high.compareTo(triggerPrice) >= 0) {
+                    triggered = true;
+                }
+
+                if (slBreached && !triggered) {
+                    activeSetup = null;
+                    continue;
+                }
+
+                if (triggered) {
+                    attempt++;
+                    boolean prevAlerts = telegramAlerts;
+                    telegramAlerts = false;
+                    openPos = executePositionEntry(symbol, activeSetup, triggerPrice);
+                    telegramAlerts = prevAlerts;
+                }
+            }
+        }
+
+        return completedTrades;
+    }
+
     public boolean isNiftyBullish() {
         return niftyBullish;
     }
