@@ -18,7 +18,8 @@ class LowestVolumePaperPositionTest {
         int lotSize = 350;
         int lots = 1;
         int totalQty = lotSize * lots;
-        BigDecimal plannedRisk = BigDecimal.valueOf(3.00).multiply(BigDecimal.valueOf(totalQty)); // 1050
+        BigDecimal plannedRisk =
+                BigDecimal.valueOf(3.00).multiply(BigDecimal.valueOf(totalQty)); // 1050
 
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
@@ -46,7 +47,8 @@ class LowestVolumePaperPositionTest {
 
         assertThat(pos.isClosed()).isTrue();
         assertThat(pos.getRemainingQuantity()).isZero();
-        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo(BigDecimal.valueOf(4200.00)); // +12 * 350
+        assertThat(pos.getTotalRealizedPnl())
+                .isEqualByComparingTo(BigDecimal.valueOf(4200.00)); // +12 * 350
         assertThat(pos.getExitReason()).isEqualTo("TARGET_1_4_FULL_EXIT");
     }
 
@@ -59,7 +61,8 @@ class LowestVolumePaperPositionTest {
         int lotSize = 125;
         int lots = 2;
         int totalQty = lotSize * lots; // 250
-        BigDecimal plannedRisk = BigDecimal.valueOf(10.00).multiply(BigDecimal.valueOf(totalQty)); // 2500
+        BigDecimal plannedRisk =
+                BigDecimal.valueOf(10.00).multiply(BigDecimal.valueOf(totalQty)); // 2500
 
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
@@ -83,7 +86,8 @@ class LowestVolumePaperPositionTest {
 
         assertThat(pos.isClosed()).isTrue();
         assertThat(pos.getRemainingQuantity()).isZero();
-        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo(BigDecimal.valueOf(-2500.00)); // -10 * 250
+        assertThat(pos.getTotalRealizedPnl())
+                .isEqualByComparingTo(BigDecimal.valueOf(-2500.00)); // -10 * 250
         assertThat(pos.getExitReason()).isEqualTo("SPOT_SL_HIT");
     }
 }

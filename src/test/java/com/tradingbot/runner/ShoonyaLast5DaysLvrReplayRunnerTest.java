@@ -302,13 +302,21 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                         if (c.high().compareTo(targetPrice) >= 0) targetHit = true;
                     }
 
-                    if (slHit) {
+                    if (targetHit) {
+                        wins++;
+                        dayR += 4.0; // 100% Full Exit at 1:4 RR = +4.0R realized
+                        System.out.printf(
+                                "    🎯 [%s IST] 1:4 TARGET REACHED (100%% FULL EXIT): %s at %.2f | Realized +4.0R\n",
+                                TIME_FMT.format(c.timestamp()), sym, targetPrice.doubleValue());
+                        inTrade = false;
+                        activeSetup = null;
+                        break; // One trade per stock per day
+                    } else if (slHit) {
                         losses++;
-                        double rLoss =
-                                partialBooked ? 0.0 : -1.0; // Breakeven if partial was booked
+                        double rLoss = -1.0;
                         dayR += rLoss;
                         System.out.printf(
-                                "    🛑 [%s IST] STOP LOSS HIT: %s at %.2f (SL: %.2f) -> PnL: %+.1fR\n",
+                                "    🛑 [%s IST] STOP LOSS HIT (100%% Exit): %s at %.2f (SL: %.2f) -> PnL: %+.1fR\n",
                                 TIME_FMT.format(c.timestamp()),
                                 sym,
                                 slPrice.doubleValue(),
@@ -317,17 +325,6 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                         inTrade = false;
                         activeSetup = null;
                         break; // One trade per stock per day
-                    } else if (targetHit && !partialBooked) {
-                        partialBooked = true;
-                        wins++;
-                        dayR += 2.0; // 50% booked at 1:4 RR = +2R realized
-                        slPrice = entryPrice; // Move SL to Cost
-                        System.out.printf(
-                                "    🎯 [%s IST] 1:4 TARGET REACHED: %s at %.2f | 50%% Booked (+2.0R), SL moved to Cost (%.2f)\n",
-                                TIME_FMT.format(c.timestamp()),
-                                sym,
-                                targetPrice.doubleValue(),
-                                slPrice.doubleValue());
                     }
 
                     if (candleTime.isAfter(LocalTime.of(15, 10)) && inTrade) {
@@ -336,18 +333,16 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                             if (direction == LowestVolumeDirection.LONG) {
                                 remR =
                                         (c.close().subtract(entryPrice).doubleValue()
-                                                        / riskPerUnit.doubleValue())
-                                                * 0.5;
+                                                / riskPerUnit.doubleValue());
                             } else {
                                 remR =
                                         (entryPrice.subtract(c.close()).doubleValue()
-                                                        / riskPerUnit.doubleValue())
-                                                * 0.5;
+                                                / riskPerUnit.doubleValue());
                             }
                         }
                         dayR += remR;
                         System.out.printf(
-                                "    🏁 [%s IST] 15:15 HARD EOD EXIT: %s at Close %.2f (Entry: %.2f) -> Remainder PnL: %+.2fR\n",
+                                "    🏁 [%s IST] 15:15 HARD EOD EXIT: %s at Close %.2f (Entry: %.2f) -> PnL: %+.2fR\n",
                                 TIME_FMT.format(c.timestamp()),
                                 sym,
                                 c.close().doubleValue(),

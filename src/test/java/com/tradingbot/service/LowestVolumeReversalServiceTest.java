@@ -62,7 +62,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Futures entry execution sets 1.0 Delta spot entry price, contract symbol and planned risk")
+    @DisplayName(
+            "Futures entry execution sets 1.0 Delta spot entry price, contract symbol and planned risk")
     void testFuturesEntryExecution() {
         service.setInstrumentType(LvrInstrumentType.FUTURES);
         service.setExitMode(LvrExitMode.FULL_TARGET_1_4);

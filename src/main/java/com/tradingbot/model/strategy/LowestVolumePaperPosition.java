@@ -127,9 +127,7 @@ public class LowestVolumePaperPosition {
         this.entryTime = entryTime != null ? entryTime : Instant.now();
     }
 
-    /**
-     * Executes 100% full exit for Stock Futures (1.0 Delta direct price P&L).
-     */
+    /** Executes 100% full exit for Stock Futures (1.0 Delta direct price P&L). */
     public synchronized void closeFullFutures(
             BigDecimal exitPrice, String reason, Instant timestamp) {
         if (this.closed) {
@@ -154,9 +152,7 @@ public class LowestVolumePaperPosition {
         this.remainingQuantity = 0;
     }
 
-    /**
-     * Executes partial profit booking at Target 1 (1:4 RR) in Options / Trailing mode.
-     */
+    /** Executes partial profit booking at Target 1 (1:4 RR) in Options / Trailing mode. */
     public synchronized void executePartialBook(BigDecimal exitPremium, Instant timestamp) {
         if (this.partialBooked || this.closed) {
             return;
@@ -178,9 +174,7 @@ public class LowestVolumePaperPosition {
         this.totalRealizedPnl = this.partialPnl;
     }
 
-    /**
-     * Closes the remaining position or full position in Options / Trailing mode.
-     */
+    /** Closes the remaining position or full position in Options / Trailing mode. */
     public synchronized void close(BigDecimal exitPremium, String reason, Instant timestamp) {
         if (this.closed) {
             return;
