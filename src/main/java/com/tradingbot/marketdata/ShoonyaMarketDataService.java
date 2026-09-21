@@ -51,7 +51,16 @@ public class ShoonyaMarketDataService {
                 config,
                 authenticator,
                 new ObjectMapper(),
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+    }
+
+    public static String buildFormBody(String jDataStr, String sessionToken) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("jData=").append(jDataStr != null ? jDataStr : "");
+        if (sessionToken != null) {
+            sb.append("&jKey=").append(sessionToken);
+        }
+        return sb.toString();
     }
 
     public ShoonyaMarketDataService(
@@ -104,7 +113,7 @@ public class ShoonyaMarketDataService {
      */
     public List<Candle> fetchDailyCandles(String symbol, int daysBack) {
         String token = resolveToken(symbol);
-        int boundedDays = Math.max(1, Math.min(daysBack, 400));
+        int boundedDays = Math.max(1, Math.min(daysBack, 1200));
         log.info(
                 "[DAILY-DATA] Fetching {} days of daily candles for {} (token: {})",
                 boundedDays,
@@ -127,34 +136,73 @@ public class ShoonyaMarketDataService {
     }
 
     /**
+     * Warms the in-memory token cache at startup with all pre-registered F&O instruments and
+     * indices.
+     */
+    @jakarta.annotation.PostConstruct
+    public void warmTokenCache() {
+        for (Map.Entry<String, StockFnoRegistry.InstrumentInfo> entry :
+                StockFnoRegistry.getAllInstruments().entrySet()) {
+            String tok = entry.getValue().token();
+            if (isValidNumericToken(tok)) {
+                tokenCache.put(entry.getKey(), tok);
+            }
+        }
+        for (Map.Entry<String, com.tradingbot.util.Nifty500Registry.StockMetadata> entry :
+                com.tradingbot.util.Nifty500Registry.getAllMetadata().entrySet()) {
+            String tok = entry.getValue().token();
+            if (isValidNumericToken(tok)) {
+                tokenCache.putIfAbsent(entry.getKey(), tok);
+            }
+        }
+        log.info(
+                "[MARKET-DATA] Token cache pre-warmed with {} active instruments (F&O + Nifty 500) at startup.",
+                tokenCache.size());
+    }
+
+    private boolean isValidNumericToken(String token) {
+        return token != null && !token.isBlank() && token.matches("\\d+");
+    }
+
+    /**
      * Resolves the instrument token for a symbol using cache, StockFnoRegistry, Nifty200Registry,
      * or Shoonya SearchScrip.
      */
     public String resolveToken(String symbol) {
         if (symbol == null || symbol.isBlank()) {
-            return "10576";
+            return "26000";
         }
         String clean = symbol.toUpperCase().trim();
         if (clean.startsWith("NSE:")) clean = clean.substring(4);
-        if ("NIFTY".equalsIgnoreCase(clean)) clean = "NIFTY50";
+        if ("NIFTY".equalsIgnoreCase(clean)
+                || "NIFTY 50".equalsIgnoreCase(clean)
+                || "NIFTY_50".equalsIgnoreCase(clean)) {
+            clean = "NIFTY50";
+        }
 
         if (tokenCache.containsKey(clean)) {
-            return tokenCache.get(clean);
+            String cached = tokenCache.get(clean);
+            if (isValidNumericToken(cached)) {
+                return cached;
+            }
         }
 
         String registeredToken = StockFnoRegistry.getToken(clean);
-        if (registeredToken != null && !registeredToken.isBlank()) {
+        if (isValidNumericToken(registeredToken)) {
             tokenCache.put(clean, registeredToken);
             return registeredToken;
         }
 
         var n200Meta = com.tradingbot.util.Nifty200Registry.getMetadata(clean);
-        if (n200Meta != null
-                && n200Meta.token() != null
-                && !n200Meta.token().isBlank()
-                && !"10576".equals(n200Meta.token())) {
+        if (n200Meta != null && isValidNumericToken(n200Meta.token())) {
             tokenCache.put(clean, n200Meta.token());
             return n200Meta.token();
+        }
+
+        var n500Meta = com.tradingbot.util.Nifty500Registry.getMetadata(clean);
+        if (n500Meta != null && isValidNumericToken(n500Meta.token())) {
+            tokenCache.put(clean, n500Meta.token());
+            return n500Meta.token();
         }
 
         // Fallback: Query SearchScrip API from Shoonya
@@ -165,14 +213,14 @@ public class ShoonyaMarketDataService {
                     String tsym = item.path("tsym").asText("");
                     if (tsym.equalsIgnoreCase(clean + "-EQ") || tsym.equalsIgnoreCase(clean)) {
                         String tok = item.path("token").asText("");
-                        if (!tok.isBlank()) {
+                        if (isValidNumericToken(tok)) {
                             tokenCache.put(clean, tok);
                             return tok;
                         }
                     }
                 }
                 String tok = searchRes.get(0).path("token").asText("");
-                if (!tok.isBlank()) {
+                if (isValidNumericToken(tok)) {
                     tokenCache.put(clean, tok);
                     return tok;
                 }
@@ -184,8 +232,10 @@ public class ShoonyaMarketDataService {
                     e.getMessage());
         }
 
-        if ("NIFTY50".equalsIgnoreCase(clean) || "NIFTY".equalsIgnoreCase(clean)) {
-            return "10576";
+        if ("NIFTY50".equalsIgnoreCase(clean)
+                || "NIFTY".equalsIgnoreCase(clean)
+                || "NIFTY 50".equalsIgnoreCase(clean)) {
+            return "26000";
         }
         log.warn("[MARKET-DATA] Unable to resolve token for symbol: {}", clean);
         return null;
@@ -209,17 +259,14 @@ public class ShoonyaMarketDataService {
                                 exchange != null ? exchange : "NSE",
                                 "token",
                                 token);
-                String body =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                String body = buildFormBody(objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest req =
                         HttpRequest.newBuilder()
                                 .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/GetQuotes"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 body, StandardCharsets.UTF_8))
@@ -238,6 +285,17 @@ public class ShoonyaMarketDataService {
                     continue;
                 }
 
+                if (resp.statusCode() == 400
+                        && respBody != null
+                        && respBody.contains("exceeds Limit 10")) {
+                    log.warn(
+                            "[QUOTE] Rate limit reached fetching token {}. Backing off 250ms (attempt {})...",
+                            token,
+                            attempt);
+                    Thread.sleep(250);
+                    continue;
+                }
+
                 if (resp.statusCode() != 200) {
                     log.error(
                             "[QUOTE] HTTP error {} fetching quote for token {}: {}",
@@ -248,6 +306,9 @@ public class ShoonyaMarketDataService {
                 }
                 return objectMapper.readTree(respBody);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.warn(
                         "[QUOTE] Error fetching quote for token {} (attempt {}): {}",
                         token,
@@ -272,13 +333,17 @@ public class ShoonyaMarketDataService {
                 payload.put("stext", searchText);
 
                 String jDataStr = objectMapper.writeValueAsString(payload);
-                String formBody = "jData=" + jDataStr + "&jKey=" + sessionToken;
+                String formBody = buildFormBody(jDataStr, sessionToken);
 
                 HttpRequest request =
                         HttpRequest.newBuilder()
-                                .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/SearchScrip"))
+                                .uri(
+                                        URI.create(
+                                                config.getBaseUrl()
+                                                        + "/NorenWClientAPI/SearchScrip"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -298,6 +363,17 @@ public class ShoonyaMarketDataService {
                     continue;
                 }
 
+                if (response.statusCode() == 400
+                        && body != null
+                        && body.contains("exceeds Limit 10")) {
+                    log.warn(
+                            "[SEARCH-SCRIP] Rate limit reached searching for {}. Backing off 250ms (attempt {})...",
+                            searchText,
+                            attempt);
+                    Thread.sleep(250);
+                    continue;
+                }
+
                 if (response.statusCode() != 200) {
                     log.error(
                             "[SEARCH-SCRIP] HTTP error {} searching for {}: {}",
@@ -311,7 +387,14 @@ public class ShoonyaMarketDataService {
                     return root.path("values");
                 }
             } catch (Exception e) {
-                log.warn("[SEARCH-SCRIP] Error searching for scrip {} (attempt {}): {}", searchText, attempt, e.getMessage());
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                log.warn(
+                        "[SEARCH-SCRIP] Error searching for scrip {} (attempt {}): {}",
+                        searchText,
+                        attempt,
+                        e.getMessage());
             }
         }
         return null;
@@ -364,13 +447,14 @@ public class ShoonyaMarketDataService {
                 payload.put("intrv", timeframe);
 
                 String jDataStr = objectMapper.writeValueAsString(payload);
-                String formBody = "jData=" + jDataStr + "&jKey=" + sessionToken;
+                String formBody = buildFormBody(jDataStr, sessionToken);
 
                 HttpRequest request =
                         HttpRequest.newBuilder()
                                 .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/TPSeries"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -390,6 +474,17 @@ public class ShoonyaMarketDataService {
                     continue;
                 }
 
+                if (response.statusCode() == 400
+                        && body != null
+                        && body.contains("exceeds Limit 10")) {
+                    log.warn(
+                            "Rate limit reached fetching TPSeries for {}. Backing off 250ms (attempt {})...",
+                            symbol,
+                            attempt);
+                    Thread.sleep(250);
+                    continue;
+                }
+
                 if (response.statusCode() != 200) {
                     log.error(
                             "HTTP error {} fetching TPSeries for {}: {}",
@@ -402,6 +497,9 @@ public class ShoonyaMarketDataService {
                 return parseShoonyaCandles(body, symbol, timeframe);
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.warn(
                         "Error fetching Shoonya TPSeries for {} (attempt {}): {}",
                         symbol,
@@ -431,13 +529,24 @@ public class ShoonyaMarketDataService {
                         BigDecimal high = new BigDecimal(node.path("inth").asText("0"));
                         BigDecimal low = new BigDecimal(node.path("intl").asText("0"));
                         BigDecimal close = new BigDecimal(node.path("intc").asText("0"));
-                        long volume = node.path("v").asLong(0);
+                        long volume = 0;
+                        if (node.has("intv")) {
+                            volume = Math.abs(node.path("intv").asLong(0));
+                        }
+                        if (volume == 0 && node.has("v")) {
+                            volume = node.path("v").asLong(0);
+                        }
 
                         Instant timestamp = parseTimestamp(node);
-                        candles.add(
-                                new Candle(
-                                        symbol, timeframe, timestamp, open, high, low, close,
-                                        volume));
+                        if (open.compareTo(BigDecimal.ZERO) > 0
+                                && high.compareTo(BigDecimal.ZERO) > 0
+                                && low.compareTo(BigDecimal.ZERO) > 0
+                                && close.compareTo(BigDecimal.ZERO) > 0) {
+                            candles.add(
+                                    new Candle(
+                                            symbol, timeframe, timestamp, open, high, low, close,
+                                            volume));
+                        }
                     }
                 }
             } else if (root.isObject() && "Not_Ok".equalsIgnoreCase(root.path("stat").asText())) {
@@ -477,14 +586,56 @@ public class ShoonyaMarketDataService {
         }
         String timeStr = node.path("time").asText("");
         if (!timeStr.isEmpty()) {
+            String clean = timeStr.trim();
+            // Handle date-only "dd-MM-yyyy", "dd/MM/yyyy", "yyyy-MM-dd"
+            if (clean.length() == 10) {
+                try {
+                    if (clean.charAt(2) == '-' || clean.charAt(2) == '/') {
+                        DateTimeFormatter fmt =
+                                clean.charAt(2) == '-'
+                                        ? DateTimeFormatter.ofPattern("dd-MM-yyyy")
+                                        : DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                        return java.time.LocalDate.parse(clean, fmt).atStartOfDay(IST).toInstant();
+                    } else if (clean.charAt(4) == '-') {
+                        return java.time.LocalDate.parse(clean, DateTimeFormatter.ISO_LOCAL_DATE)
+                                .atStartOfDay(IST)
+                                .toInstant();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
             try {
-                LocalDateTime ldt = LocalDateTime.parse(timeStr, FORMATTER_SLASH);
+                LocalDateTime ldt = LocalDateTime.parse(clean, FORMATTER_SLASH);
                 return ldt.atZone(IST).toInstant();
             } catch (Exception e1) {
                 try {
-                    LocalDateTime ldt = LocalDateTime.parse(timeStr, FORMATTER_DASH);
+                    LocalDateTime ldt = LocalDateTime.parse(clean, FORMATTER_DASH);
                     return ldt.atZone(IST).toInstant();
-                } catch (Exception ignored) {
+                } catch (Exception e2) {
+                    try {
+                        LocalDateTime ldt =
+                                LocalDateTime.parse(
+                                        clean, DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"));
+                        return ldt.atZone(IST).toInstant();
+                    } catch (Exception e3) {
+                        try {
+                            LocalDateTime ldt =
+                                    LocalDateTime.parse(
+                                            clean, DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+                            return ldt.atZone(IST).toInstant();
+                        } catch (Exception e4) {
+                            try {
+                                LocalDateTime ldt =
+                                        LocalDateTime.parse(
+                                                clean, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                                return ldt.atZone(IST).toInstant();
+                            } catch (Exception e5) {
+                                log.debug(
+                                        "Failed parsing Shoonya candle time string '{}', defaulting to now",
+                                        timeStr);
+                            }
+                        }
+                    }
                 }
             }
         }

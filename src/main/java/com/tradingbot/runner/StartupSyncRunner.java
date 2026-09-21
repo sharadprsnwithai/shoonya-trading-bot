@@ -27,14 +27,18 @@ public class StartupSyncRunner implements CommandLineRunner {
     private final ShoonyaConfig config;
     private final ShoonyaAuthenticator authenticator;
     private final ShoonyaMarketDataService marketDataService;
+    private final com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public StartupSyncRunner(
             ShoonyaConfig config,
             ShoonyaAuthenticator authenticator,
-            ShoonyaMarketDataService marketDataService) {
+            ShoonyaMarketDataService marketDataService,
+            com.tradingbot.marketdata.HistoricalOhlcCacheService ohlcCacheService) {
         this.config = config;
         this.authenticator = authenticator;
         this.marketDataService = marketDataService;
+        this.ohlcCacheService = ohlcCacheService;
     }
 
     @Override
@@ -49,14 +53,14 @@ public class StartupSyncRunner implements CommandLineRunner {
 
         try {
             // 1. Authenticate / Login
-            log.info("[1/2] Authenticating with Shoonya (Finvasia NorenAPI)...");
+            log.info("[1/3] Authenticating with Shoonya (Finvasia NorenAPI)...");
             String sessionToken = authenticator.getOrAuthenticateToken();
             log.info(
-                    "[1/2] Shoonya Authentication Successful! Session Token: {}...",
+                    "[1/3] Shoonya Authentication Successful! Session Token: {}...",
                     sessionToken.length() > 8 ? sessionToken.substring(0, 8) + "***" : "***");
 
             // 2. Fetch OHLC data for last 5 days on startup
-            log.info("[2/2] Fetching OHLC data of the last 5 days on startup...");
+            log.info("[2/3] Fetching OHLC data of the last 5 days on startup...");
 
             // Default startup instruments: F&O Benchmark Basket + NIFTY 50
             record InstrumentTarget(
@@ -89,9 +93,49 @@ public class StartupSyncRunner implements CommandLineRunner {
                 // Respect Shoonya API rate limit (350ms between requests)
                 Thread.sleep(350);
             }
-
         } catch (Exception e) {
             log.warn("Shoonya Startup Sync Notice: {}", e.getMessage());
+        }
+
+        try {
+            // 3. Verify Historical OHLC Local SQLite / Memory Cache
+            log.info("[3/3] Checking Yahoo Finance Historical OHLC Database cache status...");
+            if (ohlcCacheService.getCachedSymbolCount() == 0
+                    || !ohlcCacheService.isCacheValidForToday()) {
+                log.info(
+                        "[3/3] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating managed background sync & revalidation...",
+                        ohlcCacheService.getCachedSymbolCount(),
+                        ohlcCacheService.isCacheValidForToday());
+                java.util.concurrent.CompletableFuture.runAsync(
+                                () -> {
+                                    try {
+                                        int syncedCount = ohlcCacheService.syncAll(false);
+                                        log.info(
+                                                "[STARTUP-SYNC] Background OHLC sync finished. Total cached symbols: {}",
+                                                syncedCount);
+                                    } catch (Exception ex) {
+                                        log.error(
+                                                "[STARTUP-SYNC] Background OHLC sync error: {}",
+                                                ex.getMessage(),
+                                                ex);
+                                    }
+                                })
+                        .whenComplete(
+                                (res, ex) -> {
+                                    if (ex != null) {
+                                        log.warn(
+                                                "[STARTUP-SYNC] Background OHLC sync completed with exception: {}",
+                                                ex.getMessage());
+                                    }
+                                });
+            } else {
+                log.info(
+                        "[3/3] OHLC Database loaded: {} symbols cached (valid for today: {})",
+                        ohlcCacheService.getCachedSymbolCount(),
+                        ohlcCacheService.isCacheValidForToday());
+            }
+        } catch (Exception e) {
+            log.warn("Yahoo Historical OHLC Cache Startup Notice: {}", e.getMessage());
         }
 
         log.info("==================================================================");

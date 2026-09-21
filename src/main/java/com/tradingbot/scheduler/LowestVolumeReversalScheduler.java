@@ -39,34 +39,11 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
-     * Morning Universe Scan at 09:25:10 IST every trading weekday. Identifies Top 10 Gainers & Losers
-     * from the F&O universe, fixes this list for the day, seeds initial setups, and dispatches the
-     * daily Telegram report once.
+     * Runs every 5 minutes from 09:25:10 to 15:15:10 IST on trading weekdays. (10s offset for
+     * broker latency). Automatically runs morning universe scan on first 09:25 cycle.
      */
     @Scheduled(
-            cron = "${trading-bot.strategy.lowest-volume.scanner-cron:10 25 9 ? * MON-FRI}",
-            zone = "Asia/Kolkata")
-    public void scheduledMorningUniverseScan() {
-        if (!schedulerEnabled) {
-            log.debug("[LVR-SCHEDULER] Scheduler is disabled in configuration.");
-            return;
-        }
-
-        try {
-            log.info(
-                    "[LVR-SCHEDULER] 09:25 IST: Executing morning universe scan to fix daily watchlist...");
-            strategyService.runMorningUniverseScan();
-        } catch (Exception e) {
-            log.error(
-                    "[LVR-SCHEDULER] Exception during morning universe scan: {}",
-                    e.getMessage(),
-                    e);
-        }
-    }
-
-    /** Runs every 5 minutes from 09:25:10 to 11:05:10 IST on trading weekdays. (10s offset for broker latency) */
-    @Scheduled(
-            cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-11 ? * MON-FRI}",
+            cron = "${trading-bot.strategy.lowest-volume.cron:10 */5 9-15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
     public void scheduledCandleCycle() {
         if (!schedulerEnabled) {
@@ -75,8 +52,8 @@ public class LowestVolumeReversalScheduler {
         }
 
         LocalTime now = LocalTime.now(IST);
-        // Do not scan or evaluate after 11:05
-        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(11, 5))) {
+        // Do not scan or evaluate outside market hours (09:25 - 15:20)
+        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 20))) {
             return;
         }
 
@@ -99,7 +76,7 @@ public class LowestVolumeReversalScheduler {
         }
 
         LocalTime now = LocalTime.now(IST);
-        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 0))) {
+        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 15))) {
             return;
         }
 
@@ -107,6 +84,24 @@ public class LowestVolumeReversalScheduler {
             strategyService.evaluateLivePriceActions();
         } catch (Exception e) {
             log.error("[LVR-SCHEDULER] Exception during live price check: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Dedicated 15:15 IST Market Hard Exit on trading weekdays to ensure all open intraday
+     * paper/live positions are strictly squared off before market close.
+     */
+    @Scheduled(cron = "0 15 15 ? * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledHardExit() {
+        if (!schedulerEnabled) {
+            return;
+        }
+        log.info(
+                "[LVR-SCHEDULER] 15:15 IST Market Hard Exit reached. Executing position closures.");
+        try {
+            strategyService.executeHardExit(LocalTime.of(15, 15));
+        } catch (Exception e) {
+            log.error("[LVR-SCHEDULER] Exception during 15:15 hard exit: {}", e.getMessage(), e);
         }
     }
 

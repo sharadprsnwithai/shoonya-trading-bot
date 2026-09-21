@@ -41,6 +41,7 @@ public class LowestVolumeStrategyController {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "SUCCESS");
+        response.put("sectorState", strategyService.getSectorState());
         response.put("niftyBullish", strategyService.isNiftyBullish());
         response.put("currentTopGainers", strategyService.getCurrentTopGainers());
         response.put("currentTopLosers", strategyService.getCurrentTopLosers());
@@ -95,6 +96,7 @@ public class LowestVolumeStrategyController {
         status.put("enabled", strategyService.isEnabled());
         status.put("schedulerEnabled", scheduler.isSchedulerEnabled());
         status.put("universeScanCompletedToday", strategyService.isUniverseScanCompletedToday());
+        status.put("sectorState", strategyService.getSectorState());
         status.put("paperCapital", strategyService.getPaperCapital());
         status.put("riskPerTradePercent", strategyService.getRiskPerTradePercent());
         status.put("riskPerTradeAmount", strategyService.getRiskPerTradeAmount());

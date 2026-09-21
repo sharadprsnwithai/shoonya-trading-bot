@@ -5,35 +5,26 @@ import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
-import com.tradingbot.model.indicator.SuperTrendResult;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
+import com.tradingbot.model.strategy.LowestVolumeSectorState;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.LowestVolumeSetupState;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import com.tradingbot.telegram.TelegramService;
-import com.tradingbot.util.Nifty200Registry;
+import com.tradingbot.util.NiftySectorRegistry;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.DayOfWeek;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.YearMonth;
 import java.time.ZoneId;
-import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,8 +33,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Core engine implementing the Intraday Strategy: Lowest Volume Reversal & Continuation. Reference
- * Spec: lowest_volume_reversal_spec.md
+ * Lowest Volume Reversal & Continuation (LVR) Strategy Engine based on Kushal Varshney's 5m
+ * Intraday Framework. 1. 09:25 IST: Market Sentiment (NIFTY 50 Adv/Dec) -> 11 NSE Sector ranking ->
+ * F&O candidate stocks. 2. 09:30 - 13:00 IST: 5-minute candle engine. Ignored C1-C3 baseline,
+ * opposite-color volume dry-up triggers, dynamic trailing. 3. Action: ATM Option Buying (PE for
+ * Short, CE for Long), Spot-based 1:4 RR partial exit (50% lots), Cost SL, 10 EMA / 15:15 IST
+ * trailing.
  */
 @Service
 public class LowestVolumeReversalService {
@@ -53,17 +48,18 @@ public class LowestVolumeReversalService {
 
     public static final LocalTime TIME_SESSION_START = LocalTime.of(9, 15);
     public static final LocalTime TIME_SCANNER_START = LocalTime.of(9, 25);
-    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(11, 0);
-    public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
+    public static final LocalTime TIME_EVALUATION_START = LocalTime.of(9, 30);
+    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(13, 0);
+    public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 15);
 
     private final ShoonyaMarketDataService marketDataService;
     private final TechnicalAnalysisService taService;
     private final TelegramService telegramService;
     private final ShoonyaConfig config;
+    private final com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService;
+    private final LowestVolumeReversalScanner scanner;
 
     private java.time.Clock clock = java.time.Clock.system(IST);
-
-    private final ExecutorService executor = Executors.newFixedThreadPool(8);
 
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
     private boolean enabled = true;
@@ -77,31 +73,16 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
     private int maxConcurrentTrades = 5;
 
-    @Value("${trading-bot.strategy.lowest-volume.min-pct-change:1.0}")
-    private double minPctChange = 1.0;
-
-    @Value("${trading-bot.strategy.lowest-volume.top-n-stocks:10}")
-    private int topNStocks = 10;
+    @Value("${trading-bot.strategy.lowest-volume.lots:2}")
+    private int defaultLots = 2;
 
     @Value("${trading-bot.strategy.lowest-volume.telegram-alerts:true}")
     private boolean telegramAlerts = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:false}")
-    private boolean telegramArmedAlerts = false;
+    @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:true}")
+    private boolean telegramArmedAlerts = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.option-buying-enabled:true}")
-    private boolean optionBuyingEnabled = true;
-
-    @Value("${trading-bot.strategy.lowest-volume.lots:1}")
-    private int defaultLots = 1;
-
-    @Value("${trading-bot.strategy.lowest-volume.setup-timeout-candles:6}")
-    private int setupTimeoutCandles = 6;
-
-    @Value("${trading-bot.strategy.lowest-volume.live-breach-check-enabled:true}")
-    private boolean liveBreachCheckEnabled = true;
-
-    // Active state maps
+    // State maps
     private final Map<String, LowestVolumeSetup> activeSetups = new ConcurrentHashMap<>();
     private final Map<String, LowestVolumePaperPosition> openPositions = new ConcurrentHashMap<>();
     private final List<LowestVolumePaperPosition> tradeHistory =
@@ -115,7 +96,9 @@ public class LowestVolumeReversalService {
             new java.util.concurrent.CopyOnWriteArrayList<>();
     private final List<StockQuoteSnapshot> currentTopLoserSnapshots =
             new java.util.concurrent.CopyOnWriteArrayList<>();
-    private boolean niftyBullish = true;
+
+    private volatile LowestVolumeSectorState sectorState = LowestVolumeSectorState.empty();
+    private volatile boolean niftyBullish = true;
     private volatile boolean universeScanCompletedToday = false;
     private final AtomicInteger tradeCounter = new AtomicInteger(1);
 
@@ -124,11 +107,25 @@ public class LowestVolumeReversalService {
             ShoonyaMarketDataService marketDataService,
             TechnicalAnalysisService taService,
             TelegramService telegramService,
-            ShoonyaConfig config) {
+            ShoonyaConfig config,
+            @Autowired(required = false)
+                    com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService,
+            @Autowired(required = false) LowestVolumeReversalScanner scanner) {
         this.marketDataService = marketDataService;
         this.taService = taService;
         this.telegramService = telegramService;
         this.config = config;
+        this.optionChainService = optionChainService;
+        this.scanner = (scanner != null) ? scanner : new LowestVolumeReversalScanner();
+    }
+
+    public LowestVolumeReversalService(
+            ShoonyaMarketDataService marketDataService,
+            TechnicalAnalysisService taService,
+            TelegramService telegramService,
+            ShoonyaConfig config,
+            LowestVolumeReversalScanner scanner) {
+        this(marketDataService, taService, telegramService, config, null, scanner);
     }
 
     /**
@@ -143,1258 +140,786 @@ public class LowestVolumeReversalService {
 
         LocalTime nowTime = LocalTime.now(clock);
 
-        // 1. Session Timing Checks
         if (nowTime.isBefore(TIME_SESSION_START)) {
             log.debug("[LVR] Before market open (09:15 IST). Standing by.");
             return;
         }
 
-        // Hard exit at 15:00
         if (!nowTime.isBefore(TIME_HARD_EXIT)) {
             executeHardExit(nowTime);
             return;
         }
 
-        // Between 09:15 and 09:25: Data collection only
         if (nowTime.isBefore(TIME_SCANNER_START)) {
-            log.info(
-                    "[LVR] 09:15 - 09:25 IST: Pre-scanner data collection window. Setups start at 09:25.");
+            log.info("[LVR] 09:15 - 09:25 IST: Pre-scanner settlement window. No trades.");
             return;
         }
 
-        // Past 11:00 AM cutoff: No new setups, manage open positions only
+        if (!universeScanCompletedToday) {
+            log.info("[LVR] Triggering 09:25 AM morning sentiment & sector scan...");
+            runMorningUniverseScan();
+            if (!universeScanCompletedToday) {
+                log.info("[LVR] Morning scan pending valid sector candidates. Will retry.");
+                return;
+            }
+        }
+
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-            log.info("[LVR] Past 11:00 AM cutoff. Skipping new setups; managing open positions only.");
+            log.info("[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
             evaluateOpenPositions(nowTime);
             return;
         }
 
         log.info("[LVR] Executing 5-min strategy cycle at {} IST...", nowTime);
-
-        // If morning universe scan was not completed today, run it to lock the daily watchlist
-        if (!universeScanCompletedToday) {
-            log.info(
-                    "[LVR] Morning universe scan not yet completed today. Triggering morning scan now...");
-            runMorningUniverseScan();
-        } else {
-            // Re-evaluate NIFTY 50 Direction to track ongoing trend alignment
-            evaluateNiftyDirection();
-        }
-
-        // Update and Evaluate Setups strictly for the fixed Watchlist Symbols
-        processWatchlistSetups(nowTime);
-    }
-
-    /**
-     * Scheduled Morning Universe Scan (at 09:25 AM IST). Identifies Top 10 Gainers and Top 10
-     * Losers from the F&O universe, fixes this list for the entire trading day, seeds initial
-     * setups, and sends the daily Telegram alert once.
-     */
-    public synchronized void runMorningUniverseScan() {
-        if (!enabled) {
-            log.debug("[LVR] Strategy is disabled. Skipping morning universe scan.");
-            return;
-        }
-
-        log.info("[LVR] Running 09:25 AM Morning Universe Scan to fix daily watchlist...");
-
-        // 1. Evaluate NIFTY 50 Direction
-        evaluateNiftyDirection();
-
-        // 2. Scan F&O Universe for Top Gainers and Top Losers
-        scanUniverse();
-
-        // 3. Fix the list for the day and initialize active setups
-        if (niftyBullish) {
-            for (String g : currentTopGainers) {
-                if (!exhaustedSymbols.contains(g)) {
-                    activeSetups.computeIfAbsent(
-                            g, k -> new LowestVolumeSetup(k, LowestVolumeDirection.LONG));
-                }
-            }
-        } else {
-            for (String l : currentTopLosers) {
-                if (!exhaustedSymbols.contains(l)) {
-                    activeSetups.computeIfAbsent(
-                            l, k -> new LowestVolumeSetup(k, LowestVolumeDirection.SHORT));
-                }
-            }
-        }
-
-        this.universeScanCompletedToday = true;
-        log.info(
-                "[LVR] Daily watchlist fixed for today: {} Top Gainers {}, {} Top Losers {}. Active Setups: {}. Subsequent cycles will work on this list only.",
-                currentTopGainers.size(),
-                currentTopGainers,
-                currentTopLosers.size(),
-                currentTopLosers,
-                activeSetups.size());
-
-        // 4. Send Telegram message once a day upon list identification
-        if (telegramAlerts) {
-            telegramService.sendLvrIdentifiedStocksAlert(
-                    currentTopGainerSnapshots,
-                    currentTopLoserSnapshots,
-                    niftyBullish,
-                    activeSetups.size(),
-                    openPositions.size());
-        }
-    }
-
-    /**
-     * Evaluates NIFTY 50 trend to determine broader market alignment. Longs allowed only if NIFTY
-     * 50 is Bullish (Green). Shorts only if Bearish (Red).
-     */
-    public void evaluateNiftyDirection() {
-        try {
-            JsonNode quote = marketDataService.fetchQuote("NSE", "10576");
-            if (quote != null && quote.has("lp") && quote.has("o")) {
-                double lp = quote.path("lp").asDouble(0.0);
-                double o = quote.path("o").asDouble(0.0);
-                double c = quote.path("c").asDouble(0.0);
-                if (lp > 0 && o > 0) {
-                    this.niftyBullish = (lp >= o);
-                    log.info(
-                            "[LVR] NIFTY 50 Quote: LTP={}, Open={}, PrevClose={} ➔ {}",
-                            lp,
-                            o,
-                            c,
-                            niftyBullish
-                                    ? "BULLISH (Longs Eligible)"
-                                    : "BEARISH (Shorts Eligible)");
-                    return;
-                }
-            }
-        } catch (Exception e) {
-            log.warn(
-                    "[LVR] Failed to fetch NIFTY 50 quote: {}. Defaulting to Bullish.",
-                    e.getMessage());
-        }
-        // Fallback default
-        this.niftyBullish = true;
-    }
-
-    /**
-     * Scans the F&O universe to rank Top Gainers and Top Losers by % change from previous close.
-     */
-    public void scanUniverse() {
-        List<String> universe = getFnoUniverse();
-        List<CompletableFuture<StockQuoteSnapshot>> futures = new ArrayList<>();
-
-        for (String sym : universe) {
-            futures.add(CompletableFuture.supplyAsync(() -> fetchStockSnapshot(sym), executor));
-        }
-
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                    .get(15, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.warn("[LVR] Universe scan snapshot batch timed out or interrupted: {}", e.getMessage());
-        }
-
-        List<StockQuoteSnapshot> snapshots = new ArrayList<>();
-        for (CompletableFuture<StockQuoteSnapshot> f : futures) {
-            try {
-                if (f.isDone() && !f.isCompletedExceptionally()) {
-                    StockQuoteSnapshot s = f.join();
-                    if (s != null && s.ltp() > 0 && s.prevClose() > 0) {
-                        snapshots.add(s);
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("[LVR] Snapshot fetch error: {}", e.getMessage());
-            }
-        }
-
-        if (snapshots.isEmpty()) {
-            log.warn(
-                    "[LVR] No stock snapshots retrieved from universe. Using cached/registry fallbacks.");
-            return;
-        }
-
-        // Rank Top Gainers (pctChange >= +minPctChange, sorted descending)
-        List<StockQuoteSnapshot> gainerSnapshots =
-                snapshots.stream()
-                        .filter(s -> s.pctChange() >= minPctChange)
-                        .sorted(
-                                Comparator.comparingDouble(StockQuoteSnapshot::pctChange)
-                                        .reversed())
-                        .limit(topNStocks)
-                        .toList();
-
-        // Rank Top Losers (pctChange <= -minPctChange, sorted ascending)
-        List<StockQuoteSnapshot> loserSnapshots =
-                snapshots.stream()
-                        .filter(s -> s.pctChange() <= -minPctChange)
-                        .sorted(Comparator.comparingDouble(StockQuoteSnapshot::pctChange))
-                        .limit(topNStocks)
-                        .toList();
-
-        currentTopGainerSnapshots.clear();
-        currentTopGainerSnapshots.addAll(gainerSnapshots);
-
-        currentTopLoserSnapshots.clear();
-        currentTopLoserSnapshots.addAll(loserSnapshots);
-
-        currentTopGainers.clear();
-        currentTopGainers.addAll(gainerSnapshots.stream().map(StockQuoteSnapshot::symbol).toList());
-
-        currentTopLosers.clear();
-        currentTopLosers.addAll(loserSnapshots.stream().map(StockQuoteSnapshot::symbol).toList());
-
-        log.info(
-                "[LVR] Scanner Refresh: Found {} Top Gainers {}, {} Top Losers {}",
-                currentTopGainers.size(),
-                currentTopGainers,
-                currentTopLosers.size(),
-                currentTopLosers);
-    }
-
-    /** Dispatches an immediate Telegram report with all identified F&O stocks. */
-    public void sendScanTelegramReport() {
-        if (currentTopGainerSnapshots.isEmpty() && currentTopLoserSnapshots.isEmpty()) {
-            scanUniverse();
-        }
-        if (telegramAlerts) {
-            telegramService.sendLvrIdentifiedStocksAlert(
-                    currentTopGainerSnapshots,
-                    currentTopLoserSnapshots,
-                    niftyBullish,
-                    activeSetups.size(),
-                    openPositions.size());
-        }
-    }
-
-    /**
-     * Processes setups for: 1. Newly qualified Top Gainers/Losers (if Nifty alignment matches) 2.
-     * Already tracked setups in PULLBACK_TRACKING, TRIGGER_ARMED, or IN_POSITION
-     */
-    public void processWatchlistSetups(LocalTime nowTime) {
-        // Collect candidate symbols
-        Set<String> symbolsToEvaluate = ConcurrentHashMap.newKeySet();
-
-        // Add newly qualifying top gainers (if Nifty is Bullish)
-        if (niftyBullish) {
-            for (String g : currentTopGainers) {
-                if (!exhaustedSymbols.contains(g)) {
-                    symbolsToEvaluate.add(g);
-                    activeSetups.computeIfAbsent(
-                            g, k -> new LowestVolumeSetup(k, LowestVolumeDirection.LONG));
-                }
-            }
-        }
-
-        // Add newly qualifying top losers (if Nifty is Bearish)
-        if (!niftyBullish) {
-            for (String l : currentTopLosers) {
-                if (!exhaustedSymbols.contains(l)) {
-                    symbolsToEvaluate.add(l);
-                    activeSetups.computeIfAbsent(
-                            l, k -> new LowestVolumeSetup(k, LowestVolumeDirection.SHORT));
-                }
-            }
-        }
-
-        // Always retain existing active setups (even if dropped from top 10 mid-setup)
-        for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
-            LowestVolumeSetup setup = entry.getValue();
-            if (setup.getState() != LowestVolumeSetupState.IDLE
-                    && setup.getState() != LowestVolumeSetupState.REJECTED_EXHAUSTED
-                    && !setup.isClosed()) {
-                symbolsToEvaluate.add(entry.getKey());
-            }
-        }
-
-        // Concurrently evaluate each candidate symbol
-        for (String sym : symbolsToEvaluate) {
-            try {
-                evaluateSymbolSetup(sym, nowTime);
-            } catch (Exception e) {
-                log.error("[LVR] Error evaluating setup for {}: {}", sym, e.getMessage(), e);
-            }
-        }
-
-        // Evaluate and manage open positions (Targets, SL, SuperTrend trailing)
+        processCandidateSetups(nowTime);
         evaluateOpenPositions(nowTime);
     }
 
-    /** Evaluates the 5-minute chart for a specific symbol through the LVR state machine. */
-    public void evaluateSymbolSetup(String symbol, LocalTime nowTime) {
-        LowestVolumeSetup setup = activeSetups.get(symbol);
-        if (setup == null || setup.isExhaustedOrRejected() || setup.isInPosition()) {
-            return;
-        }
-
-        // Fetch 5-min candles (at least 2 days to have seed candles for ATR)
-        List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 2);
-        if (candles == null || candles.size() < 16) {
-            log.debug(
-                    "[LVR] Insufficient 5m candles for {} (count: {})",
-                    symbol,
-                    (candles != null ? candles.size() : 0));
-            return;
-        }
-
-        int size = candles.size();
-        double[] high = new double[size];
-        double[] low = new double[size];
-        double[] close = new double[size];
-        for (int i = 0; i < size; i++) {
-            high[i] = candles.get(i).high().doubleValue();
-            low[i] = candles.get(i).low().doubleValue();
-            close[i] = candles.get(i).close().doubleValue();
-        }
-
-        // Compute 5-min ATR(14)
-        double[] atrSeries = taService.calculateAtrSeries(high, low, close, 14);
-        double currentAtr = atrSeries[size - 1];
-        if (Double.isNaN(currentAtr) || currentAtr <= 0) {
-            currentAtr = (high[size - 1] - low[size - 1]);
-        }
-        setup.setAtr14(currentAtr);
-
-        // Separate candles belonging to today's session (09:15 onwards)
-        List<Candle> todayCandles = filterTodayCandles(candles);
-        if (todayCandles.isEmpty()) {
-            return;
-        }
-
-        // 3.5 Exhaustion Disqualifier
-        if (checkExhaustion(symbol, todayCandles, setup)) {
-            return;
-        }
-
-        LowestVolumeDirection dir = setup.getDirection();
-        LowestVolumeSetupState state = setup.getState();
-
-        // STATE MACHINE EVALUATION
-        switch (state) {
-            case SCANNING, LEG_FORMING:
-                evaluateInitialLeg(todayCandles, setup, currentAtr);
-                break;
-
-            case LEG_CONFIRMED, PULLBACK_TRACKING:
-                evaluatePullback(todayCandles, setup, currentAtr);
-                break;
-
-            case TRIGGER_ARMED:
-                evaluateArmedTrigger(todayCandles, setup, nowTime);
-                break;
-
-            default:
-                break;
-        }
-    }
-
     /**
-     * Evaluates the Initial Leg (§3.1): 2-3 consecutive candles in direction whose cumulative move
-     * >= 0.5 * ATR(14).
+     * 09:25 AM Morning Scan: 1. Evaluates NIFTY 50 Adv/Dec sentiment. 2. Ranks 11 NSE Sectors by %
+     * change. 3. Selects top winning sector and filters clean F&O candidate stocks.
      */
-    public void evaluateInitialLeg(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
-        if (todayCandles.size() < 2) {
+    public synchronized void runMorningUniverseScan() {
+        if (!enabled) return;
+
+        LocalTime nowTime = LocalTime.now(clock);
+        log.info("[LVR] Running Morning Sentiment & Sector Scan at {} IST...", nowTime);
+
+        if (marketDataService == null) {
+            log.warn("[LVR] MarketDataService not configured (mock/test mode).");
             return;
         }
 
-        LowestVolumeDirection dir = setup.getDirection();
-        double minMoveThreshold = 0.5 * atr;
+        try {
+            // 1. Fetch Nifty 50 constituents quotes
+            List<StockQuoteSnapshot> niftyQuotes = fetchNifty50Quotes();
+            LowestVolumeDirection sentiment = scanner.evaluateMarketSentiment(niftyQuotes);
+            this.niftyBullish = (sentiment == LowestVolumeDirection.LONG);
 
-        // Check the last 2 or 3 completed candles
-        int lastIdx = todayCandles.size() - 1;
+            // 2. Fetch Quotes for the 11 Sectors
+            Map<String, List<StockQuoteSnapshot>> sectorQuotes = fetchSectorQuotes();
+            List<LowestVolumeReversalScanner.SectorRankResult> rankedSectors =
+                    scanner.rankSectors(sectorQuotes, sentiment);
 
-        // Test 3-candle leg
-        if (todayCandles.size() >= 3) {
-            Candle c1 = todayCandles.get(lastIdx - 2);
-            Candle c2 = todayCandles.get(lastIdx - 1);
-            Candle c3 = todayCandles.get(lastIdx);
-
-            if (isDirectional(c1, dir) && isDirectional(c2, dir) && isDirectional(c3, dir)) {
-                BigDecimal move = getCumulativeMove(c1, c3, dir);
-                if (move.doubleValue() >= minMoveThreshold) {
-                    setup.setInitialLeg(List.of(c1, c2, c3), move, atr);
-                    log.info(
-                            "[LVR] [{}] 3-Candle Initial Leg Confirmed! Move: ₹{} >= Threshold: ₹{}",
-                            setup.getSymbol(),
-                            move,
-                            minMoveThreshold);
-                    return;
-                }
-            }
-        }
-
-        // Test 2-candle leg
-        Candle c1 = todayCandles.get(lastIdx - 1);
-        Candle c2 = todayCandles.get(lastIdx);
-        if (isDirectional(c1, dir) && isDirectional(c2, dir)) {
-            BigDecimal move = getCumulativeMove(c1, c2, dir);
-            if (move.doubleValue() >= minMoveThreshold) {
-                setup.setInitialLeg(List.of(c1, c2), move, atr);
-                log.info(
-                        "[LVR] [{}] 2-Candle Initial Leg Confirmed! Move: ₹{} >= Threshold: ₹{}",
-                        setup.getSymbol(),
-                        move,
-                        minMoveThreshold);
+            if (rankedSectors.isEmpty()) {
+                log.warn("[LVR] No sectors ranked from quotes.");
                 return;
-            } else {
-                setup.transitionTo(
-                        LowestVolumeSetupState.LEG_FORMING, "Forming leg, move below 0.5 ATR");
             }
+
+            LowestVolumeReversalScanner.SectorRankResult topSector = rankedSectors.get(0);
+            List<StockQuoteSnapshot> topSectorStockQuotes =
+                    sectorQuotes.getOrDefault(topSector.sectorName(), Collections.emptyList());
+
+            List<String> candidateStocks =
+                    scanner.filterCandidateStocks(topSectorStockQuotes, sentiment);
+
+            this.sectorState =
+                    new LowestVolumeSectorState(
+                            (int) niftyQuotes.stream().filter(q -> q.pctChange() > 0).count(),
+                            (int) niftyQuotes.stream().filter(q -> q.pctChange() < 0).count(),
+                            sentiment,
+                            topSector.sectorName(),
+                            topSector.pctChange(),
+                            candidateStocks);
+
+            log.info(
+                    "[LVR] Morning Scan Result: Sentiment={}, Winning Sector={} ({}%), Candidates={}",
+                    sentiment, topSector.sectorName(), topSector.pctChange(), candidateStocks);
+
+            // Populate active setups
+            activeSetups.clear();
+            for (String symbol : candidateStocks) {
+                activeSetups.put(symbol, new LowestVolumeSetup(symbol, sentiment));
+            }
+
+            if (sentiment == LowestVolumeDirection.LONG) {
+                currentTopGainers.clear();
+                currentTopGainers.addAll(candidateStocks);
+            } else {
+                currentTopLosers.clear();
+                currentTopLosers.addAll(candidateStocks);
+            }
+
+            this.universeScanCompletedToday = !candidateStocks.isEmpty();
+
+            if (telegramAlerts && telegramService != null && universeScanCompletedToday) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                "📊 *LVR 09:25 AM Morning Scan*\n"
+                                        + "• Sentiment: *%s*\n"
+                                        + "• Winning Sector: *%s* (%.2f%%)\n"
+                                        + "• Candidates (%d): `%s`\n"
+                                        + "• Setup Mode: *5m Lowest Volume Pullback*",
+                                sentiment,
+                                topSector.sectorName(),
+                                topSector.pctChange(),
+                                candidateStocks.size(),
+                                String.join(", ", candidateStocks)));
+            }
+        } catch (Exception e) {
+            log.error("[LVR] Error during morning universe scan: {}", e.getMessage(), e);
         }
     }
 
     /**
-     * Evaluates Pullback & Lowest Volume Trigger Candle (§3.2, §3.3): Checks opposite-color candles
-     * since start of day (09:15) and applies the Range filter.
+     * Pure 5-minute candle sequence evaluation (Kushal Varshney rules). 1. Ignore Candles 1, 2, 3
+     * for entry. 2. dayLowestVolume = min(Vol_C1, Vol_C2, Vol_C3). 3. For C4+: If opposite color
+     * candle and Vol < dayLowestVolume -> ARM TRIGGER & DYNAMIC TRAILING.
      */
-    public void evaluatePullback(List<Candle> todayCandles, LowestVolumeSetup setup, double atr) {
-        if (todayCandles.isEmpty()) {
-            return;
+    public LowestVolumeSetup evaluateCandleSequence(
+            String symbol, LowestVolumeDirection direction, List<Candle> candles) {
+        LowestVolumeSetup setup = new LowestVolumeSetup(symbol, direction);
+        if (candles == null || candles.size() < 3) {
+            return setup;
         }
 
-        LowestVolumeDirection dir = setup.getDirection();
-        Candle latestCandle = todayCandles.get(todayCandles.size() - 1);
-
-        // If opposite-color candle printed
-        if (isOppositeColor(latestCandle, dir)) {
-            setup.transitionTo(
-                    LowestVolumeSetupState.PULLBACK_TRACKING,
-                    "Opposite candle printed in pullback");
-
-            // Look back across all candles since start of day to identify the lowest volume opposite candle
-            Candle lowestVolCandle = null;
-            long minVolume = Long.MAX_VALUE;
-
-            for (Candle c : todayCandles) {
-                if (isOppositeColor(c, dir)) {
-                    // Tie-break: if equal volume, the more recent candle takes precedence
-                    if (c.volume() <= minVolume) {
-                        minVolume = c.volume();
-                        lowestVolCandle = c;
-                    }
-                }
+        // Baseline volume from first 3 candles (ignoring zero-volume ticks)
+        long baselineLowest = Long.MAX_VALUE;
+        for (int k = 0; k < 3 && k < candles.size(); k++) {
+            long v = candles.get(k).volume();
+            if (v > 0) {
+                baselineLowest = Math.min(baselineLowest, v);
             }
+        }
+        if (baselineLowest == Long.MAX_VALUE && !candles.isEmpty()) {
+            baselineLowest = candles.get(0).volume();
+        }
+        setup.setDayLowestVolume(baselineLowest);
 
-            if (lowestVolCandle != null) {
-                // §3.3 Range Filter: Reject trigger candle if (high - low) > 1.2 * ATR(14)
-                double candleRange =
-                        lowestVolCandle.high().subtract(lowestVolCandle.low()).doubleValue();
-                double maxAllowedRange = 1.2 * atr;
+        // If fewer than 4 candles, scanning only (no setup on C1-C3)
+        if (candles.size() < 4) {
+            return setup;
+        }
 
-                if (candleRange > maxAllowedRange) {
-                    log.info(
-                            "[LVR] [{}] Trigger candle rejected by Range Filter! Range: ₹{} > Max: ₹{}",
-                            setup.getSymbol(),
-                            candleRange,
-                            maxAllowedRange);
-                    return;
-                }
+        long rollingLowest = baselineLowest;
 
-                // Arm the Trigger!
-                BigDecimal tickSize = BigDecimal.valueOf(0.05);
+        for (int i = 3; i < candles.size(); i++) {
+            Candle c = candles.get(i);
+            boolean isOppositeCandle =
+                    (direction == LowestVolumeDirection.SHORT) ? c.isGreen() : c.isRed();
+
+            if (isOppositeCandle && c.volume() < rollingLowest) {
+                // Armed trigger / Trail trigger
                 BigDecimal triggerPrc;
                 BigDecimal slPrc;
                 BigDecimal target1Prc;
 
-                if (dir == LowestVolumeDirection.LONG) {
-                    triggerPrc =
-                            lowestVolCandle.high().add(tickSize).setScale(2, RoundingMode.HALF_UP);
-                    slPrc =
-                            lowestVolCandle
-                                    .low()
-                                    .subtract(tickSize)
-                                    .setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal slDistance = triggerPrc.subtract(slPrc);
+                if (direction == LowestVolumeDirection.SHORT) {
+                    triggerPrc = c.low().subtract(BigDecimal.valueOf(0.05));
+                    slPrc = c.high().add(BigDecimal.valueOf(0.05));
+                    BigDecimal risk = slPrc.subtract(triggerPrc);
                     target1Prc =
-                            triggerPrc
-                                    .add(slDistance.multiply(BigDecimal.valueOf(4)))
-                                    .setScale(2, RoundingMode.HALF_UP);
+                            triggerPrc.subtract(risk.multiply(BigDecimal.valueOf(4))); // 1:4 RR
                 } else {
-                    triggerPrc =
-                            lowestVolCandle
-                                    .low()
-                                    .subtract(tickSize)
-                                    .setScale(2, RoundingMode.HALF_UP);
-                    slPrc = lowestVolCandle.high().add(tickSize).setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal slDistance = slPrc.subtract(triggerPrc);
-                    target1Prc =
-                            triggerPrc
-                                    .subtract(slDistance.multiply(BigDecimal.valueOf(4)))
-                                    .setScale(2, RoundingMode.HALF_UP);
+                    triggerPrc = c.high().add(BigDecimal.valueOf(0.05));
+                    slPrc = c.low().subtract(BigDecimal.valueOf(0.05));
+                    BigDecimal risk = triggerPrc.subtract(slPrc);
+                    target1Prc = triggerPrc.add(risk.multiply(BigDecimal.valueOf(4))); // 1:4 RR
                 }
 
-                setup.setTriggerCandle(lowestVolCandle, triggerPrc, slPrc, target1Prc);
-                log.info(
-                        "[LVR] [{}] TRIGGER ARMED! Direction: {}, Trigger: ₹{}, SL: ₹{}, Target1: ₹{}, Vol: {}",
-                        setup.getSymbol(),
-                        dir,
-                        triggerPrc,
-                        slPrc,
-                        target1Prc,
-                        lowestVolCandle.volume());
-
-                int minLots = getDefaultLots();
-                if (telegramAlerts && telegramArmedAlerts) {
-                    telegramService.sendLvrSetupArmedAlert(
-                            setup, minLots, BigDecimal.valueOf(getRiskPerTradeAmount()));
-                }
+                setup.setTriggerCandle(c, triggerPrc, slPrc, target1Prc);
+                rollingLowest = c.volume();
+                setup.setDayLowestVolume(rollingLowest);
+            } else if (c.volume() < rollingLowest) {
+                rollingLowest = c.volume();
+                setup.setDayLowestVolume(rollingLowest);
             }
-        } else if (isDirectional(latestCandle, dir)) {
-            // Same-direction candle prints without a qualifying trigger -> pullback invalidated
-            // (§3.2 / §6)
-            log.info(
-                    "[LVR] [{}] Leg resumed with same-direction candle before trigger armed. Resetting to SCANNING.",
-                    setup.getSymbol());
-            setup.resetToScanning();
         }
+
+        return setup;
     }
 
-    /**
-     * Evaluates Armed Trigger (§3.4): Checks if price breaches trigger price to enter paper trade,
-     * or if 6 candles timeout elapsed.
-     */
-    public void evaluateArmedTrigger(
-            List<Candle> todayCandles, LowestVolumeSetup setup, LocalTime nowTime) {
-        if (setup.getState() != LowestVolumeSetupState.TRIGGER_ARMED) {
-            return;
-        }
+    /** Processes 5-minute candles for all active watchlist candidate stocks. */
+    private void processCandidateSetups(LocalTime nowTime) {
+        if (marketDataService == null) return;
 
-        // Check entry cutoff (11:00)
-        if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-            log.info("[LVR] [{}] After 11:00 cutoff. Armed setup cancelled.", setup.getSymbol());
-            setup.resetToScanning();
-            return;
-        }
-
-        // Setup Timeout check: configurable (default 6 candles / 30 min)
-        setup.incrementArmedTimeout();
-        if (setup.getArmedCandlesElapsed() > setupTimeoutCandles) {
-            log.info(
-                    "[LVR] [{}] {}-candle ({}m) timeout elapsed without trigger breach. Dropping setup.",
-                    setup.getSymbol(),
-                    setupTimeoutCandles,
-                    setupTimeoutCandles * 5);
-            setup.resetToScanning();
-            return;
-        }
-
-        // Check if concurrent trades cap reached
-        if (openPositions.size() >= maxConcurrentTrades) {
-            log.debug(
-                    "[LVR] [{}] Max concurrent trades ({}) reached. Cannot fill new trade.",
-                    setup.getSymbol(),
-                    maxConcurrentTrades);
-            return;
-        }
-
-        Candle latestCandle = todayCandles.get(todayCandles.size() - 1);
-        LowestVolumeDirection dir = setup.getDirection();
-        BigDecimal triggerPrc = setup.getTriggerPrice();
-        BigDecimal slPrc = setup.getStopLossPrice();
-
-        boolean isTriggered = false;
-        BigDecimal fillPrice = triggerPrc;
-
-        if (dir == LowestVolumeDirection.LONG) {
-            if (latestCandle.high().compareTo(triggerPrc) >= 0) {
-                isTriggered = true;
-                // Slippage guard: cap fill at 0.15% above trigger
-                BigDecimal maxSlippage = triggerPrc.multiply(BigDecimal.valueOf(1.0015));
-                fillPrice =
-                        latestCandle.close().compareTo(maxSlippage) > 0 ? maxSlippage : triggerPrc;
-            }
-        } else {
-            if (latestCandle.low().compareTo(triggerPrc) <= 0) {
-                isTriggered = true;
-                // Slippage guard: cap fill at 0.15% below trigger
-                BigDecimal maxSlippage = triggerPrc.multiply(BigDecimal.valueOf(0.9985));
-                fillPrice =
-                        latestCandle.close().compareTo(maxSlippage) < 0 ? maxSlippage : triggerPrc;
-            }
-        }
-
-        if (isTriggered) {
-            executePaperTradeEntry(setup, fillPrice, slPrc);
-        }
-    }
-
-    /**
-     * 30-second live price check for armed triggers and open position SL/Target1. Runs via
-     * fixed-rate scheduler, uses live stock quotes instead of candle data. Does NOT increment armed
-     * timeout counter (handled by the 5-min cycle). Fallback: the 5-min cycle still catches
-     * breaches at candle close if this check misses them.
-     */
-    public void evaluateLivePriceActions() {
-        if (!enabled || !liveBreachCheckEnabled) {
-            return;
-        }
-
-        LocalTime nowTime = LocalTime.now(clock);
-        if (nowTime.isBefore(TIME_SCANNER_START) || nowTime.isAfter(TIME_HARD_EXIT)) {
-            return;
-        }
-
-        // If past entry cutoff and no open positions, skip polling
-        if (nowTime.isAfter(TIME_ENTRY_CUTOFF) && openPositions.isEmpty()) {
-            return;
-        }
-
-        // Collect unique symbols: armed setups + open positions
-        Set<String> symbols = ConcurrentHashMap.newKeySet();
-        for (var e : activeSetups.entrySet()) {
-            if (e.getValue().getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
-                symbols.add(e.getKey());
-            }
-        }
-        for (var e : openPositions.entrySet()) {
-            if (!e.getValue().isClosed()) {
-                symbols.add(e.getKey());
-            }
-        }
-
-        if (symbols.isEmpty()) {
-            return;
-        }
-
-        // Fetch live quotes concurrently
-        Map<String, LiveStockQuote> liveQuotes = new ConcurrentHashMap<>();
-        List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
-        for (String sym : symbols) {
-            futures.add(
-                    CompletableFuture.runAsync(
-                            () -> {
-                                try {
-                                    String token = StockFnoRegistry.getToken(sym);
-                                    JsonNode quote = marketDataService.fetchQuote("NSE", token);
-                                    if (quote != null && quote.has("lp")) {
-                                        double lp = quote.path("lp").asDouble(0.0);
-                                        double high = quote.path("h").asDouble(0.0);
-                                        double low = quote.path("l").asDouble(0.0);
-                                        if (lp > 0) {
-                                            liveQuotes.put(
-                                                    sym,
-                                                    new LiveStockQuote(
-                                                            BigDecimal.valueOf(lp),
-                                                            BigDecimal.valueOf(high),
-                                                            BigDecimal.valueOf(low)));
-                                        }
-                                    }
-                                } catch (Exception ex) {
-                                    log.debug(
-                                            "[LVR-LIVE] Quote fetch failed for {}: {}",
-                                            sym,
-                                            ex.getMessage());
-                                }
-                            },
-                            executor));
-        }
-        try {
-            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-                    .get(10, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.warn("[LVR-LIVE] Live quote batch timed out or interrupted: {}", e.getMessage());
-        }
-
-        if (liveQuotes.isEmpty()) {
-            return;
-        }
-
-        log.debug("[LVR-LIVE] Checked {} armed/position symbols at {}", liveQuotes.size(), nowTime);
-
-        // --- Armed trigger check ---
-        for (var e : activeSetups.entrySet()) {
-            String sym = e.getKey();
-            LowestVolumeSetup setup = e.getValue();
-            LiveStockQuote lq = liveQuotes.get(sym);
-            if (lq == null || setup.getState() != LowestVolumeSetupState.TRIGGER_ARMED) {
-                continue;
-            }
-
-            LowestVolumeDirection dir = setup.getDirection();
-            BigDecimal triggerPrc = setup.getTriggerPrice();
-            BigDecimal slPrc = setup.getStopLossPrice();
-            boolean triggered = false;
-            BigDecimal fillPrice = triggerPrc;
-
-            if (dir == LowestVolumeDirection.LONG) {
-                if (lq.high().compareTo(triggerPrc) >= 0) {
-                    triggered = true;
-                    BigDecimal maxSlippage = triggerPrc.multiply(BigDecimal.valueOf(1.0015));
-                    fillPrice = lq.high().compareTo(maxSlippage) > 0 ? maxSlippage : triggerPrc;
-                }
-            } else {
-                if (lq.low().compareTo(triggerPrc) <= 0) {
-                    triggered = true;
-                    BigDecimal maxSlippage = triggerPrc.multiply(BigDecimal.valueOf(0.9985));
-                    fillPrice = lq.low().compareTo(maxSlippage) < 0 ? maxSlippage : triggerPrc;
-                }
-            }
-
-            if (triggered) {
-                log.info(
-                        "[LVR-LIVE] {} trigger breached on live quote! LTP: {}, trigger: {}",
-                        sym,
-                        lq.ltp(),
-                        triggerPrc);
-                executePaperTradeEntry(setup, fillPrice, slPrc);
-            }
-        }
-
-        // --- Open position SL / Target 1 check ---
-        for (var e : openPositions.entrySet()) {
-            String sym = e.getKey();
-            LowestVolumePaperPosition pos = e.getValue();
-            if (pos.isClosed()) {
-                continue;
-            }
-            LiveStockQuote lq = liveQuotes.get(sym);
-            if (lq == null) {
-                continue;
-            }
-
-            LowestVolumeDirection dir = pos.getDirection();
-            BigDecimal stockLtp = lq.ltp();
-
-            // SL check first (priority over Target 1)
-            if (pos.getCurrentStockSl() != null) {
-                boolean slHit =
-                        (dir == LowestVolumeDirection.LONG)
-                                ? stockLtp.compareTo(pos.getCurrentStockSl()) <= 0
-                                : stockLtp.compareTo(pos.getCurrentStockSl()) >= 0;
-                if (slHit) {
-                    log.info(
-                            "[LVR-LIVE] {} SL hit on live quote! LTP: {}, SL: {}",
-                            sym,
-                            stockLtp,
-                            pos.getCurrentStockSl());
-                    BigDecimal exitPremium =
-                            fetchOptionPremium(sym, pos.getAtmStrike(), pos.getOptionType());
-                    if (exitPremium == null) {
-                        exitPremium = pos.getEntryPremium(); // fallback
-                    }
-                    pos.close(exitPremium, "STOP_LOSS_HIT_LIVE", Instant.now());
-                    finalizeClosedPosition(sym, pos, "STOP_LOSS_HIT_LIVE");
-                    continue;
-                }
-            }
-
-            // Target 1 partial book
-            if (!pos.isPartialBooked() && pos.getTarget1StockPrice() != null) {
-                boolean t1Hit =
-                        (dir == LowestVolumeDirection.LONG)
-                                ? stockLtp.compareTo(pos.getTarget1StockPrice()) >= 0
-                                : stockLtp.compareTo(pos.getTarget1StockPrice()) <= 0;
-                if (t1Hit) {
-                    log.info(
-                            "[LVR-LIVE] {} Target 1 hit on live quote! LTP: {}, target: {}",
-                            sym,
-                            stockLtp,
-                            pos.getTarget1StockPrice());
-                    BigDecimal exitPremium =
-                            fetchOptionPremium(sym, pos.getAtmStrike(), pos.getOptionType());
-                    if (exitPremium != null && exitPremium.compareTo(BigDecimal.ZERO) > 0) {
-                        pos.executePartialBook(exitPremium, Instant.now());
-                        if (telegramAlerts) {
-                            telegramService.sendLvrPartialBookAlert(pos, pos.getPartialPnl());
-                        }
-                        log.info(
-                                "[LVR-LIVE] {} Partial booked at premium {} (lotSize={}, lots={},"
-                                        + " remaining={})",
-                                sym,
-                                exitPremium,
-                                pos.getLotSize(),
-                                pos.getLots(),
-                                pos.getRemainingQuantity());
-                    } else {
-                        log.warn(
-                                "[LVR-LIVE] {} Target 1 hit but option premium fetch failed."
-                                        + " Skipping partial book.",
-                                sym);
-                    }
-                }
-            }
-        }
-    }
-
-    private record LiveStockQuote(BigDecimal ltp, BigDecimal high, BigDecimal low) {}
-
-    /**
-     * Executes paper trade entry and creates an active paper position. Buys ATM CE (LONG) or ATM PE
-     * (SHORT) with monthly expiry.
-     */
-    public synchronized void executePaperTradeEntry(
-            LowestVolumeSetup setup, BigDecimal fillPrice, BigDecimal slPrc) {
-        String symbol = setup.getSymbol();
-        LowestVolumeDirection dir = setup.getDirection();
-        String optionType = (dir == LowestVolumeDirection.LONG) ? "CE" : "PE";
-
-        // Determine ATM strike and lot size from stock price
-        BigDecimal atmStrike = StockFnoRegistry.calculateAtmStrike(symbol, fillPrice);
-        int lotSize = StockFnoRegistry.getLotSize(symbol);
-
-        // Fetch ATM monthly option premium
-        BigDecimal entryPremium = fetchOptionPremium(symbol, atmStrike, optionType);
-        if (entryPremium == null || entryPremium.compareTo(BigDecimal.ZERO) <= 0) {
-            log.warn(
-                    "[LVR] [{}] Could not fetch ATM {} premium for strike {}. Skipping trade.",
-                    symbol,
-                    optionType,
-                    atmStrike);
-            return;
-        }
-
-        // Build monthly expiry option symbol
-        String expiry = resolveMonthlyExpiry(symbol);
-        String optionSymbol = symbol + expiry + atmStrike.intValue() + optionType;
-
-        // Position sizing: estimate premium SL distance from stock SL distance
-        BigDecimal stockSLDistance = setup.getTriggerPrice().subtract(slPrc).abs();
-        BigDecimal premiumSLDistance =
-                entryPremium.multiply(stockSLDistance).divide(fillPrice, 2, RoundingMode.HALF_UP);
-        if (premiumSLDistance.compareTo(BigDecimal.ZERO) <= 0) {
-            premiumSLDistance = entryPremium.multiply(BigDecimal.valueOf(0.3));
-        }
-        int lots =
-                Math.max(
-                        Math.max(1, defaultLots),
-                        (int)
-                                (getRiskPerTradeAmount()
-                                        / (premiumSLDistance.doubleValue() * lotSize)));
-        int totalQty = lots * lotSize;
-
-        String tradeId = "LVR_TRD_" + tradeCounter.getAndIncrement();
-        BigDecimal rpt =
-                BigDecimal.valueOf(getRiskPerTradeAmount()).setScale(2, RoundingMode.HALF_UP);
-
-        LowestVolumePaperPosition pos =
-                new LowestVolumePaperPosition(
-                        tradeId,
-                        symbol,
-                        optionType,
-                        optionSymbol,
-                        atmStrike,
-                        lotSize,
-                        lots,
-                        dir,
-                        entryPremium,
-                        fillPrice,
-                        slPrc,
-                        setup.getTarget1Price(),
-                        totalQty,
-                        rpt,
-                        Instant.now());
-
-        openPositions.put(symbol, pos);
-        setup.transitionTo(LowestVolumeSetupState.IN_POSITION, "Filled option buy entry");
-
-        log.info(
-                "[LVR] [{}] OPTION BUY FILLED! ID: {} | {} {} @ ₹{} (premium) | Lots: {} × {} = {} units | Stock SL: ₹{} | Target1: ₹{}",
-                symbol,
-                tradeId,
-                dir,
-                optionSymbol,
-                entryPremium,
-                lots,
-                lotSize,
-                totalQty,
-                slPrc,
-                setup.getTarget1Price());
-
-        if (telegramAlerts) {
-            telegramService.sendLvrTradeEntryAlert(pos, setup);
-        }
-    }
-
-    /**
-     * Evaluates all open paper positions: - Target 1 hit: Book 50% & move SL to Breakeven - Stop
-     * Loss hit: Close position - Runner Trailing Exit: 5m SuperTrend(10, 3) flip - Hard Exit at
-     * 15:00
-     */
-    public void evaluateOpenPositions(LocalTime nowTime) {
-        for (Map.Entry<String, LowestVolumePaperPosition> entry : openPositions.entrySet()) {
+        for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
             String symbol = entry.getKey();
-            LowestVolumePaperPosition pos = entry.getValue();
-            if (pos.isClosed()) {
+            LowestVolumeSetup setup = entry.getValue();
+
+            if (setup.getState() == LowestVolumeSetupState.IN_POSITION
+                    || setup.getState() == LowestVolumeSetupState.PARTIAL_BOOKED
+                    || setup.getTradeAttempts() >= 2) {
                 continue;
             }
 
             try {
-                List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 2);
-                if (candles == null || candles.isEmpty()) {
+                List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 1);
+                if (candles == null || candles.size() < 3) continue;
+
+                LowestVolumeSetup evaluated =
+                        evaluateCandleSequence(symbol, setup.getDirection(), candles);
+
+                if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
+                    boolean newlyArmedOrTrailed =
+                            (setup.getTriggerPrice() == null
+                                    || setup.getTriggerPrice()
+                                                    .compareTo(evaluated.getTriggerPrice())
+                                            != 0);
+                    setup.setTriggerCandle(
+                            evaluated.getTriggerCandle(),
+                            evaluated.getTriggerPrice(),
+                            evaluated.getStopLossPrice(),
+                            evaluated.getTarget1Price());
+                    setup.setDayLowestVolume(evaluated.getDayLowestVolume());
+
+                    log.info(
+                            "[LVR] Setup ARMED for {}: Dir={}, Trigger={}, SL={}, Target1={}",
+                            symbol,
+                            setup.getDirection(),
+                            setup.getTriggerPrice(),
+                            setup.getStopLossPrice(),
+                            setup.getTarget1Price());
+
+                    if (telegramAlerts && telegramService != null && newlyArmedOrTrailed) {
+                        telegramService.sendTextMessage(
+                                String.format(
+                                        "⚡ *LVR Setup Armed / Order Trailed*\n"
+                                                + "• Symbol: *%s* (%s)\n"
+                                                + "• 5m Pullback Vol: `%d` (< day lowest `%d`)\n"
+                                                + "• Trigger Price: `₹%.2f`\n"
+                                                + "• Spot SL: `₹%.2f` | 1:4 Target: `₹%.2f`",
+                                        symbol,
+                                        setup.getDirection(),
+                                        evaluated.getTriggerCandle() != null
+                                                ? evaluated.getTriggerCandle().volume()
+                                                : 0,
+                                        evaluated.getDayLowestVolume(),
+                                        setup.getTriggerPrice().doubleValue(),
+                                        setup.getStopLossPrice().doubleValue(),
+                                        setup.getTarget1Price().doubleValue()));
+                    }
+                }
+            } catch (Exception e) {
+                log.error("[LVR] Error processing 5m candles for {}: {}", symbol, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 30-second live check: Monitors spot price breaches for Armed Triggers, SL, and 1:4 Target.
+     */
+    public synchronized void evaluateLivePriceActions() {
+        if (!enabled || marketDataService == null) return;
+
+        LocalTime nowTime = LocalTime.now(clock);
+        if (nowTime.isBefore(TIME_SCANNER_START) || !nowTime.isBefore(TIME_HARD_EXIT)) return;
+
+        // 1. Check Armed Triggers
+        for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
+            String symbol = entry.getKey();
+            LowestVolumeSetup setup = entry.getValue();
+
+            if (setup.getState() == LowestVolumeSetupState.TRIGGER_ARMED
+                    && setup.getTradeAttempts() < 2
+                    && openPositions.size() < maxConcurrentTrades) {
+                checkSpotTriggerBreach(symbol, setup);
+            }
+        }
+
+        // 2. Check Open Positions for Spot SL & 1:4 Target
+        evaluateOpenPositions(nowTime);
+    }
+
+    /**
+     * Checks if the live spot price has breached the armed trigger level to enter ATM option trade.
+     */
+    private void checkSpotTriggerBreach(String symbol, LowestVolumeSetup setup) {
+        try {
+            double spotLtp = fetchLiveSpotPrice(symbol);
+            if (spotLtp <= 0) return;
+
+            BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
+            boolean triggered = false;
+
+            if (setup.getDirection() == LowestVolumeDirection.SHORT) {
+                if (spotPrice.compareTo(setup.getTriggerPrice()) <= 0) {
+                    triggered = true;
+                }
+            } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
+                if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
+                    triggered = true;
+                }
+            }
+
+            if (triggered) {
+                executeOptionEntry(symbol, setup, spotPrice);
+            }
+        } catch (Exception e) {
+            log.error(
+                    "[LVR] Error checking spot trigger breach for {}: {}", symbol, e.getMessage());
+        }
+    }
+
+    /** Executes ATM Option buying upon spot trigger breach. */
+    public synchronized LowestVolumePaperPosition executeOptionEntry(
+            String symbol, LowestVolumeSetup setup, BigDecimal spotPrice) {
+        setup.recordTradeAttempt();
+        setup.transitionTo(
+                LowestVolumeSetupState.IN_POSITION, "Trigger breached at spot " + spotPrice);
+
+        StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(symbol);
+        int lotSize = (fno != null) ? fno.lotSize() : 100;
+        BigDecimal strikeStep = (fno != null) ? fno.strikeStep() : BigDecimal.valueOf(10);
+
+        BigDecimal atmStrike = resolveAtmStrike(spotPrice, strikeStep);
+        String optType = (setup.getDirection() == LowestVolumeDirection.SHORT) ? "PE" : "CE";
+        String optSymbol = symbol + " ATM " + atmStrike + optType;
+
+        double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
+        double fallbackPrem = Math.max(0.50, spotPrice.doubleValue() * 0.018);
+        BigDecimal entryPremium =
+                BigDecimal.valueOf(optLtp > 0 ? optLtp : fallbackPrem)
+                        .setScale(2, RoundingMode.HALF_UP);
+
+        int totalQty = defaultLots * lotSize;
+        BigDecimal plannedRisk =
+                spotPrice
+                        .subtract(setup.getStopLossPrice())
+                        .abs()
+                        .multiply(BigDecimal.valueOf(totalQty));
+
+        String tradeId = "LVR-" + tradeCounter.getAndIncrement();
+
+        LowestVolumePaperPosition position =
+                new LowestVolumePaperPosition(
+                        tradeId,
+                        symbol,
+                        optType,
+                        optSymbol,
+                        atmStrike,
+                        lotSize,
+                        defaultLots,
+                        setup.getDirection(),
+                        entryPremium,
+                        spotPrice,
+                        setup.getStopLossPrice(),
+                        setup.getTarget1Price(),
+                        totalQty,
+                        plannedRisk,
+                        Instant.now());
+
+        openPositions.put(symbol, position);
+
+        log.info(
+                "[LVR] ENTRY EXECUTED: {} | TradeId={} | Option={} | EntryPrem={} | SpotEntry={} | SpotSL={} | SpotTarget1={}",
+                symbol,
+                tradeId,
+                optSymbol,
+                entryPremium,
+                spotPrice,
+                setup.getStopLossPrice(),
+                setup.getTarget1Price());
+
+        if (telegramAlerts && telegramService != null) {
+            telegramService.sendTextMessage(
+                    String.format(
+                            "🚀 *LVR Option Entry Triggered*\n"
+                                    + "• Symbol: *%s* (%s)\n"
+                                    + "• Contract: `%s`\n"
+                                    + "• Option LTP: `₹%.2f` (%d lots / %d qty)\n"
+                                    + "• Spot Entry: `₹%.2f` | Spot SL: `₹%.2f`\n"
+                                    + "• Spot Target 1 (1:4 RR): `₹%.2f`",
+                            symbol,
+                            setup.getDirection(),
+                            optSymbol,
+                            entryPremium.doubleValue(),
+                            defaultLots,
+                            totalQty,
+                            spotPrice.doubleValue(),
+                            setup.getStopLossPrice().doubleValue(),
+                            setup.getTarget1Price().doubleValue()));
+        }
+
+        return position;
+    }
+
+    /**
+     * Evaluates open positions for Spot SL, 1:4 Target Partial Exit, Cost SL, and 10 EMA Trailing.
+     */
+    public synchronized void evaluateOpenPositions(LocalTime nowTime) {
+        if (openPositions.isEmpty()) return;
+
+        for (Map.Entry<String, LowestVolumePaperPosition> entry : openPositions.entrySet()) {
+            String symbol = entry.getKey();
+            LowestVolumePaperPosition pos = entry.getValue();
+
+            try {
+                double spotLtp = fetchLiveSpotPrice(symbol);
+                if (spotLtp <= 0) continue;
+
+                BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
+                BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
+
+                // 1. Check Stop Loss breach on Spot
+                boolean slHit = false;
+                if (pos.getDirection() == LowestVolumeDirection.SHORT) {
+                    if (spotPrice.compareTo(pos.getCurrentStockSl()) >= 0) {
+                        slHit = true;
+                    }
+                } else if (pos.getDirection() == LowestVolumeDirection.LONG) {
+                    if (spotPrice.compareTo(pos.getCurrentStockSl()) <= 0) {
+                        slHit = true;
+                    }
+                }
+
+                if (slHit) {
+                    pos.close(optionPremium, "SPOT_SL_HIT", Instant.now());
+                    openPositions.remove(symbol);
+                    tradeHistory.add(pos);
+
+                    LowestVolumeSetup setup = activeSetups.get(symbol);
+                    if (setup != null) {
+                        if (setup.getTradeAttempts() < 2) {
+                            setup.resetToScanning();
+                        } else {
+                            setup.transitionTo(
+                                    LowestVolumeSetupState.CLOSED_SL, "Max 2 attempts reached");
+                            exhaustedSymbols.add(symbol);
+                        }
+                    }
+
+                    log.info(
+                            "[LVR] SL Hit for {}: Closed at Premium={}, Spot={}",
+                            symbol,
+                            optionPremium,
+                            spotPrice);
+                    if (telegramAlerts && telegramService != null) {
+                        telegramService.sendTextMessage(
+                                String.format(
+                                        "🛑 *LVR Stop Loss Hit*\n"
+                                                + "• Symbol: *%s*\n"
+                                                + "• Exit Premium: `₹%.2f` (P&L: `₹%.2f`)\n"
+                                                + "• Spot Exit: `₹%.2f` (SL was `₹%.2f`)",
+                                        symbol,
+                                        optionPremium.doubleValue(),
+                                        pos.getTotalRealizedPnl().doubleValue(),
+                                        spotPrice.doubleValue(),
+                                        pos.getCurrentStockSl().doubleValue()));
+                    }
                     continue;
                 }
 
-                Candle latest = candles.get(candles.size() - 1);
-                LowestVolumeDirection dir = pos.getDirection();
-
-                // 1. Check Stop Loss Hit (on STOCK PRICE)
-                if (dir == LowestVolumeDirection.LONG
-                        && latest.low().compareTo(pos.getCurrentStockSl()) <= 0) {
-                    BigDecimal exitPremium =
-                            fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
-                    if (exitPremium == null) {
-                        exitPremium = pos.getEntryPremium(); // fallback
-                    }
-                    pos.close(exitPremium, "STOP_LOSS_HIT", Instant.now());
-                    finalizeClosedPosition(symbol, pos, "STOP_LOSS_HIT");
-                    continue;
-                } else if (dir == LowestVolumeDirection.SHORT
-                        && latest.high().compareTo(pos.getCurrentStockSl()) >= 0) {
-                    BigDecimal exitPremium =
-                            fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
-                    if (exitPremium == null) {
-                        exitPremium = pos.getEntryPremium(); // fallback
-                    }
-                    pos.close(exitPremium, "STOP_LOSS_HIT", Instant.now());
-                    finalizeClosedPosition(symbol, pos, "STOP_LOSS_HIT");
-                    continue;
-                }
-
-                // 2. Check Target 1 (1:2 RR) Partial Booking (on STOCK PRICE)
+                // 2. Check 1:4 Target Partial Booking on Spot
                 if (!pos.isPartialBooked()) {
-                    boolean targetHit =
-                            (dir == LowestVolumeDirection.LONG)
-                                    ? latest.high().compareTo(pos.getTarget1StockPrice()) >= 0
-                                    : latest.low().compareTo(pos.getTarget1StockPrice()) <= 0;
+                    boolean targetHit = false;
+                    if (pos.getDirection() == LowestVolumeDirection.SHORT) {
+                        if (spotPrice.compareTo(pos.getTarget1StockPrice()) <= 0) {
+                            targetHit = true;
+                        }
+                    } else if (pos.getDirection() == LowestVolumeDirection.LONG) {
+                        if (spotPrice.compareTo(pos.getTarget1StockPrice()) >= 0) {
+                            targetHit = true;
+                        }
+                    }
 
                     if (targetHit) {
-                        BigDecimal exitPremium =
-                                fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
-                        if (exitPremium == null) {
-                            exitPremium = pos.getEntryPremium(); // fallback
-                        }
-                        pos.executePartialBook(exitPremium, Instant.now());
+                        pos.executePartialBook(optionPremium, Instant.now());
                         LowestVolumeSetup setup = activeSetups.get(symbol);
                         if (setup != null) {
                             setup.transitionTo(
                                     LowestVolumeSetupState.PARTIAL_BOOKED,
-                                    "Target 1 Hit. 50% booked, SL to BE.");
+                                    "1:4 RR reached at spot " + spotPrice);
                         }
+
                         log.info(
-                                "[LVR] [{}] Target 1 (1:2 RR) Hit! Booked 50%% at premium ₹{}, SL moved to Breakeven ₹{}",
-                                symbol, exitPremium, pos.getEntryPremium());
-                        if (telegramAlerts) {
-                            telegramService.sendLvrPartialBookAlert(pos, pos.getPartialPnl());
+                                "[LVR] 1:4 Target Hit for {}: Booked 50% at Premium={}, Cost SL Armed at Spot {}",
+                                symbol, optionPremium, pos.getStockEntryPrice());
+
+                        if (telegramAlerts && telegramService != null) {
+                            telegramService.sendTextMessage(
+                                    String.format(
+                                            "🎯 *LVR 1:4 Target Reached (50%% Booked)*\n"
+                                                    + "• Symbol: *%s*\n"
+                                                    + "• Booked Premium: `₹%.2f` (Partial P&L: `₹%.2f`)\n"
+                                                    + "• Spot: `₹%.2f` (Target: `₹%.2f`)\n"
+                                                    + "• SL on remaining lots moved to Cost: `₹%.2f`",
+                                            symbol,
+                                            optionPremium.doubleValue(),
+                                            pos.getPartialPnl().doubleValue(),
+                                            spotPrice.doubleValue(),
+                                            pos.getTarget1StockPrice().doubleValue(),
+                                            pos.getStockEntryPrice().doubleValue()));
                         }
                     }
                 }
 
-                // 3. Runner Management via 5-min SuperTrend(10, 3)
-                if (pos.isPartialBooked()
-                        && pos.getRemainingQuantity() > 0
-                        && candles.size() >= 15) {
-                    evaluateRunnerSuperTrendExit(symbol, pos, candles, latest);
-                }
+                // 3. Trailing Exit on Runner Lots (Post 50% Booking) via 10 EMA
+                if (pos.isPartialBooked() && !pos.isClosed()) {
+                    List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 20);
+                    if (candles != null && candles.size() >= 10) {
+                        double[] closes =
+                                candles.stream()
+                                        .mapToDouble(c -> c.close().doubleValue())
+                                        .toArray();
+                        double[] emaSeries = taService.calculateEmaSeries(closes, 10);
+                        double ema10 = emaSeries[emaSeries.length - 1];
+                        Candle latestCandle = candles.get(candles.size() - 1);
 
+                        boolean emaTrailExit = false;
+                        if (!Double.isNaN(ema10)) {
+                            if (pos.getDirection() == LowestVolumeDirection.SHORT
+                                    && latestCandle.close().doubleValue() > ema10) {
+                                emaTrailExit = true;
+                            } else if (pos.getDirection() == LowestVolumeDirection.LONG
+                                    && latestCandle.close().doubleValue() < ema10) {
+                                emaTrailExit = true;
+                            }
+                        }
+
+                        if (emaTrailExit) {
+                            pos.close(optionPremium, "10_EMA_TRAIL_EXIT", Instant.now());
+                            openPositions.remove(symbol);
+                            tradeHistory.add(pos);
+
+                            LowestVolumeSetup setup = activeSetups.get(symbol);
+                            if (setup != null) {
+                                setup.transitionTo(
+                                        LowestVolumeSetupState.CLOSED_TRAIL_EXIT,
+                                        String.format(
+                                                "10 EMA Trail Exit (Close=%.2f, EMA=%.2f)",
+                                                latestCandle.close().doubleValue(), ema10));
+                                exhaustedSymbols.add(symbol);
+                            }
+
+                            log.info(
+                                    "[LVR] 10 EMA Trail Exit triggered for {}: Closed remaining runner at Premium={}, Spot={}, EMA10={}",
+                                    symbol,
+                                    optionPremium,
+                                    spotPrice,
+                                    ema10);
+
+                            if (telegramAlerts && telegramService != null) {
+                                telegramService.sendTextMessage(
+                                        String.format(
+                                                "🏃 *LVR 10 EMA Trailing Exit*\n"
+                                                        + "• Symbol: *%s*\n"
+                                                        + "• Runner Exit Premium: `₹%.2f`\n"
+                                                        + "• Total Realized P&L: `₹%.2f`\n"
+                                                        + "• Spot Close: `₹%.2f` | 10 EMA: `₹%.2f`",
+                                                symbol,
+                                                optionPremium.doubleValue(),
+                                                pos.getTotalRealizedPnl().doubleValue(),
+                                                latestCandle.close().doubleValue(),
+                                                ema10));
+                            }
+                            continue;
+                        }
+                    }
+                }
             } catch (Exception e) {
-                log.error("[LVR] Error managing position for {}: {}", symbol, e.getMessage(), e);
+                log.error(
+                        "[LVR] Error evaluating open position for {}: {}", symbol, e.getMessage());
             }
         }
     }
 
-    private void evaluateRunnerSuperTrendExit(
-            String symbol, LowestVolumePaperPosition pos, List<Candle> candles, Candle latest) {
-        int size = candles.size();
-        double[] high = new double[size];
-        double[] low = new double[size];
-        double[] close = new double[size];
-        for (int i = 0; i < size; i++) {
-            high[i] = candles.get(i).high().doubleValue();
-            low[i] = candles.get(i).low().doubleValue();
-            close[i] = candles.get(i).close().doubleValue();
-        }
-
-        SuperTrendResult[] stSeries =
-                taService.calculateSuperTrendSeries(high, low, close, 10, 3.0);
-        SuperTrendResult latestSt = stSeries[size - 1];
-
-        if (latestSt != null && !Double.isNaN(latestSt.value())) {
-            pos.setTrailingSuperTrendValue(
-                    BigDecimal.valueOf(latestSt.value()).setScale(2, RoundingMode.HALF_UP));
-
-            // SuperTrend flip against trade
-            boolean flippedAgainst =
-                    (pos.getDirection() == LowestVolumeDirection.LONG && !latestSt.isBullish())
-                            || (pos.getDirection() == LowestVolumeDirection.SHORT
-                                    && latestSt.isBullish());
-
-            if (flippedAgainst) {
-                String reason =
-                        (pos.getDirection() == LowestVolumeDirection.LONG)
-                                ? "SUPERTREND_10_3_FLIP_BEARISH"
-                                : "SUPERTREND_10_3_FLIP_BULLISH";
-                BigDecimal exitPremium =
-                        fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
-                if (exitPremium == null) {
-                    exitPremium = pos.getEntryPremium(); // fallback
-                }
-                pos.close(exitPremium, reason, Instant.now());
-                finalizeClosedPosition(symbol, pos, reason);
-                log.info(
-                        "[LVR] [{}] Runner exited on SuperTrend flip @ ₹{} (Reason: {})",
-                        symbol,
-                        exitPremium,
-                        reason);
-            }
-        }
-    }
-
-    private synchronized void finalizeClosedPosition(
-            String symbol, LowestVolumePaperPosition pos, String reason) {
-        openPositions.remove(symbol);
-        tradeHistory.add(pos);
-
-        LowestVolumeSetup setup = activeSetups.get(symbol);
-        if (setup != null) {
-            setup.transitionTo(LowestVolumeSetupState.CLOSED_SL, reason);
-        }
-
-        if (telegramAlerts) {
-            telegramService.sendLvrTradeExitAlert(pos, reason);
-        }
-    }
-
-    /** Executes 15:00 IST Hard Exit: Closes all open positions at current option premium. */
+    /** 15:15 IST Hard EOD Square-Off. */
     public synchronized void executeHardExit(LocalTime nowTime) {
-        if (openPositions.isEmpty()) {
-            return;
-        }
+        if (openPositions.isEmpty()) return;
 
-        log.info(
-                "[LVR] 15:00 Hard Exit Triggered: Closing {} active paper positions...",
-                openPositions.size());
-
-        for (Map.Entry<String, LowestVolumePaperPosition> entry :
-                new ArrayList<>(openPositions.entrySet())) {
+        log.info("[LVR] 15:15 IST Hard EOD Square-off reached. Closing all open positions.");
+        for (Map.Entry<String, LowestVolumePaperPosition> entry : openPositions.entrySet()) {
             String symbol = entry.getKey();
             LowestVolumePaperPosition pos = entry.getValue();
 
-            BigDecimal exitPremium =
-                    fetchOptionPremium(symbol, pos.getAtmStrike(), pos.getOptionType());
-            if (exitPremium == null) {
-                exitPremium = pos.getEntryPremium(); // fallback
+            double spotLtp = fetchLiveSpotPrice(symbol);
+            BigDecimal spotPrice =
+                    BigDecimal.valueOf(
+                            spotLtp > 0 ? spotLtp : pos.getStockEntryPrice().doubleValue());
+            BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
+
+            pos.close(optionPremium, "EOD_1515_HARD_EXIT", Instant.now());
+            tradeHistory.add(pos);
+
+            LowestVolumeSetup setup = activeSetups.get(symbol);
+            if (setup != null) {
+                setup.transitionTo(LowestVolumeSetupState.CLOSED_TRAIL_EXIT, "15:15 EOD Exit");
             }
 
-            pos.close(exitPremium, "15:00_HARD_EXIT", Instant.now());
-            finalizeClosedPosition(symbol, pos, "15:00_HARD_EXIT");
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                "🏁 *LVR 15:15 IST Hard EOD Exit*\n"
+                                        + "• Symbol: *%s*\n"
+                                        + "• Exit Premium: `₹%.2f` (Total P&L: `₹%.2f`)\n"
+                                        + "• Reason: Market Close Square-Off",
+                                symbol,
+                                optionPremium.doubleValue(),
+                                pos.getTotalRealizedPnl().doubleValue()));
+            }
         }
+        openPositions.clear();
     }
 
-    /** Resets the strategy state for a fresh trading session (called daily at 09:15). */
     public synchronized void resetDaily() {
-        log.info(
-                "[LVR] Daily reset invoked. Clearing setups, exhausted stocks, and daily counters.");
-        universeScanCompletedToday = false;
         activeSetups.clear();
         openPositions.clear();
+        tradeHistory.clear();
         exhaustedSymbols.clear();
         currentTopGainers.clear();
         currentTopLosers.clear();
         currentTopGainerSnapshots.clear();
         currentTopLoserSnapshots.clear();
-        tradeCounter.set(1);
+        sectorState = LowestVolumeSectorState.empty();
+        universeScanCompletedToday = false;
+        log.info("[LVR] Daily state reset complete.");
     }
 
-    // --- Helper Methods ---
+    private BigDecimal resolveAtmStrike(BigDecimal spotPrice, BigDecimal strikeStep) {
+        if (strikeStep.compareTo(BigDecimal.ZERO) <= 0) return spotPrice;
+        BigDecimal divided = spotPrice.divide(strikeStep, 0, RoundingMode.HALF_UP);
+        return divided.multiply(strikeStep);
+    }
 
-    /** Checks Exhaustion Disqualifier (§3.5) */
-    public boolean checkExhaustion(
-            String symbol, List<Candle> todayCandles, LowestVolumeSetup setup) {
-        if (exhaustedSymbols.contains(symbol)) {
-            return true;
+    private double fetchLiveSpotPrice(String symbol) {
+        if (marketDataService == null) return 0.0;
+        var info = StockFnoRegistry.get(symbol);
+        String token =
+                (info != null && info.token() != null)
+                        ? info.token()
+                        : marketDataService.resolveToken(symbol);
+        String exchange = (info != null && info.exchange() != null) ? info.exchange() : "NSE";
+        JsonNode node = marketDataService.fetchQuote(exchange, token);
+        if (node != null && node.has("lp")) {
+            return node.get("lp").asDouble(0.0);
+        }
+        return 0.0;
+    }
+
+    public BigDecimal estimateOptionPremium(LowestVolumePaperPosition pos, BigDecimal currentSpot) {
+        if (pos == null || currentSpot == null) return BigDecimal.valueOf(20.0);
+        BigDecimal entrySpot = pos.getStockEntryPrice();
+        BigDecimal entryPrem = pos.getEntryPremium();
+        if (entrySpot == null || entryPrem == null || entrySpot.compareTo(BigDecimal.ZERO) <= 0) {
+            return entryPrem != null ? entryPrem : BigDecimal.valueOf(20.0);
         }
 
-        if (!todayCandles.isEmpty()) {
-            Candle candle1 = todayCandles.get(0);
-            double c1Move =
-                    Math.abs(candle1.close().subtract(candle1.open()).doubleValue())
-                            / candle1.open().doubleValue();
-            if (c1Move >= 0.05) { // >= 5% first candle
-                exhaustedSymbols.add(symbol);
-                setup.transitionTo(
-                        LowestVolumeSetupState.REJECTED_EXHAUSTED,
-                        "Exhaustion: Candle 1 move >= 5%");
-                log.info(
-                        "[LVR] [{}] Exhaustion Disqualified! Candle 1 moved {:.2f}% >= 5%",
-                        symbol, c1Move * 100);
-                return true;
-            }
-
-            if (setup.getInitialLegCandles().size() >= 2) {
-                Candle legEnd =
-                        setup.getInitialLegCandles().get(setup.getInitialLegCandles().size() - 1);
-                double legMoveFromOpen =
-                        Math.abs(legEnd.close().subtract(candle1.open()).doubleValue())
-                                / candle1.open().doubleValue();
-                if (legMoveFromOpen >= 0.06) { // >= 6% cumulative from open
-                    exhaustedSymbols.add(symbol);
-                    setup.transitionTo(
-                            LowestVolumeSetupState.REJECTED_EXHAUSTED,
-                            "Exhaustion: Leg move >= 6% from day open");
-                    log.info(
-                            "[LVR] [{}] Exhaustion Disqualified! Cumulative leg move {:.2f}% >= 6%",
-                            symbol, legMoveFromOpen * 100);
-                    return true;
-                }
-            }
+        BigDecimal delta = BigDecimal.valueOf(0.50); // ATM Delta
+        BigDecimal spotMove;
+        if (pos.getDirection() == LowestVolumeDirection.SHORT) {
+            spotMove = entrySpot.subtract(currentSpot); // Profitable when spot falls
+        } else {
+            spotMove = currentSpot.subtract(entrySpot); // Profitable when spot rises
         }
-        return false;
-    }
 
-    private boolean isDirectional(Candle c, LowestVolumeDirection dir) {
-        return (dir == LowestVolumeDirection.LONG)
-                ? c.close().compareTo(c.open()) > 0
-                : c.close().compareTo(c.open()) < 0;
-    }
-
-    private boolean isOppositeColor(Candle c, LowestVolumeDirection dir) {
-        return (dir == LowestVolumeDirection.LONG)
-                ? c.close().compareTo(c.open()) < 0
-                : c.close().compareTo(c.open()) > 0;
-    }
-
-    private BigDecimal getCumulativeMove(Candle start, Candle end, LowestVolumeDirection dir) {
-        return (dir == LowestVolumeDirection.LONG)
-                ? end.close().subtract(start.open())
-                : start.open().subtract(end.close());
-    }
-
-    private List<Candle> filterTodayCandles(List<Candle> allCandles) {
-        if (allCandles == null || allCandles.isEmpty()) {
-            return Collections.emptyList();
+        BigDecimal estPrem = entryPrem.add(spotMove.multiply(delta));
+        if (estPrem.compareTo(BigDecimal.valueOf(0.50)) < 0) {
+            estPrem = BigDecimal.valueOf(0.50);
         }
-        var today = java.time.LocalDate.now(IST);
-        return allCandles.stream()
-                .filter(c -> c.timestamp().atZone(IST).toLocalDate().equals(today))
-                .toList();
+        return estPrem.setScale(2, RoundingMode.HALF_UP);
     }
 
-    private StockQuoteSnapshot fetchStockSnapshot(String symbol) {
-        try {
-            String token = marketDataService.resolveToken(symbol);
-            JsonNode q = marketDataService.fetchQuote("NSE", token);
-            if (q != null && q.has("lp") && q.has("c")) {
-                double lp = q.path("lp").asDouble(0.0);
-                double c = q.path("c").asDouble(0.0);
-                double o = q.path("o").asDouble(lp);
-                if (lp > 0 && c > 0) {
-                    double pct = ((lp - c) / c) * 100.0;
-                    return new StockQuoteSnapshot(symbol, lp, c, o, pct);
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return null;
-    }
-
-    public int calculatePositionSize(BigDecimal triggerPrc, BigDecimal slPrc) {
-        BigDecimal slDistance = triggerPrc.subtract(slPrc).abs();
-        if (slDistance.compareTo(BigDecimal.ZERO) <= 0) {
-            return 1;
-        }
-        double rpt = getRiskPerTradeAmount();
-        int qty = (int) (rpt / slDistance.doubleValue());
-        return Math.max(1, qty);
-    }
-
-    /**
-     * Fetches option premium for a given underlying symbol, strike, and option type. Searches for
-     * the option contract on NFO and returns its last traded price.
-     */
-    private BigDecimal fetchOptionPremium(
-            String underlyingSymbol, BigDecimal strike, String optionType) {
-        try {
-            String expiry = resolveMonthlyExpiry(underlyingSymbol);
-            String optionSymbol = underlyingSymbol + expiry + strike.intValue() + optionType;
-
-            // Search for the option scrip on NFO
-            JsonNode searchResult = marketDataService.searchScrip("NFO", optionSymbol);
-            if (searchResult == null || !searchResult.isArray() || searchResult.isEmpty()) {
-                log.warn("[LVR] Option scrip not found for {} on NFO", optionSymbol);
-                return null;
-            }
-
-            // Use the first matching result to get the token
-            JsonNode firstMatch = searchResult.get(0);
-            String token = firstMatch.path("token").asText(null);
-            if (token == null || token.isBlank()) {
-                log.warn("[LVR] No token found for option {}", optionSymbol);
-                return null;
-            }
-
-            // Fetch quote to get LTP
-            JsonNode quote = marketDataService.fetchQuote("NFO", token);
-            if (quote != null) {
-                String ltpStr = quote.path("lp").asText(null);
-                if (ltpStr != null && !ltpStr.isBlank()) {
-                    BigDecimal ltp = new BigDecimal(ltpStr);
-                    if (ltp.compareTo(BigDecimal.ZERO) > 0) {
-                        return ltp;
+    private double fetchOptionLtp(String symbol, String optionType, BigDecimal strike) {
+        if (optionChainService != null) {
+            try {
+                var chain = optionChainService.getIndexOptionChain(symbol, strike, 2, true);
+                if (chain != null && chain.strikes() != null) {
+                    for (var s : chain.strikes()) {
+                        if (s.strikePrice() != null && s.strikePrice().compareTo(strike) == 0) {
+                            var contract = "PE".equalsIgnoreCase(optionType) ? s.put() : s.call();
+                            if (contract != null
+                                    && contract.ltp() != null
+                                    && contract.ltp().doubleValue() > 0) {
+                                return contract.ltp().doubleValue();
+                            }
+                        }
                     }
                 }
+            } catch (Exception e) {
+                log.debug(
+                        "[LVR] Live option quote fetch failed for {} {} {}: {}",
+                        symbol,
+                        strike,
+                        optionType,
+                        e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn(
-                    "[LVR] Failed to fetch option premium for {} {} {}: {}",
-                    underlyingSymbol,
-                    strike,
-                    optionType,
-                    e.getMessage());
         }
-        return null;
+        return 0.0;
     }
 
-    /**
-     * Resolves the monthly expiry string for the given underlying symbol. Uses current month
-     * expiry; if today is past the last Thursday, uses next month. Returns format like "25JUL" per
-     * Shoonya convention.
-     */
-    private String resolveMonthlyExpiry(String symbol) {
-        LocalDate today = LocalDate.now(IST);
-        YearMonth currentMonth = YearMonth.from(today);
-
-        // Find last Thursday of the current month
-        LocalDate lastDay = currentMonth.atEndOfMonth();
-        LocalDate lastThursday = lastDay;
-        while (lastThursday.getDayOfWeek() != DayOfWeek.THURSDAY) {
-            lastThursday = lastThursday.minusDays(1);
-        }
-
-        // If today is past this month's expiry, use next month
-        if (today.isAfter(lastThursday)) {
-            currentMonth = currentMonth.plusMonths(1);
-        }
-
-        // Format: "25JUL" (YY + MMM uppercase)
-        int year = currentMonth.getYear() % 100;
-        String month =
-                currentMonth
-                        .getMonth()
-                        .getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
-                        .toUpperCase(Locale.ENGLISH);
-        return String.format("%02d%s", year, month);
-    }
-
-    public double getRiskPerTradeAmount() {
-        return paperCapital * (riskPerTradePercent / 100.0);
-    }
-
-    public List<String> getFnoUniverse() {
-        List<String> list = new ArrayList<>(Nifty200Registry.getAllSymbols());
-        if (list.isEmpty()) {
-            list = StockFnoRegistry.getAllSubscribedSymbols();
-        }
+    private List<StockQuoteSnapshot> fetchNifty50Quotes() {
+        if (marketDataService == null) return Collections.emptyList();
+        List<StockQuoteSnapshot> list = Collections.synchronizedList(new ArrayList<>());
+        NiftySectorRegistry.NIFTY_50_CONSTITUENTS.parallelStream()
+                .forEach(
+                        sym -> {
+                            try {
+                                var info = StockFnoRegistry.get(sym);
+                                String token =
+                                        (info != null && info.token() != null)
+                                                ? info.token()
+                                                : marketDataService.resolveToken(sym);
+                                if (token == null || token.isBlank()) return;
+                                String exchange =
+                                        (info != null && info.exchange() != null)
+                                                ? info.exchange()
+                                                : "NSE";
+                                JsonNode quote = marketDataService.fetchQuote(exchange, token);
+                                if (quote != null && quote.has("lp") && quote.has("c")) {
+                                    double lp = quote.get("lp").asDouble(0.0);
+                                    double c = quote.get("c").asDouble(0.0);
+                                    double o = quote.has("o") ? quote.get("o").asDouble(lp) : lp;
+                                    if (c > 0) {
+                                        double pct = (lp - c) / c * 100.0;
+                                        list.add(new StockQuoteSnapshot(sym, lp, c, o, pct));
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.debug(
+                                        "[LVR] Error fetching Nifty 50 quote for {}: {}",
+                                        sym,
+                                        e.getMessage());
+                            }
+                        });
         return list;
     }
 
-    // --- Getters & Setters ---
-
-    public void setClock(java.time.Clock clock) {
-        this.clock = clock;
+    private Map<String, List<StockQuoteSnapshot>> fetchSectorQuotes() {
+        if (marketDataService == null) return Collections.emptyMap();
+        Map<String, List<StockQuoteSnapshot>> map = new ConcurrentHashMap<>();
+        NiftySectorRegistry.getSectorConstituents().entrySet().parallelStream()
+                .forEach(
+                        entry -> {
+                            String sector = entry.getKey();
+                            List<StockQuoteSnapshot> quotes = new ArrayList<>();
+                            for (String sym : entry.getValue()) {
+                                try {
+                                    var info = StockFnoRegistry.get(sym);
+                                    String token =
+                                            (info != null && info.token() != null)
+                                                    ? info.token()
+                                                    : marketDataService.resolveToken(sym);
+                                    if (token == null || token.isBlank()) continue;
+                                    String exchange =
+                                            (info != null && info.exchange() != null)
+                                                    ? info.exchange()
+                                                    : "NSE";
+                                    JsonNode q = marketDataService.fetchQuote(exchange, token);
+                                    if (q != null && q.has("lp") && q.has("c")) {
+                                        double lp = q.get("lp").asDouble(0.0);
+                                        double c = q.get("c").asDouble(0.0);
+                                        double o = q.has("o") ? q.get("o").asDouble(lp) : lp;
+                                        if (c > 0) {
+                                            double pct = (lp - c) / c * 100.0;
+                                            quotes.add(new StockQuoteSnapshot(sym, lp, c, o, pct));
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    log.debug(
+                                            "[LVR] Error fetching sector quote for {}: {}",
+                                            sym,
+                                            e.getMessage());
+                                }
+                            }
+                            if (!quotes.isEmpty()) {
+                                map.put(sector, quotes);
+                            }
+                        });
+        return map;
     }
 
-    public java.time.Clock getClock() {
-        return this.clock;
-    }
-
+    // Getters / Setters for Controller, Scheduler & Tests
     public boolean isEnabled() {
         return enabled;
     }
@@ -1407,124 +932,69 @@ public class LowestVolumeReversalService {
         return paperCapital;
     }
 
-    public void setPaperCapital(double paperCapital) {
-        this.paperCapital = paperCapital;
-    }
-
     public double getRiskPerTradePercent() {
         return riskPerTradePercent;
     }
 
-    public void setRiskPerTradePercent(double riskPerTradePercent) {
-        this.riskPerTradePercent = riskPerTradePercent;
+    public double getRiskPerTradeAmount() {
+        return paperCapital * (riskPerTradePercent / 100.0);
     }
 
     public int getMaxConcurrentTrades() {
         return maxConcurrentTrades;
     }
 
-    public void setMaxConcurrentTrades(int maxConcurrentTrades) {
-        this.maxConcurrentTrades = maxConcurrentTrades;
+    public Set<String> getExhaustedSymbols() {
+        return exhaustedSymbols;
     }
 
     public boolean isNiftyBullish() {
         return niftyBullish;
     }
 
-    public void setNiftyBullish(boolean niftyBullish) {
-        this.niftyBullish = niftyBullish;
-    }
-
-    public List<String> getCurrentTopGainers() {
-        return List.copyOf(currentTopGainers);
-    }
-
-    public List<String> getCurrentTopLosers() {
-        return List.copyOf(currentTopLosers);
-    }
-
-    public List<StockQuoteSnapshot> getCurrentTopGainerSnapshots() {
-        return List.copyOf(currentTopGainerSnapshots);
-    }
-
-    public List<StockQuoteSnapshot> getCurrentTopLoserSnapshots() {
-        return List.copyOf(currentTopLoserSnapshots);
-    }
-
-    public Map<String, LowestVolumeSetup> getActiveSetups() {
-        return Collections.unmodifiableMap(activeSetups);
-    }
-
-    public Map<String, LowestVolumePaperPosition> getOpenPositions() {
-        return Collections.unmodifiableMap(openPositions);
-    }
-
-    public List<LowestVolumePaperPosition> getTradeHistory() {
-        return Collections.unmodifiableList(tradeHistory);
-    }
-
-    public Set<String> getExhaustedSymbols() {
-        return Collections.unmodifiableSet(exhaustedSymbols);
-    }
-
-    public int getSetupTimeoutCandles() {
-        return setupTimeoutCandles;
-    }
-
-    public void setSetupTimeoutCandles(int setupTimeoutCandles) {
-        this.setupTimeoutCandles = setupTimeoutCandles;
-    }
-
     public boolean isUniverseScanCompletedToday() {
         return universeScanCompletedToday;
     }
 
-    public void setUniverseScanCompletedToday(boolean universeScanCompletedToday) {
-        this.universeScanCompletedToday = universeScanCompletedToday;
+    public LowestVolumeSectorState getSectorState() {
+        return sectorState;
     }
 
-    public boolean isOptionBuyingEnabled() {
-        return optionBuyingEnabled;
+    public Map<String, LowestVolumeSetup> getActiveSetups() {
+        return activeSetups;
     }
 
-    public void setOptionBuyingEnabled(boolean optionBuyingEnabled) {
-        this.optionBuyingEnabled = optionBuyingEnabled;
+    public Map<String, LowestVolumePaperPosition> getOpenPositions() {
+        return openPositions;
     }
 
-    public int getDefaultLots() {
-        return defaultLots;
+    public List<LowestVolumePaperPosition> getTradeHistory() {
+        return tradeHistory;
     }
 
-    public void setDefaultLots(int defaultLots) {
-        this.defaultLots = defaultLots;
+    public List<String> getCurrentTopGainers() {
+        return currentTopGainers;
     }
 
-    public boolean isTelegramAlerts() {
-        return telegramAlerts;
+    public List<String> getCurrentTopLosers() {
+        return currentTopLosers;
     }
 
-    public void setTelegramAlerts(boolean telegramAlerts) {
-        this.telegramAlerts = telegramAlerts;
+    public List<StockQuoteSnapshot> getCurrentTopGainerSnapshots() {
+        return currentTopGainerSnapshots;
     }
 
-    public boolean isTelegramArmedAlerts() {
-        return telegramArmedAlerts;
+    public List<StockQuoteSnapshot> getCurrentTopLoserSnapshots() {
+        return currentTopLoserSnapshots;
     }
 
-    public void setTelegramArmedAlerts(boolean telegramArmedAlerts) {
-        this.telegramArmedAlerts = telegramArmedAlerts;
+    public void setClock(java.time.Clock clock) {
+        this.clock = clock;
     }
 
-    public boolean isLiveBreachCheckEnabled() {
-        return liveBreachCheckEnabled;
-    }
-
-    public void setLiveBreachCheckEnabled(boolean liveBreachCheckEnabled) {
-        this.liveBreachCheckEnabled = liveBreachCheckEnabled;
-    }
-
-    /** Test-only helper to inject a setup into the active set. */
-    public void addActiveSetupForTesting(String symbol, LowestVolumeSetup setup) {
-        activeSetups.put(symbol, setup);
+    public void sendScanTelegramReport() {
+        if (telegramService != null) {
+            telegramService.sendTextMessage("📊 *LVR Sector & Watchlist Report*\n" + sectorState);
+        }
     }
 }

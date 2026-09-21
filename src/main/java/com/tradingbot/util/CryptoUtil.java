@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utility class for cryptographic operations: - SHA-256 hashing - Base32 decoding - RFC 6238 TOTP
@@ -12,6 +14,7 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public final class CryptoUtil {
 
+    private static final Logger log = LoggerFactory.getLogger(CryptoUtil.class);
     private static final int[] SHOONYA_KEY_OFFSETS = {83, 50, 97, 114, 110, 46, 27, 93};
     private static final String BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -82,6 +85,9 @@ public final class CryptoUtil {
             int otp = binary % 1000000;
             return String.format("%06d", otp);
         } catch (Exception e) {
+            log.warn(
+                    "Failed generating TOTP from secret, returning raw input fallback: {}",
+                    e.getMessage());
             return cleanSecret;
         }
     }

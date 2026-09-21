@@ -73,7 +73,9 @@ public class ShoonyaAuthenticator {
 
         String cachedToken = loadFreshDiskSession();
         if (cachedToken != null) {
-            log.info("Found cached Shoonya session in {}. Validating session key...", SESSION_FILE.getPath());
+            log.info(
+                    "Found cached Shoonya session in {}. Validating session key...",
+                    SESSION_FILE.getPath());
             if (validateSessionToken(cachedToken)) {
                 log.info("Shoonya cached session is valid and active.");
                 sessionToken.set(cachedToken);
@@ -90,7 +92,8 @@ public class ShoonyaAuthenticator {
     }
 
     /**
-     * Validates whether a given session token (jKey) is accepted by Shoonya API by probing UserDetails.
+     * Validates whether a given session token (jKey) is accepted by Shoonya API by probing
+     * UserDetails.
      */
     public boolean validateSessionToken(String token) {
         if (token == null || token.isBlank() || !config.isEnabled()) {
@@ -98,18 +101,21 @@ public class ShoonyaAuthenticator {
         }
         try {
             Map<String, Object> payload = Map.of("uid", config.getUserId());
-            String formBody = "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + token;
+            String formBody =
+                    "jData=" + objectMapper.writeValueAsString(payload) + "&jKey=" + token;
 
             HttpRequest req =
                     HttpRequest.newBuilder()
                             .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/UserDetails"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Forwarded-For", config.resolvePublicIp())
-                            .POST(HttpRequest.BodyPublishers.ofString(formBody, StandardCharsets.UTF_8))
+                            .timeout(Duration.ofSeconds(10))
+                            .POST(
+                                    HttpRequest.BodyPublishers.ofString(
+                                            formBody, StandardCharsets.UTF_8))
                             .build();
 
-            HttpResponse<String> resp =
-                    httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
                 log.debug("Shoonya session validation returned HTTP {}", resp.statusCode());
                 return false;
@@ -159,6 +165,7 @@ public class ShoonyaAuthenticator {
                                     "https://api.shoonya.com/OAuthlogin/authorize/oauth?client_id="
                                             + config.getClientId())
                             .header("X-Forwarded-For", publicIp)
+                            .timeout(Duration.ofSeconds(10))
                             .POST(
                                     HttpRequest.BodyPublishers.ofString(
                                             quickAuthBody, StandardCharsets.UTF_8))
@@ -195,6 +202,7 @@ public class ShoonyaAuthenticator {
                             .uri(URI.create(config.getBaseUrl() + "/NorenWClientAPI/GenAcsTok"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Forwarded-For", publicIp)
+                            .timeout(Duration.ofSeconds(10))
                             .POST(
                                     HttpRequest.BodyPublishers.ofString(
                                             genAcsBody, StandardCharsets.UTF_8))

@@ -1,11 +1,9 @@
 package com.tradingbot.telegram;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.tradingbot.config.ShoonyaConfig;
-import com.tradingbot.model.strategy.RsiCrossoverPosition;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,101 +17,9 @@ class TelegramServiceTest {
     @BeforeEach
     void setUp() {
         config = mock(ShoonyaConfig.class);
-        when(config.isTelegramEnabled()).thenReturn(false); // Do not send live network requests in unit tests
+        when(config.isTelegramEnabled())
+                .thenReturn(false); // Do not send live network requests in unit tests
         telegramService = new TelegramService(config);
-    }
-
-    @Test
-    void testSendRsiCrossoverAlertsDisabled() {
-        RsiCrossoverPosition pos =
-                new RsiCrossoverPosition(
-                        "TRD_1",
-                        "NIFTY24OCT22500CE",
-                        "CE",
-                        BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(150.0),
-                        65,
-                        Instant.now());
-
-        // Should not throw when disabled
-        telegramService.sendRsiCrossoverEntryAlert(pos, 58.5, 52.0, 48.0, 51.5);
-
-        pos.close(BigDecimal.valueOf(180.0), "RSI_REVERSAL", Instant.now());
-        telegramService.sendRsiCrossoverExitAlert(pos, "RSI_REVERSAL");
-    }
-
-    @Test
-    void testSendRsiCrossoverHedgedAlertsDisabled() {
-        RsiCrossoverPosition hedgedPos =
-                new RsiCrossoverPosition(
-                        "TRD_HEDGE_1",
-                        "NIFTY24OCT22500PE",
-                        "SELL",
-                        "PE",
-                        BigDecimal.valueOf(22500),
-                        BigDecimal.valueOf(150.0),
-                        65,
-                        Instant.now(),
-                        true,
-                        "NIFTY24OCT22050PE",
-                        BigDecimal.valueOf(22050),
-                        BigDecimal.valueOf(12.0),
-                        65);
-
-        telegramService.sendRsiCrossoverEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
-
-        hedgedPos.close(BigDecimal.valueOf(60.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", Instant.now());
-        telegramService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
-    }
-
-    @Test
-    void testSendRsiCrossoverHedgedAlertsEnabledMessageFormat() {
-        ShoonyaConfig activeConfig = mock(ShoonyaConfig.class);
-        when(activeConfig.isTelegramEnabled()).thenReturn(true);
-        when(activeConfig.getTelegramBotToken()).thenReturn("dummy-token");
-        when(activeConfig.getTelegramChatId()).thenReturn("dummy-chat");
-
-        java.util.List<String> messages = new java.util.ArrayList<>();
-        TelegramService capturingService =
-                new TelegramService(activeConfig) {
-                    @Override
-                    public void sendAsync(String text) {
-                        messages.add(text);
-                    }
-                };
-
-        RsiCrossoverPosition hedgedPos =
-                new RsiCrossoverPosition(
-                        "TRD_HEDGE_1",
-                        "NIFTY24OCT24850PE",
-                        "SELL",
-                        "PE",
-                        BigDecimal.valueOf(24850),
-                        BigDecimal.valueOf(150.0),
-                        65,
-                        Instant.now(),
-                        true,
-                        "NIFTY24OCT24350PE",
-                        BigDecimal.valueOf(24350),
-                        BigDecimal.valueOf(12.0),
-                        65);
-
-        capturingService.sendRsiCrossoverEntryAlert(hedgedPos, 58.5, 52.0, 48.0, 51.5);
-
-        assertThat(messages).hasSize(1);
-        String entryMsg = messages.get(0);
-        assertThat(entryMsg).contains("SELL *NIFTY 24850 PE* (`NIFTY24OCT24850PE`) @ ₹150.00");
-        assertThat(entryMsg).contains("BUY *NIFTY 24350 PE* (`NIFTY24OCT24350PE`) @ ₹12.00");
-        assertThat(entryMsg).contains("BULL PUT SPREAD (2% OTM HEDGE)");
-
-        hedgedPos.close(BigDecimal.valueOf(60.0), BigDecimal.valueOf(2.0), "TARGET_PROFIT_HIT", Instant.now());
-        capturingService.sendRsiCrossoverExitAlert(hedgedPos, "TARGET_PROFIT_HIT");
-
-        assertThat(messages).hasSize(2);
-        String exitMsg = messages.get(1);
-        assertThat(exitMsg).contains("Main Sell Leg (NIFTY 24850 PE)");
-        assertThat(exitMsg).contains("Hedge Buy Leg (NIFTY 24350 PE)");
-        assertThat(exitMsg).contains("TARGET_PROFIT_HIT");
     }
 
     @Test
@@ -163,5 +69,29 @@ class TelegramServiceTest {
 
         // Should not throw when disabled
         telegramService.sendLvrTradeEntryAlert(pos, setup);
+    }
+
+    @Test
+    void testSendLvrScanRetryAlert() {
+        telegramService.sendLvrScanRetryAlert(true, java.time.LocalTime.of(9, 30), 0);
+        telegramService.sendLvrScanRetryAlert(false, null, 2);
+    }
+
+    @Test
+    void testEscapeMarkdown() {
+        org.assertj.core.api.Assertions.assertThat(TelegramService.escapeMarkdown("SPOT_SL_HIT"))
+                .isEqualTo("SPOT\\_SL\\_HIT");
+        org.assertj.core.api.Assertions.assertThat(
+                        TelegramService.escapeMarkdown("TRD_1*test_2`3[4"))
+                .isEqualTo("TRD\\_1\\*test\\_2\\`3\\[4");
+        org.assertj.core.api.Assertions.assertThat(TelegramService.escapeMarkdown(null))
+                .isEqualTo("");
+    }
+
+    @Test
+    void testSendTextMessageWithChatIdWhenDisabled() {
+        // Should gracefully handle target chatId when disabled
+        telegramService.sendTextMessage("987654321", "Test custom chat alert");
+        telegramService.sendAlert("987654321", "Test custom alert");
     }
 }

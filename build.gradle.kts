@@ -33,6 +33,10 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
+    // Database: SQLite & Spring JDBC
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    implementation("org.xerial:sqlite-jdbc:3.47.2.0")
+
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

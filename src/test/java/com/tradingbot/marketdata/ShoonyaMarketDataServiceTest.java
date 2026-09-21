@@ -1,7 +1,6 @@
 package com.tradingbot.marketdata;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -71,6 +70,76 @@ class ShoonyaMarketDataServiceTest {
     }
 
     @Test
+    void testParseShoonyaDailyCandles_DateOnlyTimeFormat() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
+        ShoonyaMarketDataService service = new ShoonyaMarketDataService(config, auth);
+
+        String dailyResponse =
+                """
+            [
+              {
+                "stat": "Ok",
+                "time": "08-01-2024",
+                "into": "21500.00",
+                "inth": "21600.00",
+                "intl": "21450.00",
+                "intc": "21550.00",
+                "v": "500000"
+              },
+              {
+                "stat": "Ok",
+                "time": "09-01-2024",
+                "into": "21560.00",
+                "inth": "21650.00",
+                "intl": "21520.00",
+                "intc": "21620.00",
+                "v": "600000"
+              }
+            ]
+            """;
+
+        List<Candle> candles = service.parseShoonyaCandles(dailyResponse, "NIFTY 50", "D");
+        assertThat(candles).hasSize(2);
+        assertThat(candles.get(0).timestamp()).isBefore(candles.get(1).timestamp());
+        java.time.LocalDate d1 =
+                candles.get(0)
+                        .timestamp()
+                        .atZone(java.time.ZoneId.of("Asia/Kolkata"))
+                        .toLocalDate();
+        java.time.LocalDate d2 =
+                candles.get(1)
+                        .timestamp()
+                        .atZone(java.time.ZoneId.of("Asia/Kolkata"))
+                        .toLocalDate();
+        assertThat(d1).isEqualTo(java.time.LocalDate.of(2024, 1, 8));
+        assertThat(d2).isEqualTo(java.time.LocalDate.of(2024, 1, 9));
+    }
+
+    @Test
+    void testWarmTokenCache_PopulatesMajorFnoTokens() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        ShoonyaAuthenticator auth = mock(ShoonyaAuthenticator.class);
+        ShoonyaMarketDataService service = new ShoonyaMarketDataService(config, auth);
+
+        service.warmTokenCache();
+
+        assertThat(service.resolveToken("RELIANCE")).isEqualTo("2885");
+        assertThat(service.resolveToken("TCS")).isEqualTo("11536");
+        assertThat(service.resolveToken("INFY")).isEqualTo("1594");
+        assertThat(service.resolveToken("HDFCBANK")).isEqualTo("1333");
+    }
+
+    @Test
+    void testResolveToken_RejectsNonNumericToken() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        ShoonyaAuthenticator auth = mock(ShoonyaAuthenticator.class);
+        ShoonyaMarketDataService service = new ShoonyaMarketDataService(config, auth);
+
+        assertThat(service.resolveToken("NON_EXISTENT_TICKER_12345")).isNull();
+    }
+
+    @Test
     void testParseEmptyOrErrorResponse() {
         ShoonyaConfig config = new ShoonyaConfig();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
@@ -99,7 +168,8 @@ class ShoonyaMarketDataServiceTest {
         HttpResponse<String> sessionExpiredResp = mock(HttpResponse.class);
         when(sessionExpiredResp.statusCode()).thenReturn(401);
         when(sessionExpiredResp.body())
-                .thenReturn("{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
+                .thenReturn(
+                        "{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
 
         HttpResponse<String> successResp = mock(HttpResponse.class);
         when(successResp.statusCode()).thenReturn(200);

@@ -8,14 +8,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /** Utility to resample intraday or daily candles into higher timeframe bars (e.g. Weekly, 15m). */
 public final class CandleResamplingUtil {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final WeekFields WEEK_FIELDS = WeekFields.of(Locale.getDefault());
+    private static final WeekFields WEEK_FIELDS = WeekFields.ISO;
 
     private CandleResamplingUtil() {}
 
@@ -35,7 +34,12 @@ public final class CandleResamplingUtil {
         Map<Integer, List<Candle>> groupedByWeek = new LinkedHashMap<>();
 
         for (Candle c : dailyCandles) {
-            if (c == null || c.timestamp() == null) continue;
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
             var localDate = c.timestamp().atZone(IST).toLocalDate();
             int year = localDate.get(WEEK_FIELDS.weekBasedYear());
             int week = localDate.get(WEEK_FIELDS.weekOfWeekBasedYear());
@@ -82,6 +86,73 @@ public final class CandleResamplingUtil {
     }
 
     /**
+     * Resamples a chronological list of Daily candles into Monthly candles. Each month groups all
+     * trading days within the calendar month into a single Monthly bar.
+     *
+     * @param dailyCandles chronological list of daily candles
+     * @return chronological list of monthly candles
+     */
+    public static List<Candle> resampleDailyToMonthly(List<Candle> dailyCandles) {
+        if (dailyCandles == null || dailyCandles.isEmpty()) {
+            return List.of();
+        }
+
+        // Group by (year * 100 + monthValue)
+        Map<Integer, List<Candle>> groupedByMonth = new LinkedHashMap<>();
+
+        for (Candle c : dailyCandles) {
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
+            var localDate = c.timestamp().atZone(IST).toLocalDate();
+            int year = localDate.getYear();
+            int month = localDate.getMonthValue();
+            int monthKey = year * 100 + month;
+
+            groupedByMonth.computeIfAbsent(monthKey, k -> new ArrayList<>()).add(c);
+        }
+
+        List<Candle> monthlyCandles = new ArrayList<>();
+
+        for (List<Candle> monthBars : groupedByMonth.values()) {
+            if (monthBars.isEmpty()) continue;
+
+            monthBars.sort(Comparator.comparing(Candle::timestamp));
+            Candle first = monthBars.get(0);
+            Candle last = monthBars.get(monthBars.size() - 1);
+
+            BigDecimal open = first.open();
+            BigDecimal close = last.close();
+            BigDecimal high = first.high();
+            BigDecimal low = first.low();
+            long totalVolume = 0;
+
+            for (Candle b : monthBars) {
+                if (b.high().compareTo(high) > 0) high = b.high();
+                if (b.low().compareTo(low) < 0) low = b.low();
+                totalVolume += b.volume();
+            }
+
+            monthlyCandles.add(
+                    new Candle(
+                            first.symbol(),
+                            "1M",
+                            last.timestamp(),
+                            open,
+                            high,
+                            low,
+                            close,
+                            totalVolume));
+        }
+
+        monthlyCandles.sort(Comparator.comparing(Candle::timestamp));
+        return monthlyCandles;
+    }
+
+    /**
      * Resamples a chronological list of 5-minute candles into 15-minute candles.
      *
      * @param fiveMinCandles chronological list of 5m candles
@@ -95,7 +166,12 @@ public final class CandleResamplingUtil {
         Map<Long, List<Candle>> groupedBy15Min = new LinkedHashMap<>();
 
         for (Candle c : fiveMinCandles) {
-            if (c == null || c.timestamp() == null) continue;
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
             // Group by 15-minute slot: epochMinute / 15
             long epochMinutes = c.timestamp().getEpochSecond() / 60;
             long intervalKey = (epochMinutes / 15) * 15;
@@ -125,6 +201,151 @@ public final class CandleResamplingUtil {
                     new Candle(
                             first.symbol(),
                             "15",
+                            last.timestamp(),
+                            open,
+                            high,
+                            low,
+                            close,
+                            totalVolume));
+        }
+
+        resampled.sort(Comparator.comparing(Candle::timestamp));
+        return resampled;
+    }
+
+    /**
+     * Resamples a chronological list of 5-minute candles into 1-Hour (60m) candles aligned with IST
+     * market hours.
+     *
+     * @param fiveMinCandles chronological list of 5m candles
+     * @return chronological list of 1H candles
+     */
+    public static List<Candle> resample5MinTo1Hour(List<Candle> fiveMinCandles) {
+        return resample5MinTo1Hour(fiveMinCandles, false);
+    }
+
+    /**
+     * Resamples a chronological list of 5-minute candles into 1-Hour (60m) candles aligned with IST
+     * market hours, with optional volume scaling for partial session boundary bars (e.g.
+     * 09:15-10:00 and 15:00-15:30).
+     *
+     * @param fiveMinCandles chronological list of 5m candles
+     * @param normalizePartialVolume whether to scale volume for partial hourly buckets (12 ticks
+     *     per standard 1H bar)
+     * @return chronological list of 1H candles
+     */
+    public static List<Candle> resample5MinTo1Hour(
+            List<Candle> fiveMinCandles, boolean normalizePartialVolume) {
+        if (fiveMinCandles == null || fiveMinCandles.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, List<Candle>> groupedBy1Hour = new LinkedHashMap<>();
+        long istOffsetMinutes = 330; // +05:30 IST
+
+        for (Candle c : fiveMinCandles) {
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
+            // Group by 60-minute slot in IST
+            long epochMinutes = c.timestamp().getEpochSecond() / 60 + istOffsetMinutes;
+            long intervalKey = (epochMinutes / 60) * 60;
+            groupedBy1Hour.computeIfAbsent(intervalKey, k -> new ArrayList<>()).add(c);
+        }
+
+        List<Candle> resampled = new ArrayList<>();
+        for (List<Candle> bucket : groupedBy1Hour.values()) {
+            if (bucket.isEmpty()) continue;
+            bucket.sort(Comparator.comparing(Candle::timestamp));
+            Candle first = bucket.get(0);
+            Candle last = bucket.get(bucket.size() - 1);
+
+            BigDecimal open = first.open();
+            BigDecimal close = last.close();
+            BigDecimal high = first.high();
+            BigDecimal low = first.low();
+            long totalVolume = 0;
+
+            for (Candle b : bucket) {
+                if (b.high().compareTo(high) > 0) high = b.high();
+                if (b.low().compareTo(low) < 0) low = b.low();
+                totalVolume += b.volume();
+            }
+
+            if (normalizePartialVolume && !bucket.isEmpty() && bucket.size() < 12) {
+                totalVolume = Math.round((double) totalVolume * 12.0 / bucket.size());
+            }
+
+            resampled.add(
+                    new Candle(
+                            first.symbol(),
+                            "60",
+                            last.timestamp(),
+                            open,
+                            high,
+                            low,
+                            close,
+                            totalVolume));
+        }
+
+        resampled.sort(Comparator.comparing(Candle::timestamp));
+        return resampled;
+    }
+
+    /**
+     * Resamples a chronological list of 5-minute candles into 4-Hour (240m) candles aligned with
+     * IST market hours.
+     *
+     * @param fiveMinCandles chronological list of 5m candles
+     * @return chronological list of 4H candles
+     */
+    public static List<Candle> resample5MinTo4Hour(List<Candle> fiveMinCandles) {
+        if (fiveMinCandles == null || fiveMinCandles.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, List<Candle>> groupedBy4Hour = new LinkedHashMap<>();
+        long istOffsetMinutes = 330; // +05:30 IST
+
+        for (Candle c : fiveMinCandles) {
+            if (c == null
+                    || c.timestamp() == null
+                    || c.open() == null
+                    || c.high() == null
+                    || c.low() == null
+                    || c.close() == null) continue;
+            // Group by 240-minute slot in IST
+            long epochMinutes = c.timestamp().getEpochSecond() / 60 + istOffsetMinutes;
+            long intervalKey = (epochMinutes / 240) * 240;
+            groupedBy4Hour.computeIfAbsent(intervalKey, k -> new ArrayList<>()).add(c);
+        }
+
+        List<Candle> resampled = new ArrayList<>();
+        for (List<Candle> bucket : groupedBy4Hour.values()) {
+            if (bucket.isEmpty()) continue;
+            bucket.sort(Comparator.comparing(Candle::timestamp));
+            Candle first = bucket.get(0);
+            Candle last = bucket.get(bucket.size() - 1);
+
+            BigDecimal open = first.open();
+            BigDecimal close = last.close();
+            BigDecimal high = first.high();
+            BigDecimal low = first.low();
+            long totalVolume = 0;
+
+            for (Candle b : bucket) {
+                if (b.high().compareTo(high) > 0) high = b.high();
+                if (b.low().compareTo(low) < 0) low = b.low();
+                totalVolume += b.volume();
+            }
+
+            resampled.add(
+                    new Candle(
+                            first.symbol(),
+                            "240",
                             last.timestamp(),
                             open,
                             high,

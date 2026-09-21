@@ -91,6 +91,8 @@ class ExecutionManagerTest {
 
         assertThat(pos).isNotNull();
         assertThat(pos.optionType()).isEqualTo("PE");
+        assertThat(pos.shortSymbol()).isEqualTo("NIFTY29SEP2624000PE");
+        assertThat(pos.hedgeSymbol()).isEqualTo("NIFTY29SEP2623850PE");
         assertThat(pos.shortEntryPremium()).isEqualByComparingTo(new BigDecimal("100.00"));
         assertThat(pos.hedgeEntryPremium()).isEqualByComparingTo(new BigDecimal("5.00"));
         // SL Trigger = 100 * 1.40 = 140.00
@@ -99,11 +101,37 @@ class ExecutionManagerTest {
         assertThat(pos.slLimitPrice()).isEqualByComparingTo(new BigDecimal("144.20"));
         assertThat(pos.isClosed()).isFalse();
 
-        // Close position
+        // Close position with live quote from option chain
         ActiveSpreadPosition closed =
                 executionManager.closeSpreadPosition(pos.tradeId(), "SUPERTREND_FLIP");
         assertThat(closed.isClosed()).isTrue();
         assertThat(closed.realizedPnl()).isNotNull();
+        // Short: sold @ 100, exited @ 100 -> PnL 0; Hedge: bought @ 5, exited @ 5 -> PnL 0 -> Total
+        // realized PnL = 0
+        assertThat(closed.realizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void testCloseSpreadPositionWithExplicitExitPrices() {
+        BigDecimal atm = new BigDecimal("24000");
+        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+                .thenReturn(createMockChain(atm));
+
+        ActiveSpreadPosition pos =
+                executionManager.executeDirectionalOptionSelling(
+                        "TEST_STRATEGY", "NIFTY", "PE", atm, 65, true);
+
+        // Explicit short exit at 20.00 (gain of 80/share), hedge exit at 1.00 (loss of 4/share)
+        // Quantity = 65. Net PnL = (100 - 20) * 65 + (1 - 5) * 65 = 80*65 - 4*65 = 5200 - 260 =
+        // 4940
+        ActiveSpreadPosition closed =
+                executionManager.closeSpreadPosition(
+                        pos.tradeId(),
+                        "TARGET_HIT",
+                        new BigDecimal("20.00"),
+                        new BigDecimal("1.00"));
+        assertThat(closed.isClosed()).isTrue();
+        assertThat(closed.realizedPnl()).isEqualByComparingTo(new BigDecimal("4940.00"));
     }
 
     @Test

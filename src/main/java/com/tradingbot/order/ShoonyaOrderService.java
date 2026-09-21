@@ -42,7 +42,7 @@ public class ShoonyaOrderService {
                 config,
                 authenticator,
                 new ObjectMapper(),
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
     }
 
     public ShoonyaOrderService(
@@ -101,18 +101,18 @@ public class ShoonyaOrderService {
                 }
 
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
                                 .uri(
                                         URI.create(
-                                                config.getBaseUrl() + "/NorenWClientAPI/PlaceOrder"))
+                                                config.getBaseUrl()
+                                                        + "/NorenWClientAPI/PlaceOrder"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -157,6 +157,9 @@ public class ShoonyaOrderService {
                 }
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "[SHOONYA-ORDER] Order placement exception (attempt {}): {}",
                         attempt,
@@ -206,10 +209,8 @@ public class ShoonyaOrderService {
                 }
 
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
@@ -219,6 +220,7 @@ public class ShoonyaOrderService {
                                                         + "/NorenWClientAPI/ModifyOrder"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -244,8 +246,7 @@ public class ShoonyaOrderService {
                             resp.statusCode(),
                             orderId,
                             body);
-                    return OrderResponse.failure(
-                            null, "HTTP " + resp.statusCode() + ": " + body);
+                    return OrderResponse.failure(null, "HTTP " + resp.statusCode() + ": " + body);
                 }
 
                 JsonNode root = objectMapper.readTree(body);
@@ -254,12 +255,14 @@ public class ShoonyaOrderService {
                     return OrderResponse.success(orderId, null, "Order modified successfully");
                 } else {
                     String emsg = root.path("emsg").asText(body);
-                    log.error(
-                            "[SHOONYA-ORDER] Modify order {} rejected: {}", orderId, emsg);
+                    log.error("[SHOONYA-ORDER] Modify order {} rejected: {}", orderId, emsg);
                     return OrderResponse.failure(null, emsg);
                 }
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "[SHOONYA-ORDER] Error modifying order {} (attempt {}): {}",
                         orderId,
@@ -288,10 +291,8 @@ public class ShoonyaOrderService {
                         Map.of("uid", config.getUserId(), "norenordno", orderId);
 
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
@@ -301,6 +302,7 @@ public class ShoonyaOrderService {
                                                         + "/NorenWClientAPI/CancelOrder"))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -326,8 +328,7 @@ public class ShoonyaOrderService {
                             resp.statusCode(),
                             orderId,
                             body);
-                    return OrderResponse.failure(
-                            null, "HTTP " + resp.statusCode() + ": " + body);
+                    return OrderResponse.failure(null, "HTTP " + resp.statusCode() + ": " + body);
                 }
 
                 JsonNode root = objectMapper.readTree(body);
@@ -342,12 +343,14 @@ public class ShoonyaOrderService {
                             java.time.Instant.now());
                 } else {
                     String emsg = root.path("emsg").asText(body);
-                    log.error(
-                            "[SHOONYA-ORDER] Cancel order {} rejected: {}", orderId, emsg);
+                    log.error("[SHOONYA-ORDER] Cancel order {} rejected: {}", orderId, emsg);
                     return OrderResponse.failure(null, emsg);
                 }
 
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "[SHOONYA-ORDER] Error cancelling order {} (attempt {}): {}",
                         orderId,
@@ -384,16 +387,15 @@ public class ShoonyaOrderService {
             try {
                 String sessionToken = authenticator.getOrAuthenticateToken();
                 String formBody =
-                        "jData="
-                                + objectMapper.writeValueAsString(payload)
-                                + "&jKey="
-                                + sessionToken;
+                        com.tradingbot.marketdata.ShoonyaMarketDataService.buildFormBody(
+                                objectMapper.writeValueAsString(payload), sessionToken);
 
                 HttpRequest httpReq =
                         HttpRequest.newBuilder()
                                 .uri(URI.create(config.getBaseUrl() + endpoint))
                                 .header("Content-Type", "application/x-www-form-urlencoded")
                                 .header("X-Forwarded-For", config.resolvePublicIp())
+                                .timeout(Duration.ofSeconds(10))
                                 .POST(
                                         HttpRequest.BodyPublishers.ofString(
                                                 formBody, StandardCharsets.UTF_8))
@@ -424,6 +426,9 @@ public class ShoonyaOrderService {
 
                 return objectMapper.readTree(body);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 log.error(
                         "Failed to query Shoonya endpoint {} (attempt {}): {}",
                         endpoint,

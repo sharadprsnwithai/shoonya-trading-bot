@@ -1,7 +1,6 @@
 package com.tradingbot.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -17,7 +16,6 @@ import com.tradingbot.model.order.OrderStatus;
 import com.tradingbot.model.order.OrderType;
 import com.tradingbot.model.order.ProductType;
 import com.tradingbot.model.order.TransactionType;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -84,8 +82,7 @@ class ShoonyaOrderServiceTest {
 
         HttpResponse<String> successResp = mock(HttpResponse.class);
         when(successResp.statusCode()).thenReturn(200);
-        when(successResp.body())
-                .thenReturn("{\"stat\":\"Ok\",\"norenordno\":\"240909000123\"}");
+        when(successResp.body()).thenReturn("{\"stat\":\"Ok\",\"norenordno\":\"240909000123\"}");
 
         when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
                 .thenReturn(sessionExpiredResp, successResp);
@@ -124,12 +121,12 @@ class ShoonyaOrderServiceTest {
         HttpResponse<String> sessionExpiredResp = mock(HttpResponse.class);
         when(sessionExpiredResp.statusCode()).thenReturn(401);
         when(sessionExpiredResp.body())
-                .thenReturn("{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
+                .thenReturn(
+                        "{\"stat\":\"Not_Ok\",\"emsg\":\"Session Expired : Invalid Session Key\"}");
 
         HttpResponse<String> successResp = mock(HttpResponse.class);
         when(successResp.statusCode()).thenReturn(200);
-        when(successResp.body())
-                .thenReturn("{\"stat\":\"Ok\",\"norenordno\":\"240909000456\"}");
+        when(successResp.body()).thenReturn("{\"stat\":\"Ok\",\"norenordno\":\"240909000456\"}");
 
         when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
                 .thenReturn(sessionExpiredResp, successResp);

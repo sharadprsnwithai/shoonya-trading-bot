@@ -134,7 +134,7 @@ public final class Nifty200Registry {
                     "MAXHEALTH",
                     "MAZDOCK",
                     "MFSL",
-                    "MPASIS",
+                    "MPHASIS",
                     "MUTHOOTFIN",
                     "NHPC",
                     "NMDC",
@@ -172,13 +172,13 @@ public final class Nifty200Registry {
                     "SRF",
                     "MOTILALOFS",
                     "SAFARI",
-                    "SAMVARDHNA",
+                    "MOTHERSON",
                     "SUNDARMFIN",
                     "SUNPHARMA",
                     "SUNTV",
                     "SUPREMEIND",
                     "SUZLON",
-                    "SWANENERGY",
+                    "SOLARINDS",
                     "SYNGENE",
                     "TATACOMM",
                     "TCS",
@@ -212,16 +212,17 @@ public final class Nifty200Registry {
             int lot = StockFnoRegistry.getLotSize(sym);
             BigDecimal strikeStep = StockFnoRegistry.getStrikeStep(sym, BigDecimal.valueOf(1000));
             boolean isFno = (lot > 1);
-            STOCKS.put(
-                    sym,
-                    new StockMetadata(
-                            sym, token != null ? token : "10576", isFno, lot, strikeStep));
+            STOCKS.put(sym, new StockMetadata(sym, token, isFno, lot, strikeStep));
         }
     }
 
     private Nifty200Registry() {}
 
     public static List<String> getAllSymbols() {
+        return NIFTY_200_SYMBOLS;
+    }
+
+    public static List<String> getNifty200Symbols() {
         return NIFTY_200_SYMBOLS;
     }
 

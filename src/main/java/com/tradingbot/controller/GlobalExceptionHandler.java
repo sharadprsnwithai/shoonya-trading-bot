@@ -10,9 +10,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-/**
- * Global REST exception handler ensuring structured error responses across all API endpoints.
- */
+/** Global REST exception handler ensuring structured error responses across all API endpoints. */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -24,10 +22,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(
                         Map.of(
-                                "timestamp", Instant.now().toString(),
-                                "status", HttpStatus.BAD_REQUEST.value(),
-                                "error", "Bad Request",
-                                "message", ex.getMessage() != null ? ex.getMessage() : "Invalid argument"));
+                                "timestamp",
+                                Instant.now().toString(),
+                                "status",
+                                HttpStatus.BAD_REQUEST.value(),
+                                "error",
+                                "Bad Request",
+                                "message",
+                                ex.getMessage() != null ? ex.getMessage() : "Invalid argument"));
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
@@ -37,10 +39,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(
                         Map.of(
-                                "timestamp", Instant.now().toString(),
-                                "status", HttpStatus.BAD_REQUEST.value(),
-                                "error", "Missing Parameter",
-                                "message", ex.getMessage()));
+                                "timestamp",
+                                Instant.now().toString(),
+                                "status",
+                                HttpStatus.BAD_REQUEST.value(),
+                                "error",
+                                "Missing Parameter",
+                                "message",
+                                ex.getMessage() != null
+                                        ? ex.getMessage()
+                                        : "Missing required parameter"));
     }
 
     @ExceptionHandler(IllegalStateException.class)
@@ -49,10 +57,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(
                         Map.of(
-                                "timestamp", Instant.now().toString(),
-                                "status", HttpStatus.CONFLICT.value(),
-                                "error", "Conflict",
-                                "message", ex.getMessage() != null ? ex.getMessage() : "Invalid state"));
+                                "timestamp",
+                                Instant.now().toString(),
+                                "status",
+                                HttpStatus.CONFLICT.value(),
+                                "error",
+                                "Conflict",
+                                "message",
+                                ex.getMessage() != null ? ex.getMessage() : "Invalid state"));
     }
 
     @ExceptionHandler(Exception.class)
@@ -61,10 +73,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(
                         Map.of(
-                                "timestamp", Instant.now().toString(),
-                                "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                                "error", "Internal Server Error",
+                                "timestamp",
+                                Instant.now().toString(),
+                                "status",
+                                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                                "error",
+                                "Internal Server Error",
                                 "message",
-                                ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred"));
+                                ex.getMessage() != null
+                                        ? ex.getMessage()
+                                        : "An unexpected error occurred"));
     }
 }
