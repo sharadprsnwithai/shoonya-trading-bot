@@ -269,6 +269,14 @@ public class LowestVolumeReversalService {
      */
     public LowestVolumeSetup evaluateCandleSequence(
             String symbol, LowestVolumeDirection direction, List<Candle> candles) {
+        return evaluateCandleSequence(symbol, direction, candles, null);
+    }
+
+    public LowestVolumeSetup evaluateCandleSequence(
+            String symbol,
+            LowestVolumeDirection direction,
+            List<Candle> candles,
+            Instant filterAfter) {
         LowestVolumeSetup setup = new LowestVolumeSetup(symbol, direction);
         if (candles == null || candles.size() < 3) {
             return setup;
@@ -300,25 +308,30 @@ public class LowestVolumeReversalService {
                     (direction == LowestVolumeDirection.SHORT) ? c.isGreen() : c.isRed();
 
             if (isOppositeCandle && c.volume() < rollingLowest) {
-                // Armed trigger / Trail trigger
-                BigDecimal triggerPrc;
-                BigDecimal slPrc;
-                BigDecimal target1Prc;
+                boolean candleAllowed =
+                        (filterAfter == null
+                                || (c.timestamp() != null && c.timestamp().isAfter(filterAfter)));
+                if (candleAllowed) {
+                    // Armed trigger / Trail trigger
+                    BigDecimal triggerPrc;
+                    BigDecimal slPrc;
+                    BigDecimal target1Prc;
 
-                if (direction == LowestVolumeDirection.SHORT) {
-                    triggerPrc = c.low().subtract(BigDecimal.valueOf(0.05));
-                    slPrc = c.high().add(BigDecimal.valueOf(0.05));
-                    BigDecimal risk = slPrc.subtract(triggerPrc);
-                    target1Prc =
-                            triggerPrc.subtract(risk.multiply(BigDecimal.valueOf(4))); // 1:4 RR
-                } else {
-                    triggerPrc = c.high().add(BigDecimal.valueOf(0.05));
-                    slPrc = c.low().subtract(BigDecimal.valueOf(0.05));
-                    BigDecimal risk = triggerPrc.subtract(slPrc);
-                    target1Prc = triggerPrc.add(risk.multiply(BigDecimal.valueOf(4))); // 1:4 RR
+                    if (direction == LowestVolumeDirection.SHORT) {
+                        triggerPrc = c.low().subtract(BigDecimal.valueOf(0.05));
+                        slPrc = c.high().add(BigDecimal.valueOf(0.05));
+                        BigDecimal risk = slPrc.subtract(triggerPrc);
+                        target1Prc =
+                                triggerPrc.subtract(risk.multiply(BigDecimal.valueOf(4))); // 1:4 RR
+                    } else {
+                        triggerPrc = c.high().add(BigDecimal.valueOf(0.05));
+                        slPrc = c.low().subtract(BigDecimal.valueOf(0.05));
+                        BigDecimal risk = triggerPrc.subtract(slPrc);
+                        target1Prc = triggerPrc.add(risk.multiply(BigDecimal.valueOf(4))); // 1:4 RR
+                    }
+
+                    setup.setTriggerCandle(c, triggerPrc, slPrc, target1Prc);
                 }
-
-                setup.setTriggerCandle(c, triggerPrc, slPrc, target1Prc);
                 rollingLowest = c.volume();
                 setup.setDayLowestVolume(rollingLowest);
             } else if (c.volume() < rollingLowest) {
@@ -340,7 +353,12 @@ public class LowestVolumeReversalService {
 
             if (setup.getState() == LowestVolumeSetupState.IN_POSITION
                     || setup.getState() == LowestVolumeSetupState.PARTIAL_BOOKED
-                    || setup.getTradeAttempts() >= 2) {
+                    || setup.getState() == LowestVolumeSetupState.CLOSED_TRAIL_EXIT
+                    || setup.getState() == LowestVolumeSetupState.CLOSED_TARGET
+                    || setup.getState() == LowestVolumeSetupState.CLOSED_SL
+                    || setup.getState() == LowestVolumeSetupState.REJECTED_EXHAUSTED
+                    || setup.getTradeAttempts() >= 2
+                    || exhaustedSymbols.contains(symbol)) {
                 continue;
             }
 
@@ -368,7 +386,8 @@ public class LowestVolumeReversalService {
                 if (candles.size() < 3) continue;
 
                 LowestVolumeSetup evaluated =
-                        evaluateCandleSequence(symbol, setup.getDirection(), candles);
+                        evaluateCandleSequence(
+                                symbol, setup.getDirection(), candles, setup.getLastExitTime());
 
                 if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
                     boolean newlyArmedOrTrailed =
@@ -478,6 +497,36 @@ public class LowestVolumeReversalService {
                                     + " breached SL "
                                     + setup.getStopLossPrice()
                                     + " before trigger");
+                    return;
+                }
+            }
+
+            // Invalidate setup if spot already reached/passed 1:4 target before entry
+            if (setup.getTarget1Price() != null) {
+                boolean targetPassed = false;
+                if (setup.getDirection() == LowestVolumeDirection.SHORT) {
+                    if (spotPrice.compareTo(setup.getTarget1Price()) <= 0) {
+                        targetPassed = true;
+                    }
+                } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
+                    if (spotPrice.compareTo(setup.getTarget1Price()) >= 0) {
+                        targetPassed = true;
+                    }
+                }
+
+                if (targetPassed) {
+                    log.info(
+                            "[LVR] Setup for {} expired: Spot {} already passed Target1 {}",
+                            symbol,
+                            spotPrice,
+                            setup.getTarget1Price());
+                    setup.transitionTo(
+                            LowestVolumeSetupState.REJECTED_EXHAUSTED,
+                            "Spot "
+                                    + spotPrice
+                                    + " already passed Target1 "
+                                    + setup.getTarget1Price()
+                                    + " before trigger entry");
                     return;
                 }
             }

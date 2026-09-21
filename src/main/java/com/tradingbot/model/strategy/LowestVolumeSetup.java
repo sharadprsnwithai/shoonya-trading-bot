@@ -30,6 +30,7 @@ public class LowestVolumeSetup {
     private String rejectionReason;
     private Instant updatedAt;
     private Instant setupCreatedTime;
+    private Instant lastExitTime;
 
     public LowestVolumeSetup(String symbol, LowestVolumeDirection direction) {
         this.symbol = symbol;
@@ -54,6 +55,7 @@ public class LowestVolumeSetup {
         this.target1Price = null;
         this.armedCandlesElapsed = 0;
         this.rejectionReason = null;
+        this.lastExitTime = Instant.now();
         this.updatedAt = Instant.now();
     }
 
@@ -189,6 +191,14 @@ public class LowestVolumeSetup {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Instant getLastExitTime() {
+        return lastExitTime;
+    }
+
+    public void setLastExitTime(Instant lastExitTime) {
+        this.lastExitTime = lastExitTime;
     }
 
     public Instant getSetupCreatedTime() {

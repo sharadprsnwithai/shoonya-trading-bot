@@ -346,10 +346,10 @@ public class KissSwingService {
 
         if (calculatedUnits == 0) {
             log.warn(
-                    "[KISS] Minimum 1 lot risk for {} (₹{:.2f}) exceeds target risk budget (₹{:.2f})",
+                    "[KISS] Minimum 1 lot risk for {} (₹{}) exceeds target risk budget (₹{})",
                     signal.symbol(),
-                    riskPerLotInINR,
-                    maxRiskBudget);
+                    String.format("%.2f", riskPerLotInINR),
+                    String.format("%.2f", maxRiskBudget));
         }
 
         KissPosition position =
@@ -383,6 +383,9 @@ public class KissSwingService {
                                         ? (totalPlannedRiskInINR / accountEquity) * 100.0
                                         : 0.0);
 
+        String actionLabel =
+                signal.signalType() == KissSignalType.BUY_SIGNAL ? "BUY (LONG)" : "SELL (SHORT)";
+
         String msg =
                 String.format(
                         "🚀 *KISS Strategy Signal*\n"
@@ -394,7 +397,7 @@ public class KissSwingService {
                                 + "• Lots: `%d` (Qty: %d)%s\n"
                                 + "• Reason: %s",
                         signal.symbol(),
-                        signal.signalType(),
+                        actionLabel,
                         curSymbol,
                         signal.entryPrice(),
                         curSymbol,
@@ -422,6 +425,8 @@ public class KissSwingService {
         boolean isComm = CommodityRegistry.isCommodity(pos.getSymbol());
         String curSymbol = isComm ? "$" : "₹";
 
+        String actionLabel = pos.getSignalType() == KissSignalType.BUY_SIGNAL ? "LONG" : "SHORT";
+
         String msg =
                 String.format(
                         "🏁 *KISS Position Closed*\n"
@@ -430,7 +435,7 @@ public class KissSwingService {
                                 + "• Realized PnL: *₹%.2f*\n"
                                 + "• Reason: %s",
                         pos.getSymbol(),
-                        pos.getSignalType(),
+                        actionLabel,
                         curSymbol,
                         exitPrice,
                         curSymbol,
