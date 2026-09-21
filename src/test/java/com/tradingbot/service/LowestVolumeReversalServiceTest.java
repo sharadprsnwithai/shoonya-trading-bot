@@ -95,6 +95,50 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Futures LONG Position - 100% Full Exit at 1:4 Target in evaluateOpenPositions")
+    void testFuturesFullExitTarget14() {
+        service.setInstrumentType(LvrInstrumentType.FUTURES);
+        service.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1874),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1872.05),
+                BigDecimal.valueOf(1887.05));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1875.00));
+        assertThat(service.getOpenPositions()).hasSize(1);
+
+        // Mock spot price reaching 1:4 target (1888.00 >= 1887.05)
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1888.00"));
+
+        service.evaluateOpenPositions(LocalTime.of(10, 15));
+
+        assertThat(service.getOpenPositions()).isEmpty();
+        assertThat(service.getTradeHistory()).hasSize(1);
+        LowestVolumePaperPosition closed = service.getTradeHistory().get(0);
+        assertThat(closed.isClosed()).isTrue();
+        assertThat(closed.getExitReason()).isEqualTo("TARGET_1_4_FULL_EXIT");
+        assertThat(closed.getTotalRealizedPnl()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.CLOSED_TARGET);
+    }
+
+    @Test
     @DisplayName("5m Candle Sequence baseline and trigger arming on lower volume pullback")
     void testEvaluateCandleSequence() {
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");

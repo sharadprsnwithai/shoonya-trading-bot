@@ -733,7 +733,11 @@ public class LowestVolumeReversalService {
                 }
 
                 if (slHit) {
-                    pos.close(optionPremium, "SPOT_SL_HIT", Instant.now());
+                    if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                        pos.closeFullFutures(spotPrice, "SPOT_SL_HIT", Instant.now());
+                    } else {
+                        pos.close(optionPremium, "SPOT_SL_HIT", Instant.now());
+                    }
                     openPositions.remove(symbol);
                     tradeHistory.add(pos);
 
@@ -749,28 +753,54 @@ public class LowestVolumeReversalService {
                     }
 
                     log.info(
-                            "[LVR] SL Hit for {}: Closed at Premium={}, Spot={}",
+                            "[LVR] SL Hit for {}: Closed at ExitPrice={}, Spot={}",
                             symbol,
-                            optionPremium,
+                            pos.getInstrumentType() == LvrInstrumentType.FUTURES
+                                    ? spotPrice
+                                    : optionPremium,
                             spotPrice);
                     if (telegramAlerts && telegramService != null) {
-                        telegramService.sendTextMessage(
-                                String.format(
-                                        "🛑 *LVR Stop Loss Hit*\n"
-                                                + "• Symbol: *%s*\n"
-                                                + "• Exit Premium: `₹%.2f` (P&L: `₹%.2f`)\n"
-                                                + "• Spot Exit: `₹%.2f` (SL was `₹%.2f`)",
-                                        symbol,
-                                        optionPremium.doubleValue(),
-                                        pos.getTotalRealizedPnl().doubleValue(),
-                                        spotPrice.doubleValue(),
-                                        pos.getCurrentStockSl().doubleValue()));
+                        if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                            BigDecimal pts =
+                                    (pos.getDirection() == LowestVolumeDirection.LONG)
+                                            ? spotPrice.subtract(pos.getStockEntryPrice())
+                                            : pos.getStockEntryPrice().subtract(spotPrice);
+                            telegramService.sendTextMessage(
+                                    String.format(
+                                            "🛑 *LVR Stop Loss Hit (100%% Exit)*\n"
+                                                    + "• Symbol: *%s* (%s)\n"
+                                                    + "• Exit Price: `₹%.2f` (SL was `₹%.2f`)\n"
+                                                    + "• Points Captured: `%.2f pts`\n"
+                                                    + "• Realized P&L: `₹%.2f`\n"
+                                                    + "• Remaining Attempts: `%d`",
+                                            symbol,
+                                            pos.getDirection(),
+                                            spotPrice.doubleValue(),
+                                            pos.getCurrentStockSl().doubleValue(),
+                                            pts.doubleValue(),
+                                            pos.getTotalRealizedPnl().doubleValue(),
+                                            setup != null
+                                                    ? Math.max(0, 2 - setup.getTradeAttempts())
+                                                    : 0));
+                        } else {
+                            telegramService.sendTextMessage(
+                                    String.format(
+                                            "🛑 *LVR Stop Loss Hit*\n"
+                                                    + "• Symbol: *%s*\n"
+                                                    + "• Exit Premium: `₹%.2f` (P&L: `₹%.2f`)\n"
+                                                    + "• Spot Exit: `₹%.2f` (SL was `₹%.2f`)",
+                                            symbol,
+                                            optionPremium.doubleValue(),
+                                            pos.getTotalRealizedPnl().doubleValue(),
+                                            spotPrice.doubleValue(),
+                                            pos.getCurrentStockSl().doubleValue()));
+                        }
                     }
                     continue;
                 }
 
-                // 2. Check 1:4 Target Partial Booking on Spot
-                if (!pos.isPartialBooked()) {
+                // 2. Check 1:4 Target on Spot
+                if (!pos.isPartialBooked() && !pos.isClosed()) {
                     boolean targetHit = false;
                     if (pos.getDirection() == LowestVolumeDirection.SHORT) {
                         if (spotPrice.compareTo(pos.getTarget1StockPrice()) <= 0) {
@@ -783,32 +813,80 @@ public class LowestVolumeReversalService {
                     }
 
                     if (targetHit) {
-                        pos.executePartialBook(optionPremium, Instant.now());
-                        LowestVolumeSetup setup = activeSetups.get(symbol);
-                        if (setup != null) {
-                            setup.transitionTo(
-                                    LowestVolumeSetupState.PARTIAL_BOOKED,
-                                    "1:4 RR reached at spot " + spotPrice);
-                        }
+                        LvrExitMode currentExitMode =
+                                (pos.getExitMode() != null) ? pos.getExitMode() : exitMode;
+                        if (currentExitMode == LvrExitMode.FULL_TARGET_1_4) {
+                            // 100% Full Exit at 1:4 Target
+                            if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                                pos.closeFullFutures(
+                                        spotPrice, "TARGET_1_4_FULL_EXIT", Instant.now());
+                            } else {
+                                pos.close(optionPremium, "TARGET_1_4_FULL_EXIT", Instant.now());
+                            }
+                            openPositions.remove(symbol);
+                            tradeHistory.add(pos);
 
-                        log.info(
-                                "[LVR] 1:4 Target Hit for {}: Booked 50% at Premium={}, Cost SL Armed at Spot {}",
-                                symbol, optionPremium, pos.getStockEntryPrice());
+                            LowestVolumeSetup setup = activeSetups.get(symbol);
+                            if (setup != null) {
+                                setup.transitionTo(
+                                        LowestVolumeSetupState.CLOSED_TARGET,
+                                        "1:4 Target reached at spot " + spotPrice);
+                                exhaustedSymbols.add(symbol);
+                            }
 
-                        if (telegramAlerts && telegramService != null) {
-                            telegramService.sendTextMessage(
-                                    String.format(
-                                            "🎯 *LVR 1:4 Target Reached (50%% Booked)*\n"
-                                                    + "• Symbol: *%s*\n"
-                                                    + "• Booked Premium: `₹%.2f` (Partial P&L: `₹%.2f`)\n"
-                                                    + "• Spot: `₹%.2f` (Target: `₹%.2f`)\n"
-                                                    + "• SL on remaining lots moved to Cost: `₹%.2f`",
-                                            symbol,
-                                            optionPremium.doubleValue(),
-                                            pos.getPartialPnl().doubleValue(),
-                                            spotPrice.doubleValue(),
-                                            pos.getTarget1StockPrice().doubleValue(),
-                                            pos.getStockEntryPrice().doubleValue()));
+                            log.info(
+                                    "[LVR] 1:4 Target 100% Full Exit for {}: Closed at Spot={}, Realized PnL={}",
+                                    symbol, spotPrice, pos.getTotalRealizedPnl());
+
+                            if (telegramAlerts && telegramService != null) {
+                                BigDecimal pts =
+                                        (pos.getDirection() == LowestVolumeDirection.LONG)
+                                                ? spotPrice.subtract(pos.getStockEntryPrice())
+                                                : pos.getStockEntryPrice().subtract(spotPrice);
+                                telegramService.sendTextMessage(
+                                        String.format(
+                                                "🎯 *LVR 1:4 Target Reached (100%% Full Exit)*\n"
+                                                        + "• Symbol: *%s* (%s)\n"
+                                                        + "• Exit Price: `₹%.2f` (Target was `₹%.2f`)\n"
+                                                        + "• Points Captured: `+%.2f pts` (+4.00 R)\n"
+                                                        + "• Realized P&L: `+₹%.2f`",
+                                                symbol,
+                                                pos.getDirection(),
+                                                spotPrice.doubleValue(),
+                                                pos.getTarget1StockPrice().doubleValue(),
+                                                pts.doubleValue(),
+                                                pos.getTotalRealizedPnl().doubleValue()));
+                            }
+                            continue;
+                        } else {
+                            // Partial 50% Booking mode
+                            pos.executePartialBook(optionPremium, Instant.now());
+                            LowestVolumeSetup setup = activeSetups.get(symbol);
+                            if (setup != null) {
+                                setup.transitionTo(
+                                        LowestVolumeSetupState.PARTIAL_BOOKED,
+                                        "1:4 RR reached at spot " + spotPrice);
+                            }
+
+                            log.info(
+                                    "[LVR] 1:4 Target Hit for {}: Booked 50% at Premium={}, Cost SL Armed at Spot {}",
+                                    symbol, optionPremium, pos.getStockEntryPrice());
+
+                            if (telegramAlerts && telegramService != null) {
+                                telegramService.sendTextMessage(
+                                        String.format(
+                                                "🎯 *LVR 1:4 Target Reached (50%% Booked)*\n"
+                                                        + "• Symbol: *%s*\n"
+                                                        + "• Booked Premium: `₹%.2f` (Partial P&L: `₹%.2f`)\n"
+                                                        + "• Spot: `₹%.2f` (Target: `₹%.2f`)\n"
+                                                        + "• SL on remaining lots moved to Cost: `₹%.2f`",
+                                                symbol,
+                                                optionPremium.doubleValue(),
+                                                pos.getPartialPnl().doubleValue(),
+                                                spotPrice.doubleValue(),
+                                                pos.getTarget1StockPrice().doubleValue(),
+                                                pos.getStockEntryPrice().doubleValue()));
+                            }
                         }
                     }
                 }
@@ -898,12 +976,17 @@ public class LowestVolumeReversalService {
                             spotLtp > 0 ? spotLtp : pos.getStockEntryPrice().doubleValue());
             BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
 
-            pos.close(optionPremium, "EOD_1515_HARD_EXIT", Instant.now());
+            if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                pos.closeFullFutures(spotPrice, "EOD_1515_HARD_EXIT", Instant.now());
+            } else {
+                pos.close(optionPremium, "EOD_1515_HARD_EXIT", Instant.now());
+            }
             tradeHistory.add(pos);
 
             LowestVolumeSetup setup = activeSetups.get(symbol);
             if (setup != null) {
                 setup.transitionTo(LowestVolumeSetupState.CLOSED_TRAIL_EXIT, "15:15 EOD Exit");
+                exhaustedSymbols.add(symbol);
             }
 
             if (telegramAlerts && telegramService != null) {
@@ -911,10 +994,12 @@ public class LowestVolumeReversalService {
                         String.format(
                                 "🏁 *LVR 15:15 IST Hard EOD Exit*\n"
                                         + "• Symbol: *%s*\n"
-                                        + "• Exit Premium: `₹%.2f` (Total P&L: `₹%.2f`)\n"
+                                        + "• Exit Price: `₹%.2f` (Total P&L: `₹%.2f`)\n"
                                         + "• Reason: Market Close Square-Off",
                                 symbol,
-                                optionPremium.doubleValue(),
+                                pos.getInstrumentType() == LvrInstrumentType.FUTURES
+                                        ? spotPrice.doubleValue()
+                                        : optionPremium.doubleValue(),
                                 pos.getTotalRealizedPnl().doubleValue()));
             }
         }
