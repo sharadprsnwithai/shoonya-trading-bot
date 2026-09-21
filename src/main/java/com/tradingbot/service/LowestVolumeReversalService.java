@@ -10,6 +10,8 @@ import com.tradingbot.model.strategy.LowestVolumePaperPosition;
 import com.tradingbot.model.strategy.LowestVolumeSectorState;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.LowestVolumeSetupState;
+import com.tradingbot.model.strategy.LvrExitMode;
+import com.tradingbot.model.strategy.LvrInstrumentType;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.NiftySectorRegistry;
@@ -64,6 +66,12 @@ public class LowestVolumeReversalService {
 
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
     private boolean enabled = true;
+
+    @Value("${trading-bot.strategy.lowest-volume.instrument-type:FUTURES}")
+    private LvrInstrumentType instrumentType = LvrInstrumentType.FUTURES;
+
+    @Value("${trading-bot.strategy.lowest-volume.exit-mode:FULL_TARGET_1_4}")
+    private LvrExitMode exitMode = LvrExitMode.FULL_TARGET_1_4;
 
     @Value("${trading-bot.strategy.lowest-volume.paper-capital:1000000.0}")
     private double paperCapital = 1000000.0;
@@ -1027,6 +1035,22 @@ public class LowestVolumeReversalService {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public LvrInstrumentType getInstrumentType() {
+        return instrumentType;
+    }
+
+    public void setInstrumentType(LvrInstrumentType instrumentType) {
+        this.instrumentType = instrumentType;
+    }
+
+    public LvrExitMode getExitMode() {
+        return exitMode;
+    }
+
+    public void setExitMode(LvrExitMode exitMode) {
+        this.exitMode = exitMode;
     }
 
     public double getPaperCapital() {

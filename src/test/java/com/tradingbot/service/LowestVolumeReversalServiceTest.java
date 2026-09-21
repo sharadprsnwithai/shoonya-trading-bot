@@ -13,6 +13,8 @@ import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.LowestVolumeSetupState;
+import com.tradingbot.model.strategy.LvrExitMode;
+import com.tradingbot.model.strategy.LvrInstrumentType;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -50,6 +52,13 @@ class LowestVolumeReversalServiceTest {
 
         service.runCycle();
         assertThat(service.isUniverseScanCompletedToday()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Verify default configuration properties: FUTURES and FULL_TARGET_1_4")
+    void testDefaultConfigurationProperties() {
+        assertThat(service.getInstrumentType()).isEqualTo(LvrInstrumentType.FUTURES);
+        assertThat(service.getExitMode()).isEqualTo(LvrExitMode.FULL_TARGET_1_4);
     }
 
     @Test
