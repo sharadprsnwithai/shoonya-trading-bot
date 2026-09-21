@@ -552,7 +552,7 @@ public class LowestVolumeReversalService {
             }
 
             if (triggered) {
-                executeOptionEntry(symbol, setup, spotPrice);
+                executePositionEntry(symbol, setup, spotPrice);
             }
         } catch (Exception e) {
             log.error(
@@ -560,8 +560,8 @@ public class LowestVolumeReversalService {
         }
     }
 
-    /** Executes ATM Option buying upon spot trigger breach. */
-    public synchronized LowestVolumePaperPosition executeOptionEntry(
+    /** Executes entry (Stock Futures or ATM Option buying) upon spot trigger breach. */
+    public synchronized LowestVolumePaperPosition executePositionEntry(
             String symbol, LowestVolumeSetup setup, BigDecimal spotPrice) {
         setup.recordTradeAttempt();
         setup.transitionTo(
@@ -570,77 +570,137 @@ public class LowestVolumeReversalService {
         StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(symbol);
         int lotSize = (fno != null) ? fno.lotSize() : 100;
         BigDecimal strikeStep = (fno != null) ? fno.strikeStep() : BigDecimal.valueOf(10);
-
-        BigDecimal atmStrike = resolveAtmStrike(spotPrice, strikeStep);
-        String optType = (setup.getDirection() == LowestVolumeDirection.SHORT) ? "PE" : "CE";
-        String optSymbol = symbol + " ATM " + atmStrike + optType;
-
-        double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
-        double fallbackPrem = Math.max(0.50, spotPrice.doubleValue() * 0.018);
-        BigDecimal entryPremium =
-                BigDecimal.valueOf(optLtp > 0 ? optLtp : fallbackPrem)
-                        .setScale(2, RoundingMode.HALF_UP);
-
         int totalQty = defaultLots * lotSize;
-        BigDecimal plannedRisk =
-                spotPrice
-                        .subtract(setup.getStopLossPrice())
-                        .abs()
-                        .multiply(BigDecimal.valueOf(totalQty));
+
+        BigDecimal unitRisk = spotPrice.subtract(setup.getStopLossPrice()).abs();
+        BigDecimal plannedRisk = unitRisk.multiply(BigDecimal.valueOf(totalQty));
+        BigDecimal plannedReward =
+                unitRisk.multiply(BigDecimal.valueOf(4)).multiply(BigDecimal.valueOf(totalQty));
 
         String tradeId = "LVR-" + tradeCounter.getAndIncrement();
+        LowestVolumePaperPosition position;
 
-        LowestVolumePaperPosition position =
-                new LowestVolumePaperPosition(
-                        tradeId,
-                        symbol,
-                        optType,
-                        optSymbol,
-                        atmStrike,
-                        lotSize,
-                        defaultLots,
-                        setup.getDirection(),
-                        entryPremium,
-                        spotPrice,
-                        setup.getStopLossPrice(),
-                        setup.getTarget1Price(),
-                        totalQty,
-                        plannedRisk,
-                        Instant.now());
-
-        openPositions.put(symbol, position);
-
-        log.info(
-                "[LVR] ENTRY EXECUTED: {} | TradeId={} | Option={} | EntryPrem={} | SpotEntry={} | SpotSL={} | SpotTarget1={}",
-                symbol,
-                tradeId,
-                optSymbol,
-                entryPremium,
-                spotPrice,
-                setup.getStopLossPrice(),
-                setup.getTarget1Price());
-
-        if (telegramAlerts && telegramService != null) {
-            telegramService.sendTextMessage(
-                    String.format(
-                            "🚀 *LVR Option Entry Triggered*\n"
-                                    + "• Symbol: *%s* (%s)\n"
-                                    + "• Contract: `%s`\n"
-                                    + "• Option LTP: `₹%.2f` (%d lots / %d qty)\n"
-                                    + "• Spot Entry: `₹%.2f` | Spot SL: `₹%.2f`\n"
-                                    + "• Spot Target 1 (1:4 RR): `₹%.2f`",
+        if (instrumentType == LvrInstrumentType.FUTURES) {
+            String contractSymbol = symbol + " FUT";
+            position =
+                    new LowestVolumePaperPosition(
+                            tradeId,
                             symbol,
-                            setup.getDirection(),
-                            optSymbol,
-                            entryPremium.doubleValue(),
+                            LvrInstrumentType.FUTURES,
+                            exitMode,
+                            contractSymbol,
+                            lotSize,
                             defaultLots,
+                            setup.getDirection(),
+                            spotPrice,
+                            setup.getStopLossPrice(),
+                            setup.getTarget1Price(),
                             totalQty,
-                            spotPrice.doubleValue(),
-                            setup.getStopLossPrice().doubleValue(),
-                            setup.getTarget1Price().doubleValue()));
+                            plannedRisk,
+                            Instant.now());
+
+            openPositions.put(symbol, position);
+
+            log.info(
+                    "[LVR] FUTURES ENTRY EXECUTED: {} | TradeId={} | Contract={} | SpotEntry={} | SpotSL={} | SpotTarget1={}",
+                    symbol,
+                    tradeId,
+                    contractSymbol,
+                    spotPrice,
+                    setup.getStopLossPrice(),
+                    setup.getTarget1Price());
+
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                "🚀 *LVR Futures Entry Triggered*\n"
+                                        + "• Symbol: *%s* (%s)\n"
+                                        + "• Contract: `%s`\n"
+                                        + "• Entry Price: `₹%.2f` (%d lots / %d qty)\n"
+                                        + "• Spot SL: `₹%.2f` (Risk: `₹%.2f` / `₹%.2f`)\n"
+                                        + "• 1:4 Target Price: `₹%.2f` (Reward: `₹%.2f` / `+₹%.2f`)",
+                                symbol,
+                                setup.getDirection(),
+                                contractSymbol,
+                                spotPrice.doubleValue(),
+                                defaultLots,
+                                totalQty,
+                                setup.getStopLossPrice().doubleValue(),
+                                unitRisk.doubleValue(),
+                                plannedRisk.doubleValue(),
+                                setup.getTarget1Price().doubleValue(),
+                                unitRisk.multiply(BigDecimal.valueOf(4)).doubleValue(),
+                                plannedReward.doubleValue()));
+            }
+        } else {
+            BigDecimal atmStrike = resolveAtmStrike(spotPrice, strikeStep);
+            String optType = (setup.getDirection() == LowestVolumeDirection.SHORT) ? "PE" : "CE";
+            String optSymbol = symbol + " ATM " + atmStrike + optType;
+
+            double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
+            double fallbackPrem = Math.max(0.50, spotPrice.doubleValue() * 0.018);
+            BigDecimal entryPremium =
+                    BigDecimal.valueOf(optLtp > 0 ? optLtp : fallbackPrem)
+                            .setScale(2, RoundingMode.HALF_UP);
+
+            position =
+                    new LowestVolumePaperPosition(
+                            tradeId,
+                            symbol,
+                            optType,
+                            optSymbol,
+                            atmStrike,
+                            lotSize,
+                            defaultLots,
+                            setup.getDirection(),
+                            entryPremium,
+                            spotPrice,
+                            setup.getStopLossPrice(),
+                            setup.getTarget1Price(),
+                            totalQty,
+                            plannedRisk,
+                            Instant.now());
+
+            openPositions.put(symbol, position);
+
+            log.info(
+                    "[LVR] OPTION ENTRY EXECUTED: {} | TradeId={} | Option={} | EntryPrem={} | SpotEntry={} | SpotSL={} | SpotTarget1={}",
+                    symbol,
+                    tradeId,
+                    optSymbol,
+                    entryPremium,
+                    spotPrice,
+                    setup.getStopLossPrice(),
+                    setup.getTarget1Price());
+
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                "🚀 *LVR Option Entry Triggered*\n"
+                                        + "• Symbol: *%s* (%s)\n"
+                                        + "• Contract: `%s`\n"
+                                        + "• Option LTP: `₹%.2f` (%d lots / %d qty)\n"
+                                        + "• Spot Entry: `₹%.2f` | Spot SL: `₹%.2f`\n"
+                                        + "• Spot Target 1 (1:4 RR): `₹%.2f`",
+                                symbol,
+                                setup.getDirection(),
+                                optSymbol,
+                                entryPremium.doubleValue(),
+                                defaultLots,
+                                totalQty,
+                                spotPrice.doubleValue(),
+                                setup.getStopLossPrice().doubleValue(),
+                                setup.getTarget1Price().doubleValue()));
+            }
         }
 
         return position;
+    }
+
+    /** Legacy alias for executePositionEntry. */
+    public synchronized LowestVolumePaperPosition executeOptionEntry(
+            String symbol, LowestVolumeSetup setup, BigDecimal spotPrice) {
+        return executePositionEntry(symbol, setup, spotPrice);
     }
 
     /**

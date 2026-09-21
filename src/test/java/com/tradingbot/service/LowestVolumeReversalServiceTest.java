@@ -62,6 +62,39 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Futures entry execution sets 1.0 Delta spot entry price, contract symbol and planned risk")
+    void testFuturesEntryExecution() {
+        service.setInstrumentType(LvrInstrumentType.FUTURES);
+        service.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1876),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1875),
+                        5000),
+                BigDecimal.valueOf(1876.05),
+                BigDecimal.valueOf(1868.95),
+                BigDecimal.valueOf(1904.45));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1876.10));
+
+        assertThat(pos).isNotNull();
+        assertThat(pos.getInstrumentType()).isEqualTo(LvrInstrumentType.FUTURES);
+        assertThat(pos.getExitMode()).isEqualTo(LvrExitMode.FULL_TARGET_1_4);
+        assertThat(pos.getOptionSymbol()).isEqualTo("SUNPHARMA FUT");
+        assertThat(pos.getStockEntryPrice()).isEqualByComparingTo("1876.10");
+        assertThat(pos.getEntryPremium()).isEqualByComparingTo("1876.10");
+        assertThat(service.getOpenPositions()).containsKey("SUNPHARMA");
+    }
+
+    @Test
     @DisplayName("5m Candle Sequence baseline and trigger arming on lower volume pullback")
     void testEvaluateCandleSequence() {
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
@@ -112,6 +145,7 @@ class LowestVolumeReversalServiceTest {
     @Test
     @DisplayName("Execute Option Entry creates LowestVolumePaperPosition with ATM strike")
     void testExecuteOptionEntry() {
+        service.setInstrumentType(LvrInstrumentType.OPTIONS);
         LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
         setup.setTriggerCandle(
                 Candle.of5m(
