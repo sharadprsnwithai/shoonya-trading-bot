@@ -56,7 +56,8 @@ public class ShoonyaMarketDataService {
 
     public static String buildFormBody(String jDataStr, String sessionToken) {
         StringBuilder sb = new StringBuilder();
-        sb.append("jData=").append(jDataStr != null ? jDataStr : "");
+        String safeJData = jDataStr != null ? jDataStr.replace("&", "%26") : "";
+        sb.append("jData=").append(safeJData);
         if (sessionToken != null) {
             sb.append("&jKey=").append(sessionToken);
         }
@@ -95,13 +96,15 @@ public class ShoonyaMarketDataService {
      */
     public List<Candle> fetchHourlyCandles(String symbol, int daysBack) {
         String token = resolveToken(symbol);
+        String exchange = resolveExchange(symbol);
         int boundedDays = Math.max(1, Math.min(daysBack, 95));
         log.info(
-                "[HOURLY-DATA] Fetching {} days of 1-hour candles for {} (token: {})",
+                "[HOURLY-DATA] Fetching {} days of 1-hour candles for {} (token: {}, exch: {})",
                 boundedDays,
                 symbol,
-                token);
-        return fetchHistoricalCandles("NSE", token, symbol, "60", boundedDays);
+                token,
+                exchange);
+        return fetchHistoricalCandles(exchange, token, symbol, "60", boundedDays);
     }
 
     /**
@@ -113,13 +116,15 @@ public class ShoonyaMarketDataService {
      */
     public List<Candle> fetchDailyCandles(String symbol, int daysBack) {
         String token = resolveToken(symbol);
+        String exchange = resolveExchange(symbol);
         int boundedDays = Math.max(1, Math.min(daysBack, 1200));
         log.info(
-                "[DAILY-DATA] Fetching {} days of daily candles for {} (token: {})",
+                "[DAILY-DATA] Fetching {} days of daily candles for {} (token: {}, exch: {})",
                 boundedDays,
                 symbol,
-                token);
-        return fetchHistoricalCandles("NSE", token, symbol, "D", boundedDays);
+                token,
+                exchange);
+        return fetchHistoricalCandles(exchange, token, symbol, "D", boundedDays);
     }
 
     /**
@@ -131,8 +136,9 @@ public class ShoonyaMarketDataService {
      */
     public List<Candle> fetch5MinCandles(String symbol, int daysBack) {
         String token = resolveToken(symbol);
-        int boundedDays = Math.max(1, Math.min(daysBack, 10));
-        return fetchHistoricalCandles("NSE", token, symbol, "5", boundedDays);
+        String exchange = resolveExchange(symbol);
+        int boundedDays = Math.max(5, Math.min(daysBack, 15));
+        return fetchHistoricalCandles(exchange, token, symbol, "5", boundedDays);
     }
 
     /**
@@ -239,6 +245,35 @@ public class ShoonyaMarketDataService {
         }
         log.warn("[MARKET-DATA] Unable to resolve token for symbol: {}", clean);
         return null;
+    }
+
+    /** Resolves the exchange for a given symbol (e.g. "NSE", "BSE", "MCX", "NFO"). */
+    public String resolveExchange(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return "NSE";
+        }
+        String clean = symbol.toUpperCase().trim();
+        if (clean.startsWith("NSE:")) return "NSE";
+        if (clean.startsWith("BSE:")) return "BSE";
+        if (clean.startsWith("MCX:")) return "MCX";
+        if (clean.startsWith("NFO:")) return "NFO";
+
+        if (com.tradingbot.util.CommodityRegistry.isCommodity(clean)) {
+            var meta = com.tradingbot.util.CommodityRegistry.getMetadata(clean);
+            return (meta != null && meta.exchange() != null) ? meta.exchange() : "MCX";
+        }
+
+        var fnoInfo = StockFnoRegistry.get(clean);
+        if (fnoInfo != null && fnoInfo.exchange() != null && !fnoInfo.exchange().isBlank()) {
+            return fnoInfo.exchange();
+        }
+
+        var n500 = com.tradingbot.util.Nifty500Registry.getMetadata(clean);
+        if (n500 != null && n500.exchange() != null && !n500.exchange().isBlank()) {
+            return n500.exchange();
+        }
+
+        return "NSE";
     }
 
     /** Fetches real-time quote for a token from Shoonya GetQuotes API. */

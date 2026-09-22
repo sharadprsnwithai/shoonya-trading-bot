@@ -13,6 +13,8 @@ import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.LowestVolumeSetupState;
+import com.tradingbot.model.strategy.LvrExitMode;
+import com.tradingbot.model.strategy.LvrInstrumentType;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -50,6 +52,91 @@ class LowestVolumeReversalServiceTest {
 
         service.runCycle();
         assertThat(service.isUniverseScanCompletedToday()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Verify default configuration properties: FUTURES and FULL_TARGET_1_4")
+    void testDefaultConfigurationProperties() {
+        assertThat(service.getInstrumentType()).isEqualTo(LvrInstrumentType.FUTURES);
+        assertThat(service.getExitMode()).isEqualTo(LvrExitMode.FULL_TARGET_1_4);
+    }
+
+    @Test
+    @DisplayName(
+            "Futures entry execution sets 1.0 Delta spot entry price, contract symbol and planned risk")
+    void testFuturesEntryExecution() {
+        service.setInstrumentType(LvrInstrumentType.FUTURES);
+        service.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1876),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1875),
+                        5000),
+                BigDecimal.valueOf(1876.05),
+                BigDecimal.valueOf(1868.95),
+                BigDecimal.valueOf(1904.45));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1876.10));
+
+        assertThat(pos).isNotNull();
+        assertThat(pos.getInstrumentType()).isEqualTo(LvrInstrumentType.FUTURES);
+        assertThat(pos.getExitMode()).isEqualTo(LvrExitMode.FULL_TARGET_1_4);
+        assertThat(pos.getOptionSymbol()).isEqualTo("SUNPHARMA FUT");
+        assertThat(pos.getStockEntryPrice()).isEqualByComparingTo("1876.10");
+        assertThat(pos.getEntryPremium()).isEqualByComparingTo("1876.10");
+        assertThat(service.getOpenPositions()).containsKey("SUNPHARMA");
+    }
+
+    @Test
+    @DisplayName("Futures LONG Position - 100% Full Exit at 1:4 Target in evaluateOpenPositions")
+    void testFuturesFullExitTarget14() {
+        service.setInstrumentType(LvrInstrumentType.FUTURES);
+        service.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1874),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1872.05),
+                BigDecimal.valueOf(1887.05));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1875.00));
+        assertThat(service.getOpenPositions()).hasSize(1);
+
+        // Mock spot price reaching 1:4 target (1888.00 >= 1887.05)
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1888.00"));
+
+        service.evaluateOpenPositions(LocalTime.of(10, 15));
+
+        assertThat(service.getOpenPositions()).isEmpty();
+        assertThat(service.getTradeHistory()).hasSize(1);
+        LowestVolumePaperPosition closed = service.getTradeHistory().get(0);
+        assertThat(closed.isClosed()).isTrue();
+        assertThat(closed.getExitReason()).isEqualTo("TARGET_1_4_FULL_EXIT");
+        assertThat(closed.getTotalRealizedPnl()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.CLOSED_TARGET);
     }
 
     @Test
@@ -103,6 +190,7 @@ class LowestVolumeReversalServiceTest {
     @Test
     @DisplayName("Execute Option Entry creates LowestVolumePaperPosition with ATM strike")
     void testExecuteOptionEntry() {
+        service.setInstrumentType(LvrInstrumentType.OPTIONS);
         LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
         setup.setTriggerCandle(
                 Candle.of5m(
@@ -265,6 +353,42 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.getTradeHistory()).hasSize(1);
         assertThat(service.getTradeHistory().get(0).getExitReason())
                 .isEqualTo("EOD_1515_HARD_EXIT");
+    }
+
+    @Test
+    @DisplayName("Armed setup is invalidated if spot price breaches SL before hitting trigger")
+    void testArmedSetupInvalidationOnStopLossBreach() {
+        Clock marketClock = Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST); // 10:00 IST
+        service.setClock(marketClock);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "PVRINOX",
+                        Instant.now(),
+                        BigDecimal.valueOf(98),
+                        BigDecimal.valueOf(102),
+                        BigDecimal.valueOf(97),
+                        BigDecimal.valueOf(101),
+                        4500),
+                BigDecimal.valueOf(96.95),
+                BigDecimal.valueOf(102.05),
+                BigDecimal.valueOf(76.55));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("PVRINOX", setup);
+
+        // Spot price rallied above 102.05 SL (e.g. 103.00)
+        when(marketDataService.resolveToken(any())).thenReturn("13147");
+        when(marketDataService.resolveExchange(any())).thenReturn("NSE");
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "103.00"));
+
+        service.evaluateLivePriceActions();
+
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getOpenPositions()).isEmpty();
     }
 
     @Test

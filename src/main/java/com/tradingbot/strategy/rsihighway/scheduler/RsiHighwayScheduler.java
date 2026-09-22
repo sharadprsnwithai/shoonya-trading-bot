@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(
         name = "trading-bot.strategy.rsi-highway.enabled",
         havingValue = "true",
-        matchIfMissing = true)
+        matchIfMissing = false)
 public class RsiHighwayScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(RsiHighwayScheduler.class);

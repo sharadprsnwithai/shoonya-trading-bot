@@ -202,4 +202,21 @@ class ShoonyaMarketDataServiceTest {
         assertThat(candles).hasSize(1);
         verify(mockAuth, times(1)).invalidateSession();
     }
+
+    @Test
+    void testResolveExchange() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
+        ShoonyaMarketDataService service = new ShoonyaMarketDataService(config, auth);
+
+        assertThat(service.resolveExchange("CRUDEOIL")).isEqualTo("MCX");
+        assertThat(service.resolveExchange("GOLD")).isEqualTo("MCX");
+        assertThat(service.resolveExchange("SILVER")).isEqualTo("MCX");
+        assertThat(service.resolveExchange("COPPER")).isEqualTo("MCX");
+        assertThat(service.resolveExchange("NATURALGAS")).isEqualTo("MCX");
+        assertThat(service.resolveExchange("RELIANCE")).isEqualTo("NSE");
+        assertThat(service.resolveExchange("NSE:SBIN")).isEqualTo("NSE");
+        assertThat(service.resolveExchange("BSE:TCS")).isEqualTo("BSE");
+        assertThat(service.resolveExchange("MCX:CRUDEOIL")).isEqualTo("MCX");
+    }
 }

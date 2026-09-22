@@ -6,27 +6,28 @@ import java.time.Instant;
 
 /**
  * Represents an active or closed paper trading position for the Lowest Volume Reversal strategy.
- * Trades ATM options (CE for LONG, PE for SHORT). Signal logic (SL, Target 1, SuperTrend) runs on
- * stock candles; P&L is computed on option premiums.
+ * Supports both Stock Futures (1.0 Delta direct price) and ATM Options (CE/PE).
  */
 public class LowestVolumePaperPosition {
 
     private final String tradeId;
     private final String symbol;
+    private final LvrInstrumentType instrumentType;
+    private final LvrExitMode exitMode;
 
-    // Option metadata
-    private final String optionType; // "CE" or "PE"
-    private final String optionSymbol; // full option symbol e.g. RELIANCE25JUL2700CE
+    // Option metadata (null/empty if FUTURES)
+    private final String optionType; // "CE" or "PE" or null
+    private final String optionSymbol; // e.g. "SUNPHARMA FUT" or "RELIANCE25JUL2700CE"
     private final BigDecimal atmStrike;
     private final int lotSize;
     private final int lots;
 
     private final LowestVolumeDirection direction;
 
-    // Entry premium (option premium at entry)
+    // Entry premium for Options (or entry price if Futures)
     private final BigDecimal entryPremium;
 
-    // Stock-level signal prices (SL and Target 1 checked on stock candles)
+    // Signal prices (SL and Target 1)
     private final BigDecimal stockEntryPrice;
     private final BigDecimal initialStockSl;
     private BigDecimal currentStockSl;
@@ -51,6 +52,44 @@ public class LowestVolumePaperPosition {
 
     private BigDecimal trailingSuperTrendValue;
 
+    /** Primary constructor for Futures / Full specification. */
+    public LowestVolumePaperPosition(
+            String tradeId,
+            String symbol,
+            LvrInstrumentType instrumentType,
+            LvrExitMode exitMode,
+            String contractSymbol,
+            int lotSize,
+            int lots,
+            LowestVolumeDirection direction,
+            BigDecimal entryPrice,
+            BigDecimal initialSl,
+            BigDecimal target1Price,
+            int totalQuantity,
+            BigDecimal plannedRisk,
+            Instant entryTime) {
+        this.tradeId = tradeId;
+        this.symbol = symbol;
+        this.instrumentType = instrumentType != null ? instrumentType : LvrInstrumentType.FUTURES;
+        this.exitMode = exitMode != null ? exitMode : LvrExitMode.FULL_TARGET_1_4;
+        this.optionType = null;
+        this.optionSymbol = contractSymbol;
+        this.atmStrike = null;
+        this.lotSize = lotSize;
+        this.lots = lots;
+        this.direction = direction;
+        this.entryPremium = entryPrice;
+        this.stockEntryPrice = entryPrice;
+        this.initialStockSl = initialSl;
+        this.currentStockSl = initialSl;
+        this.target1StockPrice = target1Price;
+        this.totalQuantity = totalQuantity;
+        this.remainingQuantity = totalQuantity;
+        this.plannedRisk = plannedRisk;
+        this.entryTime = entryTime != null ? entryTime : Instant.now();
+    }
+
+    /** Options-oriented constructor for backward compatibility. */
     public LowestVolumePaperPosition(
             String tradeId,
             String symbol,
@@ -69,6 +108,8 @@ public class LowestVolumePaperPosition {
             Instant entryTime) {
         this.tradeId = tradeId;
         this.symbol = symbol;
+        this.instrumentType = LvrInstrumentType.OPTIONS;
+        this.exitMode = LvrExitMode.PARTIAL_RUNNER_10EMA;
         this.optionType = optionType;
         this.optionSymbol = optionSymbol;
         this.atmStrike = atmStrike;
@@ -86,10 +127,32 @@ public class LowestVolumePaperPosition {
         this.entryTime = entryTime != null ? entryTime : Instant.now();
     }
 
-    /**
-     * Executes partial profit booking at Target 1 (1:4 RR). Books 50% of the position and moves SL
-     * on the remainder to Breakeven (entry premium).
-     */
+    /** Executes 100% full exit for Stock Futures (1.0 Delta direct price P&L). */
+    public synchronized void closeFullFutures(
+            BigDecimal exitPrice, String reason, Instant timestamp) {
+        if (this.closed) {
+            return;
+        }
+
+        this.runnerExitPremium = exitPrice;
+        this.exitTime = timestamp != null ? timestamp : Instant.now();
+        this.exitReason = reason;
+        this.closed = true;
+
+        BigDecimal priceDiff =
+                (this.direction == LowestVolumeDirection.LONG)
+                        ? exitPrice.subtract(this.stockEntryPrice)
+                        : this.stockEntryPrice.subtract(exitPrice);
+
+        this.totalRealizedPnl =
+                priceDiff
+                        .multiply(BigDecimal.valueOf(this.totalQuantity))
+                        .setScale(2, RoundingMode.HALF_UP);
+        this.runnerPnl = this.totalRealizedPnl;
+        this.remainingQuantity = 0;
+    }
+
+    /** Executes partial profit booking at Target 1 (1:4 RR) in Options / Trailing mode. */
     public synchronized void executePartialBook(BigDecimal exitPremium, Instant timestamp) {
         if (this.partialBooked || this.closed) {
             return;
@@ -111,10 +174,7 @@ public class LowestVolumePaperPosition {
         this.totalRealizedPnl = this.partialPnl;
     }
 
-    /**
-     * Closes the remaining position or full position (e.g. SL hit, Supertrend flip, or 15:00 hard
-     * exit). P&L is computed on option premiums.
-     */
+    /** Closes the remaining position or full position in Options / Trailing mode. */
     public synchronized void close(BigDecimal exitPremium, String reason, Instant timestamp) {
         if (this.closed) {
             return;
@@ -145,6 +205,14 @@ public class LowestVolumePaperPosition {
 
     public String getSymbol() {
         return symbol;
+    }
+
+    public LvrInstrumentType getInstrumentType() {
+        return instrumentType;
+    }
+
+    public LvrExitMode getExitMode() {
+        return exitMode;
     }
 
     public String getOptionType() {

@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(
         name = "trading-bot.positional.enabled",
         havingValue = "true",
-        matchIfMissing = true)
+        matchIfMissing = false)
 public class PositionalTradingScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(PositionalTradingScheduler.class);

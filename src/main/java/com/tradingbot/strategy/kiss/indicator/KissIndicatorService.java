@@ -7,6 +7,7 @@ import com.tradingbot.positional.indicator.HeikinAshiCandle;
 import com.tradingbot.strategy.kiss.config.KissStrategyConfig;
 import com.tradingbot.strategy.kiss.model.KissSnapshot;
 import com.tradingbot.util.CandleResamplingUtil;
+import com.tradingbot.util.CommodityRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -30,7 +31,12 @@ public class KissIndicatorService {
         this.config = config;
     }
 
-    /** Converts standard OHLC candles to Heikin-Ashi candles. */
+    public enum WeeklyTrend {
+        BULLISH,
+        BEARISH,
+        UNKNOWN
+    }
+
     public List<HeikinAshiCandle> calculateHeikinAshi(List<Candle> candles) {
         if (candles == null || candles.isEmpty()) {
             return List.of();
@@ -108,7 +114,9 @@ public class KissIndicatorService {
         }
 
         // 1. Weekly Heikin-Ashi Trend Filter
-        boolean weeklyHaBullish = evaluateWeeklyTrend(dailyOrWeeklyCandles);
+        WeeklyTrend weeklyTrend = evaluateWeeklyTrend(dailyOrWeeklyCandles);
+        boolean weeklyHaBullish = (weeklyTrend == WeeklyTrend.BULLISH);
+        boolean weeklyHaBearish = (weeklyTrend == WeeklyTrend.BEARISH);
 
         // 2. 1-Hour Heikin-Ashi conversion
         List<HeikinAshiCandle> haList = calculateHeikinAshi(hourlyCandles);
@@ -214,7 +222,7 @@ public class KissIndicatorService {
         // Short Condition: Weekly HA Red + 1H HA Close < 55 EMA Low + 55 Slope Falling + MACD Line
         // <= Signal & MACD < 0
         boolean isBearishSetup =
-                (!weeklyHaBullish)
+                weeklyHaBearish
                         && (haCloseVal < currentEmaLow)
                         && (!emaSlopeBullish)
                         && !Double.isNaN(macdLine)
@@ -229,6 +237,7 @@ public class KissIndicatorService {
         double suggestedSl;
         double suggestedTarget;
         double rrRatio = config.getRiskRewardRatio();
+        double tickSize = resolveTickSize(symbol);
 
         if (isBullishSetup) {
             double minLast3HaLow = haLowVal;
@@ -242,6 +251,8 @@ public class KissIndicatorService {
             }
             double risk = currentPrice - suggestedSl;
             suggestedTarget = currentPrice + (risk * rrRatio);
+            suggestedSl = roundToTick(suggestedSl, tickSize);
+            suggestedTarget = roundToTick(suggestedTarget, tickSize);
         } else if (isBearishSetup) {
             double maxLast3HaHigh = haHighVal;
             for (int i = Math.max(0, last - 2); i <= last; i++) {
@@ -254,6 +265,8 @@ public class KissIndicatorService {
             }
             double risk = suggestedSl - currentPrice;
             suggestedTarget = Math.max(0.05, currentPrice - (risk * rrRatio));
+            suggestedSl = roundToTick(suggestedSl, tickSize);
+            suggestedTarget = roundToTick(suggestedTarget, tickSize);
         } else {
             suggestedSl = 0.0;
             suggestedTarget = 0.0;
@@ -284,9 +297,9 @@ public class KissIndicatorService {
                         : Instant.now());
     }
 
-    private boolean evaluateWeeklyTrend(List<Candle> dailyOrWeeklyCandles) {
+    public WeeklyTrend evaluateWeeklyTrend(List<Candle> dailyOrWeeklyCandles) {
         if (dailyOrWeeklyCandles == null || dailyOrWeeklyCandles.isEmpty()) {
-            return false; // Fail-safe: require valid trend confirmation
+            return WeeklyTrend.UNKNOWN; // Require valid trend confirmation
         }
 
         List<Candle> weekly;
@@ -298,26 +311,38 @@ public class KissIndicatorService {
         }
 
         if (weekly.isEmpty()) {
-            return false;
+            return WeeklyTrend.UNKNOWN;
         }
 
         List<HeikinAshiCandle> weeklyHa = calculateHeikinAshi(weekly);
         if (weeklyHa.isEmpty()) {
-            return false;
+            return WeeklyTrend.UNKNOWN;
         }
 
-        // Anchor trend filter to latest weekly bar, reinforced by prior closed weekly bar if
-        // available
+        // Evaluate the latest weekly Heikin-Ashi candle
         HeikinAshiCandle latestWeeklyHa = weeklyHa.get(weeklyHa.size() - 1);
-        boolean latestGreen = latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0;
+        return (latestWeeklyHa.close().compareTo(latestWeeklyHa.open()) >= 0)
+                ? WeeklyTrend.BULLISH
+                : WeeklyTrend.BEARISH;
+    }
 
-        if (weeklyHa.size() >= 2) {
-            HeikinAshiCandle prevWeeklyHa = weeklyHa.get(weeklyHa.size() - 2);
-            boolean prevGreen = prevWeeklyHa.close().compareTo(prevWeeklyHa.open()) >= 0;
-            // Bullish if current in-progress week is green OR last closed week was confirmed green
-            return latestGreen || prevGreen;
+    public static double resolveTickSize(String symbol) {
+        if (CommodityRegistry.isCommodity(symbol)) {
+            var meta = CommodityRegistry.getMetadata(symbol);
+            if (meta != null && meta.tickSize() != null) {
+                return meta.tickSize().doubleValue();
+            }
         }
+        return 0.05;
+    }
 
-        return latestGreen;
+    public static double roundToTick(double value, double tickSize) {
+        if (tickSize <= 0.0) tickSize = 0.05;
+        BigDecimal tick = BigDecimal.valueOf(tickSize);
+        return BigDecimal.valueOf(value)
+                .divide(tick, 0, RoundingMode.HALF_UP)
+                .multiply(tick)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 }

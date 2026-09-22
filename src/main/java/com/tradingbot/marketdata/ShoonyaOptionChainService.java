@@ -220,11 +220,19 @@ public class ShoonyaOptionChainService {
                 }
 
                 if (resp.statusCode() != 200) {
-                    log.error(
-                            "HTTP error {} fetching OptionChain for {}: {}",
-                            resp.statusCode(),
-                            futSymbol,
-                            respBody);
+                    if (respBody != null && respBody.contains("Invalid Trading Symbol")) {
+                        log.debug(
+                                "Option chain not directly available for underlying {} (HTTP {}): {}",
+                                futSymbol,
+                                resp.statusCode(),
+                                respBody);
+                    } else {
+                        log.warn(
+                                "HTTP {} fetching OptionChain for {}: {}",
+                                resp.statusCode(),
+                                futSymbol,
+                                respBody);
+                    }
                     return mockOptionChain(cleanUnderlying, atmStrike, count);
                 }
 

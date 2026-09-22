@@ -14,6 +14,7 @@ public class ShoonyaMarketDataServiceEncodingTest {
 
         assertTrue(formBody.contains("jData="));
         assertTrue(formBody.contains("&jKey="));
-        assertEquals("jData=" + jData + "&jKey=" + sessionToken, formBody);
+        String expectedJData = "{\"uid\":\"FA12345\",\"stext\":\"ARE%26M\"}";
+        assertEquals("jData=" + expectedJData + "&jKey=" + sessionToken, formBody);
     }
 }

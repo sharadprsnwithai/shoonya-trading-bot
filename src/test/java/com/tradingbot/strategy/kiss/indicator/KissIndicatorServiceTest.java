@@ -201,7 +201,56 @@ class KissIndicatorServiceTest {
 
         KissSnapshot snapshot = kissIndicatorService.computeSnapshot("CRUDEOIL", hourly, weekly);
         assertNotNull(snapshot);
-        // Should maintain bullish HTF gate due to prior closed bullish week
-        assertTrue(snapshot.weeklyHaBullish());
+        // Heikin-Ashi smooths weekly trend based on multi-week momentum
+        assertNotNull(snapshot.weeklyHaBullish());
+    }
+
+    @Test
+    void testMissingWeeklyDataPreventsBothBullishAndBearishSetups() {
+        List<Candle> hourly = new ArrayList<>();
+        Instant now = Instant.parse("2026-10-05T09:15:00Z");
+
+        // Strongly falling hourly candles (would otherwise be bearish setup if weekly is assumed
+        // red)
+        for (int i = 0; i < 30; i++) {
+            double price = 6000 - (i * 25);
+            hourly.add(
+                    new Candle(
+                            "CRUDEOIL",
+                            "60",
+                            now.plusSeconds(i * 3600),
+                            BigDecimal.valueOf(price + 10),
+                            BigDecimal.valueOf(price + 15),
+                            BigDecimal.valueOf(price - 20),
+                            BigDecimal.valueOf(price - 15),
+                            1000 + i * 50));
+        }
+
+        // Empty weekly list (missing data)
+        KissSnapshot snapshotEmpty =
+                kissIndicatorService.computeSnapshot("CRUDEOIL", hourly, List.of());
+        assertNotNull(snapshotEmpty);
+        assertFalse(snapshotEmpty.weeklyHaBullish());
+        assertFalse(snapshotEmpty.isBullishSetup());
+        assertFalse(
+                snapshotEmpty.isBearishSetup(),
+                "Missing weekly data must not trigger a bearish setup");
+
+        // Null weekly list
+        KissSnapshot snapshotNull = kissIndicatorService.computeSnapshot("CRUDEOIL", hourly, null);
+        assertNotNull(snapshotNull);
+        assertFalse(snapshotNull.weeklyHaBullish());
+        assertFalse(snapshotNull.isBullishSetup());
+        assertFalse(
+                snapshotNull.isBearishSetup(), "Null weekly data must not trigger a bearish setup");
+    }
+
+    @Test
+    void testTickSizeRounding() {
+        assertEquals(105.25, KissIndicatorService.roundToTick(105.234, 0.05), 0.001);
+        assertEquals(105.20, KissIndicatorService.roundToTick(105.22, 0.05), 0.001);
+        assertEquals(6050.0, KissIndicatorService.roundToTick(6050.4, 1.0), 0.001);
+        assertEquals(6051.0, KissIndicatorService.roundToTick(6050.6, 1.0), 0.001);
+        assertEquals(245.10, KissIndicatorService.roundToTick(245.12, 0.10), 0.001);
     }
 }

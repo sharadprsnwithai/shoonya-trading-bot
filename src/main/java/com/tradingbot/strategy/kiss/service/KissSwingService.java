@@ -265,7 +265,10 @@ public class KissSwingService {
                     stateChanged = true;
                 }
                 // Long MACD Reversal (MACD Line crossed below Signal Line)
-                else if (snapshot != null && snapshot.macdLine() < snapshot.macdSignal()) {
+                else if (snapshot != null
+                        && !Double.isNaN(snapshot.macdLine())
+                        && !Double.isNaN(snapshot.macdSignal())
+                        && snapshot.macdLine() < snapshot.macdSignal()) {
                     closePosition(
                             pos,
                             currentLtp,
@@ -290,7 +293,10 @@ public class KissSwingService {
                     stateChanged = true;
                 }
                 // Short MACD Reversal (MACD Line crossed above Signal Line)
-                else if (snapshot != null && snapshot.macdLine() > snapshot.macdSignal()) {
+                else if (snapshot != null
+                        && !Double.isNaN(snapshot.macdLine())
+                        && !Double.isNaN(snapshot.macdSignal())
+                        && snapshot.macdLine() > snapshot.macdSignal()) {
                     closePosition(
                             pos,
                             currentLtp,
@@ -336,6 +342,15 @@ public class KissSwingService {
         int calculatedUnits = (int) (maxRiskBudget / riskPerLotInINR);
         int lots = Math.max(1, calculatedUnits);
         int totalQty = lots * lotSize;
+        double totalPlannedRiskInINR = riskPerLotInINR * lots;
+
+        if (calculatedUnits == 0) {
+            log.warn(
+                    "[KISS] Minimum 1 lot risk for {} (₹{}) exceeds target risk budget (₹{})",
+                    signal.symbol(),
+                    String.format("%.2f", riskPerLotInINR),
+                    String.format("%.2f", maxRiskBudget));
+        }
 
         KissPosition position =
                 new KissPosition(
@@ -356,6 +371,21 @@ public class KissSwingService {
             state.getRecentSignals().remove(state.getRecentSignals().size() - 1);
         }
 
+        String riskNotice =
+                (calculatedUnits == 0)
+                        ? String.format(
+                                "\n• ⚠️ *Risk Notice:* 1 Lot risk (₹%.2f) > budget (₹%.2f)",
+                                totalPlannedRiskInINR, maxRiskBudget)
+                        : String.format(
+                                "\n• Planned Risk: *₹%.2f* (%.1f%%)",
+                                totalPlannedRiskInINR,
+                                accountEquity > 0
+                                        ? (totalPlannedRiskInINR / accountEquity) * 100.0
+                                        : 0.0);
+
+        String actionLabel =
+                signal.signalType() == KissSignalType.BUY_SIGNAL ? "BUY (LONG)" : "SELL (SHORT)";
+
         String msg =
                 String.format(
                         "🚀 *KISS Strategy Signal*\n"
@@ -364,10 +394,10 @@ public class KissSwingService {
                                 + "• Entry: `%s%.2f`\n"
                                 + "• Stop Loss: `%s%.2f`\n"
                                 + "• Target: `%s%.2f`\n"
-                                + "• Lots: `%d` (Qty: %d)\n"
+                                + "• Lots: `%d` (Qty: %d)%s\n"
                                 + "• Reason: %s",
                         signal.symbol(),
-                        signal.signalType(),
+                        actionLabel,
                         curSymbol,
                         signal.entryPrice(),
                         curSymbol,
@@ -376,6 +406,7 @@ public class KissSwingService {
                         signal.targetPrice(),
                         lots,
                         totalQty,
+                        riskNotice,
                         signal.reason());
         telegramService.sendTextMessage(msg);
     }
@@ -394,6 +425,8 @@ public class KissSwingService {
         boolean isComm = CommodityRegistry.isCommodity(pos.getSymbol());
         String curSymbol = isComm ? "$" : "₹";
 
+        String actionLabel = pos.getSignalType() == KissSignalType.BUY_SIGNAL ? "LONG" : "SHORT";
+
         String msg =
                 String.format(
                         "🏁 *KISS Position Closed*\n"
@@ -402,7 +435,7 @@ public class KissSwingService {
                                 + "• Realized PnL: *₹%.2f*\n"
                                 + "• Reason: %s",
                         pos.getSymbol(),
-                        pos.getSignalType(),
+                        actionLabel,
                         curSymbol,
                         exitPrice,
                         curSymbol,

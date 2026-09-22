@@ -28,7 +28,8 @@ public class YahooFinanceServiceTest {
         assertEquals("%5ENSEI", service.toYahooTicker("^NSEI"));
         assertEquals("TCS.NS", service.toYahooTicker("NSE:TCS"));
         assertEquals("POLICYBZR.NS", service.toYahooTicker("PBFINTECH"));
-        assertEquals("TMPV.NS", service.toYahooTicker("TATAMOTORS"));
+        assertEquals("TATAMOTORS.NS", service.toYahooTicker("TATAMOTORS"));
+        assertEquals("TMPV.NS", service.toYahooTicker("TMPV"));
         assertEquals("MPHASIS.NS", service.toYahooTicker("MPASIS"));
         assertEquals("OBEROIRLTY.NS", service.toYahooTicker("OBERREALTY"));
         assertEquals("NIFTY_MIDCAP_100.NS", service.toYahooTicker("MIDCPNIFTY"));

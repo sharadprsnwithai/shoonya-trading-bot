@@ -82,7 +82,7 @@ class ExecutionManagerTest {
     @Test
     void testExecuteDirectionalOptionSellingSetsHardSlLmt() {
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         ActiveSpreadPosition pos =
@@ -114,7 +114,7 @@ class ExecutionManagerTest {
     @Test
     void testCloseSpreadPositionWithExplicitExitPrices() {
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         ActiveSpreadPosition pos =
@@ -149,7 +149,7 @@ class ExecutionManagerTest {
     void testLiveMode_AbortsWhenHedgeOrderFails() {
         executionManager.setExecutionMode(ExecutionMode.LIVE);
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         // Mock hedge order failure
@@ -170,7 +170,7 @@ class ExecutionManagerTest {
     void testLiveMode_RollsBackHedgeWhenShortFails() {
         executionManager.setExecutionMode(ExecutionMode.LIVE);
         BigDecimal atm = new BigDecimal("24000");
-        when(optionChainService.getNifty50OptionChain(any(), anyInt(), anyBoolean()))
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
                 .thenReturn(createMockChain(atm));
 
         // 1. Hedge succeeds, 2. Short fails, 3. Rollback hedge succeeds
@@ -191,5 +191,44 @@ class ExecutionManagerTest {
 
         assertThat(pos).isNull();
         assertThat(executionManager.getOpenPositions()).isEmpty();
+    }
+
+    @Test
+    void testFractionalStrikeFormattingInOptionSymbol() {
+        BigDecimal stockAtm = new BigDecimal("12.50");
+        OptionContract call =
+                new OptionContract(
+                        "IDEA29SEP26C12.5",
+                        "80001",
+                        "CE",
+                        stockAtm,
+                        new BigDecimal("1.50"),
+                        10000L,
+                        5000L,
+                        new BigDecimal("1.40"),
+                        new BigDecimal("1.60"),
+                        new BigDecimal("1.00"));
+        OptionStrike strike = new OptionStrike(stockAtm, true, call, null);
+        OptionChainResponse stockChain =
+                new OptionChainResponse(
+                        "IDEA",
+                        stockAtm,
+                        stockAtm,
+                        "IDEA29SEP26F",
+                        1,
+                        10000L,
+                        5000L,
+                        1.0,
+                        List.of(strike));
+
+        when(optionChainService.getIndexOptionChain(any(), any(), anyInt(), anyBoolean()))
+                .thenReturn(stockChain);
+
+        ActiveSpreadPosition pos =
+                executionManager.executeDirectionalOptionSelling(
+                        "TEST_STOCK", "IDEA", "CE", stockAtm, 1000, false);
+
+        assertThat(pos).isNotNull();
+        assertThat(pos.shortSymbol()).isEqualTo("IDEA29SEP2612.5CE");
     }
 }
