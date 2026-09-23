@@ -28,6 +28,7 @@ public class LowestVolumeSetup {
     private int armedCandlesElapsed = 0;
     private int tradeAttempts = 0;
     private String rejectionReason;
+    private Double latestVwap;
     private Instant updatedAt;
     private Instant setupCreatedTime;
     private Instant lastExitTime;
@@ -55,7 +56,7 @@ public class LowestVolumeSetup {
         this.target1Price = null;
         this.armedCandlesElapsed = 0;
         this.rejectionReason = null;
-        this.lastExitTime = Instant.now();
+        this.latestVwap = null;
         this.updatedAt = Instant.now();
     }
 
@@ -111,6 +112,14 @@ public class LowestVolumeSetup {
         if (volume > 0 && volume < this.dayLowestVolume) {
             this.dayLowestVolume = volume;
         }
+    }
+
+    public Double getLatestVwap() {
+        return latestVwap;
+    }
+
+    public void setLatestVwap(Double latestVwap) {
+        this.latestVwap = latestVwap;
     }
 
     public String getSymbol() {

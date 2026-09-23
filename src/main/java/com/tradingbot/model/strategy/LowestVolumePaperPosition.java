@@ -89,10 +89,11 @@ public class LowestVolumePaperPosition {
         this.entryTime = entryTime != null ? entryTime : Instant.now();
     }
 
-    /** Options-oriented constructor for backward compatibility. */
+    /** Options-oriented constructor with configurable exit mode. */
     public LowestVolumePaperPosition(
             String tradeId,
             String symbol,
+            LvrExitMode exitMode,
             String optionType,
             String optionSymbol,
             BigDecimal atmStrike,
@@ -109,7 +110,7 @@ public class LowestVolumePaperPosition {
         this.tradeId = tradeId;
         this.symbol = symbol;
         this.instrumentType = LvrInstrumentType.OPTIONS;
-        this.exitMode = LvrExitMode.PARTIAL_RUNNER_10EMA;
+        this.exitMode = exitMode != null ? exitMode : LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500;
         this.optionType = optionType;
         this.optionSymbol = optionSymbol;
         this.atmStrike = atmStrike;
@@ -127,66 +128,130 @@ public class LowestVolumePaperPosition {
         this.entryTime = entryTime != null ? entryTime : Instant.now();
     }
 
+    /** Options-oriented constructor for backward compatibility. */
+    public LowestVolumePaperPosition(
+            String tradeId,
+            String symbol,
+            String optionType,
+            String optionSymbol,
+            BigDecimal atmStrike,
+            int lotSize,
+            int lots,
+            LowestVolumeDirection direction,
+            BigDecimal entryPremium,
+            BigDecimal stockEntryPrice,
+            BigDecimal initialStockSl,
+            BigDecimal target1StockPrice,
+            int totalQuantity,
+            BigDecimal plannedRisk,
+            Instant entryTime) {
+        this(
+                tradeId,
+                symbol,
+                LvrExitMode.PARTIAL_RUNNER_10EMA,
+                optionType,
+                optionSymbol,
+                atmStrike,
+                lotSize,
+                lots,
+                direction,
+                entryPremium,
+                stockEntryPrice,
+                initialStockSl,
+                target1StockPrice,
+                totalQuantity,
+                plannedRisk,
+                entryTime);
+    }
+
     /** Executes 100% full exit for Stock Futures (1.0 Delta direct price P&L). */
     public synchronized void closeFullFutures(
             BigDecimal exitPrice, String reason, Instant timestamp) {
-        if (this.closed) {
-            return;
-        }
-
-        this.runnerExitPremium = exitPrice;
-        this.exitTime = timestamp != null ? timestamp : Instant.now();
-        this.exitReason = reason;
-        this.closed = true;
-
-        BigDecimal priceDiff =
-                (this.direction == LowestVolumeDirection.LONG)
-                        ? exitPrice.subtract(this.stockEntryPrice)
-                        : this.stockEntryPrice.subtract(exitPrice);
-
-        this.totalRealizedPnl =
-                priceDiff
-                        .multiply(BigDecimal.valueOf(this.totalQuantity))
-                        .setScale(2, RoundingMode.HALF_UP);
-        this.runnerPnl = this.totalRealizedPnl;
-        this.remainingQuantity = 0;
+        close(exitPrice, reason, timestamp);
     }
 
-    /** Executes partial profit booking at Target 1 (1:4 RR) in Options / Trailing mode. */
-    public synchronized void executePartialBook(BigDecimal exitPremium, Instant timestamp) {
+    /** Executes partial profit booking at Target 1 (1:4 RR) in Trailing / Runner mode. */
+    public synchronized void executePartialBook(
+            BigDecimal exitPriceOrPremium, Instant timestamp) {
         if (this.partialBooked || this.closed) {
             return;
         }
 
-        int bookedQty = (totalQuantity + 1) / 2; // Ceil 50%
-        this.remainingQuantity = totalQuantity - bookedQty;
-        this.partialExitPremium = exitPremium;
+        int effectiveLots =
+                (this.lots > 0)
+                        ? this.lots
+                        : Math.max(1, this.totalQuantity / Math.max(1, this.lotSize));
+        int bookedLots = (effectiveLots + 1) / 2; // Ceiling of 50% lots
+        int effectiveLotSize =
+                (this.lotSize > 0) ? this.lotSize : (this.totalQuantity / effectiveLots);
+        int bookedQty = Math.min(this.totalQuantity, bookedLots * effectiveLotSize);
+
+        this.remainingQuantity = this.totalQuantity - bookedQty;
+        this.partialExitPremium = exitPriceOrPremium;
         this.partialExitTime = timestamp != null ? timestamp : Instant.now();
         this.partialBooked = true;
 
-        // Move stock SL to stock breakeven (stock entry price)
-        this.currentStockSl = this.stockEntryPrice;
+        // If all lots booked (e.g. 1 lot total), mark position fully closed at Target 1
+        if (this.remainingQuantity == 0) {
+            this.closed = true;
+            this.exitReason = "TARGET_1_4_FULL_EXIT";
+            this.runnerExitPremium = exitPriceOrPremium;
+            this.exitTime = this.partialExitTime;
+        }
 
-        // Compute Partial P&L: (exitPremium - entryPremium) × bookedQty
-        BigDecimal priceDiff = exitPremium.subtract(entryPremium);
+        // Move SL based on Exit Mode
+        BigDecimal unitRisk = this.stockEntryPrice.subtract(this.initialStockSl).abs();
+        if (this.exitMode == LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500) {
+            // Move SL to 1:1 (+1R locked)
+            if (this.direction == LowestVolumeDirection.LONG) {
+                this.currentStockSl = this.stockEntryPrice.add(unitRisk);
+            } else {
+                this.currentStockSl = this.stockEntryPrice.subtract(unitRisk);
+            }
+        } else {
+            // Move stock SL to stock breakeven (stock entry price)
+            this.currentStockSl = this.stockEntryPrice;
+        }
+
+        // Compute Partial P&L
+        BigDecimal priceDiff;
+        if (this.instrumentType == LvrInstrumentType.FUTURES) {
+            priceDiff =
+                    (this.direction == LowestVolumeDirection.LONG)
+                            ? exitPriceOrPremium.subtract(this.stockEntryPrice)
+                            : this.stockEntryPrice.subtract(exitPriceOrPremium);
+        } else {
+            priceDiff = exitPriceOrPremium.subtract(this.entryPremium);
+        }
         this.partialPnl =
-                priceDiff.multiply(BigDecimal.valueOf(bookedQty)).setScale(2, RoundingMode.HALF_UP);
+                priceDiff
+                        .multiply(BigDecimal.valueOf(bookedQty))
+                        .setScale(2, RoundingMode.HALF_UP);
         this.totalRealizedPnl = this.partialPnl;
     }
 
-    /** Closes the remaining position or full position in Options / Trailing mode. */
-    public synchronized void close(BigDecimal exitPremium, String reason, Instant timestamp) {
+    /** Closes the remaining position or full position in Trailing / Runner mode. */
+    public synchronized void close(
+            BigDecimal exitPriceOrPremium, String reason, Instant timestamp) {
         if (this.closed) {
             return;
         }
 
-        this.runnerExitPremium = exitPremium;
+        this.runnerExitPremium = exitPriceOrPremium;
         this.exitTime = timestamp != null ? timestamp : Instant.now();
         this.exitReason = reason;
         this.closed = true;
 
         if (remainingQuantity > 0) {
-            BigDecimal priceDiff = exitPremium.subtract(entryPremium);
+            BigDecimal priceDiff;
+            if (this.instrumentType == LvrInstrumentType.FUTURES) {
+                priceDiff =
+                        (this.direction == LowestVolumeDirection.LONG)
+                                ? exitPriceOrPremium.subtract(this.stockEntryPrice)
+                                : this.stockEntryPrice.subtract(exitPriceOrPremium);
+            } else {
+                priceDiff = exitPriceOrPremium.subtract(this.entryPremium);
+            }
             this.runnerPnl =
                     priceDiff
                             .multiply(BigDecimal.valueOf(remainingQuantity))

@@ -52,8 +52,8 @@ public class LowestVolumeReversalScheduler {
         }
 
         LocalTime now = LocalTime.now(IST);
-        // Do not scan or evaluate outside market hours (09:25 - 15:20)
-        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 20))) {
+        // Do not scan or evaluate outside market hours (09:25 - 15:05)
+        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 5))) {
             return;
         }
 
@@ -76,7 +76,7 @@ public class LowestVolumeReversalScheduler {
         }
 
         LocalTime now = LocalTime.now(IST);
-        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 15))) {
+        if (now.isBefore(LocalTime.of(9, 25)) || now.isAfter(LocalTime.of(15, 0))) {
             return;
         }
 
@@ -88,20 +88,20 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
-     * Dedicated 15:15 IST Market Hard Exit on trading weekdays to ensure all open intraday
+     * Dedicated 15:00 IST Market Hard Exit on trading weekdays to ensure all open intraday
      * paper/live positions are strictly squared off before market close.
      */
-    @Scheduled(cron = "0 15 15 ? * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "0 0 15 ? * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledHardExit() {
         if (!schedulerEnabled) {
             return;
         }
         log.info(
-                "[LVR-SCHEDULER] 15:15 IST Market Hard Exit reached. Executing position closures.");
+                "[LVR-SCHEDULER] 15:00 IST Market Hard Exit reached. Executing position closures.");
         try {
-            strategyService.executeHardExit(LocalTime.of(15, 15));
+            strategyService.executeHardExit(LocalTime.of(15, 0));
         } catch (Exception e) {
-            log.error("[LVR-SCHEDULER] Exception during 15:15 hard exit: {}", e.getMessage(), e);
+            log.error("[LVR-SCHEDULER] Exception during 15:00 hard exit: {}", e.getMessage(), e);
         }
     }
 

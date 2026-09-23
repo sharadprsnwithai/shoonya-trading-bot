@@ -90,4 +90,83 @@ class LowestVolumePaperPositionTest {
                 .isEqualByComparingTo(BigDecimal.valueOf(-2500.00)); // -10 * 250
         assertThat(pos.getExitReason()).isEqualTo("SPOT_SL_HIT");
     }
+
+    @Test
+    @DisplayName("Ceiling partial booking on odd lots (3 lots = 2 lots booked, 1 lot runner)")
+    void testCeilPartialBookingOddLots() {
+        int lotSize = 250;
+        int lots = 3;
+        int totalQty = lotSize * lots; // 750
+        BigDecimal entryPrice = BigDecimal.valueOf(100.00);
+        BigDecimal slPrice = BigDecimal.valueOf(98.00); // Risk = 2.00
+        BigDecimal targetPrice = BigDecimal.valueOf(108.00); // Target 1:4
+
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-3",
+                        "RELIANCE",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500,
+                        "RELIANCE FUT",
+                        lotSize,
+                        lots,
+                        LowestVolumeDirection.LONG,
+                        entryPrice,
+                        slPrice,
+                        targetPrice,
+                        totalQty,
+                        BigDecimal.valueOf(1500.00),
+                        Instant.now());
+
+        // Book partial at Target (108.00)
+        pos.executePartialBook(targetPrice, Instant.now());
+
+        // Ceiling of 3 lots is 2 lots (500 shares). Remaining is 1 lot (250 shares).
+        assertThat(pos.isPartialBooked()).isTrue();
+        assertThat(pos.isClosed()).isFalse();
+        assertThat(pos.getRemainingQuantity()).isEqualTo(250);
+        // Partial P&L: (108 - 100) * 500 = +4000.00
+        assertThat(pos.getPartialPnl()).isEqualByComparingTo("4000.00");
+        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo("4000.00");
+        // 1:1 SL moved to 100 + 2 = 102.00
+        assertThat(pos.getCurrentStockSl()).isEqualByComparingTo("102.00");
+    }
+
+    @Test
+    @DisplayName("Ceiling partial booking on 1 lot books full 1 lot and closes position")
+    void testCeilPartialBookingSingleLot() {
+        int lotSize = 250;
+        int lots = 1;
+        int totalQty = lotSize * lots; // 250
+        BigDecimal entryPrice = BigDecimal.valueOf(100.00);
+        BigDecimal slPrice = BigDecimal.valueOf(98.00);
+        BigDecimal targetPrice = BigDecimal.valueOf(108.00);
+
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-4",
+                        "RELIANCE",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500,
+                        "RELIANCE FUT",
+                        lotSize,
+                        lots,
+                        LowestVolumeDirection.LONG,
+                        entryPrice,
+                        slPrice,
+                        targetPrice,
+                        totalQty,
+                        BigDecimal.valueOf(500.00),
+                        Instant.now());
+
+        pos.executePartialBook(targetPrice, Instant.now());
+
+        // Ceiling of 1 lot is 1 lot (250 shares booked). Remaining is 0 shares.
+        assertThat(pos.isPartialBooked()).isTrue();
+        assertThat(pos.isClosed()).isTrue();
+        assertThat(pos.getRemainingQuantity()).isZero();
+        assertThat(pos.getPartialPnl()).isEqualByComparingTo("2000.00"); // (108 - 100) * 250
+        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo("2000.00");
+        assertThat(pos.getExitReason()).isEqualTo("TARGET_1_4_FULL_EXIT");
+    }
 }

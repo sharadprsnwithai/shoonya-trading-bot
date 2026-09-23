@@ -86,12 +86,13 @@ class LowestVolumeReversalScannerTest {
     }
 
     @Test
-    @DisplayName("Should filter out overextended stocks (> 5%) and circuit locked stocks")
+    @DisplayName("Should filter out overextended stocks (> 5%), circuit locked stocks, and wrong-direction stocks")
     void testFilterCandidateStocks() {
         List<StockQuoteSnapshot> quotes =
                 List.of(
                         new StockQuoteSnapshot("PVRINOX", 1550.0, 1600.0, 1580.0, -3.12),
                         new StockQuoteSnapshot("SUNTV", 780.0, 800.0, 790.0, -2.50),
+                        new StockQuoteSnapshot("GREEN_STOCK", 102.0, 100.0, 101.0, 2.0),
                         new StockQuoteSnapshot("OVEREXTENDED", 90.0, 100.0, 95.0, -10.0),
                         new StockQuoteSnapshot("TOO_FAR", 94.0, 100.0, 96.0, -6.0));
         List<String> candidates =
@@ -99,7 +100,26 @@ class LowestVolumeReversalScannerTest {
         assertEquals(2, candidates.size());
         assertTrue(candidates.contains("PVRINOX"));
         assertTrue(candidates.contains("SUNTV"));
+        assertFalse(candidates.contains("GREEN_STOCK")); // Positive stock must not be chosen for SHORT
         assertFalse(candidates.contains("OVEREXTENDED"));
         assertFalse(candidates.contains("TOO_FAR"));
+    }
+
+    @Test
+    @DisplayName("LONG sentiment must only select positive stocks and exclude negative/overextended stocks")
+    void testFilterCandidateStocksBullish() {
+        List<StockQuoteSnapshot> quotes =
+                List.of(
+                        new StockQuoteSnapshot("SUNPHARMA", 1900.0, 1850.0, 1860.0, 2.70),
+                        new StockQuoteSnapshot("CIPLA", 1530.0, 1500.0, 1510.0, 2.00),
+                        new StockQuoteSnapshot("RED_STOCK", 1480.0, 1500.0, 1490.0, -1.33),
+                        new StockQuoteSnapshot("EXHAUSTED_GAIN", 1600.0, 1500.0, 1550.0, 6.67));
+        List<String> candidates =
+                scanner.filterCandidateStocks(quotes, LowestVolumeDirection.LONG);
+        assertEquals(2, candidates.size());
+        assertEquals("SUNPHARMA", candidates.get(0)); // 2.70%
+        assertEquals("CIPLA", candidates.get(1)); // 2.00%
+        assertFalse(candidates.contains("RED_STOCK"));
+        assertFalse(candidates.contains("EXHAUSTED_GAIN"));
     }
 }
