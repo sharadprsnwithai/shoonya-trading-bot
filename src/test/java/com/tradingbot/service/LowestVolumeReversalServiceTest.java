@@ -982,11 +982,13 @@ class LowestVolumeReversalServiceTest {
     @DisplayName(
             "processCandidateSetups synchronizes live activeSetup back to SCANNING when trigger is broken")
     void testProcessCandidateSetupsResetsActiveSetupWhenInvalidated() {
+        service.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST)); // 10:00 IST
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        Instant t0 = Instant.parse("2026-09-18T04:05:00Z"); // 09:35 IST
         setup.setTriggerCandle(
                 Candle.of5m(
                         "SUNPHARMA",
-                        Instant.now(),
+                        t0.plus(15, ChronoUnit.MINUTES),
                         BigDecimal.valueOf(1818),
                         BigDecimal.valueOf(1820),
                         BigDecimal.valueOf(1810),
@@ -998,7 +1000,6 @@ class LowestVolumeReversalServiceTest {
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
         service.getActiveSetups().put("SUNPHARMA", setup);
 
-        Instant t0 = Instant.now().minus(25, ChronoUnit.MINUTES);
         List<Candle> candles =
                 List.of(
                         Candle.of5m(

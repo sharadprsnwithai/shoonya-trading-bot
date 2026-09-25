@@ -37,6 +37,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.xerial:sqlite-jdbc:3.47.2.0")
 
+    // Reactive Streams & Project Reactor
+    implementation("io.projectreactor:reactor-core:3.6.11")
+    testImplementation("io.projectreactor:reactor-test:3.6.11")
+
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
