@@ -173,6 +173,21 @@ public class ShoonyaOrderService {
         return OrderResponse.failure(request, "Failed to place order after retries");
     }
 
+    /** Modifies an existing open or trigger-pending order using an OrderRequest. */
+    public OrderResponse modifyOrder(String orderId, OrderRequest request) {
+        if (request == null) {
+            return OrderResponse.failure(null, "Null OrderRequest");
+        }
+        return modifyOrder(
+                orderId,
+                request.symbol(),
+                request.exchange(),
+                request.quantity(),
+                request.price(),
+                request.triggerPrice(),
+                request.orderType());
+    }
+
     /** Modifies an existing open or trigger-pending order. */
     public OrderResponse modifyOrder(
             String orderId,

@@ -13,6 +13,10 @@ public record OrderRequest(
         BigDecimal price,
         BigDecimal triggerPrice,
         String tag) {
+    public String tradingSymbol() {
+        return symbol;
+    }
+
     public static OrderRequest market(
             String symbol, String exchange, TransactionType type, int qty, String tag) {
         return new OrderRequest(
