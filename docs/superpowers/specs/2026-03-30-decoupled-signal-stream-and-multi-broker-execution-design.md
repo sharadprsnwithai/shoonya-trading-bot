@@ -20,9 +20,11 @@ In the current implementation, trading strategies (such as the Lowest Volume Rev
 ### 1.3 Target State
 1. **Complete Removal of Legacy Execution Code from Strategies:** All direct trade execution logic, order placement calls, and broker coupling are completely removed from strategy engines. Strategies focus solely on market data analysis, state machines, and generating signals.
 2. **Reactive Pub-Sub Backbone:** Decouple signal generation from trade execution using Project Reactor (`Flux` / `Sinks.Many`). Strategy engines publish immutable `TradeSignal` events to an in-memory reactive event bus (`SignalPublisher`).
-3. **Dedicated Pluggable Broker Consumers:** A separate, modular execution package containing `TradeExecutionConsumer` implementations (e.g. Shoonya, Zerodha Kite, Paper Simulator) that subscribe to the reactive `Flux` on isolated threads.
-4. **Multi-Broker / Multi-Account Fan-Out:** Each consumer receives the exact same signal concurrently and handles its own account-level authentication, quantity scaling multiplier, order translation, and live/paper execution mode.
-5. **Telegram Alerts:** Strategy-level telegram alerts are maintained for scanning/signal notifications, while order execution alerts are emitted by individual consumers with their consumer account ID tag.
+3. **Hot Multicast Stream (Zero Replay of Historical / Stale Signals):** The reactive stream is strictly a hot, live-only multicast stream. Late-subscribing consumers will *never* receive historical signals emitted prior to their subscription.
+4. **Defense-in-Depth Signal Freshness Check:** In addition to hot stream semantics, every `TradeSignal` carries an emission timestamp. Consumers enforce a configurable max signal age (e.g. max 30 seconds). Any stale or delayed signal is dropped with a descriptive warning log before reaching broker gateways.
+5. **Dedicated Pluggable Broker Consumers:** A separate, modular execution package containing `TradeExecutionConsumer` implementations (e.g. Shoonya, Zerodha Kite, Paper Simulator) that subscribe to the reactive `Flux` on isolated threads.
+6. **Multi-Broker / Multi-Account Fan-Out:** Each consumer receives the exact same signal concurrently and handles its own account-level authentication, quantity scaling multiplier, order translation, and live/paper execution mode.
+7. **Telegram Alerts:** Strategy-level telegram alerts are maintained for scanning/signal notifications, while order execution alerts are emitted by individual consumers with their consumer account ID tag.
 
 ---
 
@@ -189,6 +191,10 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
+/**
+ * Hot multicast reactive event bus for trading signals.
+ * Uses direct multicast without replay cache, ensuring late subscribers only receive future signals.
+ */
 @Component
 public class ReactiveSignalEventBus implements SignalPublisher, SignalStreamProvider {
     private static final Logger log = LoggerFactory.getLogger(ReactiveSignalEventBus.class);
@@ -198,6 +204,7 @@ public class ReactiveSignalEventBus implements SignalPublisher, SignalStreamProv
     private final Flux<TradeSignal> signalFlux;
 
     public ReactiveSignalEventBus() {
+        // Direct multicast without replay history: late subscribers do not receive past signals
         this.sink = Sinks.many().multicast().onBackpressureBuffer(BUFFER_CAPACITY, false);
         this.signalFlux = this.sink.asFlux().share();
     }
@@ -228,7 +235,15 @@ public class ReactiveSignalEventBus implements SignalPublisher, SignalStreamProv
 
 ---
 
-## 5. Multi-Broker Consumer Architecture
+## 5. Multi-Broker Consumer Architecture & Staleness Prevention
+
+### 5.1 Freshness & Staleness Defense
+To guarantee that stale signals are never executed in real market conditions:
+1. **Live Multicast Only:** The bus does not buffer or replay signals to new subscribers.
+2. **Signal Age Validation:** `AbstractTradeExecutionConsumer` checks `Duration.between(signal.timestamp(), Instant.now())`. If the elapsed duration exceeds `maxSignalAgeSeconds` (default: 30s), the signal is immediately dropped with a warning log:
+   ```
+   [CONSUMER:shoonya-1] DROPPED STALE SIGNAL: SIG-12345 (Age: 45s > Max allowed: 30s). No order placed.
+   ```
 
 ### 5.1 `BrokerOrderGateway` Contract
 ```java
@@ -267,6 +282,7 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     private final ExecutionMode executionMode;
     private final double quantityMultiplier;
     private final boolean enabled;
+    private final long maxSignalAgeSeconds;
     private Disposable subscription;
 
     protected AbstractTradeExecutionConsumer(
@@ -274,13 +290,15 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             String brokerName,
             ExecutionMode executionMode,
             double quantityMultiplier,
-            boolean enabled
+            boolean enabled,
+            long maxSignalAgeSeconds
     ) {
         this.consumerId = consumerId;
         this.brokerName = brokerName;
         this.executionMode = executionMode;
         this.quantityMultiplier = quantityMultiplier;
         this.enabled = enabled;
+        this.maxSignalAgeSeconds = maxSignalAgeSeconds > 0 ? maxSignalAgeSeconds : 30L;
     }
 
     @Override
@@ -290,16 +308,31 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             return;
         }
 
-        log.info("[CONSUMER:{}] Subscribing to signal stream. Broker: {} | Mode: {} | Multiplier: {}x",
-                consumerId, brokerName, executionMode, quantityMultiplier);
+        log.info("[CONSUMER:{}] Subscribing to signal stream. Broker: {} | Mode: {} | Multiplier: {}x | MaxAge: {}s",
+                consumerId, brokerName, executionMode, quantityMultiplier, maxSignalAgeSeconds);
 
         this.subscription = signalStream
                 .publishOn(Schedulers.boundedElastic()) // Isolated worker thread
-                .filter(this::shouldProcessSignal)
+                .filter(this::isSignalFreshAndActionable)
                 .doOnNext(this::processSignalSafe)
                 .doOnError(err -> log.error("[CONSUMER:{}] Uncaught stream error: {}", consumerId, err.getMessage(), err))
                 .retry()
                 .subscribe();
+    }
+
+    protected boolean isSignalFreshAndActionable(TradeSignal signal) {
+        if (signal == null || !signal.isActionable()) {
+            return false;
+        }
+        if (signal.timestamp() != null) {
+            long ageSeconds = java.time.Duration.between(signal.timestamp(), java.time.Instant.now()).getSeconds();
+            if (ageSeconds > maxSignalAgeSeconds) {
+                log.warn("[CONSUMER:{}] Dropping STALE signal {} (Age: {}s > Max: {}s) for {}",
+                        consumerId, signal.signalId(), ageSeconds, maxSignalAgeSeconds, signal.tradingSymbol());
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
