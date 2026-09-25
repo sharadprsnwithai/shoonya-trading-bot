@@ -18,7 +18,11 @@ In the current implementation, trading strategies (such as the Lowest Volume Rev
 4. **Tight Coupling:** Strategy business logic cannot be tested in isolation from execution management.
 
 ### 1.3 Target State
-Decouple signal generation from trade execution using a reactive publish-subscribe architecture powered by Project Reactor (`Flux` / `Sinks.Many`). Strategy engines publish immutable `TradeSignal` events to an in-memory reactive event bus without waiting for order execution. Multiple pluggable broker consumers (e.g. Shoonya, Zerodha Kite, Paper Simulator) subscribe to the signal stream concurrently on isolated execution threads, applying their own account credentials, execution mode (`LIVE`/`PAPER`), and position sizing multipliers.
+1. **Complete Removal of Legacy Execution Code from Strategies:** All direct trade execution logic, order placement calls, and broker coupling are completely removed from strategy engines. Strategies focus solely on market data analysis, state machines, and generating signals.
+2. **Reactive Pub-Sub Backbone:** Decouple signal generation from trade execution using Project Reactor (`Flux` / `Sinks.Many`). Strategy engines publish immutable `TradeSignal` events to an in-memory reactive event bus (`SignalPublisher`).
+3. **Dedicated Pluggable Broker Consumers:** A separate, modular execution package containing `TradeExecutionConsumer` implementations (e.g. Shoonya, Zerodha Kite, Paper Simulator) that subscribe to the reactive `Flux` on isolated threads.
+4. **Multi-Broker / Multi-Account Fan-Out:** Each consumer receives the exact same signal concurrently and handles its own account-level authentication, quantity scaling multiplier, order translation, and live/paper execution mode.
+5. **Telegram Alerts:** Strategy-level telegram alerts are maintained for scanning/signal notifications, while order execution alerts are emitted by individual consumers with their consumer account ID tag.
 
 ---
 
@@ -393,20 +397,40 @@ trading-bot:
 
 ---
 
-## 7. Migration Plan for Strategy Services
+## 7. Migration Plan & Legacy Execution Removal
 
-### 7.1 Decoupling `LowestVolumeReversalService`
-1. Inject `SignalPublisher` into `LowestVolumeReversalService`.
-2. Replace direct calls to local paper-trade mutations with `signalPublisher.publish(TradeSignal.of(...))`.
-3. The strategy publishes:
-   - `ENTRY_LONG` / `ENTRY_SHORT` when C4/C5 lowest volume breakout conditions are met.
-   - `PARTIAL_EXIT_LONG` / `PARTIAL_EXIT_SHORT` when 1:2 RR Target 1 is reached.
-   - `UPDATE_STOP_LOSS` when moving stop-loss to cost or adjusting to 10 EMA.
-   - `EXIT_LONG` / `EXIT_SHORT` on stop-loss hit or 15:00 IST hard EOD exit.
+### 7.1 Removal of Coupled Execution from Strategy Engine
+1. **Remove Direct Execution / Monolithic Management:**
+   - Remove legacy `com.tradingbot.execution.ExecutionManager` and its direct order routing dependencies.
+   - Remove direct order placement and local position mutation logic from `LowestVolumeReversalService`.
+2. **Inject `SignalPublisher` into Strategy Services:**
+   - Inject `SignalPublisher` into `LowestVolumeReversalService` and future strategy engines.
+   - When entry/exit criteria trigger, create an immutable `TradeSignal` and call `signalPublisher.publish(signal)`.
+   - Strategies continue to send Telegram signals/alerts upon candidate detection, armed triggers, and signal generation.
+
+### 7.2 Dedicated Execution Consumer Module
+1. Build `com.tradingbot.execution.consumer.TradeExecutionConsumer` and `AbstractTradeExecutionConsumer`.
+2. Implement broker order gateways:
+   - `ShoonyaBrokerGateway` (delegating to clean Shoonya API client).
+   - `ZerodhaBrokerGateway` (template for Kite Connect API client).
+3. Implement `TradeConsumerManager` to bootstrap configured consumers and connect them to `SignalStreamProvider.getSignalStream()`.
 
 ---
 
-## 8. REST Endpoints & Observability
+## 8. Dependencies & Build Configuration
+
+Add Project Reactor dependencies to `build.gradle.kts`:
+```kotlin
+dependencies {
+    // Reactive Streams & Project Reactor
+    implementation("io.projectreactor:reactor-core:3.6.11")
+    testImplementation("io.projectreactor:reactor-test:3.6.11")
+}
+```
+
+---
+
+## 9. REST Endpoints & Observability
 
 ### 8.1 API Controller Endpoints
 * `GET /api/v1/execution/consumers`: Lists all active consumers, broker types, execution modes, multipliers, and health status.
