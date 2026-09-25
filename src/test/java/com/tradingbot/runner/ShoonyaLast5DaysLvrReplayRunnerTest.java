@@ -1,20 +1,19 @@
 package com.tradingbot.runner;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.YahooFinanceService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
-import com.tradingbot.model.strategy.LowestVolumeSetup;
-import com.tradingbot.model.strategy.LowestVolumeSetupState;
+import com.tradingbot.model.strategy.LowestVolumePaperPosition;
+import com.tradingbot.model.strategy.LvrExitMode;
+import com.tradingbot.model.strategy.LvrInstrumentType;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import com.tradingbot.service.LowestVolumeReversalScanner;
+import com.tradingbot.service.LowestVolumeReversalService;
 import com.tradingbot.util.Nifty200Registry;
 import com.tradingbot.util.NiftySectorRegistry;
-import com.tradingbot.util.StockFnoRegistry;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -101,6 +100,12 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
         double netRMultiple = 0.0;
 
         LowestVolumeReversalScanner scanner = new LowestVolumeReversalScanner();
+        TechnicalAnalysisService taService = new TechnicalAnalysisService();
+        LowestVolumeReversalService lvrService =
+                new LowestVolumeReversalService(null, taService, null, null, null);
+        lvrService.setInstrumentType(LvrInstrumentType.FUTURES);
+        lvrService.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
+        lvrService.setTelegramAlerts(false);
 
         // 2. Iterate Day by Day
         for (int dayIdx = 0; dayIdx < last5Days.size(); dayIdx++) {
@@ -206,15 +211,17 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                     sectorCandidateCandles.put(sym, dayStockCandles.get(sym));
                 }
             }
-            DayResult sectorResult = runDayExecution(sectorCandidateCandles, sentiment, true);
+            System.out.println("  --- [A] Top Sector Candidates Execution (Production Mode) ---");
+            DayResult sectorResult =
+                    runDayExecution(lvrService, sectorCandidateCandles, sentiment, true);
 
-            System.out.println("\n  --- [B] Universe-Wide (All 140+ F&O Stocks) LVR Setups ---");
-            DayResult dayResult = runDayExecution(dayStockCandles, sentiment, true);
+            System.out.println("\n  --- [B] Universe-Wide (All 140+ F&O Stocks) LVR Replay ---");
+            DayResult dayResult = runDayExecution(lvrService, dayStockCandles, sentiment, false);
 
-            totalTradesTriggered += dayResult.trades;
-            totalWins += dayResult.wins;
-            totalLosses += dayResult.losses;
-            netRMultiple += dayResult.dayR;
+            totalTradesTriggered += sectorResult.trades;
+            totalWins += sectorResult.wins;
+            totalLosses += sectorResult.losses;
+            netRMultiple += sectorResult.dayR;
 
             System.out.printf(
                     "\n  >>> DAY %d SUMMARY: %d Trades | %d Wins | %d Losses | Day Net: %+.2f R (Top Sector: %d Trades, %+.2f R)\n\n",
@@ -235,7 +242,7 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                 "==========================================================================================");
         System.out.printf("  Total Days Simulated    : %d\n", totalDaysTraded);
         System.out.printf("  Total Trades Triggered  : %d\n", totalTradesTriggered);
-        System.out.printf("  Total Wins (>= 1:4)     : %d\n", totalWins);
+        System.out.printf("  Total Wins (>= 1:2)     : %d\n", totalWins);
         System.out.printf("  Total Losses (SL Hit)   : %d\n", totalLosses);
         double winRate =
                 (totalTradesTriggered > 0)
@@ -250,196 +257,61 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
     private record DayResult(int trades, int wins, int losses, double dayR) {}
 
     private DayResult runDayExecution(
+            LowestVolumeReversalService service,
             Map<String, List<Candle>> dayStockCandles,
             LowestVolumeDirection direction,
-            boolean verboseArmed) {
+            boolean verbose) {
         int trades = 0;
         int wins = 0;
         int losses = 0;
-        double dayR = 0.0;
+        double totalR = 0.0;
 
         for (Map.Entry<String, List<Candle>> entry : dayStockCandles.entrySet()) {
             String sym = entry.getKey();
             List<Candle> candles = entry.getValue();
             if (candles == null || candles.size() < 4) continue;
 
-            long baselineLowest = Long.MAX_VALUE;
-            for (int k = 0; k < 3 && k < candles.size(); k++) {
-                long v = candles.get(k).volume();
-                if (v > 0) {
-                    baselineLowest = Math.min(baselineLowest, v);
-                }
-            }
-            if (baselineLowest == Long.MAX_VALUE) {
-                baselineLowest = candles.get(0).volume();
-            }
-            long rollingLowest = baselineLowest;
+            List<LowestVolumePaperPosition> executedTrades =
+                    service.replaySession(sym, direction, candles);
+            for (LowestVolumePaperPosition pos : executedTrades) {
+                trades++;
+                double unitRisk =
+                        pos.getStockEntryPrice()
+                                .subtract(pos.getInitialStockSl())
+                                .abs()
+                                .doubleValue();
+                double pnl = pos.getTotalRealizedPnl().doubleValue();
+                double rValue =
+                        (unitRisk > 0 && pos.getTotalQuantity() > 0)
+                                ? pnl / (unitRisk * pos.getTotalQuantity())
+                                : (pnl >= 0 ? 2.0 : -1.0);
 
-            LowestVolumeSetup activeSetup = null;
-            boolean inTrade = false;
-            BigDecimal entryPrice = null;
-            BigDecimal slPrice = null;
-            BigDecimal targetPrice = null;
-            BigDecimal riskPerUnit = BigDecimal.ZERO;
-            boolean partialBooked = false;
-
-            for (int i = 3; i < candles.size(); i++) {
-                Candle c = candles.get(i);
-                LocalTime candleTime = LocalTime.ofInstant(c.timestamp(), IST);
-                boolean isOpposite =
-                        (direction == LowestVolumeDirection.SHORT) ? c.isGreen() : c.isRed();
-
-                // Active Trade Exits
-                if (inTrade) {
-                    boolean slHit = false;
-                    boolean targetHit = false;
-
-                    if (direction == LowestVolumeDirection.SHORT) {
-                        if (c.high().compareTo(slPrice) >= 0) slHit = true;
-                        if (c.low().compareTo(targetPrice) <= 0) targetHit = true;
-                    } else {
-                        if (c.low().compareTo(slPrice) <= 0) slHit = true;
-                        if (c.high().compareTo(targetPrice) >= 0) targetHit = true;
-                    }
-
-                    if (targetHit) {
-                        wins++;
-                        dayR += 4.0; // 100% Full Exit at 1:4 RR = +4.0R realized
-                        System.out.printf(
-                                "    🎯 [%s IST] 1:4 TARGET REACHED (100%% FULL EXIT): %s at %.2f | Realized +4.0R\n",
-                                TIME_FMT.format(c.timestamp()), sym, targetPrice.doubleValue());
-                        inTrade = false;
-                        activeSetup = null;
-                        break; // One trade per stock per day
-                    } else if (slHit) {
-                        losses++;
-                        double rLoss = -1.0;
-                        dayR += rLoss;
-                        System.out.printf(
-                                "    🛑 [%s IST] STOP LOSS HIT (100%% Exit): %s at %.2f (SL: %.2f) -> PnL: %+.1fR\n",
-                                TIME_FMT.format(c.timestamp()),
-                                sym,
-                                slPrice.doubleValue(),
-                                slPrice.doubleValue(),
-                                rLoss);
-                        inTrade = false;
-                        activeSetup = null;
-                        break; // One trade per stock per day
-                    }
-
-                    if (candleTime.isAfter(LocalTime.of(15, 10)) && inTrade) {
-                        double remR = 0.0;
-                        if (riskPerUnit.compareTo(BigDecimal.ZERO) > 0) {
-                            if (direction == LowestVolumeDirection.LONG) {
-                                remR =
-                                        (c.close().subtract(entryPrice).doubleValue()
-                                                / riskPerUnit.doubleValue());
-                            } else {
-                                remR =
-                                        (entryPrice.subtract(c.close()).doubleValue()
-                                                / riskPerUnit.doubleValue());
-                            }
-                        }
-                        dayR += remR;
-                        System.out.printf(
-                                "    🏁 [%s IST] 15:15 HARD EOD EXIT: %s at Close %.2f (Entry: %.2f) -> PnL: %+.2fR\n",
-                                TIME_FMT.format(c.timestamp()),
-                                sym,
-                                c.close().doubleValue(),
-                                entryPrice.doubleValue(),
-                                remR);
-                        inTrade = false;
-                        break;
-                    }
-                    continue;
+                totalR += rValue;
+                if (rValue > 0) {
+                    wins++;
+                } else {
+                    losses++;
                 }
 
-                // Check Trigger Breach
-                if (activeSetup != null
-                        && activeSetup.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
-                    boolean breached = false;
-                    if (direction == LowestVolumeDirection.SHORT
-                            && c.low().compareTo(activeSetup.getTriggerPrice()) <= 0) {
-                        breached = true;
-                    } else if (direction == LowestVolumeDirection.LONG
-                            && c.high().compareTo(activeSetup.getTriggerPrice()) >= 0) {
-                        breached = true;
-                    }
-
-                    if (breached) {
-                        inTrade = true;
-                        entryPrice = activeSetup.getTriggerPrice();
-                        slPrice = activeSetup.getStopLossPrice();
-                        targetPrice = activeSetup.getTarget1Price();
-                        riskPerUnit = slPrice.subtract(entryPrice).abs();
-                        partialBooked = false;
-                        trades++;
-
-                        String optType = (direction == LowestVolumeDirection.SHORT) ? "PE" : "CE";
-                        BigDecimal strikeStep = StockFnoRegistry.getStrikeStep(sym, entryPrice);
-                        BigDecimal atmStrike =
-                                entryPrice
-                                        .divide(strikeStep, 0, RoundingMode.HALF_UP)
-                                        .multiply(strikeStep);
-
-                        System.out.printf(
-                                "    🔥 [%s IST] TRADE TRIGGERED: %s (%s) | BUY %s ATM %.0f %s | Entry=%.2f, SL=%.2f, 1:4 Target=%.2f (Risk=%.2f)\n",
-                                TIME_FMT.format(c.timestamp()),
-                                sym,
-                                direction,
-                                sym,
-                                atmStrike.doubleValue(),
-                                optType,
-                                entryPrice.doubleValue(),
-                                slPrice.doubleValue(),
-                                targetPrice.doubleValue(),
-                                riskPerUnit.doubleValue());
-                        activeSetup = null;
-                        continue;
-                    }
-                }
-
-                // Arming / Trailing Check before 13:00 IST
-                if (candleTime.isBefore(LocalTime.of(13, 0))) {
-                    if (isOpposite && c.volume() < rollingLowest) {
-                        rollingLowest = c.volume();
-                        activeSetup = new LowestVolumeSetup(sym, direction);
-
-                        BigDecimal trg, sl, tgt;
-                        if (direction == LowestVolumeDirection.SHORT) {
-                            trg = c.low().subtract(BigDecimal.valueOf(0.05));
-                            sl = c.high().add(BigDecimal.valueOf(0.05));
-                            BigDecimal risk = sl.subtract(trg);
-                            tgt = trg.subtract(risk.multiply(BigDecimal.valueOf(4)));
-                        } else {
-                            trg = c.high().add(BigDecimal.valueOf(0.05));
-                            sl = c.low().subtract(BigDecimal.valueOf(0.05));
-                            BigDecimal risk = trg.subtract(sl);
-                            tgt = trg.add(risk.multiply(BigDecimal.valueOf(4)));
-                        }
-
-                        activeSetup.setTriggerCandle(c, trg, sl, tgt);
-                        activeSetup.setDayLowestVolume(rollingLowest);
-
-                        if (verboseArmed) {
-                            System.out.printf(
-                                    "      * [%s IST] Setup Armed on %s: %s pullback candle Vol=%,d (< Baseline %,d) | Trigger=%.2f, SL=%.2f, Target=%.2f\n",
-                                    TIME_FMT.format(c.timestamp()),
-                                    sym,
-                                    c.isGreen() ? "GREEN" : "RED",
-                                    c.volume(),
-                                    rollingLowest,
-                                    trg.doubleValue(),
-                                    sl.doubleValue(),
-                                    tgt.doubleValue());
-                        }
-                    } else if (c.volume() < rollingLowest) {
-                        rollingLowest = c.volume();
-                    }
+                if (verbose) {
+                    String icon = rValue > 0 ? "🎯" : "🛑";
+                    System.out.printf(
+                            "    %s [%s] %s (%s) | Entry=%.2f, SL=%.2f -> Exit=%s (%s) |"
+                                    + " Realized: %+.2fR (₹%.2f)\n",
+                            icon,
+                            sym,
+                            pos.getTradeId(),
+                            pos.getDirection(),
+                            pos.getStockEntryPrice().doubleValue(),
+                            pos.getInitialStockSl().doubleValue(),
+                            pos.getExitReason(),
+                            pos.isPartialBooked() ? "50% @ 1:2 + Runner" : "Full",
+                            rValue,
+                            pnl);
                 }
             }
         }
 
-        return new DayResult(trades, wins, losses, dayR);
+        return new DayResult(trades, wins, losses, totalR);
     }
 }

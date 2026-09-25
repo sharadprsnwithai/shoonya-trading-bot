@@ -166,6 +166,18 @@ public class ShoonyaMarketDataService {
                 tokenCache.size());
     }
 
+    /** Pre-warms the Shoonya API session during daily reset or startup. */
+    public void prewarmSession() {
+        if (config.isEnabled() && authenticator != null) {
+            try {
+                authenticator.getOrAuthenticateToken();
+                log.info("[MARKET-DATA] Session pre-warmed successfully.");
+            } catch (Exception e) {
+                log.warn("[MARKET-DATA] Failed to pre-warm session: {}", e.getMessage());
+            }
+        }
+    }
+
     private boolean isValidNumericToken(String token) {
         return token != null && !token.isBlank() && token.matches("\\d+");
     }

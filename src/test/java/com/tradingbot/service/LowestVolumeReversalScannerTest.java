@@ -86,7 +86,8 @@ class LowestVolumeReversalScannerTest {
     }
 
     @Test
-    @DisplayName("Should filter out overextended stocks (> 5%), circuit locked stocks, and wrong-direction stocks")
+    @DisplayName(
+            "Should filter out overextended stocks (> 5%), circuit locked stocks, and wrong-direction stocks")
     void testFilterCandidateStocks() {
         List<StockQuoteSnapshot> quotes =
                 List.of(
@@ -100,13 +101,15 @@ class LowestVolumeReversalScannerTest {
         assertEquals(2, candidates.size());
         assertTrue(candidates.contains("PVRINOX"));
         assertTrue(candidates.contains("SUNTV"));
-        assertFalse(candidates.contains("GREEN_STOCK")); // Positive stock must not be chosen for SHORT
+        assertFalse(
+                candidates.contains("GREEN_STOCK")); // Positive stock must not be chosen for SHORT
         assertFalse(candidates.contains("OVEREXTENDED"));
         assertFalse(candidates.contains("TOO_FAR"));
     }
 
     @Test
-    @DisplayName("LONG sentiment must only select positive stocks and exclude negative/overextended stocks")
+    @DisplayName(
+            "LONG sentiment must only select positive stocks and exclude negative/overextended stocks")
     void testFilterCandidateStocksBullish() {
         List<StockQuoteSnapshot> quotes =
                 List.of(
@@ -114,8 +117,7 @@ class LowestVolumeReversalScannerTest {
                         new StockQuoteSnapshot("CIPLA", 1530.0, 1500.0, 1510.0, 2.00),
                         new StockQuoteSnapshot("RED_STOCK", 1480.0, 1500.0, 1490.0, -1.33),
                         new StockQuoteSnapshot("EXHAUSTED_GAIN", 1600.0, 1500.0, 1550.0, 6.67));
-        List<String> candidates =
-                scanner.filterCandidateStocks(quotes, LowestVolumeDirection.LONG);
+        List<String> candidates = scanner.filterCandidateStocks(quotes, LowestVolumeDirection.LONG);
         assertEquals(2, candidates.size());
         assertEquals("SUNPHARMA", candidates.get(0)); // 2.70%
         assertEquals("CIPLA", candidates.get(1)); // 2.00%

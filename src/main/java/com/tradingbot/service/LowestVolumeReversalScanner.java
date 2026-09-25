@@ -98,10 +98,10 @@ public class LowestVolumeReversalScanner {
     }
 
     /**
-     * Filters candidate stocks within the selected sector:
-     * 1. For LONG: Strictly positive % change (0.0% < pctChange <= 5.0%), excluding circuit locked stocks.
-     * 2. For SHORT: Strictly negative % change (-5.0% <= pctChange < 0.0%), excluding circuit locked stocks.
-     * 3. Selects top 2-3 stocks in the direction of the trend (or all if <= 3).
+     * Filters candidate stocks within the selected sector: 1. For LONG: Strictly positive % change
+     * (0.0% < pctChange <= 5.0%), excluding circuit locked/exhausted stocks. 2. For SHORT: Strictly
+     * negative % change (-5.0% <= pctChange < 0.0%), excluding circuit locked/exhausted stocks. 3.
+     * Selects top 2-3 stocks in the direction of the trend (or all if <= 3).
      */
     public List<String> filterCandidateStocks(
             List<StockQuoteSnapshot> sectorStockQuotes, LowestVolumeDirection sentiment) {
@@ -116,9 +116,9 @@ public class LowestVolumeReversalScanner {
             eligible =
                     new ArrayList<>(
                             sectorStockQuotes.stream()
-                                    .filter(q -> q.pctChange() > 0.0) // Must be positive/green for LONG
+                                    .filter(q -> q.pctChange() > 0.0) // Must be positive/green for
+                                    // LONG
                                     .filter(q -> q.pctChange() <= 5.0) // Not exhausted (> 5%)
-                                    .filter(q -> q.pctChange() < 10.0) // Not circuit locked
                                     .toList());
             // Most positive pctChange first
             eligible.sort(Comparator.comparingDouble(StockQuoteSnapshot::pctChange).reversed());
@@ -126,9 +126,11 @@ public class LowestVolumeReversalScanner {
             eligible =
                     new ArrayList<>(
                             sectorStockQuotes.stream()
-                                    .filter(q -> q.pctChange() < 0.0) // Must be negative/red for SHORT
+                                    .filter(
+                                            q ->
+                                                    q.pctChange()
+                                                            < 0.0) // Must be negative/red for SHORT
                                     .filter(q -> q.pctChange() >= -5.0) // Not exhausted (< -5%)
-                                    .filter(q -> q.pctChange() > -10.0) // Not circuit locked
                                     .toList());
             // Most negative pctChange first
             eligible.sort(Comparator.comparingDouble(StockQuoteSnapshot::pctChange));

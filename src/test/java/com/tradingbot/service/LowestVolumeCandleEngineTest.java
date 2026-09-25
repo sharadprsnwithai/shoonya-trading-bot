@@ -109,8 +109,8 @@ class LowestVolumeCandleEngineTest {
         assertEquals(0, BigDecimal.valueOf(96.95).compareTo(setup.getTriggerPrice())); // Low - 0.05
         assertEquals(
                 0, BigDecimal.valueOf(102.05).compareTo(setup.getStopLossPrice())); // High + 0.05
-        // Spot Risk = 102.05 - 96.95 = 5.10. 1:4 Target = 96.95 - (4 * 5.10) = 76.55
-        assertEquals(0, BigDecimal.valueOf(76.55).compareTo(setup.getTarget1Price()));
+        // Spot Risk = 102.05 - 96.95 = 5.10. 1:2 Target = 96.95 - (2 * 5.10) = 86.75
+        assertEquals(0, BigDecimal.valueOf(86.75).compareTo(setup.getTarget1Price()));
         assertEquals(4500L, setup.getDayLowestVolume());
     }
 
@@ -175,8 +175,8 @@ class LowestVolumeCandleEngineTest {
         assertEquals(0, BigDecimal.valueOf(99.95).compareTo(setup.getTriggerPrice())); // Low - 0.05
         assertEquals(
                 0, BigDecimal.valueOf(105.05).compareTo(setup.getStopLossPrice())); // High + 0.05
-        // Spot Risk = 105.05 - 99.95 = 5.10. 1:4 Target = 99.95 - (4 * 5.10) = 79.55
-        assertEquals(0, BigDecimal.valueOf(79.55).compareTo(setup.getTarget1Price()));
+        // Spot Risk = 105.05 - 99.95 = 5.10. 1:2 Target = 99.95 - (2 * 5.10) = 89.75
+        assertEquals(0, BigDecimal.valueOf(89.75).compareTo(setup.getTarget1Price()));
         assertEquals(3000L, setup.getDayLowestVolume());
     }
 
@@ -232,8 +232,8 @@ class LowestVolumeCandleEngineTest {
                 0, BigDecimal.valueOf(516.05).compareTo(setup.getTriggerPrice())); // High + 0.05
         assertEquals(
                 0, BigDecimal.valueOf(507.95).compareTo(setup.getStopLossPrice())); // Low - 0.05
-        // Spot Risk = 516.05 - 507.95 = 8.10. 1:4 Target = 516.05 + (4 * 8.10) = 548.45
-        assertEquals(0, BigDecimal.valueOf(548.45).compareTo(setup.getTarget1Price()));
+        // Spot Risk = 516.05 - 507.95 = 8.10. 1:2 Target = 516.05 + (2 * 8.10) = 532.25
+        assertEquals(0, BigDecimal.valueOf(532.25).compareTo(setup.getTarget1Price()));
         assertEquals(4000L, setup.getDayLowestVolume());
     }
 }

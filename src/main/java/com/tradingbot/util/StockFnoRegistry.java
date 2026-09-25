@@ -34,6 +34,19 @@ public final class StockFnoRegistry {
         }
     }
 
+    public static final List<String> CHAMPION_STOCKS =
+            List.of(
+                    "BSE",
+                    "LAURUSLABS",
+                    "SAIL",
+                    "POLYCAB",
+                    "ADANIENSOL",
+                    "MCX",
+                    "ADANIGREEN",
+                    "TORNTPHARM",
+                    "BHEL",
+                    "HINDALCO");
+
     private static final Map<String, InstrumentInfo> INSTRUMENTS = new LinkedHashMap<>();
 
     static {
@@ -63,6 +76,7 @@ public final class StockFnoRegistry {
         // Active NSE F&O Equities Universe (Pre-populated for 0ms startup resolution)
         register("RELIANCE", "2885", 20.0, 250, "NSE", "NFO");
         register("TCS", "11536", 20.0, 175, "NSE", "NFO");
+        register("LTIM", "17818", 50.0, 150, "NSE", "NFO");
         register("INFY", "1594", 10.0, 400, "NSE", "NFO");
         register("HDFCBANK", "1333", 10.0, 550, "NSE", "NFO");
         register("ICICIBANK", "4963", 10.0, 700, "NSE", "NFO");

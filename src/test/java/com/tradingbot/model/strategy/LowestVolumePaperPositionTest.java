@@ -10,11 +10,11 @@ import org.junit.jupiter.api.Test;
 class LowestVolumePaperPositionTest {
 
     @Test
-    @DisplayName("Futures LONG Position - 100% Full Exit at 1:4 Target computes +4R exact P&L")
+    @DisplayName("Futures LONG Position - 100% Full Exit at 1:2 Target computes +2R exact P&L")
     void testFuturesLongFullExitTarget() {
         BigDecimal entryPrice = BigDecimal.valueOf(1875.00);
         BigDecimal slPrice = BigDecimal.valueOf(1872.00);
-        BigDecimal targetPrice = BigDecimal.valueOf(1887.00); // 1:4 (12 pts gain on 3 pts risk)
+        BigDecimal targetPrice = BigDecimal.valueOf(1881.00); // 1:2 (6 pts gain on 3 pts risk)
         int lotSize = 350;
         int lots = 1;
         int totalQty = lotSize * lots;
@@ -26,7 +26,7 @@ class LowestVolumePaperPositionTest {
                         "LVR-1",
                         "SUNPHARMA",
                         LvrInstrumentType.FUTURES,
-                        LvrExitMode.FULL_TARGET_1_4,
+                        LvrExitMode.FULL_TARGET_1_2,
                         "SUNPHARMA FUT",
                         lotSize,
                         lots,
@@ -39,17 +39,17 @@ class LowestVolumePaperPositionTest {
                         Instant.now());
 
         assertThat(pos.getInstrumentType()).isEqualTo(LvrInstrumentType.FUTURES);
-        assertThat(pos.getExitMode()).isEqualTo(LvrExitMode.FULL_TARGET_1_4);
+        assertThat(pos.getExitMode()).isEqualTo(LvrExitMode.FULL_TARGET_1_2);
         assertThat(pos.getTotalQuantity()).isEqualTo(350);
 
         // Execute 100% full exit at target
-        pos.closeFullFutures(targetPrice, "TARGET_1_4_FULL_EXIT", Instant.now());
+        pos.closeFullFutures(targetPrice, "TARGET_1_2_FULL_EXIT", Instant.now());
 
         assertThat(pos.isClosed()).isTrue();
         assertThat(pos.getRemainingQuantity()).isZero();
         assertThat(pos.getTotalRealizedPnl())
-                .isEqualByComparingTo(BigDecimal.valueOf(4200.00)); // +12 * 350
-        assertThat(pos.getExitReason()).isEqualTo("TARGET_1_4_FULL_EXIT");
+                .isEqualByComparingTo(BigDecimal.valueOf(2100.00)); // +6 * 350
+        assertThat(pos.getExitReason()).isEqualTo("TARGET_1_2_FULL_EXIT");
     }
 
     @Test
@@ -99,14 +99,14 @@ class LowestVolumePaperPositionTest {
         int totalQty = lotSize * lots; // 750
         BigDecimal entryPrice = BigDecimal.valueOf(100.00);
         BigDecimal slPrice = BigDecimal.valueOf(98.00); // Risk = 2.00
-        BigDecimal targetPrice = BigDecimal.valueOf(108.00); // Target 1:4
+        BigDecimal targetPrice = BigDecimal.valueOf(104.00); // Target 1:2
 
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
                         "LVR-3",
                         "RELIANCE",
                         LvrInstrumentType.FUTURES,
-                        LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_COST_EOD_1500,
                         "RELIANCE FUT",
                         lotSize,
                         lots,
@@ -118,18 +118,18 @@ class LowestVolumePaperPositionTest {
                         BigDecimal.valueOf(1500.00),
                         Instant.now());
 
-        // Book partial at Target (108.00)
+        // Book partial at Target (104.00)
         pos.executePartialBook(targetPrice, Instant.now());
 
         // Ceiling of 3 lots is 2 lots (500 shares). Remaining is 1 lot (250 shares).
         assertThat(pos.isPartialBooked()).isTrue();
         assertThat(pos.isClosed()).isFalse();
         assertThat(pos.getRemainingQuantity()).isEqualTo(250);
-        // Partial P&L: (108 - 100) * 500 = +4000.00
-        assertThat(pos.getPartialPnl()).isEqualByComparingTo("4000.00");
-        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo("4000.00");
-        // 1:1 SL moved to 100 + 2 = 102.00
-        assertThat(pos.getCurrentStockSl()).isEqualByComparingTo("102.00");
+        // Partial P&L: (104 - 100) * 500 = +2000.00
+        assertThat(pos.getPartialPnl()).isEqualByComparingTo("2000.00");
+        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo("2000.00");
+        // Cost SL moved to entry price 100.00
+        assertThat(pos.getCurrentStockSl()).isEqualByComparingTo("100.00");
     }
 
     @Test
@@ -140,14 +140,14 @@ class LowestVolumePaperPositionTest {
         int totalQty = lotSize * lots; // 250
         BigDecimal entryPrice = BigDecimal.valueOf(100.00);
         BigDecimal slPrice = BigDecimal.valueOf(98.00);
-        BigDecimal targetPrice = BigDecimal.valueOf(108.00);
+        BigDecimal targetPrice = BigDecimal.valueOf(104.00);
 
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
                         "LVR-4",
                         "RELIANCE",
                         LvrInstrumentType.FUTURES,
-                        LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_COST_EOD_1500,
                         "RELIANCE FUT",
                         lotSize,
                         lots,
@@ -165,8 +165,8 @@ class LowestVolumePaperPositionTest {
         assertThat(pos.isPartialBooked()).isTrue();
         assertThat(pos.isClosed()).isTrue();
         assertThat(pos.getRemainingQuantity()).isZero();
-        assertThat(pos.getPartialPnl()).isEqualByComparingTo("2000.00"); // (108 - 100) * 250
-        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo("2000.00");
-        assertThat(pos.getExitReason()).isEqualTo("TARGET_1_4_FULL_EXIT");
+        assertThat(pos.getPartialPnl()).isEqualByComparingTo("1000.00"); // (104 - 100) * 250
+        assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo("1000.00");
+        assertThat(pos.getExitReason()).isEqualTo("TARGET_1_2_FULL_EXIT");
     }
 }

@@ -3,18 +3,15 @@ package com.tradingbot.telegram;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.ShoonyaConfig;
-import com.tradingbot.positional.config.PositionalStrategyConfig;
-import com.tradingbot.positional.service.BollingerHaPositionalService;
-import com.tradingbot.util.CommodityRegistry;
+import com.tradingbot.service.LowestVolumeReversalService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -25,8 +22,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * Bidirectional Telegram Bot Listener. Polls for incoming commands (/status, /scan, /approve,
- * /reject, /exit, /mode, /help) and handles interactive inline keyboard callbacks.
+ * Bidirectional Telegram Bot Command Listener for the Lowest Volume Reversal (LVR) Strategy. Polls
+ * for incoming commands (/status, /lvr, /scan, /exit, /reset, /help).
  */
 @Component
 @ConditionalOnProperty(
@@ -37,11 +34,7 @@ public class TelegramBotCommandListener {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramBotCommandListener.class);
 
-    private final BollingerHaPositionalService positionalService;
-    private final PositionalStrategyConfig positionalConfig;
-    private final com.tradingbot.service.LowestVolumeReversalService lvrService;
-    private final com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService;
-    private final com.tradingbot.strategy.kiss.service.KissSwingService kissService;
+    private final LowestVolumeReversalService lvrService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -53,23 +46,12 @@ public class TelegramBotCommandListener {
 
     @Autowired
     public TelegramBotCommandListener(
-            BollingerHaPositionalService positionalService,
-            PositionalStrategyConfig positionalConfig,
-            @Autowired(required = false)
-                    com.tradingbot.service.LowestVolumeReversalService lvrService,
-            @Autowired(required = false)
-                    com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
-            @Autowired(required = false)
-                    com.tradingbot.strategy.kiss.service.KissSwingService kissService,
+            @Autowired(required = false) LowestVolumeReversalService lvrService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
         this(
-                positionalService,
-                positionalConfig,
                 lvrService,
-                swingService,
-                kissService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -77,43 +59,16 @@ public class TelegramBotCommandListener {
     }
 
     public TelegramBotCommandListener(
-            BollingerHaPositionalService positionalService,
-            PositionalStrategyConfig positionalConfig,
-            com.tradingbot.service.LowestVolumeReversalService lvrService,
-            com.tradingbot.strategy.rsihighway.service.RsiHighwaySwingService swingService,
-            com.tradingbot.strategy.kiss.service.KissSwingService kissService,
+            LowestVolumeReversalService lvrService,
             TelegramService telegramService,
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
-        this.positionalService = positionalService;
-        this.positionalConfig = positionalConfig;
         this.lvrService = lvrService;
-        this.swingService = swingService;
-        this.kissService = kissService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
-    }
-
-    public TelegramBotCommandListener(
-            BollingerHaPositionalService positionalService,
-            PositionalStrategyConfig positionalConfig,
-            TelegramService telegramService,
-            ShoonyaConfig shoonyaConfig,
-            ObjectMapper objectMapper,
-            HttpClient httpClient) {
-        this(
-                positionalService,
-                positionalConfig,
-                null,
-                null,
-                null,
-                telegramService,
-                shoonyaConfig,
-                objectMapper,
-                httpClient);
     }
 
     @PostConstruct
@@ -203,7 +158,6 @@ public class TelegramBotCommandListener {
     }
 
     private void handleSingleUpdate(JsonNode update) {
-        // 1. Text Message Commands
         if (update.has("message")) {
             JsonNode message = update.path("message");
             String text = message.path("text").asText("");
@@ -222,42 +176,6 @@ public class TelegramBotCommandListener {
                 }
             }
         }
-
-        // 2. Interactive Inline Button Callbacks
-        if (update.has("callback_query")) {
-            JsonNode callback = update.path("callback_query");
-            String callbackId = callback.path("id").asText();
-            String data = callback.path("data").asText();
-            long chatId = callback.path("message").path("chat").path("id").asLong();
-            String targetChatId = chatId != 0 ? String.valueOf(chatId) : null;
-            log.info(
-                    "[TELEGRAM LISTENER] Received callback query: '{}' from chat {}", data, chatId);
-
-            answerCallback(callbackId, "Processing...");
-
-            String reply = null;
-            if ("pos_approve".equalsIgnoreCase(data)) {
-                boolean approved = positionalService.approveStagedTrade();
-                reply =
-                        approved
-                                ? "✅ Staged positional trade was *APPROVED* and executed successfully!"
-                                : "⚠️ No staged trade available for approval.";
-            } else if ("pos_reject".equalsIgnoreCase(data)) {
-                boolean rejected = positionalService.rejectStagedTrade();
-                reply =
-                        rejected
-                                ? "🛑 Staged positional trade was *REJECTED*. Status reset to FLAT."
-                                : "⚠️ No staged trade available to reject.";
-            }
-
-            if (reply != null) {
-                if (targetChatId != null) {
-                    telegramService.sendTextMessage(targetChatId, reply);
-                } else {
-                    telegramService.sendAlert(reply);
-                }
-            }
-        }
     }
 
     public String processCommand(String fullCommand) {
@@ -266,72 +184,25 @@ public class TelegramBotCommandListener {
         String[] parts = fullCommand.trim().split("\\s+");
         String cmd = parts[0].toLowerCase();
 
-        // Strip bot username suffix if present (e.g. /status@MyBot -> /status)
         if (cmd.contains("@")) {
             cmd = cmd.substring(0, cmd.indexOf("@"));
         }
 
         switch (cmd) {
             case "/status":
-            case "/all_status":
-            case "/all":
-                StringBuilder sb = new StringBuilder("🤖 *All Strategy Status*\n\n");
-                if (positionalService != null) {
-                    sb.append("📊 *Bollinger Positional (NIFTY):*\n")
-                            .append(positionalService.getSummaryStatus())
-                            .append("\n\n");
-                }
-                if (lvrService != null) {
-                    sb.append("⚡ *LVR Strategy (5m Options):*\n")
-                            .append("• Winning Sector: ")
-                            .append(
-                                    lvrService.getSectorState().topSector() != null
-                                                    && !lvrService
-                                                            .getSectorState()
-                                                            .topSector()
-                                                            .isBlank()
-                                            ? lvrService.getSectorState().topSector()
-                                            : "None")
-                            .append("\n• Active Setups: ")
-                            .append(lvrService.getActiveSetups().size())
-                            .append(" | Open Positions: ")
-                            .append(lvrService.getOpenPositions().size())
-                            .append("\n• Closed Trades: ")
-                            .append(lvrService.getTradeHistory().size())
-                            .append("\n\n");
-                }
-                if (swingService != null) {
-                    sb.append("📈 *RSI Highway Swing:*\n")
-                            .append("• Active Positions: ")
-                            .append(swingService.getActivePositions().size())
-                            .append("\n• Available Capital: ₹")
-                            .append(
-                                    String.format(
-                                            "%.2f", swingService.getState().getAvailableCapital()))
-                            .append("\n\n");
-                }
-                if (kissService != null) {
-                    var kissState = kissService.getState();
-                    sb.append("🎯 *KISS Multi-Timeframe Strategy (Nifty 200 + MCX):*\n")
-                            .append(
-                                    String.format(
-                                            "• Equity: ₹%.2f | Active Positions: %d | Closed: %d\n",
-                                            kissState.getTotalPortfolioEquity(),
-                                            kissState.getPositions().size(),
-                                            kissState.getClosedPositions().size()));
-                }
-                return sb.toString();
-
             case "/lvr":
             case "/lvr_status":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
                 var sec = lvrService.getSectorState();
                 return String.format(
-                        "⚡ *Lowest Volume Reversal (LVR) Status*\n"
+                        "⚡ *Lowest Volume Reversal (LVR) Strategy Status*\n\n"
                                 + "• Market Sentiment: *%s* (%d Adv / %d Dec)\n"
                                 + "• Winning Sector: *%s* (%.2f%%)\n"
                                 + "• Candidates (%d): `%s`\n"
-                                + "• Open Positions: %d | Closed Trades: %d",
+                                + "• Active Setups: %d\n"
+                                + "• Open Positions: %d\n"
+                                + "• Closed Trades: %d\n"
+                                + "• Exit Mode: *1:2 RR + Cost Floor + 10 EMA Trail*",
                         sec.sentiment(),
                         sec.advances(),
                         sec.declines(),
@@ -343,195 +214,41 @@ public class TelegramBotCommandListener {
                         sec.candidateSymbols() != null
                                 ? String.join(", ", sec.candidateSymbols())
                                 : "None",
+                        lvrService.getActiveSetups().size(),
                         lvrService.getOpenPositions().size(),
                         lvrService.getTradeHistory().size());
 
+            case "/scan":
             case "/lvr_scan":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
+                lvrService.runCycle();
+                return "🔍 LVR 5-Minute Strategy Cycle executed!\n\n" + processCommand("/status");
+
+            case "/morning_scan":
+                if (lvrService == null) return "⚠️ LVR Service not active.";
                 lvrService.runMorningUniverseScan();
-                return "🔍 LVR Morning Universe Scan completed!\n\n"
-                        + processCommand("/lvr_status");
-
-            case "/swing":
-            case "/swing_status":
-                if (swingService == null) return "⚠️ RSI Highway Swing Service not active.";
-                var swingState = swingService.getState();
-                return String.format(
-                        "📈 *RSI Highway Swing Status*\n"
-                                + "• Total Equity: ₹%.2f\n"
-                                + "• Available Capital: ₹%.2f\n"
-                                + "• Active Positions: %d\n"
-                                + "• Closed Positions: %d",
-                        swingState.getTotalPortfolioEquity(),
-                        swingState.getAvailableCapital(),
-                        swingState.getPositions().size(),
-                        swingState.getClosedPositions().size());
-
-            case "/kiss":
-            case "/kiss_status":
-                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
-                var kissState = kissService.getState();
-                StringBuilder kissSb = new StringBuilder();
-                kissSb.append("🎯 *KISS Multi-Timeframe Strategy Status*\n");
-                kissSb.append(
-                        String.format(
-                                "• Total Equity: ₹%.2f\n", kissState.getTotalPortfolioEquity()));
-                kissSb.append(
-                        String.format(
-                                "• Available Capital: ₹%.2f\n", kissState.getAvailableCapital()));
-                kissSb.append(
-                        String.format("• Active Positions: %d\n", kissState.getPositions().size()));
-                kissSb.append(
-                        String.format(
-                                "• Closed Trades: %d\n", kissState.getClosedPositions().size()));
-                if (!kissState.getPositions().isEmpty()) {
-                    kissSb.append("\n*Active Positions:*\n");
-                    kissState
-                            .getPositions()
-                            .values()
-                            .forEach(
-                                    p -> {
-                                        boolean isComm =
-                                                CommodityRegistry.isCommodity(p.getSymbol());
-                                        String curSymbol = isComm ? "$" : "₹";
-                                        kissSb.append(
-                                                String.format(
-                                                        "• `%s` (%s) | Qty: %d | Entry: %s%.2f | LTP: %s%.2f | PnL: ₹%.2f (%.2f%%)\n",
-                                                        p.getSymbol(),
-                                                        p.getSignalType(),
-                                                        p.getQuantity(),
-                                                        curSymbol,
-                                                        p.getEntryPrice(),
-                                                        curSymbol,
-                                                        p.getCurrentLtp(),
-                                                        p.getUnrealizedPnl(),
-                                                        p.getUnrealizedPnlPct()));
-                                    });
-                }
-                return kissSb.toString();
-
-            case "/kiss_scan":
-                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
-                var kissSignals = kissService.scanAndExecute();
-                return String.format(
-                        "🎯 KISS Full Scan Completed! Generated %d new actionable signals.",
-                        kissSignals.size());
-
-            case "/kiss_mcx":
-                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
-                var mcxSignals = kissService.scanMcxUniverse();
-                return String.format(
-                        "🛢️ KISS MCX Commodity Scan Completed! Found %d signals.",
-                        mcxSignals.size());
-
-            case "/kiss_nse":
-                if (kissService == null) return "⚠️ KISS Strategy Service not active.";
-                var nseSignals = kissService.scanNseUniverse();
-                return String.format(
-                        "📊 KISS NSE Equity Scan Completed! Found %d signals.", nseSignals.size());
-
-            case "/pos_status":
-                return positionalService.getSummaryStatus();
-
-            case "/scan":
-            case "/pos_scan":
-                positionalService.scanAndEvaluate();
-                return "🔍 Scan completed!\n\n" + positionalService.getSummaryStatus();
-
-            case "/approve":
-            case "/pos_approve":
-                boolean approved = positionalService.approveStagedTrade();
-                return approved
-                        ? "✅ Staged trade approved and executed."
-                        : "⚠️ No staged trade currently waiting for approval.";
-
-            case "/reject":
-            case "/pos_reject":
-                boolean rejected = positionalService.rejectStagedTrade();
-                return rejected
-                        ? "🛑 Staged trade rejected. State reset to FLAT."
-                        : "⚠️ No staged trade currently waiting to reject.";
+                return "🌅 LVR Morning Universe Scan executed!\n\n" + processCommand("/status");
 
             case "/exit":
-            case "/pos_exit":
-                positionalService.forceExitCurrentPosition("TELEGRAM_MANUAL_EXIT");
-                return "⚡ Exit signal dispatched for active positional trade.";
+            case "/squareoff":
+                if (lvrService == null) return "⚠️ LVR Service not active.";
+                lvrService.executeHardExit(LocalTime.now());
+                return "🛑 Manual hard exit executed. All open LVR positions squared off.";
 
-            case "/mode":
-            case "/pos_mode":
-                if (parts.length > 1) {
-                    String newMode = parts[1].toUpperCase();
-                    if ("AUTO".equals(newMode)
-                            || "MANUAL".equals(newMode)
-                            || "MANUAL_CONFIRMATION".equals(newMode)) {
-                        positionalConfig.setExecutionMode(newMode);
-                        return "⚙️ Positional Strategy execution mode updated to: *"
-                                + newMode
-                                + "*";
-                    } else {
-                        return "⚠️ Invalid mode. Choose `AUTO` or `MANUAL_CONFIRMATION`.";
-                    }
-                }
-                return "⚙️ Current Positional Mode: *"
-                        + positionalConfig.getExecutionMode()
-                        + "*\n\nUsage: `/mode <AUTO|MANUAL_CONFIRMATION>`";
+            case "/reset":
+                if (lvrService == null) return "⚠️ LVR Service not active.";
+                lvrService.resetDaily();
+                return "🔄 LVR daily session state reset successfully.";
 
             case "/help":
-            case "/pos_help":
-                return """
-                        🤖 *Shoonya Trading Bot Commands:*
-
-                        📊 *Overall & Multi-Strategy:*
-                        • `/status` or `/all` - View status across all strategies
-
-                        🎯 *KISS Multi-Timeframe Strategy (Nifty 200 + MCX Commodities):*
-                        • `/kiss` or `/kiss_status` - View active paper positions & PnL
-                        • `/kiss_scan` - Trigger manual full universe scan
-                        • `/kiss_mcx` - Scan MCX commodities (Crude, Gold, Silver, Copper, NatGas)
-                        • `/kiss_nse` - Scan Nifty 200 equity futures
-
-                        ⚡ *LVR (Lowest Volume Reversal 5m Options):*
-                        • `/lvr` - View LVR winning sector & candidate setups
-                        • `/lvr_scan` - Trigger manual LVR 09:25 AM universe scan
-
-                        📈 *RSI Highway Swing:*
-                        • `/swing` - View RSI Highway portfolio & active positions
-
-                        🛡️ *Positional Strategy (Bollinger Bands + HA):*
-                        • `/pos_status` - View current positional trade & state
-                        • `/scan` or `/pos_scan` - Run 3:00 PM IST strategy evaluation
-                        • `/approve` - Confirm & execute staged positional trade
-                        • `/reject` - Cancel & reject staged positional trade
-                        • `/exit` - Immediately exit active positional trade
-                        • `/mode <AUTO|MANUAL>` - Switch positional execution mode
-                        • `/help` - Show command list
-                        """;
-
             default:
-                return "❓ Unknown command `" + cmd + "`. Send `/help` for available options.";
-        }
-    }
-
-    private void answerCallback(String callbackId, String text) {
-        if (shoonyaConfig == null || shoonyaConfig.getTelegramBotToken().isBlank()) return;
-
-        try {
-            String token = shoonyaConfig.getTelegramBotToken().trim();
-            String url =
-                    String.format(
-                            "https://api.telegram.org/bot%s/answerCallbackQuery?callback_query_id=%s&text=%s",
-                            token, callbackId, URLEncoder.encode(text, StandardCharsets.UTF_8));
-
-            HttpRequest req =
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(url))
-                            .timeout(Duration.ofSeconds(10))
-                            .POST(HttpRequest.BodyPublishers.noBody())
-                            .build();
-
-            httpClient.sendAsync(req, HttpResponse.BodyHandlers.discarding());
-        } catch (Exception e) {
-            log.debug("[TELEGRAM LISTENER] Error answering callback query: {}", e.getMessage());
+                return "🤖 *Lowest Volume Reversal Bot Commands:*\n\n"
+                        + "• `/status` - Live LVR strategy status & positions\n"
+                        + "• `/scan` - Execute immediate 5m strategy cycle\n"
+                        + "• `/morning_scan` - Force 09:25 AM morning scan\n"
+                        + "• `/exit` - Square off all open positions immediately\n"
+                        + "• `/reset` - Reset daily session state\n"
+                        + "• `/help` - Show this command menu";
         }
     }
 }

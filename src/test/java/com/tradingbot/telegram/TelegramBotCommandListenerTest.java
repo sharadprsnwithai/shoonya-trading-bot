@@ -1,21 +1,22 @@
 package com.tradingbot.telegram;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.ShoonyaConfig;
-import com.tradingbot.positional.config.PositionalStrategyConfig;
-import com.tradingbot.positional.service.BollingerHaPositionalService;
+import com.tradingbot.model.strategy.LowestVolumeDirection;
+import com.tradingbot.model.strategy.LowestVolumeSectorState;
+import com.tradingbot.service.LowestVolumeReversalService;
 import java.net.http.HttpClient;
+import java.util.Collections;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class TelegramBotCommandListenerTest {
 
-    private BollingerHaPositionalService positionalService;
-    private PositionalStrategyConfig positionalConfig;
+    private LowestVolumeReversalService lvrService;
     private TelegramService telegramService;
     private ShoonyaConfig shoonyaConfig;
     private ObjectMapper objectMapper;
@@ -24,8 +25,7 @@ class TelegramBotCommandListenerTest {
 
     @BeforeEach
     void setUp() {
-        positionalService = mock(BollingerHaPositionalService.class);
-        positionalConfig = new PositionalStrategyConfig();
+        lvrService = mock(LowestVolumeReversalService.class);
         telegramService = mock(TelegramService.class);
         shoonyaConfig = mock(ShoonyaConfig.class);
         when(shoonyaConfig.isTelegramEnabled()).thenReturn(true);
@@ -37,60 +37,59 @@ class TelegramBotCommandListenerTest {
 
         commandListener =
                 new TelegramBotCommandListener(
-                        positionalService,
-                        positionalConfig,
-                        telegramService,
-                        shoonyaConfig,
-                        objectMapper,
-                        httpClient);
+                        lvrService, telegramService, shoonyaConfig, objectMapper, httpClient);
     }
 
     @Test
     void testHandleStatusCommand() {
-        when(positionalService.getSummaryStatus()).thenReturn("📊 Status: FLAT");
+        when(lvrService.getSectorState())
+                .thenReturn(
+                        new LowestVolumeSectorState(
+                                30,
+                                20,
+                                LowestVolumeDirection.LONG,
+                                "NIFTY PHARMA",
+                                1.25,
+                                List.of("SUNPHARMA", "CIPLA")));
+        when(lvrService.getActiveSetups()).thenReturn(Collections.emptyMap());
+        when(lvrService.getOpenPositions()).thenReturn(Collections.emptyMap());
+        when(lvrService.getTradeHistory()).thenReturn(Collections.emptyList());
 
         String response = commandListener.processCommand("/status");
         assertNotNull(response);
-        assertTrue(response.contains("Status: FLAT"));
+        assertTrue(response.contains("NIFTY PHARMA"));
+        assertTrue(response.contains("SUNPHARMA"));
     }
 
     @Test
     void testHandleScanCommand() {
-        doNothing().when(positionalService).scanAndEvaluate();
-        when(positionalService.getSummaryStatus()).thenReturn("📊 Status: ALERT_PENDING");
+        when(lvrService.getSectorState()).thenReturn(LowestVolumeSectorState.empty());
+        when(lvrService.getActiveSetups()).thenReturn(Collections.emptyMap());
+        when(lvrService.getOpenPositions()).thenReturn(Collections.emptyMap());
+        when(lvrService.getTradeHistory()).thenReturn(Collections.emptyList());
 
         String response = commandListener.processCommand("/scan");
-        verify(positionalService, times(1)).scanAndEvaluate();
-        assertTrue(response.contains("Scan completed"));
-    }
-
-    @Test
-    void testHandleApproveAndRejectCommands() {
-        when(positionalService.approveStagedTrade()).thenReturn(true);
-        String approveResp = commandListener.processCommand("/approve");
-        assertTrue(approveResp.contains("approved"));
-
-        when(positionalService.rejectStagedTrade()).thenReturn(true);
-        String rejectResp = commandListener.processCommand("/reject");
-        assertTrue(rejectResp.contains("rejected"));
-    }
-
-    @Test
-    void testHandleModeToggleCommand() {
-        String resp = commandListener.processCommand("/mode AUTO");
-        assertTrue(resp.contains("AUTO"));
-        assertEquals("AUTO", positionalConfig.getExecutionMode());
-
-        resp = commandListener.processCommand("/mode MANUAL_CONFIRMATION");
-        assertTrue(resp.contains("MANUAL_CONFIRMATION"));
-        assertEquals("MANUAL_CONFIRMATION", positionalConfig.getExecutionMode());
+        verify(lvrService, times(1)).runCycle();
+        assertTrue(response.contains("LVR 5-Minute Strategy Cycle executed"));
     }
 
     @Test
     void testHandleExitCommand() {
-        doNothing().when(positionalService).forceExitCurrentPosition(anyString());
         String resp = commandListener.processCommand("/exit");
-        verify(positionalService, times(1)).forceExitCurrentPosition("TELEGRAM_MANUAL_EXIT");
-        assertTrue(resp.contains("Exit signal dispatched"));
+        verify(lvrService, times(1)).executeHardExit(any());
+        assertTrue(resp.contains("Manual hard exit executed"));
+    }
+
+    @Test
+    void testHandleResetCommand() {
+        String resp = commandListener.processCommand("/reset");
+        verify(lvrService, times(1)).resetDaily();
+        assertTrue(resp.contains("LVR daily session state reset"));
+    }
+
+    @Test
+    void testHandleHelpCommand() {
+        String resp = commandListener.processCommand("/help");
+        assertTrue(resp.contains("Lowest Volume Reversal Bot Commands"));
     }
 }

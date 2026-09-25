@@ -105,6 +105,8 @@ public class LowestVolumeStrategyController {
         status.put("topGainers", strategyService.getCurrentTopGainers());
         status.put("topLosers", strategyService.getCurrentTopLosers());
         status.put("exhaustedSymbolsCount", strategyService.getExhaustedSymbols().size());
+        status.put("reservoirCount", strategyService.getCandidateReservoir().size());
+        status.put("candidateReservoir", strategyService.getCandidateReservoir());
         status.put("activeSetupsCount", strategyService.getActiveSetups().size());
         status.put("openPositionsCount", strategyService.getOpenPositions().size());
         status.put("closedTradesCount", strategyService.getTradeHistory().size());

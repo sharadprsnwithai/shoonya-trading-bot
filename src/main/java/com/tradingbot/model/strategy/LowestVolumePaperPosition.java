@@ -71,7 +71,7 @@ public class LowestVolumePaperPosition {
         this.tradeId = tradeId;
         this.symbol = symbol;
         this.instrumentType = instrumentType != null ? instrumentType : LvrInstrumentType.FUTURES;
-        this.exitMode = exitMode != null ? exitMode : LvrExitMode.FULL_TARGET_1_4;
+        this.exitMode = exitMode != null ? exitMode : LvrExitMode.FULL_TARGET_1_2;
         this.optionType = null;
         this.optionSymbol = contractSymbol;
         this.atmStrike = null;
@@ -110,7 +110,8 @@ public class LowestVolumePaperPosition {
         this.tradeId = tradeId;
         this.symbol = symbol;
         this.instrumentType = LvrInstrumentType.OPTIONS;
-        this.exitMode = exitMode != null ? exitMode : LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500;
+        this.exitMode =
+                exitMode != null ? exitMode : LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500;
         this.optionType = optionType;
         this.optionSymbol = optionSymbol;
         this.atmStrike = atmStrike;
@@ -170,9 +171,8 @@ public class LowestVolumePaperPosition {
         close(exitPrice, reason, timestamp);
     }
 
-    /** Executes partial profit booking at Target 1 (1:4 RR) in Trailing / Runner mode. */
-    public synchronized void executePartialBook(
-            BigDecimal exitPriceOrPremium, Instant timestamp) {
+    /** Executes partial profit booking at Target 1 (1:2 RR) in Trailing / Runner mode. */
+    public synchronized void executePartialBook(BigDecimal exitPriceOrPremium, Instant timestamp) {
         if (this.partialBooked || this.closed) {
             return;
         }
@@ -194,24 +194,13 @@ public class LowestVolumePaperPosition {
         // If all lots booked (e.g. 1 lot total), mark position fully closed at Target 1
         if (this.remainingQuantity == 0) {
             this.closed = true;
-            this.exitReason = "TARGET_1_4_FULL_EXIT";
+            this.exitReason = "TARGET_1_2_FULL_EXIT";
             this.runnerExitPremium = exitPriceOrPremium;
             this.exitTime = this.partialExitTime;
         }
 
-        // Move SL based on Exit Mode
-        BigDecimal unitRisk = this.stockEntryPrice.subtract(this.initialStockSl).abs();
-        if (this.exitMode == LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500) {
-            // Move SL to 1:1 (+1R locked)
-            if (this.direction == LowestVolumeDirection.LONG) {
-                this.currentStockSl = this.stockEntryPrice.add(unitRisk);
-            } else {
-                this.currentStockSl = this.stockEntryPrice.subtract(unitRisk);
-            }
-        } else {
-            // Move stock SL to stock breakeven (stock entry price)
-            this.currentStockSl = this.stockEntryPrice;
-        }
+        // Move stock SL to cost / breakeven (entry price)
+        this.currentStockSl = this.stockEntryPrice;
 
         // Compute Partial P&L
         BigDecimal priceDiff;
@@ -224,9 +213,7 @@ public class LowestVolumePaperPosition {
             priceDiff = exitPriceOrPremium.subtract(this.entryPremium);
         }
         this.partialPnl =
-                priceDiff
-                        .multiply(BigDecimal.valueOf(bookedQty))
-                        .setScale(2, RoundingMode.HALF_UP);
+                priceDiff.multiply(BigDecimal.valueOf(bookedQty)).setScale(2, RoundingMode.HALF_UP);
         this.totalRealizedPnl = this.partialPnl;
     }
 

@@ -59,16 +59,16 @@ class ShoonyaTodayLvrReplayRunnerTest {
                 List.of("SUNPHARMA", "LAURUSLABS", "TORNTPHARM", "AUROPHARMA");
         Map<String, List<Candle>> candlesMap = fetchSessionCandlesForStocks(candidateStocks);
 
-        // Run Production Stock Futures Mode (100% Full Exit at 1:4 Target)
+        // Run Production Stock Futures Mode (100% Full Exit at 1:2 Target)
         System.out.println(
-                "\n--- [A] PRODUCTION MODE: STOCK FUTURES (100% Full Exit at 1:4 Target) ---");
+                "\n--- [A] PRODUCTION MODE: STOCK FUTURES (100% Full Exit at 1:2 Target) ---");
         lvrService.setInstrumentType(LvrInstrumentType.FUTURES);
-        lvrService.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+        lvrService.setExitMode(LvrExitMode.FULL_TARGET_1_2);
         lvrService.setTelegramAlerts(false);
 
         runServiceReplay(candidateStocks, candlesMap, LowestVolumeDirection.LONG);
 
-        // Run Options Mode (50% Partial at 1:4 Target + 10 EMA Trailing Runner)
+        // Run Options Mode (50% Partial at 1:2 Target + 10 EMA Trailing Runner)
         System.out.println(
                 "\n--- [B] COMPARISON MODE: ATM OPTIONS (50% Partial + 10 EMA Trail) ---");
         lvrService.setInstrumentType(LvrInstrumentType.OPTIONS);
@@ -78,7 +78,7 @@ class ShoonyaTodayLvrReplayRunnerTest {
 
         // Reset to production defaults
         lvrService.setInstrumentType(LvrInstrumentType.FUTURES);
-        lvrService.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+        lvrService.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
     }
 
     @Test
