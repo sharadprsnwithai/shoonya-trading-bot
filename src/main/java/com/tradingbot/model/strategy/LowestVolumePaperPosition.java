@@ -275,6 +275,10 @@ public class LowestVolumePaperPosition {
         return optionSymbol;
     }
 
+    public String getContractSymbol() {
+        return optionSymbol;
+    }
+
     public BigDecimal getAtmStrike() {
         return atmStrike;
     }

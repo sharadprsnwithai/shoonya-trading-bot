@@ -1,24 +1,19 @@
 package com.tradingbot.controller;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.tradingbot.execution.ExecutionManager;
-import com.tradingbot.model.execution.ActiveSpreadPosition;
+import com.tradingbot.execution.consumer.TradeConsumerManager;
+import com.tradingbot.execution.consumer.TradeExecutionConsumer;
 import com.tradingbot.model.execution.ExecutionMode;
-import java.math.BigDecimal;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ExecutionController.class)
@@ -26,91 +21,45 @@ class ExecutionControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private ExecutionManager executionManager;
+    @MockBean private TradeConsumerManager consumerManager;
 
     @Test
-    void testGetExecutionMode() throws Exception {
-        when(executionManager.getExecutionMode()).thenReturn(ExecutionMode.PAPER);
+    void testGetConsumers() throws Exception {
+        TradeExecutionConsumer mockConsumer = Mockito.mock(TradeExecutionConsumer.class);
+        when(mockConsumer.getConsumerId()).thenReturn("shoonya-test");
+        when(mockConsumer.getBrokerName()).thenReturn("SHOONYA");
+        when(mockConsumer.getExecutionMode()).thenReturn(ExecutionMode.PAPER);
+        when(mockConsumer.isEnabled()).thenReturn(true);
+        when(mockConsumer.getQuantityMultiplier()).thenReturn(1.0);
 
-        mockMvc.perform(get("/api/v1/execution/mode"))
+        when(consumerManager.getRegisteredConsumers()).thenReturn(List.of(mockConsumer));
+
+        mockMvc.perform(get("/api/v1/execution/consumers")).andExpect(status().isOk());
+    }
+
+    @Test
+    void testGetConsumerById() throws Exception {
+        TradeExecutionConsumer mockConsumer = Mockito.mock(TradeExecutionConsumer.class);
+        when(mockConsumer.getConsumerId()).thenReturn("shoonya-test");
+        when(mockConsumer.getBrokerName()).thenReturn("SHOONYA");
+        when(mockConsumer.getExecutionMode()).thenReturn(ExecutionMode.PAPER);
+        when(mockConsumer.isEnabled()).thenReturn(true);
+        when(mockConsumer.getQuantityMultiplier()).thenReturn(1.0);
+
+        when(consumerManager.getConsumer("shoonya-test")).thenReturn(mockConsumer);
+
+        mockMvc.perform(get("/api/v1/execution/consumers/shoonya-test"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("shoonya-test"))
+                .andExpect(jsonPath("$.broker").value("SHOONYA"))
                 .andExpect(jsonPath("$.mode").value("PAPER"));
     }
 
     @Test
-    void testExecuteTrade() throws Exception {
-        BigDecimal atm = new BigDecimal("24000");
-        ActiveSpreadPosition mockPos =
-                ActiveSpreadPosition.open(
-                        "TRD_1",
-                        "PIVOT_ST",
-                        "NIFTY",
-                        "PE",
-                        atm,
-                        "NIFTY29SEP26P24000",
-                        "ORD_SHORT_1",
-                        new BigDecimal("100.00"),
-                        "NIFTY29SEP26P23700",
-                        "ORD_HEDGE_1",
-                        new BigDecimal("5.00"),
-                        "ORD_SLL_1",
-                        new BigDecimal("140.00"),
-                        new BigDecimal("144.20"),
-                        65,
-                        ExecutionMode.PAPER);
+    void testGetConsumerNotFound() throws Exception {
+        when(consumerManager.getConsumer("unknown")).thenReturn(null);
 
-        when(executionManager.executeDirectionalOptionSelling(
-                        anyString(), anyString(), anyString(), any(), anyInt(), anyBoolean()))
-                .thenReturn(mockPos);
-
-        mockMvc.perform(
-                        post("/api/v1/execution/trade")
-                                .param("optionType", "PE")
-                                .param("strikePrice", "24000")
-                                .param("buyHedge", "true")
-                                .accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tradeId").value("TRD_1"))
-                .andExpect(jsonPath("$.optionType").value("PE"))
-                .andExpect(jsonPath("$.slTriggerPrice").value(140.00))
-                .andExpect(jsonPath("$.slLimitPrice").value(144.20));
-    }
-
-    @Test
-    void testCloseTrade() throws Exception {
-        BigDecimal atm = new BigDecimal("24000");
-        ActiveSpreadPosition mockPos =
-                ActiveSpreadPosition.open(
-                        "TRD_1",
-                        "PIVOT_ST",
-                        "NIFTY",
-                        "PE",
-                        atm,
-                        "NIFTY29SEP26P24000",
-                        "ORD_SHORT_1",
-                        new BigDecimal("100.00"),
-                        "NIFTY29SEP26P23700",
-                        "ORD_HEDGE_1",
-                        new BigDecimal("5.00"),
-                        "ORD_SLL_1",
-                        new BigDecimal("140.00"),
-                        new BigDecimal("144.20"),
-                        65,
-                        ExecutionMode.PAPER);
-        ActiveSpreadPosition closedPos =
-                mockPos.close(
-                        java.time.Instant.now(),
-                        new BigDecimal("80.00"),
-                        new BigDecimal("2.50"),
-                        new BigDecimal("1137.50"),
-                        "SUPERTREND_FLIP");
-
-        when(executionManager.closeSpreadPosition("TRD_1", "SUPERTREND_FLIP"))
-                .thenReturn(closedPos);
-
-        mockMvc.perform(post("/api/v1/execution/close/TRD_1").param("reason", "SUPERTREND_FLIP"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.isClosed").value(true))
-                .andExpect(jsonPath("$.realizedPnl").value(1137.50));
+        mockMvc.perform(get("/api/v1/execution/consumers/unknown"))
+                .andExpect(status().isNotFound());
     }
 }

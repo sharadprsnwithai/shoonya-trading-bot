@@ -57,6 +57,57 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Publishes TradeSignal to SignalPublisher on Entry and Hard Exit")
+    void testSignalPublishedOnEntryAndExit() {
+        com.tradingbot.bus.SignalPublisher mockPublisher =
+                mock(com.tradingbot.bus.SignalPublisher.class);
+        service =
+                new LowestVolumeReversalService(
+                        marketDataService, taService, null, config, null, null, mockPublisher);
+        service.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST)); // 10:00 IST
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1876),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1875),
+                        5000),
+                BigDecimal.valueOf(1876.05),
+                BigDecimal.valueOf(1868.95),
+                BigDecimal.valueOf(1890.25));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1876.10));
+        assertThat(pos).isNotNull();
+
+        // Verify Entry Signal published
+        org.mockito.Mockito.verify(mockPublisher, org.mockito.Mockito.times(1))
+                .publish(
+                        org.mockito.ArgumentMatchers.argThat(
+                                sig ->
+                                        sig.underlyingSymbol().equals("SUNPHARMA")
+                                                && sig.action()
+                                                        == com.tradingbot.strategy.SignalAction
+                                                                .ENTRY_LONG));
+
+        // Test 15:00 EOD Hard Exit Signal published
+        service.executeHardExit(LocalTime.of(15, 0));
+        org.mockito.Mockito.verify(mockPublisher, org.mockito.Mockito.times(1))
+                .publish(
+                        org.mockito.ArgumentMatchers.argThat(
+                                sig ->
+                                        sig.underlyingSymbol().equals("SUNPHARMA")
+                                                && sig.action()
+                                                        == com.tradingbot.strategy.SignalAction
+                                                                .EXIT_LONG));
+    }
+
+    @Test
     @DisplayName(
             "Verify default configuration properties: FUTURES and PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500")
     void testDefaultConfigurationProperties() {

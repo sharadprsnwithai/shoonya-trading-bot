@@ -63,6 +63,7 @@ public class LowestVolumeReversalService {
     private final ShoonyaConfig config;
     private final com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService;
     private final LowestVolumeReversalScanner scanner;
+    private final com.tradingbot.bus.SignalPublisher signalPublisher;
 
     private java.time.Clock clock = java.time.Clock.system(IST);
 
@@ -140,13 +141,15 @@ public class LowestVolumeReversalService {
             ShoonyaConfig config,
             @Autowired(required = false)
                     com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService,
-            @Autowired(required = false) LowestVolumeReversalScanner scanner) {
+            @Autowired(required = false) LowestVolumeReversalScanner scanner,
+            @Autowired(required = false) com.tradingbot.bus.SignalPublisher signalPublisher) {
         this.marketDataService = marketDataService;
         this.taService = taService;
         this.telegramService = telegramService;
         this.config = config;
         this.optionChainService = optionChainService;
         this.scanner = (scanner != null) ? scanner : new LowestVolumeReversalScanner();
+        this.signalPublisher = signalPublisher;
     }
 
     public LowestVolumeReversalService(
@@ -155,7 +158,7 @@ public class LowestVolumeReversalService {
             TelegramService telegramService,
             ShoonyaConfig config,
             LowestVolumeReversalScanner scanner) {
-        this(marketDataService, taService, telegramService, config, null, scanner);
+        this(marketDataService, taService, telegramService, config, null, scanner, null);
     }
 
     /**
@@ -925,6 +928,19 @@ public class LowestVolumeReversalService {
 
             openPositions.put(symbol, position);
 
+            publishSignal(
+                    symbol,
+                    contractSymbol,
+                    setup.getDirection() == LowestVolumeDirection.LONG
+                            ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
+                            : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,
+                    spotPrice,
+                    setup.getStopLossPrice(),
+                    actualTarget1,
+                    totalQty,
+                    "LVR Futures Entry Triggered",
+                    Map.of("instrumentType", "FUTURES"));
+
             log.info(
                     "[LVR] FUTURES ENTRY EXECUTED: {} | TradeId={} | Contract={} | SpotEntry={} |"
                             + " SpotSL={} | SpotTarget1={}",
@@ -989,6 +1005,19 @@ public class LowestVolumeReversalService {
                             Instant.now());
 
             openPositions.put(symbol, position);
+
+            publishSignal(
+                    symbol,
+                    optSymbol,
+                    setup.getDirection() == LowestVolumeDirection.LONG
+                            ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
+                            : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,
+                    entryPremium,
+                    setup.getStopLossPrice(),
+                    actualTarget1,
+                    totalQty,
+                    "LVR Option Entry Triggered",
+                    Map.of("instrumentType", "OPTION", "spotPrice", spotPrice));
 
             log.info(
                     "[LVR] OPTION ENTRY EXECUTED: {} | TradeId={} | Option={} | EntryPrem={} |"
@@ -1113,6 +1142,21 @@ public class LowestVolumeReversalService {
                                     : optionPremium,
                             spotPrice,
                             slReason);
+
+                    publishSignal(
+                            symbol,
+                            pos.getContractSymbol(),
+                            pos.getDirection() == LowestVolumeDirection.LONG
+                                    ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                                    : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                            pos.getInstrumentType() == LvrInstrumentType.FUTURES
+                                    ? spotPrice
+                                    : optionPremium,
+                            pos.getCurrentStockSl(),
+                            null,
+                            pos.getRemainingQuantity(),
+                            slReason,
+                            Map.of("instrumentType", pos.getInstrumentType().name()));
                     if (telegramAlerts && telegramService != null) {
                         if (pos.isPartialBooked()) {
                             telegramService.sendTextMessage(
@@ -1208,6 +1252,21 @@ public class LowestVolumeReversalService {
                                     "[LVR] 1:2 Target 100% Full Exit for {}: Closed at Spot={}, Realized PnL={}",
                                     symbol, spotPrice, pos.getTotalRealizedPnl());
 
+                            publishSignal(
+                                    symbol,
+                                    pos.getContractSymbol(),
+                                    pos.getDirection() == LowestVolumeDirection.LONG
+                                            ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                                            : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                                    pos.getInstrumentType() == LvrInstrumentType.FUTURES
+                                            ? spotPrice
+                                            : optionPremium,
+                                    pos.getCurrentStockSl(),
+                                    pos.getTarget1StockPrice(),
+                                    pos.getRemainingQuantity(),
+                                    "TARGET_1_2_FULL_EXIT",
+                                    Map.of("instrumentType", pos.getInstrumentType().name()));
+
                             if (telegramAlerts && telegramService != null) {
                                 BigDecimal pts =
                                         (pos.getDirection() == LowestVolumeDirection.LONG)
@@ -1250,6 +1309,19 @@ public class LowestVolumeReversalService {
                                         "[LVR] 1:2 Target Full Exit (100% booked) for {}: Closed at Spot={}, Realized PnL={}",
                                         symbol, spotPrice, pos.getTotalRealizedPnl());
 
+                                publishSignal(
+                                        symbol,
+                                        pos.getContractSymbol(),
+                                        pos.getDirection() == LowestVolumeDirection.LONG
+                                                ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                                                : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                                        partialExitPrice,
+                                        pos.getCurrentStockSl(),
+                                        pos.getTarget1StockPrice(),
+                                        pos.getRemainingQuantity(),
+                                        "TARGET_1_2_FULL_EXIT",
+                                        Map.of("instrumentType", pos.getInstrumentType().name()));
+
                                 if (telegramAlerts && telegramService != null) {
                                     BigDecimal pts =
                                             (pos.getDirection() == LowestVolumeDirection.LONG)
@@ -1278,6 +1350,24 @@ public class LowestVolumeReversalService {
                             log.info(
                                     "[LVR] 1:2 Target Hit for {}: Booked 50% at ExitPrice={}, Cost SL Armed at Spot {}",
                                     symbol, partialExitPrice, pos.getCurrentStockSl());
+
+                            publishSignal(
+                                    symbol,
+                                    pos.getContractSymbol(),
+                                    pos.getDirection() == LowestVolumeDirection.LONG
+                                            ? com.tradingbot.strategy.SignalAction.PARTIAL_EXIT_LONG
+                                            : com.tradingbot.strategy.SignalAction
+                                                    .PARTIAL_EXIT_SHORT,
+                                    partialExitPrice,
+                                    pos.getCurrentStockSl(),
+                                    pos.getTarget1StockPrice(),
+                                    pos.getTotalQuantity() / 2,
+                                    "1:2 RR Target 50% Booked",
+                                    Map.of(
+                                            "instrumentType",
+                                            pos.getInstrumentType().name(),
+                                            "partialExitRatio",
+                                            0.5));
 
                             if (telegramAlerts && telegramService != null) {
                                 telegramService.sendTextMessage(
@@ -1354,6 +1444,19 @@ public class LowestVolumeReversalService {
                                     spotPrice,
                                     ema10);
 
+                            publishSignal(
+                                    symbol,
+                                    pos.getContractSymbol(),
+                                    pos.getDirection() == LowestVolumeDirection.LONG
+                                            ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                                            : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                                    exitVal,
+                                    pos.getCurrentStockSl(),
+                                    null,
+                                    pos.getRemainingQuantity(),
+                                    "10_EMA_TRAIL_EXIT",
+                                    Map.of("instrumentType", pos.getInstrumentType().name()));
+
                             if (telegramAlerts && telegramService != null) {
                                 telegramService.sendTextMessage(
                                         String.format(
@@ -1400,6 +1503,19 @@ public class LowestVolumeReversalService {
                             : optionPremium;
             pos.close(exitVal, "EOD_1500_HARD_EXIT", Instant.now());
             tradeHistory.add(pos);
+
+            publishSignal(
+                    symbol,
+                    pos.getContractSymbol(),
+                    pos.getDirection() == LowestVolumeDirection.LONG
+                            ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                            : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                    exitVal,
+                    pos.getCurrentStockSl(),
+                    null,
+                    pos.getRemainingQuantity(),
+                    "EOD_1500_HARD_EXIT",
+                    Map.of("instrumentType", pos.getInstrumentType().name()));
 
             LowestVolumeSetup setup = activeSetups.get(symbol);
             if (setup != null) {
@@ -2191,6 +2307,33 @@ public class LowestVolumeReversalService {
     public void sendScanTelegramReport() {
         if (telegramService != null) {
             telegramService.sendTextMessage("📊 *LVR Sector & Watchlist Report*\n" + sectorState);
+        }
+    }
+
+    private void publishSignal(
+            String underlying,
+            String contract,
+            com.tradingbot.strategy.SignalAction action,
+            BigDecimal price,
+            BigDecimal sl,
+            BigDecimal target,
+            int quantity,
+            String reason,
+            Map<String, Object> metadata) {
+        if (signalPublisher != null && action != null) {
+            com.tradingbot.strategy.TradeSignal signal =
+                    com.tradingbot.strategy.TradeSignal.of(
+                            "LVR_" + instrumentType,
+                            underlying,
+                            contract != null ? contract : underlying,
+                            action,
+                            price != null ? price : BigDecimal.ZERO,
+                            sl,
+                            target,
+                            quantity,
+                            reason,
+                            metadata);
+            signalPublisher.publish(signal);
         }
     }
 }
