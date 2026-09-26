@@ -197,12 +197,22 @@ public class KiteRestClient {
     }
 
     private JsonNode get(String path) {
-        return restClient
-                .get()
-                .uri(path)
-                .header("Authorization", authorizationHeader())
-                .retrieve()
-                .body(JsonNode.class);
+        try {
+            return restClient
+                    .get()
+                    .uri(path)
+                    .header("Authorization", authorizationHeader())
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (org.springframework.web.client.RestClientResponseException e) {
+            log.error(
+                    "[KITE-REST] HTTP {} error on GET {}: {}",
+                    e.getStatusCode(),
+                    path,
+                    e.getResponseBodyAsString());
+            throw new IllegalStateException(
+                    "Kite GET " + path + " failed: " + e.getResponseBodyAsString(), e);
+        }
     }
 
     public JsonNode postForm(String path, Map<String, String> form) {
@@ -210,30 +220,42 @@ public class KiteRestClient {
     }
 
     public JsonNode postForm(String path, Map<String, String> form, boolean authenticated) {
-        String body =
-                String.join(
-                        "&",
-                        form.entrySet().stream()
-                                .map(
-                                        entry -> {
-                                            String k =
-                                                    java.net.URLEncoder.encode(
-                                                            entry.getKey(), StandardCharsets.UTF_8);
-                                            String v =
-                                                    java.net.URLEncoder.encode(
-                                                            entry.getValue() != null
-                                                                    ? entry.getValue()
-                                                                    : "",
-                                                            StandardCharsets.UTF_8);
-                                            return k + "=" + v;
-                                        })
-                                .toList());
+        try {
+            String body =
+                    String.join(
+                            "&",
+                            form.entrySet().stream()
+                                    .map(
+                                            entry -> {
+                                                String k =
+                                                        java.net.URLEncoder.encode(
+                                                                entry.getKey(),
+                                                                StandardCharsets.UTF_8);
+                                                String v =
+                                                        java.net.URLEncoder.encode(
+                                                                entry.getValue() != null
+                                                                        ? entry.getValue()
+                                                                        : "",
+                                                                StandardCharsets.UTF_8);
+                                                return k + "=" + v;
+                                            })
+                                    .toList());
 
-        var spec = restClient.post().uri(path).contentType(MediaType.APPLICATION_FORM_URLENCODED);
-        if (authenticated) {
-            spec.header("Authorization", authorizationHeader());
+            var spec =
+                    restClient.post().uri(path).contentType(MediaType.APPLICATION_FORM_URLENCODED);
+            if (authenticated) {
+                spec.header("Authorization", authorizationHeader());
+            }
+            return spec.body(body).retrieve().body(JsonNode.class);
+        } catch (org.springframework.web.client.RestClientResponseException e) {
+            log.error(
+                    "[KITE-REST] HTTP {} error on POST {}: {}",
+                    e.getStatusCode(),
+                    path,
+                    e.getResponseBodyAsString());
+            throw new IllegalStateException(
+                    "Kite POST " + path + " failed: " + e.getResponseBodyAsString(), e);
         }
-        return spec.body(body).retrieve().body(JsonNode.class);
     }
 
     public String authorizationHeader() {
