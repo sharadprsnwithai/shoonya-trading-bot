@@ -5,6 +5,7 @@ import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.execution.gateway.ShoonyaBrokerGateway;
 import com.tradingbot.execution.gateway.ZerodhaBrokerGateway;
 import com.tradingbot.kite.auth.KiteAuthService;
+import com.tradingbot.kite.config.KiteProperties;
 import com.tradingbot.marketdata.HistoricalOhlcCacheService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
@@ -38,6 +39,7 @@ public class StartupSyncRunner implements CommandLineRunner {
     private final ShoonyaBrokerGateway shoonyaGateway;
     private final ZerodhaBrokerGateway zerodhaGateway;
     private final KiteAuthService kiteAuthService;
+    private final KiteProperties kiteProperties;
     private final TelegramService telegramService;
 
     @Autowired
@@ -49,6 +51,7 @@ public class StartupSyncRunner implements CommandLineRunner {
             @Autowired(required = false) ShoonyaBrokerGateway shoonyaGateway,
             @Autowired(required = false) ZerodhaBrokerGateway zerodhaGateway,
             @Autowired(required = false) KiteAuthService kiteAuthService,
+            @Autowired(required = false) KiteProperties kiteProperties,
             @Autowired(required = false) TelegramService telegramService) {
         this.config = config;
         this.authenticator = authenticator;
@@ -57,6 +60,7 @@ public class StartupSyncRunner implements CommandLineRunner {
         this.shoonyaGateway = shoonyaGateway;
         this.zerodhaGateway = zerodhaGateway;
         this.kiteAuthService = kiteAuthService;
+        this.kiteProperties = kiteProperties;
         this.telegramService = telegramService;
     }
 
@@ -92,6 +96,22 @@ public class StartupSyncRunner implements CommandLineRunner {
             if (kiteAuthService != null && zerodhaGateway != null) {
                 log.info("[2/4] Checking Zerodha Kite Connect authentication status...");
                 KiteAuthService.KiteStatus kiteStatus = kiteAuthService.status();
+
+                // If not active, attempt automated headless login if credentials present
+                if (!"ACTIVE".equalsIgnoreCase(kiteStatus.status())
+                        && kiteProperties != null
+                        && kiteProperties.hasAutoLoginCredentials()) {
+                    log.info(
+                            "[2/4] Zerodha Kite inactive. Attempting automated TOTP login for user"
+                                    + " {}...",
+                            kiteProperties.userId());
+                    try {
+                        kiteStatus = kiteAuthService.performAutoLogin();
+                    } catch (Exception e) {
+                        log.warn("[2/4] Automated Zerodha login notice: {}", e.getMessage());
+                    }
+                }
+
                 if ("ACTIVE".equalsIgnoreCase(kiteStatus.status())) {
                     log.info(
                             "[2/4] Zerodha Kite session active for user {}. Fetching positions...",

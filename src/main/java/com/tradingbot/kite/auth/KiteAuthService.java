@@ -61,7 +61,7 @@ public class KiteAuthService {
                 performAutoLogin();
             } catch (Exception e) {
                 log.warn(
-                        "[KITE-AUTH] Headless auto-login failed: {}. Standing by for web login.",
+                        "[KITE-AUTH] Headless auto-login notice: {}. Standing by for web login.",
                         e.getMessage());
             }
         }
@@ -128,7 +128,7 @@ public class KiteAuthService {
                             .uri(URI.create("https://kite.zerodha.com/api/login"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Kite-Version", "3")
-                            .header("User-Agent", "Mozilla/5.0")
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                             .POST(HttpRequest.BodyPublishers.ofString(loginForm))
                             .build();
 
@@ -139,7 +139,8 @@ public class KiteAuthService {
 
             String requestId = loginJson.path("data").path("request_id").asText();
             if (requestId == null || requestId.isBlank()) {
-                throw new IllegalStateException("Zerodha login failed: " + loginResp.body());
+                String errMsg = loginJson.path("message").asText(loginResp.body());
+                throw new IllegalStateException("Zerodha login rejected: " + errMsg);
             }
 
             // 2. Generate 6-digit TOTP
@@ -163,45 +164,79 @@ public class KiteAuthService {
                             .uri(URI.create("https://kite.zerodha.com/api/twofa"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Kite-Version", "3")
-                            .header("User-Agent", "Mozilla/5.0")
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                             .POST(HttpRequest.BodyPublishers.ofString(twofaForm))
                             .build();
 
-            client.send(twofaReq, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> twofaResp =
+                    client.send(twofaReq, HttpResponse.BodyHandlers.ofString());
+            JsonNode twofaJson = mapper.readTree(twofaResp.body());
+            if ("error".equalsIgnoreCase(twofaJson.path("status").asText())) {
+                throw new IllegalStateException(
+                        "Zerodha 2FA rejected: " + twofaJson.path("message").asText());
+            }
 
-            // 4. Follow connect login URL to obtain request_token
+            // 4. Capture request_token from connect OAuth URL using Redirect.NEVER
+            HttpClient noRedirectClient =
+                    HttpClient.newBuilder()
+                            .cookieHandler(cookieManager)
+                            .followRedirects(HttpClient.Redirect.NEVER)
+                            .connectTimeout(Duration.ofSeconds(15))
+                            .build();
+
             String connectUrl = restClient.loginUrl();
             HttpRequest connectReq =
                     HttpRequest.newBuilder()
                             .uri(URI.create(connectUrl))
-                            .header("User-Agent", "Mozilla/5.0")
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                             .GET()
                             .build();
 
             HttpResponse<String> connectResp =
-                    client.send(connectReq, HttpResponse.BodyHandlers.ofString());
-            URI finalUri = connectResp.uri();
-            String query = finalUri != null ? finalUri.getQuery() : null;
+                    noRedirectClient.send(connectReq, HttpResponse.BodyHandlers.ofString());
 
+            String location = connectResp.headers().firstValue("Location").orElse(null);
             String requestToken = null;
-            if (query != null && query.contains("request_token=")) {
-                for (String param : query.split("&")) {
-                    if (param.startsWith("request_token=")) {
-                        requestToken = param.substring("request_token=".length());
-                        break;
+
+            if (location != null && location.contains("request_token=")) {
+                URI locUri = URI.create(location);
+                String query = locUri.getQuery();
+                if (query != null) {
+                    for (String param : query.split("&")) {
+                        if (param.startsWith("request_token=")) {
+                            requestToken = param.substring("request_token=".length());
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (requestToken == null || requestToken.isBlank()) {
+                // Fallback attempt with normal client
+                HttpResponse<String> redirectResp =
+                        client.send(connectReq, HttpResponse.BodyHandlers.ofString());
+                URI finalUri = redirectResp.uri();
+                if (finalUri != null
+                        && finalUri.getQuery() != null
+                        && finalUri.getQuery().contains("request_token=")) {
+                    for (String param : finalUri.getQuery().split("&")) {
+                        if (param.startsWith("request_token=")) {
+                            requestToken = param.substring("request_token=".length());
+                            break;
+                        }
                     }
                 }
             }
 
             if (requestToken != null && !requestToken.isBlank()) {
                 log.info(
-                        "[KITE-AUTH] Headless OAuth handshake succeeded. Obtained request_token: {}...",
-                        requestToken.substring(0, Math.min(6, requestToken.length())));
+                        "[KITE-AUTH] Headless OAuth handshake succeeded. Exchanging request_token...");
                 return exchangeRequestToken(requestToken);
             } else {
                 log.warn(
-                        "[KITE-AUTH] Auto-login completed 2FA, but could not capture request_token from URI: {}",
-                        finalUri);
+                        "[KITE-AUTH] Auto-login completed 2FA, but could not capture request_token. Response: HTTP {} (Location: {})",
+                        connectResp.statusCode(),
+                        location);
                 return status();
             }
         } catch (Exception e) {
