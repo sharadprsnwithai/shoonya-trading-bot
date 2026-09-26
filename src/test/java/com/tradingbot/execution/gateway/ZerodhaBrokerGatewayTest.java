@@ -30,16 +30,10 @@ class ZerodhaBrokerGatewayTest {
 
         // Reference price = 2500.00 -> 1% upward buffer = 2525.00
         OrderRequest request =
-                OrderRequest.market(
-                        "RELIANCE26MARFUT",
-                        "NFO",
-                        TransactionType.BUY,
-                        250,
-                        "SIG-123");
+                OrderRequest.market("RELIANCE26MARFUT", "NFO", TransactionType.BUY, 250, "SIG-123");
 
         OrderResponse resp =
-                gateway.placeOrderWithReferencePrice(
-                        request, BigDecimal.valueOf(2500.00));
+                gateway.placeOrderWithReferencePrice(request, BigDecimal.valueOf(2500.00));
         assertTrue(resp.success());
         assertEquals("2603300002", resp.orderId());
 
@@ -60,16 +54,10 @@ class ZerodhaBrokerGatewayTest {
 
         // Reference price = 3800.00 -> 1% downward buffer = 3762.00
         OrderRequest request =
-                OrderRequest.market(
-                        "TCS26MARFUT",
-                        "NFO",
-                        TransactionType.SELL,
-                        175,
-                        "SIG-456");
+                OrderRequest.market("TCS26MARFUT", "NFO", TransactionType.SELL, 175, "SIG-456");
 
         OrderResponse resp =
-                gateway.placeOrderWithReferencePrice(
-                        request, BigDecimal.valueOf(3800.00));
+                gateway.placeOrderWithReferencePrice(request, BigDecimal.valueOf(3800.00));
         assertTrue(resp.success());
 
         verify(mockRestClient, times(1))

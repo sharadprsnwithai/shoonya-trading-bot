@@ -42,8 +42,7 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
         return placeOrderWithReferencePrice(request, refPrice);
     }
 
-    public OrderResponse placeOrderWithReferencePrice(
-            OrderRequest request, BigDecimal refPrice) {
+    public OrderResponse placeOrderWithReferencePrice(OrderRequest request, BigDecimal refPrice) {
         if (request == null) {
             return OrderResponse.failure(null, "Null OrderRequest");
         }
@@ -77,9 +76,7 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                             request.symbol(),
                             request.transactionType().name(),
                             request.quantity(),
-                            request.productType() != null
-                                    ? request.productType().name()
-                                    : "MIS",
+                            request.productType() != null ? request.productType().name() : "MIS",
                             orderType,
                             limitPrice,
                             triggerPrice);

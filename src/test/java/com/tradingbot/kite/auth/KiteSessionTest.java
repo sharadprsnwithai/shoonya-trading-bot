@@ -3,7 +3,6 @@ package com.tradingbot.kite.auth;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.AfterEach;
@@ -49,8 +48,7 @@ class KiteSessionTest {
 
     @Test
     void testClearDeletesSessionAndFile() {
-        KiteSession.Session session =
-                new KiteSession.Session("test-token", "AB1234", "Sharad");
+        KiteSession.Session session = new KiteSession.Session("test-token", "AB1234", "Sharad");
         kiteSession.update(session);
         assertNotNull(kiteSession.current());
 

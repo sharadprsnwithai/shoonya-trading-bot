@@ -92,8 +92,7 @@ public class KiteAuthService {
 
     public KiteStatus performAutoLogin() {
         if (!kiteProperties.hasAutoLoginCredentials()) {
-            throw new IllegalStateException(
-                    "Missing user_id, password or totp_key for auto-login");
+            throw new IllegalStateException("Missing user_id, password or totp_key for auto-login");
         }
 
         log.info("[KITE-AUTH] Generating 6-digit TOTP code for user {}", kiteProperties.userId());

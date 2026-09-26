@@ -7,7 +7,6 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.kite.auth.KiteSession;
 import com.tradingbot.kite.config.KiteProperties;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -57,14 +56,7 @@ class KiteRestClientTest {
 
         KiteRestClient.KiteOrderRequest req =
                 new KiteRestClient.KiteOrderRequest(
-                        "NFO",
-                        "RELIANCE26MARFUT",
-                        "BUY",
-                        250,
-                        "MIS",
-                        "LIMIT",
-                        2500.0,
-                        null);
+                        "NFO", "RELIANCE26MARFUT", "BUY", 250, "MIS", "LIMIT", 2500.0, null);
 
         KiteRestClient.KiteOrderResponse resp = kiteRestClient.placeOrder(req);
         assertNotNull(resp);

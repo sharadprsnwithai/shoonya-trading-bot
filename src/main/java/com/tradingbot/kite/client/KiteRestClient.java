@@ -37,6 +37,7 @@ public class KiteRestClient {
 
     public record KiteOrderResponse(String orderId) {}
 
+    @org.springframework.beans.factory.annotation.Autowired
     public KiteRestClient(KiteProperties kiteProperties, KiteSession kiteSession) {
         this(
                 kiteProperties,

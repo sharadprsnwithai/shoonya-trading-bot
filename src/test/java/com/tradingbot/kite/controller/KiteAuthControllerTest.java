@@ -30,8 +30,7 @@ class KiteAuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(
                         jsonPath("$.loginUrl")
-                                .value(
-                                        "https://kite.zerodha.com/connect/login?v=3&api_key=test"));
+                                .value("https://kite.zerodha.com/connect/login?v=3&api_key=test"));
     }
 
     @Test

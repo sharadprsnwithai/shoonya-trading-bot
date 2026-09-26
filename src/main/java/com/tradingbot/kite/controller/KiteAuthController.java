@@ -57,7 +57,8 @@ public class KiteAuthController {
             @RequestParam(value = "request_token", required = false) String requestToken,
             @RequestParam(value = "status", required = false) String status) {
         if (requestToken == null || requestToken.isBlank()) {
-            log.warn("[KITE-CALLBACK] Callback received without request_token (status: {})", status);
+            log.warn(
+                    "[KITE-CALLBACK] Callback received without request_token (status: {})", status);
             return new RedirectView("http://localhost:3000?kite=cancelled");
         }
         try {

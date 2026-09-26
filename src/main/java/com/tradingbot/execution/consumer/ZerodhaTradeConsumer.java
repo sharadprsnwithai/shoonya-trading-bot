@@ -1,7 +1,6 @@
 package com.tradingbot.execution.consumer;
 
 import com.tradingbot.execution.gateway.BrokerOrderGateway;
-import com.tradingbot.execution.gateway.ZerodhaBrokerGateway;
 import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.OrderResponse;
@@ -10,7 +9,6 @@ import com.tradingbot.model.order.ProductType;
 import com.tradingbot.model.order.TransactionType;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
-import java.math.BigDecimal;
 
 public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
 
@@ -55,12 +53,7 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
                         signal.stopLoss(),
                         signal.signalId());
 
-        OrderResponse resp;
-        if (orderGateway instanceof ZerodhaBrokerGateway zerodhaGw) {
-            resp = zerodhaGw.placeOrderWithReferencePrice(request, signal.price());
-        } else {
-            resp = orderGateway.placeOrder(request);
-        }
+        OrderResponse resp = orderGateway.placeOrder(request);
 
         log.info(
                 "[CONSUMER:{}] Zerodha live order executed: {} {} x {} @ RefPrice: {} |"
