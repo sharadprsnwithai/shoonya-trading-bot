@@ -27,6 +27,9 @@ import org.springframework.stereotype.Service;
 public class KiteAuthService {
 
     private static final Logger log = LoggerFactory.getLogger(KiteAuthService.class);
+    private static final String BROWSER_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
+                    + " Chrome/120.0.0.0 Safari/537.36";
 
     public record KiteStatus(String status, String detail, String userId) {}
 
@@ -112,7 +115,7 @@ public class KiteAuthService {
             HttpClient client =
                     HttpClient.newBuilder()
                             .cookieHandler(cookieManager)
-                            .followRedirects(HttpClient.Redirect.ALWAYS)
+                            .followRedirects(HttpClient.Redirect.NEVER)
                             .connectTimeout(Duration.ofSeconds(15))
                             .build();
 
@@ -128,7 +131,9 @@ public class KiteAuthService {
                             .uri(URI.create("https://kite.zerodha.com/api/login"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Kite-Version", "3")
-                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                            .header("Origin", "https://kite.zerodha.com")
+                            .header("Referer", "https://kite.zerodha.com/")
+                            .header("User-Agent", BROWSER_UA)
                             .POST(HttpRequest.BodyPublishers.ofString(loginForm))
                             .build();
 
@@ -157,14 +162,16 @@ public class KiteAuthService {
                             + URLEncoder.encode(requestId, StandardCharsets.UTF_8)
                             + "&twofa_value="
                             + URLEncoder.encode(totpCode, StandardCharsets.UTF_8)
-                            + "&skip_session=true";
+                            + "&twofa_type=totp&skip_session=true";
 
             HttpRequest twofaReq =
                     HttpRequest.newBuilder()
                             .uri(URI.create("https://kite.zerodha.com/api/twofa"))
                             .header("Content-Type", "application/x-www-form-urlencoded")
                             .header("X-Kite-Version", "3")
-                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                            .header("Origin", "https://kite.zerodha.com")
+                            .header("Referer", "https://kite.zerodha.com/")
+                            .header("User-Agent", BROWSER_UA)
                             .POST(HttpRequest.BodyPublishers.ofString(twofaForm))
                             .build();
 
@@ -176,57 +183,47 @@ public class KiteAuthService {
                         "Zerodha 2FA rejected: " + twofaJson.path("message").asText());
             }
 
-            // 4. Capture request_token from connect OAuth URL using Redirect.NEVER
-            HttpClient noRedirectClient =
-                    HttpClient.newBuilder()
-                            .cookieHandler(cookieManager)
-                            .followRedirects(HttpClient.Redirect.NEVER)
-                            .connectTimeout(Duration.ofSeconds(15))
-                            .build();
+            // 4. Capture request_token from connect OAuth URL
+            String connectUrl =
+                    "https://kite.zerodha.com/connect/login?v=3&api_key=" + kiteProperties.apiKey();
+            if (kiteProperties.redirectUri() != null && !kiteProperties.redirectUri().isBlank()) {
+                connectUrl +=
+                        "&redirect_uri="
+                                + URLEncoder.encode(
+                                        kiteProperties.redirectUri(), StandardCharsets.UTF_8);
+            }
 
-            String connectUrl = restClient.loginUrl();
             HttpRequest connectReq =
                     HttpRequest.newBuilder()
                             .uri(URI.create(connectUrl))
-                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                            .header("Referer", "https://kite.zerodha.com/")
+                            .header("User-Agent", BROWSER_UA)
                             .GET()
                             .build();
 
             HttpResponse<String> connectResp =
-                    noRedirectClient.send(connectReq, HttpResponse.BodyHandlers.ofString());
-
+                    client.send(connectReq, HttpResponse.BodyHandlers.ofString());
             String location = connectResp.headers().firstValue("Location").orElse(null);
-            String requestToken = null;
 
-            if (location != null && location.contains("request_token=")) {
-                URI locUri = URI.create(location);
-                String query = locUri.getQuery();
-                if (query != null) {
-                    for (String param : query.split("&")) {
-                        if (param.startsWith("request_token=")) {
-                            requestToken = param.substring("request_token=".length());
-                            break;
-                        }
-                    }
-                }
+            // If first attempt with redirect_uri fails with 400, retry connect login without
+            // redirect_uri parameter
+            if (connectResp.statusCode() == 400
+                    || (location == null && connectResp.statusCode() != 302)) {
+                String fallbackConnectUrl =
+                        "https://kite.zerodha.com/connect/login?v=3&api_key="
+                                + kiteProperties.apiKey();
+                HttpRequest fallbackReq =
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(fallbackConnectUrl))
+                                .header("Referer", "https://kite.zerodha.com/")
+                                .header("User-Agent", BROWSER_UA)
+                                .GET()
+                                .build();
+                connectResp = client.send(fallbackReq, HttpResponse.BodyHandlers.ofString());
+                location = connectResp.headers().firstValue("Location").orElse(null);
             }
 
-            if (requestToken == null || requestToken.isBlank()) {
-                // Fallback attempt with normal client
-                HttpResponse<String> redirectResp =
-                        client.send(connectReq, HttpResponse.BodyHandlers.ofString());
-                URI finalUri = redirectResp.uri();
-                if (finalUri != null
-                        && finalUri.getQuery() != null
-                        && finalUri.getQuery().contains("request_token=")) {
-                    for (String param : finalUri.getQuery().split("&")) {
-                        if (param.startsWith("request_token=")) {
-                            requestToken = param.substring("request_token=".length());
-                            break;
-                        }
-                    }
-                }
-            }
+            String requestToken = extractRequestToken(location);
 
             if (requestToken != null && !requestToken.isBlank()) {
                 log.info(
@@ -234,8 +231,9 @@ public class KiteAuthService {
                 return exchangeRequestToken(requestToken);
             } else {
                 log.warn(
-                        "[KITE-AUTH] Auto-login completed 2FA, but could not capture request_token. Response: HTTP {} (Location: {})",
+                        "[KITE-AUTH] Auto-login completed 2FA, but could not capture request_token. Response: HTTP {} | Body: {} | Location: {}",
                         connectResp.statusCode(),
+                        connectResp.body(),
                         location);
                 return status();
             }
@@ -243,6 +241,25 @@ public class KiteAuthService {
             log.error("[KITE-AUTH] Headless auto-login error: {}", e.getMessage(), e);
             throw new IllegalStateException("Auto-login failed: " + e.getMessage(), e);
         }
+    }
+
+    private static String extractRequestToken(String locationUrl) {
+        if (locationUrl == null || !locationUrl.contains("request_token=")) {
+            return null;
+        }
+        try {
+            URI locUri = URI.create(locationUrl);
+            String query = locUri.getQuery();
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    if (param.startsWith("request_token=")) {
+                        return param.substring("request_token=".length());
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     public void logout() {
