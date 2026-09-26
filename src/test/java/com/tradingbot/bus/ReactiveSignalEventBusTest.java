@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
 import java.math.BigDecimal;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,5 +97,49 @@ class ReactiveSignalEventBusTest {
         bus.publish(signal2);
 
         assertEquals(1, lateSubCount.get());
+    }
+
+    @Test
+    void testConcurrentMultiThreadedPublishing() throws InterruptedException {
+        int threadCount = 10;
+        int signalsPerThread = 50;
+        AtomicInteger receivedCount = new AtomicInteger(0);
+
+        bus.getSignalStream().subscribe(sig -> receivedCount.incrementAndGet());
+
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        for (int t = 0; t < threadCount; t++) {
+            final int threadId = t;
+            executor.submit(
+                    () -> {
+                        try {
+                            for (int i = 0; i < signalsPerThread; i++) {
+                                TradeSignal signal =
+                                        TradeSignal.of(
+                                                "LVR",
+                                                "SYM_" + threadId,
+                                                "SYM_" + threadId + "FUT",
+                                                SignalAction.ENTRY_LONG,
+                                                BigDecimal.valueOf(100 + i),
+                                                null,
+                                                null,
+                                                10,
+                                                "Thread signal",
+                                                null);
+                                bus.publish(signal);
+                            }
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+        }
+
+        latch.await();
+        executor.shutdown();
+        Thread.sleep(200);
+
+        assertEquals(threadCount * signalsPerThread, receivedCount.get());
     }
 }

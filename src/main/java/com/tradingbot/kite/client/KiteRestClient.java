@@ -164,11 +164,11 @@ public class KiteRestClient {
         form.put(
                 "product",
                 req.product() != null && !req.product().isBlank() ? req.product() : "MIS");
-        form.put(
-                "order_type",
-                req.orderType() != null && !req.orderType().isBlank() ? req.orderType() : "LIMIT");
+        String orderType =
+                req.orderType() != null && !req.orderType().isBlank() ? req.orderType() : "LIMIT";
+        form.put("order_type", orderType);
         form.put("validity", "DAY");
-        if (req.price() != null && req.price() > 0) {
+        if (!"MARKET".equalsIgnoreCase(orderType) && req.price() != null && req.price() > 0) {
             double tickRounded = Math.round(req.price() * 20.0) / 20.0;
             form.put("price", String.format(Locale.US, "%.2f", tickRounded));
         }

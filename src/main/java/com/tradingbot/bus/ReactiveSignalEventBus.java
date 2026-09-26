@@ -26,7 +26,7 @@ public class ReactiveSignalEventBus implements SignalPublisher, SignalStreamProv
     }
 
     @Override
-    public boolean publish(TradeSignal signal) {
+    public synchronized boolean publish(TradeSignal signal) {
         if (signal == null || !signal.isActionable()) {
             return false;
         }

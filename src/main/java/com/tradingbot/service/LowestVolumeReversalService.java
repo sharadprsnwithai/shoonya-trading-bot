@@ -909,6 +909,7 @@ public class LowestVolumeReversalService {
 
         if (instrumentType == LvrInstrumentType.FUTURES) {
             String contractSymbol = symbol + " FUT";
+            String brokerTradingSymbol = StockFnoRegistry.formatFuturesTradingSymbol(symbol, null);
             position =
                     new LowestVolumePaperPosition(
                             tradeId,
@@ -930,7 +931,7 @@ public class LowestVolumeReversalService {
 
             publishSignal(
                     symbol,
-                    contractSymbol,
+                    brokerTradingSymbol,
                     setup.getDirection() == LowestVolumeDirection.LONG
                             ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
                             : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,
@@ -978,6 +979,8 @@ public class LowestVolumeReversalService {
             BigDecimal atmStrike = resolveAtmStrike(spotPrice, strikeStep);
             String optType = (setup.getDirection() == LowestVolumeDirection.SHORT) ? "PE" : "CE";
             String optSymbol = symbol + " ATM " + atmStrike + optType;
+            String brokerTradingSymbol =
+                    StockFnoRegistry.formatTradingSymbol(symbol, null, atmStrike, optType, false);
 
             double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
             double fallbackPrem = Math.max(0.50, spotPrice.doubleValue() * 0.018);
@@ -1008,7 +1011,7 @@ public class LowestVolumeReversalService {
 
             publishSignal(
                     symbol,
-                    optSymbol,
+                    brokerTradingSymbol,
                     setup.getDirection() == LowestVolumeDirection.LONG
                             ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
                             : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,

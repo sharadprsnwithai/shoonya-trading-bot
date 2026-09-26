@@ -475,6 +475,32 @@ public final class StockFnoRegistry {
         return getLastDayOfWeekOfMonth(date, DayOfWeek.THURSDAY);
     }
 
+    public static LocalDate getMonthlyExpiry(LocalDate date) {
+        return getLastThursdayOfMonth(date != null ? date : LocalDate.now(IST));
+    }
+
+    /**
+     * Formats the official NSE / Shoonya / Zerodha Futures trading symbol (e.g. RELIANCE26MARFUT).
+     */
+    public static String formatFuturesTradingSymbol(String symbol, LocalDate expiryDate) {
+        String cleanUnderlying = symbol != null ? symbol.toUpperCase().replace(" ", "") : "NIFTY";
+        if (cleanUnderlying.equals("NIFTY50") || cleanUnderlying.equals("NIFTY")) {
+            cleanUnderlying = "NIFTY";
+        } else if (cleanUnderlying.equals("BANKNIFTY") || cleanUnderlying.equals("BANK NIFTY")) {
+            cleanUnderlying = "BANKNIFTY";
+        } else if (cleanUnderlying.equals("BSESN") || cleanUnderlying.equals("SENSEX")) {
+            cleanUnderlying = "SENSEX";
+        }
+
+        if (expiryDate == null) {
+            expiryDate = getMonthlyExpiry(LocalDate.now(IST));
+        }
+
+        String yearStr = String.valueOf(expiryDate.getYear()).substring(2);
+        String monthStr = expiryDate.getMonth().name().substring(0, 3).toUpperCase();
+        return String.format("%s%s%sFUT", cleanUnderlying, yearStr, monthStr);
+    }
+
     /**
      * Formats the official Shoonya / NSE / BSE derivative trading symbol.
      *
