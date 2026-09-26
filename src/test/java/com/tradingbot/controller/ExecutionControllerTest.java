@@ -7,7 +7,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.tradingbot.execution.consumer.TradeConsumerManager;
 import com.tradingbot.execution.consumer.TradeExecutionConsumer;
+import com.tradingbot.execution.gateway.ShoonyaBrokerGateway;
+import com.tradingbot.execution.gateway.ZerodhaBrokerGateway;
+import com.tradingbot.model.execution.BrokerPosition;
 import com.tradingbot.model.execution.ExecutionMode;
+import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -22,6 +26,8 @@ class ExecutionControllerTest {
     @Autowired private MockMvc mockMvc;
 
     @MockBean private TradeConsumerManager consumerManager;
+    @MockBean private ShoonyaBrokerGateway shoonyaGateway;
+    @MockBean private ZerodhaBrokerGateway zerodhaGateway;
 
     @Test
     void testGetConsumers() throws Exception {
@@ -56,10 +62,64 @@ class ExecutionControllerTest {
     }
 
     @Test
-    void testGetConsumerNotFound() throws Exception {
-        when(consumerManager.getConsumer("unknown")).thenReturn(null);
+    void testGetPositionsCombined() throws Exception {
+        BrokerPosition pos1 =
+                BrokerPosition.of(
+                        "SHOONYA",
+                        "NSE",
+                        "RELIANCE",
+                        "RELIANCE",
+                        "CNC",
+                        10,
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2520),
+                        BigDecimal.valueOf(200),
+                        BigDecimal.ZERO);
 
-        mockMvc.perform(get("/api/v1/execution/consumers/unknown"))
-                .andExpect(status().isNotFound());
+        BrokerPosition pos2 =
+                BrokerPosition.of(
+                        "ZERODHA",
+                        "NFO",
+                        "NIFTY",
+                        "NIFTY26MAR22000CE",
+                        "MIS",
+                        50,
+                        BigDecimal.valueOf(150),
+                        BigDecimal.valueOf(180),
+                        BigDecimal.valueOf(1500),
+                        BigDecimal.ZERO);
+
+        when(shoonyaGateway.getPositions()).thenReturn(List.of(pos1));
+        when(zerodhaGateway.getPositions()).thenReturn(List.of(pos2));
+
+        mockMvc.perform(get("/api/v1/execution/positions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].segment").value("CASH"))
+                .andExpect(jsonPath("$[1].segment").value("DERIVATIVES"));
+    }
+
+    @Test
+    void testGetPositionsByBroker() throws Exception {
+        BrokerPosition pos =
+                BrokerPosition.of(
+                        "ZERODHA",
+                        "NFO",
+                        "BANKNIFTY",
+                        "BANKNIFTY26MAR48000PE",
+                        "MIS",
+                        15,
+                        BigDecimal.valueOf(200),
+                        BigDecimal.valueOf(220),
+                        BigDecimal.valueOf(300),
+                        BigDecimal.ZERO);
+
+        when(zerodhaGateway.getPositions()).thenReturn(List.of(pos));
+
+        mockMvc.perform(get("/api/v1/execution/positions/ZERODHA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].broker").value("ZERODHA"))
+                .andExpect(jsonPath("$[0].segment").value("DERIVATIVES"));
     }
 }

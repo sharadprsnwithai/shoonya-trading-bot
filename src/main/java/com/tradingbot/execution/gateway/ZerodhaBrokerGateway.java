@@ -1,12 +1,16 @@
 package com.tradingbot.execution.gateway;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.tradingbot.kite.client.KiteRestClient;
+import com.tradingbot.model.execution.BrokerPosition;
 import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.OrderResponse;
 import com.tradingbot.model.order.OrderStatus;
 import com.tradingbot.model.order.TransactionType;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +18,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Production Broker Gateway for Zerodha Kite Connect API supporting marketable limit order
- * execution.
+ * execution and position querying.
  */
 @Component
 public class ZerodhaBrokerGateway implements BrokerOrderGateway {
@@ -66,7 +70,12 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                             ? Math.round(request.triggerPrice().doubleValue() * 20.0) / 20.0
                             : null;
 
-            String orderType = (limitPrice != null) ? "LIMIT" : "MARKET";
+            String orderType;
+            if (triggerPrice != null) {
+                orderType = (limitPrice != null) ? "SL" : "SL-M";
+            } else {
+                orderType = (limitPrice != null) ? "LIMIT" : "MARKET";
+            }
 
             KiteRestClient.KiteOrderRequest kiteReq =
                     new KiteRestClient.KiteOrderRequest(
@@ -125,5 +134,45 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
         log.info("[ZERODHA-GATEWAY] Modifying order {}: {}", orderId, request.symbol());
         return new OrderResponse(
                 true, orderId, OrderStatus.OPEN, "Order modify submitted", request, Instant.now());
+    }
+
+    @Override
+    public List<BrokerPosition> getPositions() {
+        List<BrokerPosition> positions = new ArrayList<>();
+        try {
+            JsonNode data = kiteRestClient.positions();
+            if (data != null && data.isArray()) {
+                for (JsonNode row : data) {
+                    long qty = row.path("quantity").asLong(0L);
+                    if (qty == 0L) {
+                        continue;
+                    }
+
+                    String tsym = row.path("tradingsymbol").asText("");
+                    String exch = row.path("exchange").asText("NFO");
+                    String prd = row.path("product").asText("MIS");
+                    double avgPrice = row.path("average_price").asDouble(0.0);
+                    double lastPrice = row.path("last_price").asDouble(0.0);
+                    double pnl = row.path("pnl").asDouble(0.0);
+                    double m2m = row.path("m2m").asDouble(0.0);
+
+                    positions.add(
+                            BrokerPosition.of(
+                                    "ZERODHA",
+                                    exch,
+                                    tsym,
+                                    tsym,
+                                    prd,
+                                    qty,
+                                    BigDecimal.valueOf(avgPrice),
+                                    BigDecimal.valueOf(lastPrice),
+                                    BigDecimal.valueOf(pnl),
+                                    BigDecimal.valueOf(m2m)));
+                }
+            }
+        } catch (Exception e) {
+            log.error("[ZERODHA-GATEWAY] Error reading Kite positions: {}", e.getMessage(), e);
+        }
+        return positions;
     }
 }
