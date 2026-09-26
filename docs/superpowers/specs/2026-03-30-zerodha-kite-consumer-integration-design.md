@@ -13,11 +13,14 @@
 Integrate a production-ready **Zerodha Kite Connect Consumer** into the trading bot's decoupled reactive signal distribution architecture. The Zerodha consumer will subscribe concurrently to `Flux<TradeSignal>`, authenticate with Zerodha Kite Connect APIs, manage session persistence, and execute live or paper orders using marketable limit order protection with isolated worker threads.
 
 ### 1.2 Key Requirements
-1. **Kite Authentication & Session Persistence:** Support OAuth 2.0 web login, token exchange with SHA-256 checksums, and token persistence to `data/kite_session.json` (similar to existing `data/shoonya_session.json`).
+1. **Dual-Mode Kite Authentication & Session Persistence:**
+   - **Automated Headless TOTP Login:** When `KITE_USER_ID`, `KITE_PASSWORD`, and `KITE_TOTP_KEY` are provided in `.env`, the bot performs hands-free login at startup or pre-market (08:45 AM) by computing the 6-digit TOTP code with `CryptoUtil`, posting credentials to Kite login API, acquiring `request_token`, and generating `access_token`.
+   - **Standard OAuth 2.0 Web Login:** Web endpoint fallback (`/api/v1/kite/login-url` and `/api/v1/kite/auth/callback`) to authorize via browser.
+   - **Persistent Storage:** Stored in `data/kite_session.json` across bot restarts for all-day validity.
 2. **Kite REST API Client:** Direct REST communication with `https://api.kite.trade` v3 endpoints (`/session/token`, `/user/profile`, `/orders/regular`, `/portfolio/positions`, `/orders/{orderId}`).
 3. **Marketable Limit Order Execution (1% Buffer):** Place orders with a 1% protective buffer (1.01x for BUY, 0.99x for SELL) rounded to the nearest 0.05 tick size to ensure immediate fill while preventing slippage.
 4. **Decoupled Consumer Subscription:** `ZerodhaTradeConsumer` receives signals from `ReactiveSignalEventBus`, performs freshness verification, scales quantities with consumer-specific lot multipliers, and executes orders via `ZerodhaBrokerGateway`.
-5. **REST API & OAuth Web Endpoints:** Endpoints to generate Kite login URL, process OAuth callbacks, check session connectivity, and view live Zerodha positions.
+5. **REST API & OAuth Web Endpoints:** Endpoints to trigger auto-login, generate Kite login URL, process OAuth callbacks, check session connectivity, and view live Zerodha positions.
 
 ---
 
@@ -88,6 +91,9 @@ public record KiteProperties(
     boolean enabled,
     String apiKey,
     String apiSecret,
+    String userId,
+    String password,
+    String totpKey,
     String redirectUri,
     String accessToken,
     String sessionFile,
@@ -98,27 +104,41 @@ public record KiteProperties(
             sessionFile = "data/kite_session.json";
         }
     }
+
+    public boolean hasAutoLoginCredentials() {
+        return userId != null && !userId.isBlank()
+                && password != null && !password.isBlank()
+                && totpKey != null && !totpKey.isBlank();
+    }
 }
 ```
 
 Environment variables supported:
 * `KITE_API_KEY`: Zerodha Kite Connect API key (e.g. `xz6f5qndx8fl6jc5`)
 * `KITE_API_SECRET`: Kite Connect API secret (e.g. `w2hl2ppyv3k0bqem4i31tq8bmwi9npsx`)
-* `KITE_REDIRECT_URI`: OAuth callback URI (e.g. `http://localhost:8080/api/v1/kite/auth/callback`)
-* `KITE_ACCESS_TOKEN`: Pre-generated access token (optional override)
+* `KITE_USER_ID`: Zerodha User ID (optional, for auto-login)
+* `KITE_PASSWORD`: Zerodha Account Password (optional, for auto-login)
+* `KITE_TOTP_KEY`: Base32 TOTP secret key (optional, for hands-free auto-login)
+* `KITE_REDIRECT_URI`: OAuth callback URI (e.g. `https://untaxed-substance-reputably.ngrok-free.dev/api/kite/auth/callback`)
+* `KITE_ACCESS_TOKEN`: Pre-generated access token override
 * `KITE_SESSION_FILE`: Path to saved session token JSON (`data/kite_session.json`)
 
 ### 4.2 Session Persistence (`KiteSession`)
 * Manages an `AtomicReference<Session>` in memory.
-* Automatically serializes session JSON to `data/kite_session.json` upon token exchange.
+* Automatically serializes session JSON to `data/kite_session.json` upon token exchange or auto-login.
 * Loads existing valid session on startup so application restarts do not require re-login during the trading day.
 * `clear()` invalidates memory and deletes the file upon logout or 401 expiration.
 
 ### 4.3 Authentication Service (`KiteAuthService`)
-* **Login URL Generation:** `https://kite.zerodha.com/connect/login?v=3&api_key={apiKey}&redirect_uri={redirectUri}`
-* **Token Exchange:** Computes SHA-256 checksum:
-  $$\text{checksum} = \text{SHA256}(\text{apiKey} + \text{requestToken} + \text{apiSecret})$$
-  Posts form payload to `/session/token` on `https://api.kite.trade`.
+* **Automated Headless TOTP Login:**
+  1. `POST https://kite.zerodha.com/api/login` with `user_id` and `password` $\to$ gets `request_id`.
+  2. Generates 6-digit TOTP code using `CryptoUtil.generateTotp(totpKey)`.
+  3. `POST https://kite.zerodha.com/api/twofa` with `request_id`, `twofa_value`, and `user_id` $\to$ follows redirect to extract `request_token`.
+  4. Exchanges `request_token` for `access_token` via `https://api.kite.trade/session/token` using SHA-256 checksum.
+  5. Saves `Session` to `data/kite_session.json`.
+* **Standard OAuth Flow:**
+  - Login URL: `https://kite.zerodha.com/connect/login?v=3&api_key={apiKey}&redirect_uri={redirectUri}`
+  - Callback token exchange: `checksum = sha256(apiKey + requestToken + apiSecret)`.
 * **Session Health Check:** Calls `/user/profile` to verify session validity and user ID.
 
 ### 4.4 Kite REST Client (`KiteRestClient`)
