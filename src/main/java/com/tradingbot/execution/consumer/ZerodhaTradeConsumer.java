@@ -1,6 +1,7 @@
 package com.tradingbot.execution.consumer;
 
 import com.tradingbot.execution.gateway.BrokerOrderGateway;
+import com.tradingbot.execution.gateway.ZerodhaBrokerGateway;
 import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.OrderResponse;
@@ -47,18 +48,28 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
                         signal.tradingSymbol(),
                         "NFO",
                         txnType,
-                        OrderType.MKT,
+                        OrderType.LMT,
                         ProductType.MIS,
                         quantity,
-                        BigDecimal.ZERO,
-                        null,
+                        signal.price(),
+                        signal.stopLoss(),
                         signal.signalId());
 
-        OrderResponse resp = orderGateway.placeOrder(request);
+        OrderResponse resp;
+        if (orderGateway instanceof ZerodhaBrokerGateway zerodhaGw) {
+            resp = zerodhaGw.placeOrderWithReferencePrice(request, signal.price());
+        } else {
+            resp = orderGateway.placeOrder(request);
+        }
+
         log.info(
-                "[CONSUMER:{}] Zerodha live order placed: {} | Result: {}",
+                "[CONSUMER:{}] Zerodha live order executed: {} {} x {} @ RefPrice: {} |"
+                        + " Result: {}",
                 getConsumerId(),
+                txnType,
                 signal.tradingSymbol(),
+                quantity,
+                signal.price(),
                 resp);
     }
 
