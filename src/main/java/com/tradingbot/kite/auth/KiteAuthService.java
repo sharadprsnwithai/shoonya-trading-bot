@@ -205,25 +205,35 @@ public class KiteAuthService {
                     client.send(connectReq, HttpResponse.BodyHandlers.ofString());
             String location = connectResp.headers().firstValue("Location").orElse(null);
 
-            // If first attempt with redirect_uri fails with 400, retry connect login without
-            // redirect_uri parameter
-            if (connectResp.statusCode() == 400
-                    || (location == null && connectResp.statusCode() != 302)) {
-                String fallbackConnectUrl =
-                        "https://kite.zerodha.com/connect/login?v=3&api_key="
-                                + kiteProperties.apiKey();
-                HttpRequest fallbackReq =
+            // Follow OAuth redirect hops (e.g. /connect/login -> /connect/finish ->
+            // redirect_uri?request_token=...)
+            int hops = 0;
+            String requestToken = extractRequestToken(location);
+
+            while (requestToken == null && location != null && hops < 5) {
+                hops++;
+                String nextUrl =
+                        location.startsWith("http")
+                                ? location
+                                : "https://kite.zerodha.com" + location;
+                log.info("[KITE-AUTH] Following OAuth redirect hop {}: {}", hops, nextUrl);
+
+                HttpRequest hopReq =
                         HttpRequest.newBuilder()
-                                .uri(URI.create(fallbackConnectUrl))
+                                .uri(URI.create(nextUrl))
                                 .header("Referer", "https://kite.zerodha.com/")
                                 .header("User-Agent", BROWSER_UA)
                                 .GET()
                                 .build();
-                connectResp = client.send(fallbackReq, HttpResponse.BodyHandlers.ofString());
-                location = connectResp.headers().firstValue("Location").orElse(null);
-            }
 
-            String requestToken = extractRequestToken(location);
+                HttpResponse<String> hopResp =
+                        client.send(hopReq, HttpResponse.BodyHandlers.ofString());
+                location = hopResp.headers().firstValue("Location").orElse(null);
+                requestToken = extractRequestToken(location);
+                if (requestToken == null && hopResp.uri() != null) {
+                    requestToken = extractRequestToken(hopResp.uri().toString());
+                }
+            }
 
             if (requestToken != null && !requestToken.isBlank()) {
                 log.info(
@@ -231,9 +241,7 @@ public class KiteAuthService {
                 return exchangeRequestToken(requestToken);
             } else {
                 log.warn(
-                        "[KITE-AUTH] Auto-login completed 2FA, but could not capture request_token. Response: HTTP {} | Body: {} | Location: {}",
-                        connectResp.statusCode(),
-                        connectResp.body(),
+                        "[KITE-AUTH] Auto-login completed 2FA, but could not capture request_token. Final Location: {}",
                         location);
                 return status();
             }
