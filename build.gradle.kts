@@ -54,6 +54,10 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+tasks.getByName<Jar>("jar") {
+    enabled = false
+}
+
 // ==============================================================================
 // Spotless Code Formatting Configuration
 // ==============================================================================
