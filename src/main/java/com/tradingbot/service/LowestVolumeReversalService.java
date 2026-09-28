@@ -1111,12 +1111,17 @@ public class LowestVolumeReversalService {
                 if (slHit) {
                     String slReason =
                             pos.isPartialBooked() ? "TRAILING_COST_SL_HIT" : "SPOT_SL_HIT";
-                    pos.close(
+                    int exitQty =
+                            pos.getRemainingQuantity() > 0
+                                    ? pos.getRemainingQuantity()
+                                    : pos.getTotalQuantity();
+                    String brokerSymbol = resolveBrokerTradingSymbol(pos);
+                    BigDecimal exitPrc =
                             pos.getInstrumentType() == LvrInstrumentType.FUTURES
                                     ? spotPrice
-                                    : optionPremium,
-                            slReason,
-                            Instant.now());
+                                    : optionPremium;
+
+                    pos.close(exitPrc, slReason, Instant.now());
                     openPositions.remove(symbol);
                     tradeHistory.add(pos);
 
@@ -1140,24 +1145,20 @@ public class LowestVolumeReversalService {
                     log.info(
                             "[LVR] SL Hit for {}: Closed at ExitPrice={}, Spot={}, Reason={}",
                             symbol,
-                            pos.getInstrumentType() == LvrInstrumentType.FUTURES
-                                    ? spotPrice
-                                    : optionPremium,
+                            exitPrc,
                             spotPrice,
                             slReason);
 
                     publishSignal(
                             symbol,
-                            pos.getContractSymbol(),
+                            brokerSymbol,
                             pos.getDirection() == LowestVolumeDirection.LONG
                                     ? com.tradingbot.strategy.SignalAction.EXIT_LONG
                                     : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
-                            pos.getInstrumentType() == LvrInstrumentType.FUTURES
-                                    ? spotPrice
-                                    : optionPremium,
+                            exitPrc,
                             pos.getCurrentStockSl(),
                             null,
-                            pos.getRemainingQuantity(),
+                            exitQty,
                             slReason,
                             Map.of("instrumentType", pos.getInstrumentType().name()));
                     if (telegramAlerts && telegramService != null) {
@@ -1234,6 +1235,16 @@ public class LowestVolumeReversalService {
                         if (currentExitMode == LvrExitMode.FULL_TARGET_1_2
                                 || currentExitMode == LvrExitMode.FULL_TARGET_1_4) {
                             // 100% Full Exit at 1:2 Target
+                            int exitQty =
+                                    pos.getRemainingQuantity() > 0
+                                            ? pos.getRemainingQuantity()
+                                            : pos.getTotalQuantity();
+                            String brokerSymbol = resolveBrokerTradingSymbol(pos);
+                            BigDecimal exitPrc =
+                                    pos.getInstrumentType() == LvrInstrumentType.FUTURES
+                                            ? spotPrice
+                                            : optionPremium;
+
                             if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
                                 pos.closeFullFutures(
                                         spotPrice, "TARGET_1_2_FULL_EXIT", Instant.now());
@@ -1257,16 +1268,14 @@ public class LowestVolumeReversalService {
 
                             publishSignal(
                                     symbol,
-                                    pos.getContractSymbol(),
+                                    brokerSymbol,
                                     pos.getDirection() == LowestVolumeDirection.LONG
                                             ? com.tradingbot.strategy.SignalAction.EXIT_LONG
                                             : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
-                                    pos.getInstrumentType() == LvrInstrumentType.FUTURES
-                                            ? spotPrice
-                                            : optionPremium,
+                                    exitPrc,
                                     pos.getCurrentStockSl(),
                                     pos.getTarget1StockPrice(),
-                                    pos.getRemainingQuantity(),
+                                    exitQty,
                                     "TARGET_1_2_FULL_EXIT",
                                     Map.of("instrumentType", pos.getInstrumentType().name()));
 
@@ -1422,6 +1431,11 @@ public class LowestVolumeReversalService {
                         }
 
                         if (emaTrailExit) {
+                            int exitQty =
+                                    pos.getRemainingQuantity() > 0
+                                            ? pos.getRemainingQuantity()
+                                            : pos.getTotalQuantity();
+                            String brokerSymbol = resolveBrokerTradingSymbol(pos);
                             BigDecimal exitVal =
                                     (pos.getInstrumentType() == LvrInstrumentType.FUTURES)
                                             ? latestCandle.close()
@@ -1449,14 +1463,14 @@ public class LowestVolumeReversalService {
 
                             publishSignal(
                                     symbol,
-                                    pos.getContractSymbol(),
+                                    brokerSymbol,
                                     pos.getDirection() == LowestVolumeDirection.LONG
                                             ? com.tradingbot.strategy.SignalAction.EXIT_LONG
                                             : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
                                     exitVal,
                                     pos.getCurrentStockSl(),
                                     null,
-                                    pos.getRemainingQuantity(),
+                                    exitQty,
                                     "10_EMA_TRAIL_EXIT",
                                     Map.of("instrumentType", pos.getInstrumentType().name()));
 
@@ -1504,19 +1518,24 @@ public class LowestVolumeReversalService {
                     (pos.getInstrumentType() == LvrInstrumentType.FUTURES)
                             ? spotPrice
                             : optionPremium;
+            int exitQty =
+                    pos.getRemainingQuantity() > 0
+                            ? pos.getRemainingQuantity()
+                            : pos.getTotalQuantity();
+            String brokerSymbol = resolveBrokerTradingSymbol(pos);
             pos.close(exitVal, "EOD_1500_HARD_EXIT", Instant.now());
             tradeHistory.add(pos);
 
             publishSignal(
                     symbol,
-                    pos.getContractSymbol(),
+                    brokerSymbol,
                     pos.getDirection() == LowestVolumeDirection.LONG
                             ? com.tradingbot.strategy.SignalAction.EXIT_LONG
                             : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
                     exitVal,
                     pos.getCurrentStockSl(),
                     null,
-                    pos.getRemainingQuantity(),
+                    exitQty,
                     "EOD_1500_HARD_EXIT",
                     Map.of("instrumentType", pos.getInstrumentType().name()));
 
@@ -2311,6 +2330,19 @@ public class LowestVolumeReversalService {
         if (telegramService != null) {
             telegramService.sendTextMessage("📊 *LVR Sector & Watchlist Report*\n" + sectorState);
         }
+    }
+
+    private String resolveBrokerTradingSymbol(LowestVolumePaperPosition pos) {
+        if (pos == null) {
+            return "";
+        }
+        if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+            return StockFnoRegistry.formatFuturesTradingSymbol(pos.getSymbol(), null);
+        } else if (pos.getAtmStrike() != null) {
+            return StockFnoRegistry.formatTradingSymbol(
+                    pos.getSymbol(), null, pos.getAtmStrike(), pos.getOptionType(), false);
+        }
+        return pos.getContractSymbol();
     }
 
     private void publishSignal(
