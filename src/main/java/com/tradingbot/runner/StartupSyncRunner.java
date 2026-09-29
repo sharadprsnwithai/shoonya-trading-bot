@@ -26,6 +26,11 @@ import org.springframework.stereotype.Component;
  * for all configured brokers, and synchronizes benchmark OHLC data.
  */
 @Component
+@org.springframework.context.annotation.Profile("!test")
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = "trading-bot.startup-sync.enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class StartupSyncRunner implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(StartupSyncRunner.class);

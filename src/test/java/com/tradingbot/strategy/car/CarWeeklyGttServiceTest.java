@@ -1,11 +1,9 @@
 package com.tradingbot.strategy.car;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import com.tradingbot.marketdata.HistoricalOhlcCacheService;
-import com.tradingbot.model.Candle;
 import com.tradingbot.strategy.car.config.CarWeeklyProperties;
 import com.tradingbot.strategy.car.gtt.ZerodhaKiteGttGateway;
 import com.tradingbot.telegram.TelegramService;

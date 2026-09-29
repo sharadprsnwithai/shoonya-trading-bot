@@ -67,7 +67,8 @@ class CarCalculatorTest {
                             10000));
         }
 
-        // 10 consecutive rising days where close (e.g. 700 to 880) is above previous CumAvg (~550-600) but below 52W high (1000)
+        // 10 consecutive rising days where close (e.g. 700 to 880) is above previous CumAvg
+        // (~550-600) but below 52W high (1000)
         for (int i = 21; i <= 30; i++) {
             BigDecimal c = BigDecimal.valueOf(700 + (i - 20) * 20); // 720, 740, 760... 900
             candles.add(

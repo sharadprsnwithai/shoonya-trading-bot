@@ -35,8 +35,7 @@ class ZerodhaKiteGttGatewayTest {
         ObjectNode mockResp = objectMapper.createObjectNode();
         mockResp.putObject("data").put("trigger_id", "GTT_98765");
 
-        when(mockRestClient.postForm(eq("/gtt/triggers"), anyMap(), eq(true)))
-                .thenReturn(mockResp);
+        when(mockRestClient.postForm(eq("/gtt/triggers"), anyMap(), eq(true))).thenReturn(mockResp);
 
         CarGttOrder order =
                 new CarGttOrder(

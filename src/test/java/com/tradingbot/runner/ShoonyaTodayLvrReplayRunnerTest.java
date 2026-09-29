@@ -33,6 +33,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * production beans.
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 class ShoonyaTodayLvrReplayRunnerTest {
 
     private static final Logger log =

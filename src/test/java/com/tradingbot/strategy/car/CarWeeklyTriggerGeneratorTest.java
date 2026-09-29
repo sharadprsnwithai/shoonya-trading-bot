@@ -90,8 +90,7 @@ class CarWeeklyTriggerGeneratorTest {
                                 500));
 
         BigDecimal unitSize =
-                new BigDecimal(
-                        "25000.0"); // Price 132,000 > UNIT 25,000 -> ceil gives 1 share
+                new BigDecimal("25000.0"); // Price 132,000 > UNIT 25,000 -> ceil gives 1 share
         CarWeeklyTriggerGenerator.TriggerCalculation result =
                 generator.calculateTrigger("MRF", weekCandles, unitSize);
 

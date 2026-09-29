@@ -755,6 +755,7 @@ public class TelegramService {
         CompletableFuture.runAsync(
                 () -> {
                     try {
+                        if (config == null || !config.isTelegramEnabled()) return;
                         String token = config.getTelegramBotToken().trim();
                         String chatId = config.getTelegramChatId().trim();
                         if (token.isBlank() || chatId.isBlank()) return;
@@ -844,7 +845,7 @@ public class TelegramService {
         CompletableFuture.runAsync(
                 () -> {
                     try {
-                        if (config == null) return;
+                        if (config == null || !config.isTelegramEnabled()) return;
                         String token =
                                 config.getTelegramBotToken() != null
                                         ? config.getTelegramBotToken().trim()
