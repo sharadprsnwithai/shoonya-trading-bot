@@ -11,6 +11,7 @@ import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.execution.BrokerPosition;
 import com.tradingbot.telegram.TelegramService;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -41,6 +42,8 @@ public class StartupSyncRunner implements CommandLineRunner {
     private final KiteAuthService kiteAuthService;
     private final KiteProperties kiteProperties;
     private final TelegramService telegramService;
+    private final java.util.Set<String> reportedBrokers =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @Autowired
     public StartupSyncRunner(
@@ -191,9 +194,19 @@ public class StartupSyncRunner implements CommandLineRunner {
         log.info("==================================================================");
     }
 
-    private void fetchAndReportPositions(String brokerName, List<BrokerPosition> positions) {
+    private synchronized void fetchAndReportPositions(
+            String brokerName, List<BrokerPosition> positions) {
         if (positions == null || positions.isEmpty()) {
             log.info("[{}] No active open positions in Cash or Derivatives.", brokerName);
+            return;
+        }
+
+        // Deduplicate startup position alerts so it is never sent twice
+        String reportKey = brokerName + ":" + LocalDate.now(IST);
+        if (!reportedBrokers.add(reportKey)) {
+            log.debug(
+                    "[{}] Startup positions already reported today. Skipping duplicate alert.",
+                    brokerName);
             return;
         }
 
