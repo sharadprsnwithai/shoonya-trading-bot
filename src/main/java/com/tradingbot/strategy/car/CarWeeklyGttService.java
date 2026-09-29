@@ -11,7 +11,6 @@ import com.tradingbot.telegram.TelegramService;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
 import org.slf4j.Logger;
@@ -80,8 +79,37 @@ public class CarWeeklyGttService {
                 availableUnits,
                 properties.getNumParts());
 
-        Set<String> universe =
-                Nifty100Registry.getUniverseWithHoldings(portfolioState.getHoldings().keySet());
+        // 1. Sync live broker Demat holdings (Zerodha + Shoonya) into portfolio state
+        Set<String> allHeldSymbols = new HashSet<>(portfolioState.getHoldings().keySet());
+        for (GttExecutionGateway gw : gttGateways) {
+            try {
+                List<com.tradingbot.model.execution.BrokerPosition> brokerHoldings =
+                        gw.getHoldings();
+                if (brokerHoldings != null) {
+                    for (com.tradingbot.model.execution.BrokerPosition h : brokerHoldings) {
+                        String sym = h.symbol();
+                        allHeldSymbols.add(sym);
+                        if (!portfolioState.getHoldings().containsKey(sym)) {
+                            log.info(
+                                    "[CAR-WEEKLY] Discovered live {} Demat holding for {}: {}"
+                                            + " shares @ avg ₹{}",
+                                    gw.getBrokerName(),
+                                    sym,
+                                    h.quantity(),
+                                    h.averagePrice());
+                            portfolioState.addFill(sym, (int) h.quantity(), h.averagePrice());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn(
+                        "[CAR-WEEKLY] Notice checking {} live holdings: {}",
+                        gw.getBrokerName(),
+                        e.getMessage());
+            }
+        }
+
+        Set<String> universe = Nifty100Registry.getUniverseWithHoldings(allHeldSymbols);
         List<CarAnalysisResult> carPositiveStocks = new ArrayList<>();
 
         for (String symbol : universe) {
@@ -122,8 +150,7 @@ public class CarWeeklyGttService {
         sb.append(
                 String.format(
                         "• *Active Holdings:* `%d` | *CAR-Positive Stocks:* `%d`\n\n",
-                        portfolioState.getHoldings().size(),
-                        carPositives.size()));
+                        portfolioState.getHoldings().size(), carPositives.size()));
 
         if (!carPositives.isEmpty()) {
             sb.append("🎯 *Top CAR-Positive Setups:*\n");

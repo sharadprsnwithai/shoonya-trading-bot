@@ -23,8 +23,7 @@ public record CarHolding(
                 totalSpent.divide(BigDecimal.valueOf(newTotalQty), 2, RoundingMode.HALF_UP);
         BigDecimal targetMultiplier =
                 BigDecimal.ONE.add(
-                        profitTargetPct.divide(
-                                BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                        profitTargetPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
         BigDecimal newTarget =
                 newAvgPrice.multiply(targetMultiplier).setScale(2, RoundingMode.HALF_UP);
 
@@ -42,10 +41,8 @@ public record CarHolding(
             String symbol, int qty, BigDecimal fillPrice, BigDecimal profitTargetPct) {
         BigDecimal targetMultiplier =
                 BigDecimal.ONE.add(
-                        profitTargetPct.divide(
-                                BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
-        BigDecimal target =
-                fillPrice.multiply(targetMultiplier).setScale(2, RoundingMode.HALF_UP);
+                        profitTargetPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+        BigDecimal target = fillPrice.multiply(targetMultiplier).setScale(2, RoundingMode.HALF_UP);
         return new CarHolding(
                 symbol,
                 qty,

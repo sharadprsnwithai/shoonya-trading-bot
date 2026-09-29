@@ -47,4 +47,9 @@ public class LocalGttWatcherGateway implements GttExecutionGateway {
     public GttStatus getGttStatus(String gttId) {
         return activeWatchers.containsKey(gttId) ? GttStatus.PENDING : GttStatus.CANCELLED;
     }
+
+    @Override
+    public java.util.List<com.tradingbot.model.execution.BrokerPosition> getHoldings() {
+        return java.util.List.of();
+    }
 }

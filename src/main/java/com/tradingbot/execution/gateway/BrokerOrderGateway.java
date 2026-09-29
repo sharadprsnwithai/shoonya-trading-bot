@@ -16,4 +16,6 @@ public interface BrokerOrderGateway {
     OrderResponse modifyOrder(String orderId, OrderRequest request);
 
     List<BrokerPosition> getPositions();
+
+    List<BrokerPosition> getHoldings();
 }

@@ -20,27 +20,21 @@ public class CarPortfolioState {
         this(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
     }
 
-    public CarPortfolioState(
-            BigDecimal initialCapital, int numParts, BigDecimal profitTargetPct) {
-        this.initialCapital =
-                initialCapital != null ? initialCapital : new BigDecimal("1000000.0");
+    public CarPortfolioState(BigDecimal initialCapital, int numParts, BigDecimal profitTargetPct) {
+        this.initialCapital = initialCapital != null ? initialCapital : new BigDecimal("1000000.0");
         this.totalCapital = this.initialCapital;
         this.realizedPnL = BigDecimal.ZERO;
         this.numParts = numParts > 0 ? numParts : 40;
-        this.profitTargetPct =
-                profitTargetPct != null ? profitTargetPct : new BigDecimal("6.28");
+        this.profitTargetPct = profitTargetPct != null ? profitTargetPct : new BigDecimal("6.28");
     }
 
     public synchronized void addFill(String symbol, int quantity, BigDecimal fillPrice) {
         if (symbol == null || quantity <= 0 || fillPrice == null) return;
         CarHolding existing = holdings.get(symbol);
         if (existing == null) {
-            holdings.put(
-                    symbol, CarHolding.initial(symbol, quantity, fillPrice, profitTargetPct));
+            holdings.put(symbol, CarHolding.initial(symbol, quantity, fillPrice, profitTargetPct));
         } else {
-            holdings.put(
-                    symbol,
-                    existing.withAdditionalFill(quantity, fillPrice, profitTargetPct));
+            holdings.put(symbol, existing.withAdditionalFill(quantity, fillPrice, profitTargetPct));
         }
     }
 
@@ -66,8 +60,7 @@ public class CarPortfolioState {
 
     @JsonIgnore
     public int getAvailableUnits() {
-        int investedUnits =
-                holdings.values().stream().mapToInt(CarHolding::accumulatedUnits).sum();
+        int investedUnits = holdings.values().stream().mapToInt(CarHolding::accumulatedUnits).sum();
         long pendingBuyGtts =
                 gttOrders.values().stream()
                         .filter(

@@ -13,4 +13,6 @@ public interface GttExecutionGateway {
     boolean cancelGtt(String gttId);
 
     GttStatus getGttStatus(String gttId);
+
+    java.util.List<com.tradingbot.model.execution.BrokerPosition> getHoldings();
 }

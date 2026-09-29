@@ -72,6 +72,10 @@ public class KiteRestClient {
         return get("/portfolio/positions").path("data").path("net");
     }
 
+    public JsonNode holdings() {
+        return get("/portfolio/holdings").path("data");
+    }
+
     public List<JsonNode> orderHistory(String orderId) {
         if (orderId == null || orderId.isBlank()) {
             return List.of();

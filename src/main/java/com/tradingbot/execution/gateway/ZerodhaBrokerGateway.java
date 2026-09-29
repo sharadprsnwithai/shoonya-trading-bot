@@ -175,4 +175,42 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
         }
         return positions;
     }
+
+    @Override
+    public List<BrokerPosition> getHoldings() {
+        List<BrokerPosition> holdings = new ArrayList<>();
+        try {
+            JsonNode data = kiteRestClient.holdings();
+            if (data != null && data.isArray()) {
+                for (JsonNode row : data) {
+                    long qty = row.path("quantity").asLong(0L);
+                    if (qty <= 0L) {
+                        continue;
+                    }
+
+                    String tsym = row.path("tradingsymbol").asText("");
+                    String exch = row.path("exchange").asText("NSE");
+                    double avgPrice = row.path("average_price").asDouble(0.0);
+                    double lastPrice = row.path("last_price").asDouble(0.0);
+                    double pnl = row.path("pnl").asDouble(0.0);
+
+                    holdings.add(
+                            BrokerPosition.of(
+                                    "ZERODHA",
+                                    exch,
+                                    tsym,
+                                    tsym,
+                                    "CNC",
+                                    qty,
+                                    BigDecimal.valueOf(avgPrice),
+                                    BigDecimal.valueOf(lastPrice),
+                                    BigDecimal.valueOf(pnl),
+                                    BigDecimal.ZERO));
+                }
+            }
+        } catch (Exception e) {
+            log.error("[ZERODHA-GATEWAY] Error reading Kite holdings: {}", e.getMessage(), e);
+        }
+        return holdings;
+    }
 }

@@ -10,9 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
-/**
- * Mathematical engine for Cumulative Average Reversal (CAR) computation.
- */
+/** Mathematical engine for Cumulative Average Reversal (CAR) computation. */
 @Component
 public class CarCalculator {
 

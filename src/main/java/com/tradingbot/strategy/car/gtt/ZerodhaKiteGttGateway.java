@@ -6,6 +6,7 @@ import com.tradingbot.kite.client.KiteRestClient;
 import com.tradingbot.strategy.car.model.CarGttOrder;
 import com.tradingbot.strategy.car.model.GttOrderType;
 import com.tradingbot.strategy.car.model.GttStatus;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,11 +47,16 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
 
             Map<String, Object> orderDetail =
                     Map.of(
-                            "transaction_type", txnType,
-                            "quantity", order.quantity(),
-                            "price", order.limitPrice().doubleValue(),
-                            "order_type", "LIMIT",
-                            "product", "CNC");
+                            "transaction_type",
+                            txnType,
+                            "quantity",
+                            order.quantity(),
+                            "price",
+                            order.limitPrice().doubleValue(),
+                            "order_type",
+                            "LIMIT",
+                            "product",
+                            "CNC");
 
             Map<String, String> form = new LinkedHashMap<>();
             form.put("type", "single");
@@ -94,5 +100,40 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
     @Override
     public GttStatus getGttStatus(String gttId) {
         return GttStatus.PENDING;
+    }
+
+    @Override
+    public List<com.tradingbot.model.execution.BrokerPosition> getHoldings() {
+        List<com.tradingbot.model.execution.BrokerPosition> holdings = new ArrayList<>();
+        try {
+            JsonNode data = kiteRestClient.holdings();
+            if (data != null && data.isArray()) {
+                for (JsonNode row : data) {
+                    long qty = row.path("quantity").asLong(0L);
+                    if (qty <= 0L) continue;
+                    String tsym = row.path("tradingsymbol").asText("");
+                    String exch = row.path("exchange").asText("NSE");
+                    double avgPrice = row.path("average_price").asDouble(0.0);
+                    double lastPrice = row.path("last_price").asDouble(0.0);
+                    double pnl = row.path("pnl").asDouble(0.0);
+
+                    holdings.add(
+                            com.tradingbot.model.execution.BrokerPosition.of(
+                                    "ZERODHA",
+                                    exch,
+                                    tsym,
+                                    tsym,
+                                    "CNC",
+                                    qty,
+                                    java.math.BigDecimal.valueOf(avgPrice),
+                                    java.math.BigDecimal.valueOf(lastPrice),
+                                    java.math.BigDecimal.valueOf(pnl),
+                                    java.math.BigDecimal.ZERO));
+                }
+            }
+        } catch (Exception e) {
+            log.error("[ZERODHA-GTT] Error fetching Kite holdings: {}", e.getMessage(), e);
+        }
+        return holdings;
     }
 }
