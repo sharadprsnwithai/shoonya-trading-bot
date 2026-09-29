@@ -33,8 +33,9 @@ public class CarWeeklyProperties {
             return false;
         }
         return accumulationOnlySymbols.stream()
+                .filter(s -> s != null && !s.isBlank())
                 .map(s -> s.toUpperCase().trim())
-                .anyMatch(clean::equalsIgnoreCase);
+                .anyMatch(pattern -> clean.equalsIgnoreCase(pattern) || clean.contains(pattern));
     }
 
     public boolean isEnabled() {
@@ -99,6 +100,10 @@ public class CarWeeklyProperties {
 
     public void setTelegramAlerts(boolean telegramAlerts) {
         this.telegramAlerts = telegramAlerts;
+    }
+
+    public String stateFilePath() {
+        return stateFilePath;
     }
 
     public String getStateFilePath() {
