@@ -1,5 +1,7 @@
 package com.tradingbot.strategy.car.config;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +18,24 @@ public class CarWeeklyProperties {
     private int highLookbackDays = 252;
     private boolean telegramAlerts = true;
     private String stateFilePath = "data/car_portfolio_state.json";
+    private List<String> accumulationOnlySymbols = new ArrayList<>();
+
+    public boolean isAccumulationOnly(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return false;
+        }
+        String clean = symbol.toUpperCase().replace("NSE:", "").replace("BSE:", "").trim();
+        // Automatic Sovereign Gold Bond (SGB) detection
+        if (clean.startsWith("SGB") || clean.endsWith("SGB") || clean.contains("SGB")) {
+            return true;
+        }
+        if (accumulationOnlySymbols == null || accumulationOnlySymbols.isEmpty()) {
+            return false;
+        }
+        return accumulationOnlySymbols.stream()
+                .map(s -> s.toUpperCase().trim())
+                .anyMatch(clean::equalsIgnoreCase);
+    }
 
     public boolean isEnabled() {
         return enabled;
@@ -87,5 +107,13 @@ public class CarWeeklyProperties {
 
     public void setStateFilePath(String stateFilePath) {
         this.stateFilePath = stateFilePath;
+    }
+
+    public List<String> getAccumulationOnlySymbols() {
+        return accumulationOnlySymbols;
+    }
+
+    public void setAccumulationOnlySymbols(List<String> accumulationOnlySymbols) {
+        this.accumulationOnlySymbols = accumulationOnlySymbols;
     }
 }

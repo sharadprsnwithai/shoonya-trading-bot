@@ -11,6 +11,8 @@ import com.tradingbot.telegram.TelegramService;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
 import org.slf4j.Logger;
@@ -109,6 +111,7 @@ public class CarWeeklyGttService {
             }
         }
 
+        // 2. Build full universe: Nifty 100 + CAR local holdings + live Broker Demat holdings!
         Set<String> universe = Nifty100Registry.getUniverseWithHoldings(allHeldSymbols);
         List<CarAnalysisResult> carPositiveStocks = new ArrayList<>();
 
@@ -129,8 +132,102 @@ public class CarWeeklyGttService {
                 universe.size(),
                 carPositiveStocks.size());
 
+        // 3. Manage Sell Targets for Holdings (Skipping Accumulation-Only / SGB symbols)
+        manageSellTargetGtts();
+
+        // 4. Place / Modify Buy GTTs for CAR-Positive stocks up to available capital units
+        reconcileBuyGtts(carPositiveStocks);
+
         saveState();
         sendSundayTelegramReport(carPositiveStocks);
+    }
+
+    private void manageSellTargetGtts() {
+        for (CarHolding holding : portfolioState.getHoldings().values()) {
+            String sym = holding.symbol();
+            if (properties.isAccumulationOnly(sym)) {
+                log.info(
+                        "[CAR-WEEKLY] Symbol {} is configured as Accumulation-Only / SGB."
+                                + " Skipping +6.28% sell target GTT placement.",
+                        sym);
+                continue;
+            }
+
+            // For standard stocks, ensure target GTT is active at holding.targetPrice()
+            log.info(
+                    "[CAR-WEEKLY] Tracking +6.28% profit target for {}: {} shares @ Target ₹{}",
+                    sym, holding.totalQuantity(), holding.targetPrice());
+        }
+    }
+
+    private void reconcileBuyGtts(List<CarAnalysisResult> carPositiveStocks) {
+        if (carPositiveStocks == null || carPositiveStocks.isEmpty()) return;
+
+        LocalDate monday = LocalDate.now(IST);
+        while (monday.getDayOfWeek().getValue() != 1) {
+            monday = monday.minusDays(1);
+        }
+
+        for (CarAnalysisResult candidate : carPositiveStocks) {
+            if (portfolioState.getAvailableUnits() <= 0) {
+                log.info("[CAR-WEEKLY] All 40 capital units allocated. Standing by.");
+                break;
+            }
+
+            String sym = candidate.symbol();
+            if (ohlcService != null) {
+                List<Candle> weekCandles = ohlcService.getDailyCandles(sym);
+                if (weekCandles != null && !weekCandles.isEmpty()) {
+                    CarWeeklyTriggerGenerator.TriggerCalculation trig =
+                            triggerGenerator.calculateTrigger(
+                                    sym, weekCandles, portfolioState.getUnitSize());
+
+                    if (trig.quantity() > 0 && trig.triggerPrice().compareTo(BigDecimal.ZERO) > 0) {
+                        CarGttOrder gtt =
+                                new CarGttOrder(
+                                        null,
+                                        "PRIMARY",
+                                        sym,
+                                        GttOrderType.BUY,
+                                        trig.triggerPrice(),
+                                        trig.limitPrice(),
+                                        trig.quantity(),
+                                        GttStatus.PENDING,
+                                        monday,
+                                        Instant.now());
+
+                        for (GttExecutionGateway gw : gttGateways) {
+                            try {
+                                String gttId = gw.placeGtt(gtt);
+                                if (gttId != null) {
+                                    portfolioState
+                                            .getGttOrders()
+                                            .put(
+                                                    sym,
+                                                    new CarGttOrder(
+                                                            gttId,
+                                                            gw.getBrokerName(),
+                                                            sym,
+                                                            gtt.type(),
+                                                            gtt.triggerPrice(),
+                                                            gtt.limitPrice(),
+                                                            gtt.quantity(),
+                                                            GttStatus.PENDING,
+                                                            monday,
+                                                            Instant.now()));
+                                }
+                            } catch (Exception e) {
+                                log.warn(
+                                        "[CAR-WEEKLY] Could not place GTT for {} on {}: {}",
+                                        sym,
+                                        gw.getBrokerName(),
+                                        e.getMessage());
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private void sendSundayTelegramReport(List<CarAnalysisResult> carPositives) {
@@ -156,10 +253,12 @@ public class CarWeeklyGttService {
             sb.append("🎯 *Top CAR-Positive Setups:*\n");
             for (int i = 0; i < Math.min(5, carPositives.size()); i++) {
                 CarAnalysisResult c = carPositives.get(i);
+                boolean isExempt = properties.isAccumulationOnly(c.symbol());
                 sb.append(
                         String.format(
-                                " • *%s* (Streak: %d days | 52W High: ₹%.2f)\n",
+                                " • *%s*%s (Streak: %d days | 52W High: ₹%.2f)\n",
                                 c.symbol(),
+                                isExempt ? " 🛡️ _(Accumulate Only)_" : "",
                                 c.consecutivePositiveDays(),
                                 c.fiftyTwoWeekHighClose().doubleValue()));
             }
