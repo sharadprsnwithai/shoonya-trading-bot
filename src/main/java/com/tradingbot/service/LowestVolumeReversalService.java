@@ -2347,8 +2347,8 @@ public class LowestVolumeReversalService {
                     lastExitTime = currentCandle.timestamp();
                     openPos = null;
                     activeSetup = null;
-                    if (attempt >= 2) {
-                        break; // Exhausted max 2 attempts
+                    if (attempt >= maxAttemptsPerSymbol) {
+                        break; // Exhausted max attempt(s)
                     }
                 } else if (targetHit) {
                     LvrExitMode currentExitMode =
@@ -2449,7 +2449,7 @@ public class LowestVolumeReversalService {
             }
 
             // 2. Setup Evaluation & Trigger Arming / Trailing
-            if (candleTime.isBefore(TIME_ENTRY_CUTOFF) && attempt < 2) {
+            if (candleTime.isBefore(TIME_ENTRY_CUTOFF) && attempt < maxAttemptsPerSymbol) {
                 LowestVolumeSetup evaluated =
                         evaluateCandleSequence(symbol, direction, historicalSubList, lastExitTime);
                 if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
@@ -2461,7 +2461,7 @@ public class LowestVolumeReversalService {
             if (activeSetup != null
                     && activeSetup.getState() == LowestVolumeSetupState.TRIGGER_ARMED
                     && openPos == null
-                    && attempt < 2) {
+                    && attempt < maxAttemptsPerSymbol) {
                 BigDecimal high = currentCandle.high();
                 BigDecimal low = currentCandle.low();
                 BigDecimal triggerPrice = activeSetup.getTriggerPrice();
