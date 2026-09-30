@@ -2,7 +2,7 @@
 
 **Document ID:** `2026-09-30-market-intelligence-and-commodity-direction-design`  
 **Subsystem:** `com.tradingbot.intelligence`  
-**Status:** `Draft / Pending User Requirements Review`  
+**Status:** `Approved`  
 **Date:** `2026-09-30`
 
 ---
