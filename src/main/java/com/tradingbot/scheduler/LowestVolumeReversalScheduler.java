@@ -1,5 +1,6 @@
 package com.tradingbot.scheduler;
 
+import com.tradingbot.kite.auth.KiteAuthService;
 import com.tradingbot.service.LowestVolumeReversalService;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -22,13 +23,17 @@ public class LowestVolumeReversalScheduler {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final LowestVolumeReversalService strategyService;
+    private final KiteAuthService kiteAuthService;
 
     @Value("${trading-bot.strategy.lowest-volume.scheduler-enabled:true}")
     private boolean schedulerEnabled = true;
 
     @Autowired
-    public LowestVolumeReversalScheduler(LowestVolumeReversalService strategyService) {
+    public LowestVolumeReversalScheduler(
+            LowestVolumeReversalService strategyService,
+            @Autowired(required = false) KiteAuthService kiteAuthService) {
         this.strategyService = strategyService;
+        this.kiteAuthService = kiteAuthService;
     }
 
     /** Daily reset at 09:15 IST (market open) every Monday through Friday. */
@@ -36,6 +41,15 @@ public class LowestVolumeReversalScheduler {
     public void scheduledDailyReset() {
         log.info("[LVR-SCHEDULER] Market Open (09:15 IST). Executing daily strategy state reset.");
         strategyService.resetDaily();
+        if (kiteAuthService != null) {
+            try {
+                log.info(
+                        "[LVR-SCHEDULER] Ensuring Zerodha Kite session is active and pre-warmed for today's market session...");
+                kiteAuthService.ensureActiveSession();
+            } catch (Exception e) {
+                log.warn("[LVR-SCHEDULER] Kite session pre-warm notice: {}", e.getMessage());
+            }
+        }
     }
 
     /**

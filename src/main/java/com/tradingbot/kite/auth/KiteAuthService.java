@@ -53,6 +53,8 @@ public class KiteAuthService {
                 log.info("[KITE-AUTH] Restored active Kite session for user {}", stat.userId());
                 return;
             }
+            log.info("[KITE-AUTH] Stored Kite session expired or invalid. Clearing...");
+            kiteSession.clear();
         }
 
         // 2. If configured with auto-login credentials, perform automated TOTP login
@@ -273,6 +275,64 @@ public class KiteAuthService {
     public void logout() {
         kiteSession.clear();
         log.info("[KITE-AUTH] Kite session logged out and cleared.");
+    }
+
+    /**
+     * Ensures an active Zerodha Kite Connect session. Checks profile validity. If inactive/expired
+     * or missing, clears the session and performs headless auto-login if auto-login credentials are
+     * configured.
+     *
+     * @return true if an active session is established or verified, false otherwise
+     */
+    public synchronized boolean ensureActiveSession() {
+        KiteStatus stat = status();
+        if ("ACTIVE".equalsIgnoreCase(stat.status())) {
+            log.info("[KITE-AUTH] Kite session is active and valid for user {}", stat.userId());
+            return true;
+        }
+
+        log.warn(
+                "[KITE-AUTH] Kite session is inactive or expired (status: {}). Attempting re-authentication...",
+                stat.status());
+        kiteSession.clear();
+
+        if (kiteProperties.hasAutoLoginCredentials()) {
+            try {
+                KiteStatus loginStatus = performAutoLogin();
+                if ("ACTIVE".equalsIgnoreCase(loginStatus.status())) {
+                    log.info(
+                            "[KITE-AUTH] Auto-login succeeded for user {}. Session active.",
+                            loginStatus.userId());
+                    return true;
+                }
+            } catch (Exception e) {
+                log.error("[KITE-AUTH] Auto-login attempt failed: {}", e.getMessage(), e);
+            }
+        } else {
+            log.warn(
+                    "[KITE-AUTH] Auto-login credentials missing. Standing by for manual web login.");
+        }
+        return false;
+    }
+
+    /**
+     * Explicitly forces session invalidation and re-authenticates via headless auto-login.
+     *
+     * @return true if re-authentication succeeded and session is active, false otherwise
+     */
+    public synchronized boolean reAuthenticate() {
+        log.info("[KITE-AUTH] Forcing Kite session invalidation and re-authentication...");
+        kiteSession.clear();
+        if (kiteProperties.hasAutoLoginCredentials()) {
+            try {
+                KiteStatus loginStatus = performAutoLogin();
+                return "ACTIVE".equalsIgnoreCase(loginStatus.status());
+            } catch (Exception e) {
+                log.error("[KITE-AUTH] Re-authentication failed: {}", e.getMessage(), e);
+                return false;
+            }
+        }
+        return false;
     }
 
     public KiteStatus status() {

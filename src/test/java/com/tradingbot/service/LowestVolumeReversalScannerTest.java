@@ -40,6 +40,20 @@ class LowestVolumeReversalScannerTest {
     }
 
     @Test
+    @DisplayName("Should return NONE when market breadth is mixed / neutral")
+    void testNeutralMixedSentiment() {
+        List<StockQuoteSnapshot> quotes =
+                List.of(
+                        new StockQuoteSnapshot("TCS", 4100.0, 4000.0, 4050.0, 2.5),
+                        new StockQuoteSnapshot("INFY", 1900.0, 1850.0, 1860.0, 2.7),
+                        new StockQuoteSnapshot("RELIANCE", 2900.0, 2920.0, 2910.0, -1.0),
+                        new StockQuoteSnapshot("HDFCBANK", 1550.0, 1590.0, 1580.0, -2.5));
+        // 2 advances, 2 declines = 50% breadth (below 56% threshold)
+        LowestVolumeDirection dir = scanner.evaluateMarketSentiment(quotes, 56.0);
+        assertEquals(LowestVolumeDirection.NONE, dir);
+    }
+
+    @Test
     @DisplayName("Should rank sectors and select Top Loser sector during Bearish sentiment")
     void testRankSectorsBearish() {
         Map<String, List<StockQuoteSnapshot>> sectorData =

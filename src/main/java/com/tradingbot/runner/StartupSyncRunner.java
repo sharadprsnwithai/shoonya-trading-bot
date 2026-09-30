@@ -103,22 +103,8 @@ public class StartupSyncRunner implements CommandLineRunner {
             // 2. Check Zerodha Kite Auth & Fetch Active Positions
             if (kiteAuthService != null && zerodhaGateway != null) {
                 log.info("[2/4] Checking Zerodha Kite Connect authentication status...");
+                kiteAuthService.ensureActiveSession();
                 KiteAuthService.KiteStatus kiteStatus = kiteAuthService.status();
-
-                // If not active, attempt automated headless login if credentials present
-                if (!"ACTIVE".equalsIgnoreCase(kiteStatus.status())
-                        && kiteProperties != null
-                        && kiteProperties.hasAutoLoginCredentials()) {
-                    log.info(
-                            "[2/4] Zerodha Kite inactive. Attempting automated TOTP login for user"
-                                    + " {}...",
-                            kiteProperties.userId());
-                    try {
-                        kiteStatus = kiteAuthService.performAutoLogin();
-                    } catch (Exception e) {
-                        log.warn("[2/4] Automated Zerodha login notice: {}", e.getMessage());
-                    }
-                }
 
                 if ("ACTIVE".equalsIgnoreCase(kiteStatus.status())) {
                     log.info(

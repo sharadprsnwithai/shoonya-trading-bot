@@ -100,6 +100,15 @@ public class LowestVolumeStrategyController {
         status.put("paperCapital", strategyService.getPaperCapital());
         status.put("riskPerTradePercent", strategyService.getRiskPerTradePercent());
         status.put("riskPerTradeAmount", strategyService.getRiskPerTradeAmount());
+        status.put("vwapConfirmationEnabled", strategyService.isVwapConfirmationEnabled());
+        status.put("sectorMomentumFilterEnabled", strategyService.isSectorMomentumFilterEnabled());
+        status.put("lots", strategyService.getDefaultLots());
+        status.put("dynamicPositionSizing", strategyService.isDynamicPositionSizing());
+        status.put("maxAttemptsPerSymbol", strategyService.getMaxAttemptsPerSymbol());
+        status.put("minBreadthPct", strategyService.getMinBreadthPct());
+        status.put("minStopLossPct", strategyService.getMinStopLossPct());
+        status.put("maxDailyLoss", strategyService.getMaxDailyLoss());
+        status.put("dailyCircuitBreakerTripped", strategyService.isDailyCircuitBreakerTripped());
         status.put("maxConcurrentTrades", strategyService.getMaxConcurrentTrades());
         status.put("niftyBullish", strategyService.isNiftyBullish());
         status.put("topGainers", strategyService.getCurrentTopGainers());

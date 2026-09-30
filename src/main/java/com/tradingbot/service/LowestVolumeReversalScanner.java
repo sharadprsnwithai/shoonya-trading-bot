@@ -23,10 +23,20 @@ public class LowestVolumeReversalScanner {
     public record SectorRankResult(String sectorName, double pctChange, int stockCount) {}
 
     /**
-     * Evaluates Nifty 50 constituent performance at 09:25 IST. Declines > Advances -> SHORT
-     * (Bearish) Advances > Declines -> LONG (Bullish)
+     * Evaluates Nifty 50 constituent performance at 09:25 IST. Uses default minimum breadth
+     * requirement of 56% (e.g. at least 28 of 50 stocks aligned).
      */
     public LowestVolumeDirection evaluateMarketSentiment(List<StockQuoteSnapshot> nifty50Quotes) {
+        return evaluateMarketSentiment(nifty50Quotes, 56.0);
+    }
+
+    /**
+     * Evaluates Nifty 50 constituent performance at 09:25 IST with custom breadth percentage.
+     * Declines >= minRequired -> SHORT (Bearish) Advances >= minRequired -> LONG (Bullish)
+     * Otherwise -> NONE (Neutral / Mixed)
+     */
+    public LowestVolumeDirection evaluateMarketSentiment(
+            List<StockQuoteSnapshot> nifty50Quotes, double minBreadthPct) {
         if (nifty50Quotes == null || nifty50Quotes.isEmpty()) {
             log.warn("[LVR-SCANNER] No NIFTY 50 quotes provided for market sentiment evaluation.");
             return LowestVolumeDirection.NONE;
@@ -34,6 +44,7 @@ public class LowestVolumeReversalScanner {
 
         int advances = 0;
         int declines = 0;
+        int total = nifty50Quotes.size();
 
         for (StockQuoteSnapshot q : nifty50Quotes) {
             if (q.pctChange() > 0.0) {
@@ -43,17 +54,29 @@ public class LowestVolumeReversalScanner {
             }
         }
 
-        log.info(
-                "[LVR-SCANNER] NIFTY 50 Market Sentiment: Advances={}, Declines={}, Total={}",
-                advances,
-                declines,
-                nifty50Quotes.size());
+        double advPct = (double) advances / total * 100.0;
+        double decPct = (double) declines / total * 100.0;
 
-        if (declines > advances) {
-            return LowestVolumeDirection.SHORT;
-        } else if (advances > declines) {
+        log.info(
+                "[LVR-SCANNER] NIFTY 50 Market Sentiment: Advances={} ({}%), Declines={} ({}%), Total={}",
+                advances,
+                String.format(java.util.Locale.US, "%.1f", advPct),
+                declines,
+                String.format(java.util.Locale.US, "%.1f", decPct),
+                total);
+
+        int minRequired = (int) Math.ceil(total * (minBreadthPct / 100.0));
+
+        if (advances >= minRequired && advances > declines) {
             return LowestVolumeDirection.LONG;
+        } else if (declines >= minRequired && declines > advances) {
+            return LowestVolumeDirection.SHORT;
         } else {
+            log.info(
+                    "[LVR-SCANNER] Market sentiment is NEUTRAL/MIXED (Advances={}, Declines={}, required={}).",
+                    advances,
+                    declines,
+                    minRequired);
             return LowestVolumeDirection.NONE;
         }
     }

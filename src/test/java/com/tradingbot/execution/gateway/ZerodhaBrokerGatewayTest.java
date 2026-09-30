@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import com.tradingbot.kite.auth.KiteAuthService;
 import com.tradingbot.kite.client.KiteRestClient;
 import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.OrderResponse;
@@ -15,12 +16,14 @@ import org.junit.jupiter.api.Test;
 class ZerodhaBrokerGatewayTest {
 
     private KiteRestClient mockRestClient;
+    private KiteAuthService mockAuthService;
     private ZerodhaBrokerGateway gateway;
 
     @BeforeEach
     void setUp() {
         mockRestClient = mock(KiteRestClient.class);
-        gateway = new ZerodhaBrokerGateway(mockRestClient);
+        mockAuthService = mock(KiteAuthService.class);
+        gateway = new ZerodhaBrokerGateway(mockRestClient, mockAuthService);
     }
 
     @Test
@@ -68,5 +71,49 @@ class ZerodhaBrokerGatewayTest {
                                                 && req.transactionType().equals("SELL")
                                                 && req.price().equals(3762.00)
                                                 && req.quantity() == 175));
+    }
+
+    @Test
+    void testPlaceOrderRetriesOnTokenExceptionWhenReAuthSucceeds() {
+        when(mockRestClient.placeOrder(any(KiteRestClient.KiteOrderRequest.class)))
+                .thenThrow(
+                        new IllegalStateException(
+                                "Kite POST /orders/regular failed: 403 Forbidden - {\"status\":\"error\",\"error_type\":\"TokenException\"}"))
+                .thenReturn(new KiteRestClient.KiteOrderResponse("2603300004"));
+
+        when(mockAuthService.reAuthenticate()).thenReturn(true);
+
+        OrderRequest request =
+                OrderRequest.market(
+                        "PERSISTENT26SEPFUT", "NFO", TransactionType.BUY, 400, "SIG-789");
+
+        OrderResponse resp =
+                gateway.placeOrderWithReferencePrice(request, BigDecimal.valueOf(5335.5));
+        assertTrue(resp.success());
+        assertEquals("2603300004", resp.orderId());
+
+        verify(mockAuthService, times(1)).reAuthenticate();
+        verify(mockRestClient, times(2)).placeOrder(any(KiteRestClient.KiteOrderRequest.class));
+    }
+
+    @Test
+    void testPlaceOrderFailsWhenReAuthFails() {
+        when(mockRestClient.placeOrder(any(KiteRestClient.KiteOrderRequest.class)))
+                .thenThrow(
+                        new IllegalStateException(
+                                "Kite POST /orders/regular failed: 403 Forbidden - {\"status\":\"error\",\"error_type\":\"TokenException\"}"));
+
+        when(mockAuthService.reAuthenticate()).thenReturn(false);
+
+        OrderRequest request =
+                OrderRequest.market(
+                        "PERSISTENT26SEPFUT", "NFO", TransactionType.BUY, 400, "SIG-789");
+
+        OrderResponse resp =
+                gateway.placeOrderWithReferencePrice(request, BigDecimal.valueOf(5335.5));
+        assertFalse(resp.success());
+
+        verify(mockAuthService, times(1)).reAuthenticate();
+        verify(mockRestClient, times(1)).placeOrder(any(KiteRestClient.KiteOrderRequest.class));
     }
 }

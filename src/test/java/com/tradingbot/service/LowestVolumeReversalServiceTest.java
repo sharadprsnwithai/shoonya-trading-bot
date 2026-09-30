@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
@@ -22,6 +23,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -812,19 +814,19 @@ class LowestVolumeReversalServiceTest {
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
         service.getActiveSetups().put("PVRINOX", setup);
 
-        // Spot LTP = 97.80 (<= Trigger 97.95 and within 0.25% slippage), VWAP (ap) = 100.50 (Spot <
+        // Spot LTP = 97.90 (<= Trigger 97.95 and within 0.12% slippage), VWAP (ap) = 100.50 (Spot <
         // VWAP)
         com.fasterxml.jackson.databind.ObjectMapper mapper =
                 new com.fasterxml.jackson.databind.ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
-                .thenReturn(mapper.createObjectNode().put("lp", "97.80").put("ap", "100.50"));
+                .thenReturn(mapper.createObjectNode().put("lp", "97.90").put("ap", "100.50"));
         when(marketDataService.resolveToken("PVRINOX")).thenReturn("13147");
 
         service.evaluateLivePriceActions();
 
         assertThat(service.getOpenPositions()).containsKey("PVRINOX");
         LowestVolumePaperPosition pos = service.getOpenPositions().get("PVRINOX");
-        assertThat(pos.getStockEntryPrice()).isEqualByComparingTo("97.80");
+        assertThat(pos.getStockEntryPrice()).isEqualByComparingTo("97.90");
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
         assertThat(service.getExhaustedSymbols()).doesNotContain("PVRINOX");
     }
@@ -848,12 +850,12 @@ class LowestVolumeReversalServiceTest {
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
         service.getActiveSetups().put("PVRINOX", setup);
 
-        // Spot LTP = 97.80 (<= Trigger 97.95 and within 0.25% slippage), but VWAP (ap) = 96.00
+        // Spot LTP = 97.90 (<= Trigger 97.95 and within 0.12% slippage), but VWAP (ap) = 96.00
         // (Spot >= VWAP)
         com.fasterxml.jackson.databind.ObjectMapper mapper =
                 new com.fasterxml.jackson.databind.ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
-                .thenReturn(mapper.createObjectNode().put("lp", "97.80").put("ap", "96.00"));
+                .thenReturn(mapper.createObjectNode().put("lp", "97.90").put("ap", "96.00"));
         when(marketDataService.resolveToken("PVRINOX")).thenReturn("13147");
 
         service.evaluateLivePriceActions();
@@ -1734,8 +1736,37 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Dynamic position sizing adjusts lots inversely to stop loss distance")
+    @DisplayName("Default position sizing uses fixed 2 lots when dynamic sizing is disabled")
+    void testFixedDefaultLots() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1874),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1873.05), // Risk = 2.00
+                BigDecimal.valueOf(1879.05));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed");
+
+        // Dynamic sizing is false by default. Lots must strictly be fixed default (2 lots)
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1875.05));
+
+        assertThat(pos).isNotNull();
+        assertThat(pos.getLots()).isEqualTo(2);
+        assertThat(pos.getTotalQuantity()).isEqualTo(700); // 2 * 350
+    }
+
+    @Test
+    @DisplayName(
+            "Dynamic position sizing adjusts lots inversely to stop loss distance when enabled")
     void testDynamicPositionSizing() {
+        service.setDynamicPositionSizing(true);
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
                 Candle.of5m(
@@ -1791,5 +1822,99 @@ class LowestVolumeReversalServiceTest {
 
         // Intrinsic alone is 1910 - 1870 = 40.00. Dynamic Delta estimate > 25 + 40 * 0.50 = 45.00.
         assertThat(estPrem).isGreaterThan(BigDecimal.valueOf(45.00));
+    }
+
+    @Test
+    @DisplayName("Single attempt mode immediately exhausts symbol on initial SL hit")
+    void testSingleAttemptExhaustsSymbolOnSl() {
+        service.setMaxAttemptsPerSymbol(1);
+        LowestVolumeSetup setup = new LowestVolumeSetup("PERSISTENT", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "PERSISTENT",
+                        Instant.now(),
+                        BigDecimal.valueOf(5330),
+                        BigDecimal.valueOf(5340),
+                        BigDecimal.valueOf(5320),
+                        BigDecimal.valueOf(5335),
+                        1000),
+                BigDecimal.valueOf(5340.05),
+                BigDecimal.valueOf(5320.00),
+                BigDecimal.valueOf(5380.15));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed");
+        service.getActiveSetups().put("PERSISTENT", setup);
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("PERSISTENT", setup, BigDecimal.valueOf(5340.05));
+        service.getOpenPositions().put("PERSISTENT", pos);
+
+        // Spot hits SL at 5315.00
+        service.evaluateOpenPositions(
+                java.time.LocalTime.of(10, 0),
+                Map.of("PERSISTENT", new ObjectMapper().createObjectNode().put("lp", "5315.00")),
+                false);
+
+        assertThat(service.getOpenPositions()).doesNotContainKey("PERSISTENT");
+        assertThat(service.getExhaustedSymbols()).contains("PERSISTENT");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.CLOSED_SL);
+    }
+
+    @Test
+    @DisplayName("Daily circuit breaker trips when cumulative realized loss exceeds limit")
+    void testDailyCircuitBreakerTrips() {
+        service.setMaxDailyLoss(10000.0);
+        assertThat(service.isDailyCircuitBreakerTripped()).isFalse();
+
+        // Create a closed losing position with -12,000 loss
+        Instant testInstant = Instant.parse("2026-09-18T04:30:00Z");
+        LowestVolumePaperPosition lossPos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "PERSISTENT",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500,
+                        "PERSISTENT FUT",
+                        100,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(5340.00),
+                        BigDecimal.valueOf(5320.00),
+                        BigDecimal.valueOf(5380.00),
+                        200,
+                        BigDecimal.valueOf(4000.00),
+                        testInstant);
+        lossPos.close(BigDecimal.valueOf(5280.00), "SPOT_SL_HIT", testInstant);
+        service.getTradeHistory().add(lossPos);
+
+        assertThat(service.calculateTodayRealizedPnl()).isLessThan(-10000.0);
+        assertThat(service.isDailyCircuitBreakerTripped()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Live sector alignment blocks LONG entry when parent sector turns negative")
+    void testLiveSectorAlignmentBlocksLongWhenSectorNegative() {
+        ObjectMapper mapper = new ObjectMapper();
+        // COFORGE belongs to NIFTY IT. Constituents: TCS, INFY, WIPRO, COFORGE, LTIM, PERSISTENT,
+        // etc.
+        // Mock quotes to simulate NIFTY IT constituents being negative (lp < c)
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        mapper.createObjectNode().put("lp", "98.00").put("c", "100.00")); // -2.0%
+
+        boolean aligned = service.checkLiveSectorAlignment("COFORGE", LowestVolumeDirection.LONG);
+        assertThat(aligned).isFalse();
+    }
+
+    @Test
+    @DisplayName("Live sector alignment allows LONG entry when parent sector remains positive")
+    void testLiveSectorAlignmentAllowsLongWhenSectorPositive() {
+        ObjectMapper mapper = new ObjectMapper();
+        // Mock quotes to simulate NIFTY IT constituents being positive (lp > c)
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        mapper.createObjectNode().put("lp", "102.50").put("c", "100.00")); // +2.5%
+
+        boolean aligned = service.checkLiveSectorAlignment("COFORGE", LowestVolumeDirection.LONG);
+        assertThat(aligned).isTrue();
     }
 }

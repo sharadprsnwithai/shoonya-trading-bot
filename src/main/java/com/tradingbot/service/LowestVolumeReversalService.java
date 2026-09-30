@@ -85,8 +85,23 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
     private int maxConcurrentTrades = 5;
 
-    @Value("${trading-bot.strategy.lowest-volume.lots:4}")
-    private int defaultLots = 4;
+    @Value("${trading-bot.strategy.lowest-volume.max-attempts-per-symbol:1}")
+    private int maxAttemptsPerSymbol = 1;
+
+    @Value("${trading-bot.strategy.lowest-volume.min-breadth-pct:56.0}")
+    private double minBreadthPct = 56.0;
+
+    @Value("${trading-bot.strategy.lowest-volume.min-sl-pct:0.35}")
+    private double minStopLossPct = 0.35;
+
+    @Value("${trading-bot.strategy.lowest-volume.max-daily-loss:15000.0}")
+    private double maxDailyLoss = 15000.0;
+
+    @Value("${trading-bot.strategy.lowest-volume.lots:2}")
+    private int defaultLots = 2;
+
+    @Value("${trading-bot.strategy.lowest-volume.dynamic-position-sizing:false}")
+    private boolean dynamicPositionSizing = false;
 
     @Value("${trading-bot.strategy.lowest-volume.telegram-alerts:true}")
     private boolean telegramAlerts = true;
@@ -97,14 +112,17 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.vwap-confirmation-enabled:true}")
     private boolean vwapConfirmationEnabled = true;
 
+    @Value("${trading-bot.strategy.lowest-volume.sector-momentum-filter-enabled:true}")
+    private boolean sectorMomentumFilterEnabled = true;
+
     @Value("${trading-bot.strategy.lowest-volume.setup-timeout-candles:6}")
     private int setupTimeoutCandles = 6;
 
     @Value("${trading-bot.strategy.lowest-volume.min-active-candidates:2}")
     private int minActiveCandidates = 2;
 
-    @Value("${trading-bot.strategy.lowest-volume.max-slippage-pct:0.25}")
-    private double maxSlippagePct = 0.25;
+    @Value("${trading-bot.strategy.lowest-volume.max-slippage-pct:0.12}")
+    private double maxSlippagePct = 0.12;
 
     private long morningScanDelayMs = 115;
 
@@ -130,6 +148,8 @@ public class LowestVolumeReversalService {
     private volatile boolean niftyBullish = true;
     private volatile boolean universeScanCompletedToday = false;
     private final AtomicInteger tradeCounter = new AtomicInteger(1);
+    private final java.util.concurrent.atomic.AtomicBoolean dailyCircuitBreakerAlertSent =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.concurrent.atomic.AtomicBoolean isScanning =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
@@ -269,9 +289,22 @@ public class LowestVolumeReversalService {
                     niftyQuotes.add(q);
                 }
             }
-            LowestVolumeDirection sentiment = scanner.evaluateMarketSentiment(niftyQuotes);
+            LowestVolumeDirection sentiment =
+                    scanner.evaluateMarketSentiment(niftyQuotes, minBreadthPct);
             if (sentiment == LowestVolumeDirection.NONE) {
-                sentiment = LowestVolumeDirection.LONG;
+                log.info(
+                        "[LVR] Market sentiment is NEUTRAL/MIXED (below {}% breadth threshold). Standing down for the day to avoid whipsaws.",
+                        minBreadthPct);
+                this.universeScanCompletedToday = true;
+                if (telegramAlerts && telegramService != null) {
+                    telegramService.sendTextMessage(
+                            String.format(
+                                    "⚠️ *LVR Morning Scan: Market Sentiment Neutral/Mixed*\n"
+                                            + "• NIFTY 50 Advance/Decline breadth did not meet the %.0f%% directional threshold.\n"
+                                            + "• Status: *Standing down today* to avoid choppy false breakouts.",
+                                    minBreadthPct));
+                }
+                return;
             }
             this.niftyBullish = (sentiment == LowestVolumeDirection.LONG);
 
@@ -517,13 +550,19 @@ public class LowestVolumeReversalService {
                     if (direction == LowestVolumeDirection.SHORT) {
                         triggerPrc = c.low().subtract(BigDecimal.valueOf(0.05));
                         slPrc = c.high().add(BigDecimal.valueOf(0.05));
-                        BigDecimal risk = slPrc.subtract(triggerPrc);
+                        BigDecimal minRisk =
+                                triggerPrc.multiply(BigDecimal.valueOf(minStopLossPct / 100.0));
+                        BigDecimal risk = slPrc.subtract(triggerPrc).max(minRisk);
+                        slPrc = triggerPrc.add(risk);
                         target1Prc =
                                 triggerPrc.subtract(risk.multiply(BigDecimal.valueOf(2))); // 1:2 RR
                     } else {
                         triggerPrc = c.high().add(BigDecimal.valueOf(0.05));
                         slPrc = c.low().subtract(BigDecimal.valueOf(0.05));
-                        BigDecimal risk = triggerPrc.subtract(slPrc);
+                        BigDecimal minRisk =
+                                triggerPrc.multiply(BigDecimal.valueOf(minStopLossPct / 100.0));
+                        BigDecimal risk = triggerPrc.subtract(slPrc).max(minRisk);
+                        slPrc = triggerPrc.subtract(risk);
                         target1Prc = triggerPrc.add(risk.multiply(BigDecimal.valueOf(2))); // 1:2 RR
                     }
 
@@ -554,7 +593,7 @@ public class LowestVolumeReversalService {
                     || setup.getState() == LowestVolumeSetupState.CLOSED_TARGET
                     || setup.getState() == LowestVolumeSetupState.CLOSED_SL
                     || setup.getState() == LowestVolumeSetupState.REJECTED_EXHAUSTED
-                    || setup.getTradeAttempts() >= 2
+                    || setup.getTradeAttempts() >= maxAttemptsPerSymbol
                     || exhaustedSymbols.contains(symbol)) {
                 continue;
             }
@@ -669,14 +708,15 @@ public class LowestVolumeReversalService {
 
         Map<String, JsonNode> liveQuoteCache = new HashMap<>();
 
-        // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff)
-        if (nowTime.isBefore(TIME_ENTRY_CUTOFF)) {
+        // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff and if
+        // circuit breaker not tripped)
+        if (nowTime.isBefore(TIME_ENTRY_CUTOFF) && !isDailyCircuitBreakerTripped()) {
             for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
                 String symbol = entry.getKey();
                 LowestVolumeSetup setup = entry.getValue();
 
                 if (setup.getState() == LowestVolumeSetupState.TRIGGER_ARMED
-                        && setup.getTradeAttempts() < 2
+                        && setup.getTradeAttempts() < maxAttemptsPerSymbol
                         && openPositions.size() < maxConcurrentTrades) {
                     JsonNode quoteNode =
                             liveQuoteCache.computeIfAbsent(symbol, this::fetchLiveQuoteNode);
@@ -865,6 +905,18 @@ public class LowestVolumeReversalService {
                     }
                 }
 
+                // Sector Momentum Alignment Check at Entry Time
+                if (sectorMomentumFilterEnabled) {
+                    boolean sectorAligned = checkLiveSectorAlignment(symbol, setup.getDirection());
+                    if (!sectorAligned) {
+                        log.warn(
+                                "[LVR] Entry for {} BLOCKED: Parent sector has flipped or lost momentum opposite to {} direction. Skipping entry.",
+                                symbol,
+                                setup.getDirection());
+                        return;
+                    }
+                }
+
                 executePositionEntry(symbol, setup, spotPrice);
             }
         } catch (Exception e) {
@@ -885,8 +937,8 @@ public class LowestVolumeReversalService {
         BigDecimal strikeStep = (fno != null) ? fno.strikeStep() : BigDecimal.valueOf(10);
 
         BigDecimal unitRisk = spotPrice.subtract(setup.getStopLossPrice()).abs();
-        int lots = defaultLots;
-        if (unitRisk.compareTo(BigDecimal.ZERO) > 0 && lotSize > 0) {
+        int lots = defaultLots > 0 ? defaultLots : 2;
+        if (dynamicPositionSizing && unitRisk.compareTo(BigDecimal.ZERO) > 0 && lotSize > 0) {
             int sizedLots = (int) (getRiskPerTradeAmount() / (unitRisk.doubleValue() * lotSize));
             lots = Math.max(1, Math.min(sizedLots, defaultLots > 0 ? defaultLots * 2 : 10));
         }
@@ -1132,12 +1184,14 @@ public class LowestVolumeReversalService {
                                     LowestVolumeSetupState.CLOSED_TRAIL_EXIT,
                                     slReason + " at " + spotPrice);
                             exhaustedSymbols.add(symbol);
-                        } else if (setup.getTradeAttempts() < 2) {
+                        } else if (setup.getTradeAttempts() < maxAttemptsPerSymbol) {
                             setup.resetToScanning();
                             setup.setLastExitTime(Instant.now());
                         } else {
                             setup.transitionTo(
-                                    LowestVolumeSetupState.CLOSED_SL, "Max 2 attempts reached");
+                                    LowestVolumeSetupState.CLOSED_SL,
+                                    String.format(
+                                            "Max %d attempt(s) reached", maxAttemptsPerSymbol));
                             exhaustedSymbols.add(symbol);
                         }
                     }
@@ -1577,6 +1631,7 @@ public class LowestVolumeReversalService {
         currentTopLoserSnapshots.clear();
         sectorState = LowestVolumeSectorState.empty();
         universeScanCompletedToday = false;
+        dailyCircuitBreakerAlertSent.set(false);
         tradeCounter.set(1);
         if (marketDataService != null) {
             marketDataService.prewarmSession();
@@ -1634,12 +1689,15 @@ public class LowestVolumeReversalService {
         }
     }
 
-    /** Counts currently actionable setups (not exhausted, not permanently closed, < 2 attempts). */
+    /**
+     * Counts currently actionable setups (not exhausted, not permanently closed, <
+     * maxAttemptsPerSymbol).
+     */
     public long countActionableSetups() {
         return activeSetups.values().stream()
                 .filter(s -> !s.isExhaustedOrRejected())
                 .filter(s -> !s.isClosed())
-                .filter(s -> s.getTradeAttempts() < 2)
+                .filter(s -> s.getTradeAttempts() < maxAttemptsPerSymbol)
                 .filter(s -> !exhaustedSymbols.contains(s.getSymbol()))
                 .count();
     }
@@ -2013,12 +2071,201 @@ public class LowestVolumeReversalService {
         this.maxSlippagePct = maxSlippagePct;
     }
 
+    public boolean isSectorMomentumFilterEnabled() {
+        return sectorMomentumFilterEnabled;
+    }
+
+    public void setSectorMomentumFilterEnabled(boolean sectorMomentumFilterEnabled) {
+        this.sectorMomentumFilterEnabled = sectorMomentumFilterEnabled;
+    }
+
+    /**
+     * Re-checks whether the stock's parent sector is still aligned with the strategy direction. For
+     * LONG: Sector average % change must be > 0.0% and advances >= declines. For SHORT: Sector
+     * average % change must be < 0.0% and declines >= advances.
+     */
+    public boolean checkLiveSectorAlignment(String symbol, LowestVolumeDirection direction) {
+        if (marketDataService == null) return true;
+
+        String sectorName = NiftySectorRegistry.getSectorForSymbol(symbol);
+        if (sectorName == null || sectorName.isBlank()) {
+            if (sectorState != null
+                    && sectorState.topSector() != null
+                    && !sectorState.topSector().isBlank()) {
+                sectorName = sectorState.topSector();
+            } else {
+                return true;
+            }
+        }
+
+        List<String> constituents = NiftySectorRegistry.getStocksForSector(sectorName);
+        if (constituents == null || constituents.isEmpty()) {
+            return true;
+        }
+
+        double totalPctChange = 0.0;
+        int count = 0;
+        int advances = 0;
+        int declines = 0;
+
+        for (String constituent : constituents) {
+            try {
+                JsonNode qNode = fetchLiveQuoteNode(constituent);
+                if (qNode != null) {
+                    double lp = qNode.path("lp").asDouble(0.0);
+                    double c = qNode.path("c").asDouble(0.0);
+                    if (lp > 0.0 && c > 0.0) {
+                        double pct = ((lp - c) / c) * 100.0;
+                        totalPctChange += pct;
+                        count++;
+                        if (pct > 0.0) advances++;
+                        else if (pct < 0.0) declines++;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug(
+                        "[LVR] Error fetching live quote for sector constituent {}: {}",
+                        constituent,
+                        e.getMessage());
+            }
+        }
+
+        if (count == 0) {
+            return true; // If data unavailable, fail safe and allow
+        }
+
+        double avgSectorPct = totalPctChange / count;
+        boolean aligned;
+
+        if (direction == LowestVolumeDirection.LONG) {
+            aligned = (avgSectorPct > 0.0 && advances >= declines);
+        } else {
+            aligned = (avgSectorPct < 0.0 && declines >= advances);
+        }
+
+        log.info(
+                "[LVR-SECTOR-CHECK] Rechecked {} sector '{}' at entry: AvgChange={}% (Advances={}, Declines={}, Total={}) | Aligned={}",
+                symbol,
+                sectorName,
+                String.format(java.util.Locale.US, "%.2f", avgSectorPct),
+                advances,
+                declines,
+                count,
+                aligned);
+
+        if (!aligned) {
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                "⚠️ *LVR Entry Blocked (Sector Momentum Flipped)*\n"
+                                        + "• Symbol: *%s* (Setup: *%s*)\n"
+                                        + "• Parent Sector: *%s*\n"
+                                        + "• Current Sector %% Change: `%+.2f%%` (Advances: %d, Declines: %d)\n"
+                                        + "• Reason: *Sector turned %s*. Entry skipped to prevent fighting sector drag.",
+                                symbol,
+                                direction,
+                                sectorName,
+                                avgSectorPct,
+                                advances,
+                                declines,
+                                direction == LowestVolumeDirection.LONG
+                                        ? "BEARISH / RED"
+                                        : "BULLISH / GREEN"));
+            }
+        }
+
+        return aligned;
+    }
+
     public boolean isVwapConfirmationEnabled() {
         return vwapConfirmationEnabled;
     }
 
     public void setVwapConfirmationEnabled(boolean vwapConfirmationEnabled) {
         this.vwapConfirmationEnabled = vwapConfirmationEnabled;
+    }
+
+    public int getDefaultLots() {
+        return defaultLots;
+    }
+
+    public void setDefaultLots(int defaultLots) {
+        this.defaultLots = defaultLots;
+    }
+
+    public int getMaxAttemptsPerSymbol() {
+        return maxAttemptsPerSymbol;
+    }
+
+    public void setMaxAttemptsPerSymbol(int maxAttemptsPerSymbol) {
+        this.maxAttemptsPerSymbol = maxAttemptsPerSymbol;
+    }
+
+    public double getMinBreadthPct() {
+        return minBreadthPct;
+    }
+
+    public void setMinBreadthPct(double minBreadthPct) {
+        this.minBreadthPct = minBreadthPct;
+    }
+
+    public double getMinStopLossPct() {
+        return minStopLossPct;
+    }
+
+    public void setMinStopLossPct(double minStopLossPct) {
+        this.minStopLossPct = minStopLossPct;
+    }
+
+    public double getMaxDailyLoss() {
+        return maxDailyLoss;
+    }
+
+    public void setMaxDailyLoss(double maxDailyLoss) {
+        this.maxDailyLoss = maxDailyLoss;
+    }
+
+    public double calculateTodayRealizedPnl() {
+        LocalDate today = LocalDate.now(clock);
+        return tradeHistory.stream()
+                .filter(
+                        p ->
+                                p.getExitTime() != null
+                                        && LocalDate.ofInstant(p.getExitTime(), IST).equals(today))
+                .mapToDouble(p -> p.getTotalRealizedPnl().doubleValue())
+                .sum();
+    }
+
+    public boolean isDailyCircuitBreakerTripped() {
+        if (maxDailyLoss <= 0.0) return false;
+        double todayPnl = calculateTodayRealizedPnl();
+        if (todayPnl <= -maxDailyLoss) {
+            if (dailyCircuitBreakerAlertSent.compareAndSet(false, true)) {
+                log.warn(
+                        "[LVR] Daily Max Loss Circuit Breaker tripped: Today's realized loss (₹{}) reached limit (₹{}). Halting new entries.",
+                        String.format(java.util.Locale.US, "%.2f", Math.abs(todayPnl)),
+                        String.format(java.util.Locale.US, "%.2f", maxDailyLoss));
+                if (telegramAlerts && telegramService != null) {
+                    telegramService.sendTextMessage(
+                            String.format(
+                                    "🚨 *LVR Daily Circuit Breaker Activated*\n"
+                                            + "• Today's Realized P&L: `₹%.2f`\n"
+                                            + "• Daily Loss Limit: `₹%.2f`\n"
+                                            + "• Action: *Halting all new trade entries for the day* to protect capital.",
+                                    todayPnl, maxDailyLoss));
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isDynamicPositionSizing() {
+        return dynamicPositionSizing;
+    }
+
+    public void setDynamicPositionSizing(boolean dynamicPositionSizing) {
+        this.dynamicPositionSizing = dynamicPositionSizing;
     }
 
     public void setTelegramAlerts(boolean telegramAlerts) {
