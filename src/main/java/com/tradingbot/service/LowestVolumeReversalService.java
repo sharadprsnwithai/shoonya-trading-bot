@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,63 +69,63 @@ public class LowestVolumeReversalService {
     private java.time.Clock clock = java.time.Clock.system(IST);
 
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
-    private boolean enabled = true;
+    private volatile boolean enabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.instrument-type:FUTURES}")
-    private LvrInstrumentType instrumentType = LvrInstrumentType.FUTURES;
+    private volatile LvrInstrumentType instrumentType = LvrInstrumentType.FUTURES;
 
     @Value("${trading-bot.strategy.lowest-volume.exit-mode:PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500}")
-    private LvrExitMode exitMode = LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500;
+    private volatile LvrExitMode exitMode = LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500;
 
     @Value("${trading-bot.strategy.lowest-volume.paper-capital:1000000.0}")
-    private double paperCapital = 1000000.0;
+    private volatile double paperCapital = 1000000.0;
 
     @Value("${trading-bot.strategy.lowest-volume.risk-per-trade-percent:1.0}")
-    private double riskPerTradePercent = 1.0;
+    private volatile double riskPerTradePercent = 1.0;
 
     @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
-    private int maxConcurrentTrades = 5;
+    private volatile int maxConcurrentTrades = 5;
 
     @Value("${trading-bot.strategy.lowest-volume.max-attempts-per-symbol:1}")
-    private int maxAttemptsPerSymbol = 1;
+    private volatile int maxAttemptsPerSymbol = 1;
 
     @Value("${trading-bot.strategy.lowest-volume.min-breadth-pct:56.0}")
-    private double minBreadthPct = 56.0;
+    private volatile double minBreadthPct = 56.0;
 
     @Value("${trading-bot.strategy.lowest-volume.min-sl-pct:0.35}")
-    private double minStopLossPct = 0.35;
+    private volatile double minStopLossPct = 0.35;
 
     @Value("${trading-bot.strategy.lowest-volume.max-daily-loss:15000.0}")
-    private double maxDailyLoss = 15000.0;
+    private volatile double maxDailyLoss = 15000.0;
 
     @Value("${trading-bot.strategy.lowest-volume.lots:2}")
-    private int defaultLots = 2;
+    private volatile int defaultLots = 2;
 
     @Value("${trading-bot.strategy.lowest-volume.dynamic-position-sizing:false}")
-    private boolean dynamicPositionSizing = false;
+    private volatile boolean dynamicPositionSizing = false;
 
     @Value("${trading-bot.strategy.lowest-volume.telegram-alerts:true}")
-    private boolean telegramAlerts = true;
+    private volatile boolean telegramAlerts = true;
 
     @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:true}")
-    private boolean telegramArmedAlerts = true;
+    private volatile boolean telegramArmedAlerts = true;
 
     @Value("${trading-bot.strategy.lowest-volume.vwap-confirmation-enabled:true}")
-    private boolean vwapConfirmationEnabled = true;
+    private volatile boolean vwapConfirmationEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.sector-momentum-filter-enabled:true}")
-    private boolean sectorMomentumFilterEnabled = true;
+    private volatile boolean sectorMomentumFilterEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.setup-timeout-candles:6}")
-    private int setupTimeoutCandles = 6;
+    private volatile int setupTimeoutCandles = 6;
 
     @Value("${trading-bot.strategy.lowest-volume.min-active-candidates:2}")
-    private int minActiveCandidates = 2;
+    private volatile int minActiveCandidates = 2;
 
     @Value("${trading-bot.strategy.lowest-volume.max-slippage-pct:0.12}")
-    private double maxSlippagePct = 0.12;
+    private volatile double maxSlippagePct = 0.12;
 
-    private long morningScanDelayMs = 115;
+    private volatile long morningScanDelayMs = 115;
 
     // State maps
     private final Map<String, LowestVolumeSetup> activeSetups = new ConcurrentHashMap<>();
@@ -135,6 +136,9 @@ public class LowestVolumeReversalService {
     private final List<String> candidateReservoir =
             new java.util.concurrent.CopyOnWriteArrayList<>();
     private volatile LocalTime lastMidMorningRefreshTime = null;
+    private volatile LocalDate lastScanDate = null;
+    private final java.util.concurrent.atomic.AtomicBoolean isCycleRunning =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private final List<String> currentTopGainers =
             new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -186,66 +190,80 @@ public class LowestVolumeReversalService {
      * candle close during market hours.
      */
     public void runCycle() {
-        if (!enabled) {
-            log.debug("[LVR] Strategy is currently disabled.");
+        if (!isCycleRunning.compareAndSet(false, true)) {
+            log.warn("[LVR] Previous 5-minute cycle still executing. Skipping concurrent run.");
             return;
         }
+        try {
+            LocalDate today = LocalDate.now(clock);
+            if (lastScanDate != null && !today.equals(lastScanDate)) {
+                log.info("[LVR] New trading day detected ({} vs last {}). Resetting daily state.", today, lastScanDate);
+                resetDaily();
+            }
 
-        LocalTime nowTime = LocalTime.now(clock);
-
-        if (nowTime.isBefore(TIME_SESSION_START)) {
-            log.debug("[LVR] Before market open (09:15 IST). Standing by.");
-            return;
-        }
-
-        if (!nowTime.isBefore(TIME_HARD_EXIT)) {
-            executeHardExit(nowTime);
-            return;
-        }
-
-        if (nowTime.isBefore(TIME_SCANNER_START)) {
-            log.info("[LVR] 09:15 - 09:25 IST: Pre-scanner settlement window. No trades.");
-            return;
-        }
-
-        if (!universeScanCompletedToday) {
-            if (nowTime.isAfter(TIME_SCANNER_CUTOFF)) {
-                log.info(
-                        "[LVR] Past 10:00 AM fallback cutoff. No valid morning candidates found"
-                                + " today. Standing down.");
+            if (!enabled) {
+                log.debug("[LVR] Strategy is currently disabled.");
                 return;
             }
-            log.info("[LVR] Triggering 09:25 AM morning sentiment & sector scan...");
-            runMorningUniverseScan();
+
+            LocalTime nowTime = LocalTime.now(clock);
+
+            if (nowTime.isBefore(TIME_SESSION_START)) {
+                log.debug("[LVR] Before market open (09:15 IST). Standing by.");
+                return;
+            }
+
+            if (!nowTime.isBefore(TIME_HARD_EXIT)) {
+                executeHardExit(nowTime);
+                return;
+            }
+
+            if (nowTime.isBefore(TIME_SCANNER_START)) {
+                log.info("[LVR] 09:15 - 09:25 IST: Pre-scanner settlement window. No trades.");
+                return;
+            }
+
             if (!universeScanCompletedToday) {
-                log.info("[LVR] Morning scan pending valid sector candidates. Will retry.");
+                if (nowTime.isAfter(TIME_SCANNER_CUTOFF)) {
+                    log.info(
+                            "[LVR] Past 10:00 AM fallback cutoff. No valid morning candidates found"
+                                    + " today. Standing down.");
+                    return;
+                }
+                log.info("[LVR] Triggering 09:25 AM morning sentiment & sector scan...");
+                runMorningUniverseScan();
+                if (!universeScanCompletedToday) {
+                    log.info("[LVR] Morning scan pending valid sector candidates. Will retry.");
+                    return;
+                }
+            }
+
+            if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
+                log.info("[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
+                evaluateOpenPositions(nowTime);
                 return;
             }
+
+            // Replenish candidate setups from standby reservoir if active candidates dropped below
+            // threshold
+            replenishActiveCandidatesIfNeeded(nowTime);
+
+            // If 0 actionable setups and past 10:30, trigger mid-morning refresh (paced at max once per
+            // 30 mins)
+            if (countActionableSetups() == 0
+                    && nowTime.isAfter(LocalTime.of(10, 30))
+                    && openPositions.size() < maxConcurrentTrades
+                    && (lastMidMorningRefreshTime == null
+                            || nowTime.isAfter(lastMidMorningRefreshTime.plusMinutes(30)))) {
+                runMidMorningUniverseRefresh(nowTime);
+            }
+
+            log.info("[LVR] Executing 5-min strategy cycle at {} IST...", nowTime);
+            processCandidateSetups(nowTime);
+            evaluateOpenPositions(nowTime, null, true);
+        } finally {
+            isCycleRunning.set(false);
         }
-
-        if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-            log.info("[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
-            evaluateOpenPositions(nowTime);
-            return;
-        }
-
-        // Replenish candidate setups from standby reservoir if active candidates dropped below
-        // threshold
-        replenishActiveCandidatesIfNeeded(nowTime);
-
-        // If 0 actionable setups and past 10:30, trigger mid-morning refresh (paced at max once per
-        // 30 mins)
-        if (countActionableSetups() == 0
-                && nowTime.isAfter(LocalTime.of(10, 30))
-                && openPositions.size() < maxConcurrentTrades
-                && (lastMidMorningRefreshTime == null
-                        || nowTime.isAfter(lastMidMorningRefreshTime.plusMinutes(30)))) {
-            runMidMorningUniverseRefresh(nowTime);
-        }
-
-        log.info("[LVR] Executing 5-min strategy cycle at {} IST...", nowTime);
-        processCandidateSetups(nowTime);
-        evaluateLivePriceActions();
     }
 
     /**
@@ -709,9 +727,9 @@ public class LowestVolumeReversalService {
 
         Map<String, JsonNode> liveQuoteCache = new HashMap<>();
 
-        // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff and if
+        // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff, if strategy enabled, and if
         // circuit breaker not tripped)
-        if (nowTime.isBefore(TIME_ENTRY_CUTOFF) && !isDailyCircuitBreakerTripped()) {
+        if (enabled && nowTime.isBefore(TIME_ENTRY_CUTOFF) && !isDailyCircuitBreakerTripped()) {
             for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
                 String symbol = entry.getKey();
                 LowestVolumeSetup setup = entry.getValue();
@@ -929,9 +947,32 @@ public class LowestVolumeReversalService {
     /** Executes entry (Stock Futures or ATM Option buying) upon spot trigger breach. */
     public synchronized LowestVolumePaperPosition executePositionEntry(
             String symbol, LowestVolumeSetup setup, BigDecimal spotPrice) {
-        setup.recordTradeAttempt();
-        setup.transitionTo(
-                LowestVolumeSetupState.IN_POSITION, "Trigger breached at spot " + spotPrice);
+        if (setup == null || symbol == null) return null;
+        if (openPositions.containsKey(symbol)) {
+            log.warn("[LVR] Position for {} already open. Skipping duplicate entry.", symbol);
+            return openPositions.get(symbol);
+        }
+        if (setup.getState() != LowestVolumeSetupState.TRIGGER_ARMED) {
+            log.warn(
+                    "[LVR] Setup for {} is in state {} (not TRIGGER_ARMED). Skipping entry.",
+                    symbol,
+                    setup.getState());
+            return openPositions.get(symbol);
+        }
+        if (setup.getTradeAttempts() >= maxAttemptsPerSymbol) {
+            log.warn(
+                    "[LVR] Setup for {} has already reached max attempts ({}). Skipping entry.",
+                    symbol,
+                    maxAttemptsPerSymbol);
+            return null;
+        }
+        if (openPositions.size() >= maxConcurrentTrades) {
+            log.warn(
+                    "[LVR] Max concurrent trades ({}) reached. Skipping entry for {}.",
+                    maxConcurrentTrades,
+                    symbol);
+            return null;
+        }
 
         StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(symbol);
         int lotSize = (fno != null) ? fno.lotSize() : 100;
@@ -994,7 +1035,14 @@ public class LowestVolumeReversalService {
                             plannedRisk,
                             Instant.now());
 
-            openPositions.put(symbol, position);
+            LowestVolumePaperPosition existing = openPositions.putIfAbsent(symbol, position);
+            if (existing != null) {
+                log.warn("[LVR] Concurrent position insertion race detected for {}. Skipping.", symbol);
+                return existing;
+            }
+            setup.recordTradeAttempt();
+            setup.transitionTo(
+                    LowestVolumeSetupState.IN_POSITION, "Trigger breached at spot " + spotPrice);
 
             publishSignal(
                     symbol,
@@ -1074,7 +1122,14 @@ public class LowestVolumeReversalService {
                             plannedRisk,
                             Instant.now());
 
-            openPositions.put(symbol, position);
+            LowestVolumePaperPosition existing = openPositions.putIfAbsent(symbol, position);
+            if (existing != null) {
+                log.warn("[LVR] Concurrent position insertion race detected for {}. Skipping.", symbol);
+                return existing;
+            }
+            setup.recordTradeAttempt();
+            setup.transitionTo(
+                    LowestVolumeSetupState.IN_POSITION, "Trigger breached at spot " + spotPrice);
 
             publishSignal(
                     symbol,
@@ -1141,13 +1196,17 @@ public class LowestVolumeReversalService {
         evaluateOpenPositions(nowTime, quoteCache, true);
     }
 
-    public void evaluateOpenPositions(
+    public synchronized void evaluateOpenPositions(
             LocalTime nowTime, Map<String, JsonNode> quoteCache, boolean isCandleClose) {
         if (openPositions.isEmpty()) return;
 
         for (Map.Entry<String, LowestVolumePaperPosition> entry : openPositions.entrySet()) {
             String symbol = entry.getKey();
             LowestVolumePaperPosition pos = entry.getValue();
+            if (pos == null || pos.isClosed()) {
+                openPositions.remove(symbol);
+                continue;
+            }
 
             try {
                 JsonNode quoteNode =
@@ -1176,6 +1235,8 @@ public class LowestVolumeReversalService {
                 }
 
                 if (slHit) {
+                    if (pos.isClosed()) continue;
+                    openPositions.remove(symbol);
                     String slReason =
                             pos.isPartialBooked() ? "TRAILING_COST_SL_HIT" : "SPOT_SL_HIT";
                     int exitQty =
@@ -1189,7 +1250,6 @@ public class LowestVolumeReversalService {
                                     : optionPremium;
 
                     pos.close(exitPrc, slReason, Instant.now());
-                    openPositions.remove(symbol);
                     tradeHistory.add(pos);
 
                     LowestVolumeSetup setup = activeSetups.get(symbol);
@@ -1581,74 +1641,92 @@ public class LowestVolumeReversalService {
     public synchronized void executeHardExit(LocalTime nowTime) {
         if (openPositions.isEmpty()) return;
 
-        log.info("[LVR] 15:00 IST Hard EOD Square-off reached. Closing all open positions.");
-        for (Map.Entry<String, LowestVolumePaperPosition> entry : openPositions.entrySet()) {
-            String symbol = entry.getKey();
-            LowestVolumePaperPosition pos = entry.getValue();
-
-            double spotLtp = fetchLiveSpotPrice(symbol);
-            BigDecimal spotPrice =
-                    BigDecimal.valueOf(
-                            spotLtp > 0 ? spotLtp : pos.getStockEntryPrice().doubleValue());
-            BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
-
-            BigDecimal exitVal =
-                    (pos.getInstrumentType() == LvrInstrumentType.FUTURES)
-                            ? spotPrice
-                            : optionPremium;
-            int exitQty =
-                    pos.getRemainingQuantity() > 0
-                            ? pos.getRemainingQuantity()
-                            : pos.getTotalQuantity();
-            String brokerSymbol = resolveBrokerTradingSymbol(pos);
-            pos.close(exitVal, "EOD_1500_HARD_EXIT", Instant.now());
-            tradeHistory.add(pos);
-
-            publishSignal(
-                    symbol,
-                    brokerSymbol,
-                    pos.getDirection() == LowestVolumeDirection.LONG
-                            ? com.tradingbot.strategy.SignalAction.EXIT_LONG
-                            : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
-                    exitVal,
-                    pos.getCurrentStockSl(),
-                    null,
-                    exitQty,
-                    "EOD_1500_HARD_EXIT",
-                    Map.of("instrumentType", pos.getInstrumentType().name()));
-
-            LowestVolumeSetup setup = activeSetups.get(symbol);
-            if (setup != null) {
-                setup.transitionTo(LowestVolumeSetupState.CLOSED_TRAIL_EXIT, "15:00 EOD Exit");
-                exhaustedSymbols.add(symbol);
+        log.info("[LVR] {} Hard EOD Square-off reached. Closing all open positions.", nowTime != null ? nowTime : "15:00 IST");
+        List<String> symbols = new ArrayList<>(openPositions.keySet());
+        for (String symbol : symbols) {
+            LowestVolumePaperPosition pos = openPositions.get(symbol);
+            if (pos == null || pos.isClosed()) {
+                openPositions.remove(symbol);
+                continue;
             }
 
-            if (telegramAlerts && telegramService != null) {
-                telegramService.sendTextMessage(
-                        String.format(
-                                "🏁 *LVR 15:00 IST Hard EOD Exit*\n"
-                                        + "• Symbol: *%s* (%s)\n"
-                                        + "• Exit Price: `₹%.2f`\n"
-                                        + "• Runner Realized P&L: `₹%.2f`\n"
-                                        + "• Total Realized P&L: `₹%.2f`\n"
-                                        + "• Reason: Market Close Square-Off",
-                                symbol,
-                                pos.getDirection(),
-                                exitVal.doubleValue(),
-                                pos.getRunnerPnl().doubleValue(),
-                                pos.getTotalRealizedPnl().doubleValue()));
+            try {
+                double spotLtp = fetchLiveSpotPrice(symbol);
+                BigDecimal spotPrice =
+                        BigDecimal.valueOf(
+                                spotLtp > 0 ? spotLtp : pos.getStockEntryPrice().doubleValue());
+                BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
+
+                BigDecimal exitVal =
+                        (pos.getInstrumentType() == LvrInstrumentType.FUTURES)
+                                ? spotPrice
+                                : optionPremium;
+                int exitQty =
+                        pos.getRemainingQuantity() > 0
+                                ? pos.getRemainingQuantity()
+                                : pos.getTotalQuantity();
+                String brokerSymbol = resolveBrokerTradingSymbol(pos);
+                pos.close(exitVal, "EOD_1500_HARD_EXIT", Instant.now());
+                openPositions.remove(symbol);
+                tradeHistory.add(pos);
+
+                publishSignal(
+                        symbol,
+                        brokerSymbol,
+                        pos.getDirection() == LowestVolumeDirection.LONG
+                                ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                                : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                        exitVal,
+                        pos.getCurrentStockSl(),
+                        null,
+                        exitQty,
+                        "EOD_1500_HARD_EXIT",
+                        Map.of("instrumentType", pos.getInstrumentType().name()));
+
+                LowestVolumeSetup setup = activeSetups.get(symbol);
+                if (setup != null) {
+                    setup.transitionTo(LowestVolumeSetupState.CLOSED_TRAIL_EXIT, "15:00 EOD Exit");
+                    exhaustedSymbols.add(symbol);
+                }
+
+                if (telegramAlerts && telegramService != null) {
+                    telegramService.sendTextMessage(
+                            String.format(
+                                    Locale.US,
+                                    "🏁 *LVR %s Hard EOD Exit*\n"
+                                            + "• Symbol: *%s* (%s)\n"
+                                            + "• Exit Price: `₹%.2f`\n"
+                                            + "• Runner Realized P&L: `₹%.2f`\n"
+                                            + "• Total Realized P&L: `₹%.2f`\n"
+                                            + "• Reason: Market Close Square-Off",
+                                    nowTime != null ? nowTime : "15:00 IST",
+                                    symbol,
+                                    pos.getDirection(),
+                                    exitVal.doubleValue(),
+                                    pos.getRunnerPnl().doubleValue(),
+                                    pos.getTotalRealizedPnl().doubleValue()));
+                }
+            } catch (Exception e) {
+                log.error("[LVR] Error during hard exit for {}: {}", symbol, e.getMessage(), e);
+                openPositions.remove(symbol);
             }
         }
         openPositions.clear();
     }
 
     public synchronized void resetDaily() {
+        if (!openPositions.isEmpty()) {
+            log.warn("[LVR] resetDaily() called while {} open position(s) exist. Executing hard exit first.", openPositions.size());
+            executeHardExit(LocalTime.of(15, 0));
+        }
         activeSetups.clear();
         openPositions.clear();
         tradeHistory.clear();
         exhaustedSymbols.clear();
         candidateReservoir.clear();
         lastMidMorningRefreshTime = null;
+        lastScanDate = null;
+        niftyBullish = true;
         currentTopGainers.clear();
         currentTopLosers.clear();
         currentTopGainerSnapshots.clear();
@@ -1667,7 +1745,7 @@ public class LowestVolumeReversalService {
      * Replenishes active setups from the standby candidate reservoir if actionable candidate count
      * drops below minActiveCandidates (due to SL hits, exhaustion, or invalidation).
      */
-    public void replenishActiveCandidatesIfNeeded(LocalTime nowTime) {
+    public synchronized void replenishActiveCandidatesIfNeeded(LocalTime nowTime) {
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) return;
 
         long actionableCount = countActionableSetups();

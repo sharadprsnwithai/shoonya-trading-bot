@@ -26,7 +26,7 @@ public class LowestVolumeReversalScheduler {
     private final KiteAuthService kiteAuthService;
 
     @Value("${trading-bot.strategy.lowest-volume.scheduler-enabled:true}")
-    private boolean schedulerEnabled = true;
+    private volatile boolean schedulerEnabled = true;
 
     @Autowired
     public LowestVolumeReversalScheduler(
@@ -39,6 +39,10 @@ public class LowestVolumeReversalScheduler {
     /** Daily reset at 09:15 IST (market open) every Monday through Friday. */
     @Scheduled(cron = "0 15 9 ? * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledDailyReset() {
+        if (!schedulerEnabled) {
+            log.debug("[LVR-SCHEDULER] Scheduler is disabled. Skipping scheduled daily reset.");
+            return;
+        }
         log.info("[LVR-SCHEDULER] Market Open (09:15 IST). Executing daily strategy state reset.");
         strategyService.resetDaily();
         if (kiteAuthService != null) {

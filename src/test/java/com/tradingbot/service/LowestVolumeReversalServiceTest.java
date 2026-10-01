@@ -49,6 +49,54 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Double entry race is prevented and does not overwrite position")
+    void testDoubleEntryRacePrevented() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "RELIANCE",
+                        Instant.now(),
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2510),
+                        BigDecimal.valueOf(2495),
+                        BigDecimal.valueOf(2505),
+                        1000),
+                BigDecimal.valueOf(2510.05),
+                BigDecimal.valueOf(2494.95),
+                BigDecimal.valueOf(2540.25));
+
+        service.getActiveSetups().put("RELIANCE", setup);
+
+        LowestVolumePaperPosition pos1 = service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2510.05));
+        assertThat(pos1).isNotNull();
+        assertThat(service.getOpenPositions()).containsKey("RELIANCE");
+        assertThat(setup.getTradeAttempts()).isEqualTo(1);
+
+        // Second call while in position
+        LowestVolumePaperPosition pos2 = service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2511.00));
+        assertThat(pos2).isSameAs(pos1);
+        assertThat(setup.getTradeAttempts()).isEqualTo(1); // Not incremented again
+    }
+
+    @Test
+    @DisplayName("resetDaily exits open positions before clearing daily state")
+    void testResetDailyExitsOpenPositions() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("TCS", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m("TCS", Instant.now(), BigDecimal.valueOf(3500), BigDecimal.valueOf(3510), BigDecimal.valueOf(3490), BigDecimal.valueOf(3505), 500),
+                BigDecimal.valueOf(3510.05),
+                BigDecimal.valueOf(3489.95),
+                BigDecimal.valueOf(3550.25));
+        service.getActiveSetups().put("TCS", setup);
+        service.executePositionEntry("TCS", setup, BigDecimal.valueOf(3510.05));
+        assertThat(service.getOpenPositions()).containsKey("TCS");
+
+        service.resetDaily();
+        assertThat(service.getOpenPositions()).isEmpty();
+        assertThat(service.getActiveSetups()).isEmpty();
+    }
+
+    @Test
     @DisplayName("resolveAtmStrike never returns strike 0 even for small spot prices")
     void testResolveAtmStrikeGuardsAgainstZero() {
         BigDecimal strike = service.resolveAtmStrike(BigDecimal.valueOf(3.0), BigDecimal.valueOf(10.0));
@@ -1433,8 +1481,8 @@ class LowestVolumeReversalServiceTest {
     @Test
     @DisplayName("resetDaily resets tradeCounter back to 1 for clean trade ID generation")
     void testDailyResetClearsTradeCounter() {
-        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
-        setup.setTriggerCandle(
+        LowestVolumeSetup setup1 = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup1.setTriggerCandle(
                 Candle.of5m(
                         "SUNPHARMA",
                         Instant.now(),
@@ -1446,22 +1494,49 @@ class LowestVolumeReversalServiceTest {
                 BigDecimal.valueOf(1875.05),
                 BigDecimal.valueOf(1868.95),
                 BigDecimal.valueOf(1899.45));
-        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+
+        LowestVolumeSetup setup2 = new LowestVolumeSetup("TATASTEEL", LowestVolumeDirection.LONG);
+        setup2.setTriggerCandle(
+                Candle.of5m(
+                        "TATASTEEL",
+                        Instant.now(),
+                        BigDecimal.valueOf(150),
+                        BigDecimal.valueOf(155),
+                        BigDecimal.valueOf(149),
+                        BigDecimal.valueOf(154),
+                        5000),
+                BigDecimal.valueOf(155.05),
+                BigDecimal.valueOf(148.95),
+                BigDecimal.valueOf(167.25));
 
         LowestVolumePaperPosition pos1 =
-                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1875.05));
+                service.executePositionEntry("SUNPHARMA", setup1, BigDecimal.valueOf(1875.05));
         assertThat(pos1.getTradeId()).isEqualTo("LVR-1");
 
         LowestVolumePaperPosition pos2 =
-                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1875.05));
+                service.executePositionEntry("TATASTEEL", setup2, BigDecimal.valueOf(155.05));
         assertThat(pos2.getTradeId()).isEqualTo("LVR-2");
 
         // Execute daily reset
         service.resetDaily();
 
         // Next trade should restart at LVR-1
+        LowestVolumeSetup setup3 = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup3.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1874),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1868.95),
+                BigDecimal.valueOf(1899.45));
+
         LowestVolumePaperPosition pos3 =
-                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1875.05));
+                service.executePositionEntry("SUNPHARMA", setup3, BigDecimal.valueOf(1875.05));
         assertThat(pos3.getTradeId()).isEqualTo("LVR-1");
     }
 
