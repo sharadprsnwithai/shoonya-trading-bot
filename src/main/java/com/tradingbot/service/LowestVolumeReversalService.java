@@ -1375,16 +1375,19 @@ public class LowestVolumeReversalService {
                                         "[LVR] 1:2 Target Full Exit (100% booked) for {}: Closed at Spot={}, Realized PnL={}",
                                         symbol, spotPrice, pos.getTotalRealizedPnl());
 
+                                String brokerSymbol = resolveBrokerTradingSymbol(pos);
+                                int closedQty = pos.getTotalQuantity();
+
                                 publishSignal(
                                         symbol,
-                                        pos.getContractSymbol(),
+                                        brokerSymbol,
                                         pos.getDirection() == LowestVolumeDirection.LONG
                                                 ? com.tradingbot.strategy.SignalAction.EXIT_LONG
                                                 : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
                                         partialExitPrice,
                                         pos.getCurrentStockSl(),
                                         pos.getTarget1StockPrice(),
-                                        pos.getRemainingQuantity(),
+                                        closedQty,
                                         "TARGET_1_2_FULL_EXIT",
                                         Map.of("instrumentType", pos.getInstrumentType().name()));
 
@@ -1417,9 +1420,15 @@ public class LowestVolumeReversalService {
                                     "[LVR] 1:2 Target Hit for {}: Booked 50% at ExitPrice={}, Cost SL Armed at Spot {}",
                                     symbol, partialExitPrice, pos.getCurrentStockSl());
 
+                            String brokerSymbol = resolveBrokerTradingSymbol(pos);
+                            int partialBookQty =
+                                    (pos.getLots() > 0 && pos.getLotSize() > 0)
+                                            ? ((pos.getLots() + 1) / 2) * pos.getLotSize()
+                                            : pos.getTotalQuantity() / 2;
+
                             publishSignal(
                                     symbol,
-                                    pos.getContractSymbol(),
+                                    brokerSymbol,
                                     pos.getDirection() == LowestVolumeDirection.LONG
                                             ? com.tradingbot.strategy.SignalAction.PARTIAL_EXIT_LONG
                                             : com.tradingbot.strategy.SignalAction
@@ -1427,7 +1436,7 @@ public class LowestVolumeReversalService {
                                     partialExitPrice,
                                     pos.getCurrentStockSl(),
                                     pos.getTarget1StockPrice(),
-                                    pos.getTotalQuantity() / 2,
+                                    partialBookQty,
                                     "1:2 RR Target 50% Booked",
                                     Map.of(
                                             "instrumentType",

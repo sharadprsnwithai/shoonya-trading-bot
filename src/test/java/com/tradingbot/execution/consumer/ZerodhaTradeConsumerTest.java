@@ -59,4 +59,44 @@ class ZerodhaTradeConsumerTest {
                                                 && req.quantity() == 350));
         consumer.stop();
     }
+
+    @Test
+    void testZerodhaOptionBuyingEntryShortExecutesBuyWithoutSpotTrigger() throws InterruptedException {
+        BrokerOrderGateway mockGateway = mock(BrokerOrderGateway.class);
+        when(mockGateway.placeOrder(any(OrderRequest.class)))
+                .thenAnswer(inv -> OrderResponse.success("KITE_124", inv.getArgument(0), "Order placed"));
+
+        ZerodhaTradeConsumer consumer =
+                new ZerodhaTradeConsumer(
+                        "zerodha-live", ExecutionMode.LIVE, 1.0, true, 30, mockGateway);
+
+        Sinks.Many<TradeSignal> sink = Sinks.many().multicast().directBestEffort();
+        consumer.start(sink.asFlux());
+
+        TradeSignal signal =
+                TradeSignal.of(
+                        "LVR_OPTIONS",
+                        "INFY",
+                        "INFY26OCT1450PE",
+                        SignalAction.ENTRY_SHORT,
+                        BigDecimal.valueOf(35),
+                        BigDecimal.valueOf(1480), // Spot SL, should NOT be passed as trigger price on derivative order
+                        BigDecimal.valueOf(1420),
+                        400,
+                        "LVR Option Entry Triggered",
+                        java.util.Map.of("instrumentType", "OPTION"));
+
+        sink.tryEmitNext(signal);
+        Thread.sleep(150);
+
+        verify(mockGateway, times(1))
+                .placeOrder(
+                        argThat(
+                                (OrderRequest req) ->
+                                        req.tradingSymbol().equals("INFY26OCT1450PE")
+                                                && req.transactionType() == TransactionType.BUY
+                                                && req.triggerPrice() == null
+                                                && req.quantity() == 400));
+        consumer.stop();
+    }
 }

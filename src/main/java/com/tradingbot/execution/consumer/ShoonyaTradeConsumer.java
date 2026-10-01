@@ -34,13 +34,7 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
 
     @Override
     protected void handleLiveExecution(TradeSignal signal, int quantity) {
-        TransactionType txnType =
-                (signal.action() == SignalAction.ENTRY_LONG
-                                || signal.action() == SignalAction.BUY
-                                || signal.action() == SignalAction.EXIT_SHORT
-                                || signal.action() == SignalAction.PARTIAL_EXIT_SHORT)
-                        ? TransactionType.BUY
-                        : TransactionType.SELL;
+        TransactionType txnType = resolveTransactionType(signal);
 
         OrderRequest request =
                 new OrderRequest(
@@ -60,6 +54,38 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
                 getConsumerId(),
                 signal.tradingSymbol(),
                 resp);
+    }
+
+    private boolean isOptionSignal(TradeSignal signal) {
+        if (signal.metadata() != null) {
+            String instType = String.valueOf(signal.metadata().get("instrumentType"));
+            if ("OPTION".equalsIgnoreCase(instType) || "OPTIONS".equalsIgnoreCase(instType)) {
+                return true;
+            }
+        }
+        String sym = signal.tradingSymbol();
+        return sym != null && (sym.endsWith("CE") || sym.endsWith("PE") || sym.contains(" CE") || sym.contains(" PE"));
+    }
+
+    private TransactionType resolveTransactionType(TradeSignal signal) {
+        if (isOptionSignal(signal)) {
+            // Option Buying: Entries are BUY (both CE and PE), Exits are SELL (close long option position)
+            if (signal.action() == SignalAction.ENTRY_LONG
+                    || signal.action() == SignalAction.ENTRY_SHORT
+                    || signal.action() == SignalAction.BUY) {
+                return TransactionType.BUY;
+            } else {
+                return TransactionType.SELL;
+            }
+        }
+
+        // Futures / Equity: Directional long/short
+        return (signal.action() == SignalAction.ENTRY_LONG
+                        || signal.action() == SignalAction.BUY
+                        || signal.action() == SignalAction.EXIT_SHORT
+                        || signal.action() == SignalAction.PARTIAL_EXIT_SHORT)
+                ? TransactionType.BUY
+                : TransactionType.SELL;
     }
 
     @Override
