@@ -148,6 +148,8 @@ public class LowestVolumeReversalService {
     private final List<StockQuoteSnapshot> currentTopLoserSnapshots =
             new java.util.concurrent.CopyOnWriteArrayList<>();
 
+    private final Map<String, Instant> sectorRejectionAlertCooldown = new ConcurrentHashMap<>();
+
     private volatile LowestVolumeSectorState sectorState = LowestVolumeSectorState.empty();
     private volatile boolean niftyBullish = true;
     private volatile boolean universeScanCompletedToday = false;
@@ -747,7 +749,7 @@ public class LowestVolumeReversalService {
 
         // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff, if strategy enabled, and if
         // circuit breaker not tripped)
-        if (enabled && nowTime.isBefore(TIME_ENTRY_CUTOFF) && !isDailyCircuitBreakerTripped()) {
+        if (enabled && nowTime.isBefore(TIME_ENTRY_CUTOFF) && !isDailyCircuitBreakerTripped(liveQuoteCache)) {
             for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
                 String symbol = entry.getKey();
                 LowestVolumeSetup setup = entry.getValue();
@@ -969,6 +971,11 @@ public class LowestVolumeReversalService {
                             }
                             return;
                         }
+                    } else {
+                        log.warn(
+                                "[LVR] VWAP confirmation enabled but no valid VWAP available for {}. Skipping entry (fail-closed).",
+                                symbol);
+                        return;
                     }
                 }
 
@@ -996,6 +1003,10 @@ public class LowestVolumeReversalService {
     public synchronized LowestVolumePaperPosition executePositionEntry(
             String symbol, LowestVolumeSetup setup, BigDecimal spotPrice) {
         if (setup == null || symbol == null) return null;
+        if (isDailyCircuitBreakerTripped()) {
+            log.warn("[LVR] Daily max loss circuit breaker is active. Skipping new entry for {}.", symbol);
+            return null;
+        }
         if (openPositions.containsKey(symbol)) {
             log.warn("[LVR] Position for {} already open. Skipping duplicate entry.", symbol);
             return openPositions.get(symbol);
@@ -1146,10 +1157,15 @@ public class LowestVolumeReversalService {
                     StockFnoRegistry.formatTradingSymbol(symbol, null, atmStrike, optType, false);
 
             double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
-            double fallbackPrem = Math.max(0.50, spotPrice.doubleValue() * 0.018);
-            BigDecimal entryPremium =
-                    BigDecimal.valueOf(optLtp > 0 ? optLtp : fallbackPrem)
-                            .setScale(2, RoundingMode.HALF_UP);
+            if (optLtp <= 0.0) {
+                log.warn(
+                        "[LVR] Option LTP unavailable for {} {} ATM {}. Skipping entry this tick to avoid fabricated premium.",
+                        symbol,
+                        optType,
+                        atmStrike);
+                return null;
+            }
+            BigDecimal entryPremium = BigDecimal.valueOf(optLtp).setScale(2, RoundingMode.HALF_UP);
 
             position =
                     new LowestVolumePaperPosition(
@@ -2096,11 +2112,14 @@ public class LowestVolumeReversalService {
             if (marketDataService != null) {
                 LocalDate expiry =
                         StockFnoRegistry.calculateTargetExpiry(
-                                symbol, LocalDate.now(IST), false, 1);
+                                symbol, LocalDate.now(clock), false, 1);
                 String tsym =
                         StockFnoRegistry.formatTradingSymbol(
                                 symbol, expiry, strike, optionType, false);
                 String tok = marketDataService.resolveToken(tsym);
+                if (tok == null || tok.isBlank()) {
+                    tok = marketDataService.resolveToken(symbol);
+                }
                 if (tok != null && !tok.isBlank()) {
                     JsonNode q = marketDataService.fetchQuote("NFO", tok);
                     if (q != null && q.has("lp")) {
@@ -2326,23 +2345,28 @@ public class LowestVolumeReversalService {
                 aligned);
 
         if (!aligned) {
-            if (telegramAlerts && telegramService != null) {
-                telegramService.sendTextMessage(
-                        String.format(
-                                "⚠️ *LVR Entry Blocked (Sector Momentum Flipped)*\n"
-                                        + "• Symbol: *%s* (Setup: *%s*)\n"
-                                        + "• Parent Sector: *%s*\n"
-                                        + "• Current Sector %% Change: `%+.2f%%` (Advances: %d, Declines: %d)\n"
-                                        + "• Reason: *Sector turned %s*. Entry skipped to prevent fighting sector drag.",
-                                symbol,
-                                direction,
-                                sectorName,
-                                avgSectorPct,
-                                advances,
-                                declines,
-                                direction == LowestVolumeDirection.LONG
-                                        ? "BEARISH / RED"
-                                        : "BULLISH / GREEN"));
+            Instant lastAlert = sectorRejectionAlertCooldown.get(symbol);
+            if (lastAlert == null || Instant.now(clock).isAfter(lastAlert.plusSeconds(300))) {
+                sectorRejectionAlertCooldown.put(symbol, Instant.now(clock));
+                if (telegramAlerts && telegramService != null) {
+                    telegramService.sendTextMessage(
+                            String.format(
+                                    Locale.US,
+                                    "⚠️ *LVR Entry Blocked (Sector Momentum Flipped)*\n"
+                                            + "• Symbol: *%s* (Setup: *%s*)\n"
+                                            + "• Parent Sector: *%s*\n"
+                                            + "• Current Sector %% Change: `%+.2f%%` (Advances: %d, Declines: %d)\n"
+                                            + "• Reason: *Sector turned %s*. Entry skipped to prevent fighting sector drag.",
+                                    symbol,
+                                    direction,
+                                    sectorName,
+                                    avgSectorPct,
+                                    advances,
+                                    declines,
+                                    direction == LowestVolumeDirection.LONG
+                                            ? "BEARISH / RED"
+                                            : "BULLISH / GREEN"));
+                }
             }
         }
 
@@ -2408,23 +2432,85 @@ public class LowestVolumeReversalService {
                 .sum();
     }
 
+    public double calculateOpenPositionsUnrealizedPnl() {
+        return calculateOpenPositionsUnrealizedPnl(null);
+    }
+
+    public double calculateOpenPositionsUnrealizedPnl(Map<String, JsonNode> quoteCache) {
+        if (openPositions.isEmpty()) return 0.0;
+        double totalUnrealized = 0.0;
+        for (LowestVolumePaperPosition pos : openPositions.values()) {
+            if (pos == null || pos.isClosed()) continue;
+            try {
+                JsonNode qNode =
+                        (quoteCache != null && quoteCache.containsKey(pos.getSymbol()))
+                                ? quoteCache.get(pos.getSymbol())
+                                : (quoteCache != null
+                                        ? quoteCache.computeIfAbsent(
+                                                pos.getSymbol(), this::fetchLiveQuoteNode)
+                                        : fetchLiveQuoteNode(pos.getSymbol()));
+                double spotLtp =
+                        (qNode != null && qNode.has("lp")) ? qNode.get("lp").asDouble(0.0) : 0.0;
+                if (spotLtp <= 0) continue;
+                BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
+                BigDecimal exitVal =
+                        (pos.getInstrumentType() == LvrInstrumentType.FUTURES)
+                                ? spotPrice
+                                : estimateOptionPremium(pos, spotPrice);
+
+                BigDecimal priceDiff;
+                if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+                    priceDiff =
+                            (pos.getDirection() == LowestVolumeDirection.LONG)
+                                    ? exitVal.subtract(pos.getStockEntryPrice())
+                                    : pos.getStockEntryPrice().subtract(exitVal);
+                } else {
+                    priceDiff = exitVal.subtract(pos.getEntryPremium());
+                }
+                int remQty =
+                        pos.getRemainingQuantity() > 0
+                                ? pos.getRemainingQuantity()
+                                : pos.getTotalQuantity();
+                double pnl = priceDiff.multiply(BigDecimal.valueOf(remQty)).doubleValue();
+                totalUnrealized += pnl;
+            } catch (Exception e) {
+                log.debug(
+                        "[LVR] Error calculating unrealized PnL for {}: {}",
+                        pos.getSymbol(),
+                        e.getMessage());
+            }
+        }
+        return totalUnrealized;
+    }
+
+    public double calculateTodayTotalRiskPnl() {
+        return calculateTodayRealizedPnl() + calculateOpenPositionsUnrealizedPnl();
+    }
+
     public boolean isDailyCircuitBreakerTripped() {
+        return isDailyCircuitBreakerTripped(null);
+    }
+
+    public boolean isDailyCircuitBreakerTripped(Map<String, JsonNode> quoteCache) {
         if (maxDailyLoss <= 0.0) return false;
-        double todayPnl = calculateTodayRealizedPnl();
-        if (todayPnl <= -maxDailyLoss) {
+        double totalRiskPnl =
+                calculateTodayRealizedPnl() + calculateOpenPositionsUnrealizedPnl(quoteCache);
+        if (totalRiskPnl <= -maxDailyLoss) {
             if (dailyCircuitBreakerAlertSent.compareAndSet(false, true)) {
                 log.warn(
-                        "[LVR] Daily Max Loss Circuit Breaker tripped: Today's realized loss (₹{}) reached limit (₹{}). Halting new entries.",
-                        String.format(java.util.Locale.US, "%.2f", Math.abs(todayPnl)),
-                        String.format(java.util.Locale.US, "%.2f", maxDailyLoss));
+                        "[LVR] Daily Max Loss Circuit Breaker tripped: Total risk loss (₹{}) reached limit (₹{}). Halting new entries.",
+                        String.format(Locale.US, "%.2f", Math.abs(totalRiskPnl)),
+                        String.format(Locale.US, "%.2f", maxDailyLoss));
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
+                                    Locale.US,
                                     "🚨 *LVR Daily Circuit Breaker Activated*\n"
-                                            + "• Today's Realized P&L: `₹%.2f`\n"
+                                            + "• Today's Total Loss (Realized + Floating): `₹%.2f`\n"
                                             + "• Daily Loss Limit: `₹%.2f`\n"
                                             + "• Action: *Halting all new trade entries for the day* to protect capital.",
-                                    todayPnl, maxDailyLoss));
+                                    totalRiskPnl,
+                                    maxDailyLoss));
                 }
             }
             return true;

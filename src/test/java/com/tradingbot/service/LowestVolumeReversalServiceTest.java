@@ -113,6 +113,73 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Circuit breaker trips on aggregate floating loss plus realized loss")
+    void testCircuitBreakerTripsOnUnrealizedLoss() {
+        service.setMaxDailyLoss(5000.0);
+
+        // Open a LONG futures position that has moved down
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "RELIANCE",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.FULL_TARGET_1_2,
+                        "RELIANCE FUT",
+                        250,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(2500.0),
+                        BigDecimal.valueOf(2480.0),
+                        BigDecimal.valueOf(2540.0),
+                        500,
+                        BigDecimal.valueOf(10000.0),
+                        Instant.now());
+        service.getOpenPositions().put("RELIANCE", pos);
+
+        // Spot LTP is 2485 (15 pts loss on 500 qty = -7500 loss, which exceeds -5000 maxDailyLoss)
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new com.fasterxml.jackson.databind.ObjectMapper()
+                                .createObjectNode()
+                                .put("lp", "2485.0"));
+
+        assertThat(service.isDailyCircuitBreakerTripped()).isTrue();
+
+        // Attempting to enter another position should be blocked
+        LowestVolumeSetup setup2 = new LowestVolumeSetup("TCS", LowestVolumeDirection.LONG);
+        setup2.setTriggerCandle(
+                Candle.of5m("TCS", Instant.now(), BigDecimal.valueOf(3500), BigDecimal.valueOf(3510), BigDecimal.valueOf(3490), BigDecimal.valueOf(3505), 500),
+                BigDecimal.valueOf(3510.05),
+                BigDecimal.valueOf(3489.95),
+                BigDecimal.valueOf(3550.25));
+        setup2.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed");
+
+        LowestVolumePaperPosition pos2 = service.executePositionEntry("TCS", setup2, BigDecimal.valueOf(3510.05));
+        assertThat(pos2).isNull();
+    }
+
+    @Test
+    @DisplayName("Option entry is skipped when live option quote is unavailable (no fabricated premium)")
+    void testOptionEntryAbortedWhenOptionLtpUnavailable() {
+        service.setInstrumentType(LvrInstrumentType.OPTIONS);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("INFY", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m("INFY", Instant.now(), BigDecimal.valueOf(1500), BigDecimal.valueOf(1510), BigDecimal.valueOf(1495), BigDecimal.valueOf(1505), 500),
+                BigDecimal.valueOf(1510.05),
+                BigDecimal.valueOf(1494.95),
+                BigDecimal.valueOf(1540.25));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed");
+
+        // mock fetchQuote returning 0 / null for option token
+        when(marketDataService.fetchQuote(any(), any())).thenReturn(null);
+
+        LowestVolumePaperPosition pos = service.executePositionEntry("INFY", setup, BigDecimal.valueOf(1510.05));
+        assertThat(pos).isNull();
+        assertThat(service.getOpenPositions()).doesNotContainKey("INFY");
+    }
+
+    @Test
     @DisplayName("resolveAtmStrike never returns strike 0 even for small spot prices")
     void testResolveAtmStrikeGuardsAgainstZero() {
         BigDecimal strike = service.resolveAtmStrike(BigDecimal.valueOf(3.0), BigDecimal.valueOf(10.0));
@@ -529,6 +596,13 @@ class LowestVolumeReversalServiceTest {
     @DisplayName("Execute Option Entry creates LowestVolumePaperPosition with ATM strike")
     void testExecuteOptionEntry() {
         service.setInstrumentType(LvrInstrumentType.OPTIONS);
+        when(marketDataService.resolveToken(any())).thenReturn("12345");
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new com.fasterxml.jackson.databind.ObjectMapper()
+                                .createObjectNode()
+                                .put("lp", "5.50"));
+
         LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
         setup.setTriggerCandle(
                 Candle.of5m(
