@@ -251,6 +251,21 @@ public class LowestVolumePaperPosition {
 
     // --- Getters ---
 
+    public int getEffectiveBookedQuantityOnTarget() {
+        int effectiveLots =
+                (this.lots > 0)
+                        ? this.lots
+                        : Math.max(1, this.totalQuantity / Math.max(1, this.lotSize));
+        int bookedLots = (effectiveLots + 1) / 2;
+        int effectiveLotSize =
+                (this.lotSize > 0) ? this.lotSize : (this.totalQuantity / effectiveLots);
+        return Math.min(this.totalQuantity, bookedLots * effectiveLotSize);
+    }
+
+    public int getBookedQuantity() {
+        return this.totalQuantity - this.remainingQuantity;
+    }
+
     public String getTradeId() {
         return tradeId;
     }

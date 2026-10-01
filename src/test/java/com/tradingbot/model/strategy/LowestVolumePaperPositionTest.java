@@ -169,4 +169,38 @@ class LowestVolumePaperPositionTest {
         assertThat(pos.getTotalRealizedPnl()).isEqualByComparingTo("1000.00");
         assertThat(pos.getExitReason()).isEqualTo("TARGET_1_2_FULL_EXIT");
     }
+
+    @Test
+    @DisplayName("Position exposes booked quantity and handles partial exit math")
+    void testBookedQuantityAccessors() {
+        int lotSize = 100;
+        int lots = 3;
+        int totalQty = 300;
+        BigDecimal entryPrice = BigDecimal.valueOf(50.0);
+
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-5",
+                        "SBIN",
+                        LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500,
+                        "CE",
+                        "SBIN ATM 800CE",
+                        BigDecimal.valueOf(800),
+                        lotSize,
+                        lots,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(15.0),
+                        entryPrice,
+                        BigDecimal.valueOf(48.0),
+                        BigDecimal.valueOf(54.0),
+                        totalQty,
+                        BigDecimal.valueOf(300.0),
+                        Instant.now());
+
+        // 3 lots: (3+1)/2 = 2 lots booked (200 qty)
+        assertThat(pos.getEffectiveBookedQuantityOnTarget()).isEqualTo(200);
+        pos.executePartialBook(BigDecimal.valueOf(25.0), Instant.now());
+        assertThat(pos.getBookedQuantity()).isEqualTo(200);
+        assertThat(pos.getRemainingQuantity()).isEqualTo(100);
+    }
 }

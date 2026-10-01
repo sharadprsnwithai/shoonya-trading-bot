@@ -49,6 +49,26 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("resolveAtmStrike never returns strike 0 even for small spot prices")
+    void testResolveAtmStrikeGuardsAgainstZero() {
+        BigDecimal strike = service.resolveAtmStrike(BigDecimal.valueOf(3.0), BigDecimal.valueOf(10.0));
+        assertThat(strike).isEqualByComparingTo(BigDecimal.valueOf(10.0));
+
+        strike = service.resolveAtmStrike(BigDecimal.valueOf(1234.50), BigDecimal.valueOf(50.0));
+        assertThat(strike).isEqualByComparingTo(BigDecimal.valueOf(1250.0));
+    }
+
+    @Test
+    @DisplayName("roundToTick rounds prices strictly to 0.05 increments")
+    void testRoundToTickIncrements() {
+        BigDecimal tick = LowestVolumeReversalService.roundToTick(BigDecimal.valueOf(1234.239040));
+        assertThat(tick).isEqualByComparingTo(BigDecimal.valueOf(1234.25));
+
+        tick = LowestVolumeReversalService.roundToTick(BigDecimal.valueOf(1234.21));
+        assertThat(tick).isEqualByComparingTo(BigDecimal.valueOf(1234.20));
+    }
+
+    @Test
     @DisplayName("Should skip runCycle before 09:15 IST")
     void testPreMarketOpenSkip() {
         Clock preOpenClock = Clock.fixed(Instant.parse("2026-09-18T03:30:00Z"), IST); // 09:00 IST

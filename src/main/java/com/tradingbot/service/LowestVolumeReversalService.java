@@ -548,22 +548,23 @@ public class LowestVolumeReversalService {
                     BigDecimal target1Prc;
 
                     if (direction == LowestVolumeDirection.SHORT) {
-                        triggerPrc = c.low().subtract(BigDecimal.valueOf(0.05));
-                        slPrc = c.high().add(BigDecimal.valueOf(0.05));
+                        triggerPrc = roundToTick(c.low().subtract(BigDecimal.valueOf(0.05)));
+                        BigDecimal rawSl = c.high().add(BigDecimal.valueOf(0.05));
                         BigDecimal minRisk =
                                 triggerPrc.multiply(BigDecimal.valueOf(minStopLossPct / 100.0));
-                        BigDecimal risk = slPrc.subtract(triggerPrc).max(minRisk);
-                        slPrc = triggerPrc.add(risk);
+                        BigDecimal risk = rawSl.subtract(triggerPrc).max(minRisk);
+                        slPrc = roundToTick(triggerPrc.add(risk));
                         target1Prc =
-                                triggerPrc.subtract(risk.multiply(BigDecimal.valueOf(2))); // 1:2 RR
+                                roundToTick(triggerPrc.subtract(risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
                     } else {
-                        triggerPrc = c.high().add(BigDecimal.valueOf(0.05));
-                        slPrc = c.low().subtract(BigDecimal.valueOf(0.05));
+                        triggerPrc = roundToTick(c.high().add(BigDecimal.valueOf(0.05)));
+                        BigDecimal rawSl = c.low().subtract(BigDecimal.valueOf(0.05));
                         BigDecimal minRisk =
                                 triggerPrc.multiply(BigDecimal.valueOf(minStopLossPct / 100.0));
-                        BigDecimal risk = triggerPrc.subtract(slPrc).max(minRisk);
-                        slPrc = triggerPrc.subtract(risk);
-                        target1Prc = triggerPrc.add(risk.multiply(BigDecimal.valueOf(2))); // 1:2 RR
+                        BigDecimal risk = triggerPrc.subtract(rawSl).max(minRisk);
+                        slPrc = roundToTick(triggerPrc.subtract(risk));
+                        target1Prc =
+                                roundToTick(triggerPrc.add(risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
                     }
 
                     setup.setTriggerCandle(c, triggerPrc, slPrc, target1Prc);
@@ -939,11 +940,25 @@ public class LowestVolumeReversalService {
         BigDecimal unitRisk = spotPrice.subtract(setup.getStopLossPrice()).abs();
         int lots = defaultLots > 0 ? defaultLots : 2;
         if (dynamicPositionSizing && unitRisk.compareTo(BigDecimal.ZERO) > 0 && lotSize > 0) {
-            int sizedLots = (int) (getRiskPerTradeAmount() / (unitRisk.doubleValue() * lotSize));
+            double riskDenominator;
+            if (instrumentType == LvrInstrumentType.OPTIONS) {
+                riskDenominator = Math.max(0.50, unitRisk.doubleValue() * 0.50) * lotSize;
+            } else {
+                riskDenominator = unitRisk.doubleValue() * lotSize;
+            }
+            int sizedLots = (int) (getRiskPerTradeAmount() / riskDenominator);
             lots = Math.max(1, Math.min(sizedLots, defaultLots > 0 ? defaultLots * 2 : 10));
         }
         int totalQty = lots * lotSize;
-        BigDecimal plannedRisk = unitRisk.multiply(BigDecimal.valueOf(totalQty));
+        BigDecimal plannedRisk;
+        if (instrumentType == LvrInstrumentType.OPTIONS) {
+            plannedRisk =
+                    unitRisk.multiply(BigDecimal.valueOf(0.50))
+                            .multiply(BigDecimal.valueOf(totalQty))
+                            .setScale(2, RoundingMode.HALF_UP);
+        } else {
+            plannedRisk = unitRisk.multiply(BigDecimal.valueOf(totalQty)).setScale(2, RoundingMode.HALF_UP);
+        }
         BigDecimal plannedReward =
                 unitRisk.multiply(BigDecimal.valueOf(2)).multiply(BigDecimal.valueOf(totalQty));
 
@@ -951,9 +966,9 @@ public class LowestVolumeReversalService {
         // distortion
         BigDecimal actualTarget1;
         if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-            actualTarget1 = spotPrice.subtract(unitRisk.multiply(BigDecimal.valueOf(2)));
+            actualTarget1 = roundToTick(spotPrice.subtract(unitRisk.multiply(BigDecimal.valueOf(2))));
         } else {
-            actualTarget1 = spotPrice.add(unitRisk.multiply(BigDecimal.valueOf(2)));
+            actualTarget1 = roundToTick(spotPrice.add(unitRisk.multiply(BigDecimal.valueOf(2))));
         }
 
         String tradeId = "LVR-" + tradeCounter.getAndIncrement();
@@ -1784,9 +1799,19 @@ public class LowestVolumeReversalService {
         this.minActiveCandidates = minActiveCandidates;
     }
 
-    private BigDecimal resolveAtmStrike(BigDecimal spotPrice, BigDecimal strikeStep) {
-        if (strikeStep.compareTo(BigDecimal.ZERO) <= 0) return spotPrice;
+    public static BigDecimal roundToTick(BigDecimal price) {
+        if (price == null) return null;
+        double rounded = Math.round(price.doubleValue() * 20.0) / 20.0;
+        return BigDecimal.valueOf(rounded).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal resolveAtmStrike(BigDecimal spotPrice, BigDecimal strikeStep) {
+        if (strikeStep == null || strikeStep.compareTo(BigDecimal.ZERO) <= 0) return spotPrice;
+        if (spotPrice == null || spotPrice.compareTo(BigDecimal.ZERO) <= 0) return strikeStep;
         BigDecimal divided = spotPrice.divide(strikeStep, 0, RoundingMode.HALF_UP);
+        if (divided.compareTo(BigDecimal.ZERO) == 0) {
+            return strikeStep;
+        }
         return divided.multiply(strikeStep);
     }
 
