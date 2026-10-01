@@ -5,6 +5,7 @@ import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.scheduler.LowestVolumeReversalScheduler;
 import com.tradingbot.service.LowestVolumeReversalService;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,17 +83,24 @@ public class LowestVolumeStrategyController {
     /** Scans the universe and immediately sends the identified F&O stocks report to Telegram. */
     @PostMapping("/notify")
     public ResponseEntity<Map<String, Object>> scanAndNotifyTelegram() {
-        strategyService.sendScanTelegramReport();
+        boolean dispatched = strategyService.isTelegramAlerts();
+        if (dispatched) {
+            strategyService.sendScanTelegramReport();
+        }
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "SUCCESS");
-        response.put("message", "Identified F&O stocks report dispatched to Telegram.");
+        response.put(
+                "message",
+                dispatched
+                        ? "Identified F&O stocks report dispatched to Telegram."
+                        : "Telegram notifications currently disabled in strategy configuration.");
         response.put("niftyBullish", strategyService.isNiftyBullish());
         response.put("topGainersCount", strategyService.getCurrentTopGainerSnapshots().size());
         response.put("topGainers", strategyService.getCurrentTopGainerSnapshots());
         response.put("topLosersCount", strategyService.getCurrentTopLoserSnapshots().size());
         response.put("topLosers", strategyService.getCurrentTopLoserSnapshots());
-        response.put("telegramNotificationDispatched", true);
+        response.put("telegramNotificationDispatched", dispatched);
 
         return ResponseEntity.ok(response);
     }
@@ -129,12 +137,19 @@ public class LowestVolumeStrategyController {
         status.put("openPositionsCount", strategyService.getOpenPositions().size());
         status.put("closedTradesCount", strategyService.getTradeHistory().size());
 
-        // Calculate Total Realized P&L
-        BigDecimal totalPnl =
+        // Calculate Total Realized & Unrealized P&L
+        double unrealizedPnl = strategyService.calculateOpenPositionsUnrealizedPnl();
+        BigDecimal totalRealized =
                 strategyService.getTradeHistory().stream()
                         .map(LowestVolumePaperPosition::getTotalRealizedPnl)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
-        status.put("totalRealizedPnl", totalPnl);
+        BigDecimal totalUnrealized =
+                BigDecimal.valueOf(unrealizedPnl).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalNetPnl = totalRealized.add(totalUnrealized);
+
+        status.put("totalRealizedPnl", totalRealized);
+        status.put("totalUnrealizedPnl", totalUnrealized);
+        status.put("totalNetPnl", totalNetPnl);
 
         return ResponseEntity.ok(status);
     }

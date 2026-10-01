@@ -105,4 +105,16 @@ class LowestVolumeStrategyControllerTest {
 
         verify(strategyService).resetDaily();
     }
+
+    @Test
+    @DisplayName("POST /api/strategy/lowest-volume/notify respects telegram alerts disabled flag")
+    void testNotifyDisabled() throws Exception {
+        when(strategyService.isTelegramAlerts()).thenReturn(false);
+        when(strategyService.getCurrentTopGainerSnapshots()).thenReturn(Collections.emptyList());
+        when(strategyService.getCurrentTopLoserSnapshots()).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(post("/api/strategy/lowest-volume/notify"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.telegramNotificationDispatched").value(false));
+    }
 }

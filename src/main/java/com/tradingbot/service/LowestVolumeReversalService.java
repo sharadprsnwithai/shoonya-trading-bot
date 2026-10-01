@@ -705,12 +705,13 @@ public class LowestVolumeReversalService {
                                 setup.getStopLossPrice(),
                                 setup.getTarget1Price());
 
-                        if (telegramAlerts && telegramService != null && newlyArmedOrTrailed) {
+                        if (telegramAlerts && telegramArmedAlerts && telegramService != null && newlyArmedOrTrailed) {
                             telegramService.sendTextMessage(
                                     String.format(
+                                            Locale.US,
                                             "⚡ *LVR Setup Armed / Order Trailed*\n"
                                                     + "• Symbol: *%s* (%s)\n"
-                                                    + "• 5m Pullback Vol: `%d` (< day lowest `%d`)\n"
+                                                    + "• 5m Pullback Vol: `%d` (<= day lowest `%d`)\n"
                                                     + "• Trigger Price: `₹%.2f`\n"
                                                     + "• Spot SL: `₹%.2f` | 1:2 Target: `₹%.2f`",
                                             symbol,
@@ -1358,6 +1359,7 @@ public class LowestVolumeReversalService {
                         if (pos.isPartialBooked()) {
                             telegramService.sendTextMessage(
                                     String.format(
+                                            Locale.US,
                                             "🛡️ *LVR Cost Trailing Stop Hit (Remaining 50%%"
                                                     + " Closed)*\n"
                                                     + "• Symbol: *%s* (%s)\n"
@@ -1366,7 +1368,7 @@ public class LowestVolumeReversalService {
                                                     + "• Total Realized P&L: `₹%.2f`",
                                             symbol,
                                             pos.getDirection(),
-                                            spotPrice.doubleValue(),
+                                            exitPrc.doubleValue(),
                                             pos.getCurrentStockSl().doubleValue(),
                                             pos.getRunnerPnl().doubleValue(),
                                             pos.getTotalRealizedPnl().doubleValue()));
@@ -1377,6 +1379,7 @@ public class LowestVolumeReversalService {
                                             : pos.getStockEntryPrice().subtract(spotPrice);
                             telegramService.sendTextMessage(
                                     String.format(
+                                            Locale.US,
                                             "🛑 *LVR Stop Loss Hit (100%% Exit)*\n"
                                                     + "• Symbol: *%s* (%s)\n"
                                                     + "• Exit Price: `₹%.2f` (SL was `₹%.2f`)\n"
@@ -1390,11 +1393,12 @@ public class LowestVolumeReversalService {
                                             pts.doubleValue(),
                                             pos.getTotalRealizedPnl().doubleValue(),
                                             setup != null
-                                                    ? Math.max(0, 2 - setup.getTradeAttempts())
+                                                    ? Math.max(0, maxAttemptsPerSymbol - setup.getTradeAttempts())
                                                     : 0));
                         } else {
                             telegramService.sendTextMessage(
                                     String.format(
+                                            Locale.US,
                                             "🛑 *LVR Stop Loss Hit*\n"
                                                     + "• Symbol: *%s*\n"
                                                     + "• Exit Premium: `₹%.2f` (P&L: `₹%.2f`)\n"
@@ -2526,8 +2530,20 @@ public class LowestVolumeReversalService {
         this.dynamicPositionSizing = dynamicPositionSizing;
     }
 
+    public boolean isTelegramAlerts() {
+        return telegramAlerts;
+    }
+
     public void setTelegramAlerts(boolean telegramAlerts) {
         this.telegramAlerts = telegramAlerts;
+    }
+
+    public boolean isTelegramArmedAlerts() {
+        return telegramArmedAlerts;
+    }
+
+    public void setTelegramArmedAlerts(boolean telegramArmedAlerts) {
+        this.telegramArmedAlerts = telegramArmedAlerts;
     }
 
     /**
@@ -2772,10 +2788,80 @@ public class LowestVolumeReversalService {
                     }
 
                     attempt++;
-                    boolean prevAlerts = telegramAlerts;
-                    telegramAlerts = false;
-                    openPos = executePositionEntry(symbol, activeSetup, triggerPrice);
-                    telegramAlerts = prevAlerts;
+                    StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(symbol);
+                    int lotSize = (fno != null) ? fno.lotSize() : 100;
+                    BigDecimal strikeStep =
+                            (fno != null) ? fno.strikeStep() : BigDecimal.valueOf(10);
+                    BigDecimal unitRisk =
+                            triggerPrice.subtract(activeSetup.getStopLossPrice()).abs();
+                    int lots = defaultLots > 0 ? defaultLots : 2;
+                    int totalQty = lots * lotSize;
+                    BigDecimal plannedRisk =
+                            (instrumentType == LvrInstrumentType.OPTIONS)
+                                    ? unitRisk
+                                            .multiply(BigDecimal.valueOf(0.50))
+                                            .multiply(BigDecimal.valueOf(totalQty))
+                                            .setScale(2, RoundingMode.HALF_UP)
+                                    : unitRisk
+                                            .multiply(BigDecimal.valueOf(totalQty))
+                                            .setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal actualTarget1;
+                    if (direction == LowestVolumeDirection.SHORT) {
+                        actualTarget1 =
+                                roundToTick(
+                                        triggerPrice.subtract(
+                                                unitRisk.multiply(BigDecimal.valueOf(2))));
+                    } else {
+                        actualTarget1 =
+                                roundToTick(
+                                        triggerPrice.add(
+                                                unitRisk.multiply(BigDecimal.valueOf(2))));
+                    }
+                    String tradeId = "REPLAY-" + attempt;
+                    if (instrumentType == LvrInstrumentType.FUTURES) {
+                        openPos =
+                                new LowestVolumePaperPosition(
+                                        tradeId,
+                                        symbol,
+                                        LvrInstrumentType.FUTURES,
+                                        exitMode,
+                                        symbol + " FUT",
+                                        lotSize,
+                                        lots,
+                                        direction,
+                                        triggerPrice,
+                                        activeSetup.getStopLossPrice(),
+                                        actualTarget1,
+                                        totalQty,
+                                        plannedRisk,
+                                        currentCandle.timestamp());
+                    } else {
+                        BigDecimal atmStrike = resolveAtmStrike(triggerPrice, strikeStep);
+                        String optType = (direction == LowestVolumeDirection.SHORT) ? "PE" : "CE";
+                        String optSymbol = symbol + " ATM " + atmStrike + optType;
+                        BigDecimal entryPrem =
+                                BigDecimal.valueOf(
+                                                Math.max(0.50, triggerPrice.doubleValue() * 0.018))
+                                        .setScale(2, RoundingMode.HALF_UP);
+                        openPos =
+                                new LowestVolumePaperPosition(
+                                        tradeId,
+                                        symbol,
+                                        exitMode,
+                                        optType,
+                                        optSymbol,
+                                        atmStrike,
+                                        lotSize,
+                                        lots,
+                                        direction,
+                                        entryPrem,
+                                        triggerPrice,
+                                        activeSetup.getStopLossPrice(),
+                                        actualTarget1,
+                                        totalQty,
+                                        plannedRisk,
+                                        currentCandle.timestamp());
+                    }
                 }
             }
         }
@@ -2832,7 +2918,7 @@ public class LowestVolumeReversalService {
     }
 
     public void sendScanTelegramReport() {
-        if (telegramService != null) {
+        if (telegramAlerts && telegramService != null) {
             telegramService.sendTextMessage("📊 *LVR Sector & Watchlist Report*\n" + sectorState);
         }
     }
