@@ -21,6 +21,7 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     private final String consumerId;
     private final String brokerName;
     private final ExecutionMode executionMode;
+    private final java.util.Map<String, ExecutionMode> strategyModes;
     private final double quantityMultiplier;
     private final boolean enabled;
     private final long maxSignalAgeSeconds;
@@ -33,9 +34,29 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             double quantityMultiplier,
             boolean enabled,
             long maxSignalAgeSeconds) {
+        this(
+                consumerId,
+                brokerName,
+                executionMode,
+                java.util.Collections.emptyMap(),
+                quantityMultiplier,
+                enabled,
+                maxSignalAgeSeconds);
+    }
+
+    protected AbstractTradeExecutionConsumer(
+            String consumerId,
+            String brokerName,
+            ExecutionMode executionMode,
+            java.util.Map<String, ExecutionMode> strategyModes,
+            double quantityMultiplier,
+            boolean enabled,
+            long maxSignalAgeSeconds) {
         this.consumerId = consumerId;
         this.brokerName = brokerName;
         this.executionMode = executionMode != null ? executionMode : ExecutionMode.PAPER;
+        this.strategyModes =
+                strategyModes != null ? strategyModes : java.util.Collections.emptyMap();
         this.quantityMultiplier = quantityMultiplier > 0 ? quantityMultiplier : 1.0;
         this.enabled = enabled;
         this.maxSignalAgeSeconds = maxSignalAgeSeconds > 0 ? maxSignalAgeSeconds : 30L;
@@ -102,6 +123,15 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         return true;
     }
 
+    public ExecutionMode resolveMode(TradeSignal signal) {
+        if (signal != null
+                && signal.strategyId() != null
+                && strategyModes.containsKey(signal.strategyId())) {
+            return strategyModes.get(signal.strategyId());
+        }
+        return this.executionMode;
+    }
+
     private void processSignalSafe(TradeSignal signal) {
         try {
             int targetQty = calculateQuantity(signal.baseQuantity());
@@ -113,7 +143,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                 return;
             }
 
-            if (executionMode == ExecutionMode.PAPER) {
+            ExecutionMode effectiveMode = resolveMode(signal);
+            if (effectiveMode == ExecutionMode.PAPER) {
                 handlePaperExecution(signal, targetQty);
             } else {
                 handleLiveExecution(signal, targetQty);

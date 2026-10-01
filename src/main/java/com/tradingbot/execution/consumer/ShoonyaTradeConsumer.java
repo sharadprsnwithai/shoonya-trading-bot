@@ -22,10 +22,29 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
             boolean enabled,
             long maxSignalAgeSeconds,
             BrokerOrderGateway orderGateway) {
+        this(
+                consumerId,
+                executionMode,
+                java.util.Collections.emptyMap(),
+                quantityMultiplier,
+                enabled,
+                maxSignalAgeSeconds,
+                orderGateway);
+    }
+
+    public ShoonyaTradeConsumer(
+            String consumerId,
+            ExecutionMode executionMode,
+            java.util.Map<String, ExecutionMode> strategyModes,
+            double quantityMultiplier,
+            boolean enabled,
+            long maxSignalAgeSeconds,
+            BrokerOrderGateway orderGateway) {
         super(
                 consumerId,
                 "SHOONYA",
                 executionMode,
+                strategyModes,
                 quantityMultiplier,
                 enabled,
                 maxSignalAgeSeconds);

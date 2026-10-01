@@ -105,4 +105,76 @@ class ZerodhaTradeConsumerTest {
                                                 && req.quantity() == 400));
         consumer.stop();
     }
+
+    @Test
+    void testStrategySpecificRoutingBetweenLiveAndPaper() throws InterruptedException {
+        BrokerOrderGateway mockGateway = mock(BrokerOrderGateway.class);
+        when(mockGateway.placeOrder(any(OrderRequest.class)))
+                .thenAnswer(
+                        inv ->
+                                OrderResponse.success(
+                                        "KITE_125", inv.getArgument(0), "Order placed"));
+
+        // Configure default mode as PAPER, but override BOLLINGER_HA_1M to LIVE and LVR to PAPER
+        java.util.Map<String, ExecutionMode> strategyModes =
+                java.util.Map.of(
+                        "BOLLINGER_HA_1M", ExecutionMode.LIVE,
+                        "LOWEST_VOLUME_REVERSAL", ExecutionMode.PAPER);
+
+        ZerodhaTradeConsumer consumer =
+                new ZerodhaTradeConsumer(
+                        "zerodha-custom",
+                        ExecutionMode.PAPER,
+                        strategyModes,
+                        1.0,
+                        true,
+                        30,
+                        mockGateway);
+
+        Sinks.Many<TradeSignal> sink = Sinks.many().multicast().directBestEffort();
+        consumer.start(sink.asFlux());
+
+        // 1. Emit LVR signal -> Must execute in PAPER (no call to mockGateway)
+        TradeSignal lvrSignal =
+                TradeSignal.of(
+                        "LOWEST_VOLUME_REVERSAL",
+                        "RELIANCE",
+                        "RELIANCE26OCTFUT",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(2500),
+                        null,
+                        null,
+                        250,
+                        "LVR Signal",
+                        null);
+        sink.tryEmitNext(lvrSignal);
+        Thread.sleep(150);
+
+        verify(mockGateway, never()).placeOrder(any());
+
+        // 2. Emit BOLLINGER_HA_1M signal -> Must execute in LIVE (places order with mockGateway)
+        TradeSignal bHaSignal =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT25950CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(150),
+                        BigDecimal.valueOf(135),
+                        BigDecimal.valueOf(180),
+                        130,
+                        "Bollinger HA Entry",
+                        java.util.Map.of("instrumentType", "OPTION"));
+        sink.tryEmitNext(bHaSignal);
+        Thread.sleep(150);
+
+        verify(mockGateway, times(1))
+                .placeOrder(
+                        argThat(
+                                (OrderRequest req) ->
+                                        req.tradingSymbol().equals("NIFTY26OCT25950CE")
+                                                && req.transactionType() == TransactionType.BUY
+                                                && req.quantity() == 130));
+        consumer.stop();
+    }
 }

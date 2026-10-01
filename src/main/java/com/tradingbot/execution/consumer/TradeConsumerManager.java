@@ -64,6 +64,7 @@ public class TradeConsumerManager {
                     new ShoonyaTradeConsumer(
                             cfg.getId(),
                             cfg.getMode(),
+                            cfg.getStrategyModes(),
                             cfg.getQuantityMultiplier(),
                             cfg.isEnabled(),
                             cfg.getMaxSignalAgeSeconds(),
@@ -72,6 +73,7 @@ public class TradeConsumerManager {
                     new ZerodhaTradeConsumer(
                             cfg.getId(),
                             cfg.getMode(),
+                            cfg.getStrategyModes(),
                             cfg.getQuantityMultiplier(),
                             cfg.isEnabled(),
                             cfg.getMaxSignalAgeSeconds(),

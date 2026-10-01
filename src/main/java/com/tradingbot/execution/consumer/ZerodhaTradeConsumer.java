@@ -21,10 +21,29 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
             boolean enabled,
             long maxSignalAgeSeconds,
             BrokerOrderGateway orderGateway) {
+        this(
+                consumerId,
+                executionMode,
+                java.util.Collections.emptyMap(),
+                quantityMultiplier,
+                enabled,
+                maxSignalAgeSeconds,
+                orderGateway);
+    }
+
+    public ZerodhaTradeConsumer(
+            String consumerId,
+            ExecutionMode executionMode,
+            java.util.Map<String, ExecutionMode> strategyModes,
+            double quantityMultiplier,
+            boolean enabled,
+            long maxSignalAgeSeconds,
+            BrokerOrderGateway orderGateway) {
         super(
                 consumerId,
                 "ZERODHA",
                 executionMode,
+                strategyModes,
                 quantityMultiplier,
                 enabled,
                 maxSignalAgeSeconds);
