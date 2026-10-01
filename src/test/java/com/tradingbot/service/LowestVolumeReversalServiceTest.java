@@ -2158,4 +2158,76 @@ class LowestVolumeReversalServiceTest {
         boolean aligned = service.checkLiveSectorAlignment("COFORGE", LowestVolumeDirection.LONG);
         assertThat(aligned).isTrue();
     }
+
+    @Test
+    @DisplayName("Opening 15m Range Filter rejects LONG entry when spot is inside 15m range")
+    void testOpening15mRangeFilterRejectsInsidePrice() {
+        service.setMaxSlippagePct(2.0);
+        service.setSectorMomentumFilterEnabled(false);
+        ObjectMapper mapper = new ObjectMapper();
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setFirst15MinHigh(BigDecimal.valueOf(2520.00));
+        setup.setFirst15MinLow(BigDecimal.valueOf(2490.00));
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "RELIANCE",
+                        Instant.now(),
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2510),
+                        BigDecimal.valueOf(2495),
+                        BigDecimal.valueOf(2505),
+                        1000),
+                BigDecimal.valueOf(2510.05),
+                BigDecimal.valueOf(2494.95),
+                BigDecimal.valueOf(2540.25));
+        setup.setLatestVwap(2500.00); // VWAP confirmed (> 2500)
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed");
+        service.getActiveSetups().put("RELIANCE", setup);
+
+        // Spot breached trigger at 2515.00, but is INSIDE 15m range [2490 - 2520] (<= 2520.00 high)
+        service.checkSpotTriggerBreach(
+                "RELIANCE",
+                setup,
+                mapper.createObjectNode().put("lp", "2515.00").put("ap", "2500.00"));
+
+        assertThat(service.getOpenPositions()).doesNotContainKey("RELIANCE");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getExhaustedSymbols()).contains("RELIANCE");
+    }
+
+    @Test
+    @DisplayName("Opening 15m Range Filter allows LONG entry when spot breaks out of 15m range")
+    void testOpening15mRangeFilterAllowsBreakoutPrice() {
+        service.setMaxSlippagePct(2.0);
+        service.setSectorMomentumFilterEnabled(false);
+        ObjectMapper mapper = new ObjectMapper();
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setFirst15MinHigh(BigDecimal.valueOf(2520.00));
+        setup.setFirst15MinLow(BigDecimal.valueOf(2490.00));
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "RELIANCE",
+                        Instant.now(),
+                        BigDecimal.valueOf(2510),
+                        BigDecimal.valueOf(2522),
+                        BigDecimal.valueOf(2505),
+                        BigDecimal.valueOf(2520),
+                        1000),
+                BigDecimal.valueOf(2521.05),
+                BigDecimal.valueOf(2494.95),
+                BigDecimal.valueOf(2560.25));
+        setup.setLatestVwap(2500.00); // VWAP confirmed
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed");
+        service.getActiveSetups().put("RELIANCE", setup);
+
+        // Spot is 2522.00 (> 2520.00 15m High and >= 2521.05 trigger) -> Confirmed breakout!
+        service.checkSpotTriggerBreach(
+                "RELIANCE",
+                setup,
+                mapper.createObjectNode().put("lp", "2522.00").put("ap", "2500.00"));
+
+        assertThat(service.getOpenPositions()).containsKey("RELIANCE");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
+    }
 }

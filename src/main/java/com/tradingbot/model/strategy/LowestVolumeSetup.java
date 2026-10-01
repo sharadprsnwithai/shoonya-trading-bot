@@ -29,6 +29,8 @@ public class LowestVolumeSetup {
     private int tradeAttempts = 0;
     private String rejectionReason;
     private Double latestVwap;
+    private BigDecimal first15MinHigh;
+    private BigDecimal first15MinLow;
     private Instant updatedAt;
     private Instant setupCreatedTime;
     private Instant lastExitTime;
@@ -57,6 +59,8 @@ public class LowestVolumeSetup {
         this.armedCandlesElapsed = 0;
         this.rejectionReason = null;
         this.latestVwap = null;
+        this.first15MinHigh = null;
+        this.first15MinLow = null;
         this.updatedAt = Instant.now();
     }
 
@@ -175,6 +179,22 @@ public class LowestVolumeSetup {
 
     public boolean isExhaustedOrRejected() {
         return state == LowestVolumeSetupState.REJECTED_EXHAUSTED;
+    }
+
+    public BigDecimal getFirst15MinHigh() {
+        return first15MinHigh;
+    }
+
+    public void setFirst15MinHigh(BigDecimal first15MinHigh) {
+        this.first15MinHigh = first15MinHigh;
+    }
+
+    public BigDecimal getFirst15MinLow() {
+        return first15MinLow;
+    }
+
+    public void setFirst15MinLow(BigDecimal first15MinLow) {
+        this.first15MinLow = first15MinLow;
     }
 
     public boolean isInPosition() {

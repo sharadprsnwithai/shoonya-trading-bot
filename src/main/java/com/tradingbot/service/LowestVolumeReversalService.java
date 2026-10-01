@@ -113,6 +113,9 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.vwap-confirmation-enabled:true}")
     private volatile boolean vwapConfirmationEnabled = true;
 
+    @Value("${trading-bot.strategy.lowest-volume.opening-15m-range-filter-enabled:true}")
+    private volatile boolean opening15mRangeFilterEnabled = true;
+
     @Value("${trading-bot.strategy.lowest-volume.sector-momentum-filter-enabled:true}")
     private volatile boolean sectorMomentumFilterEnabled = true;
 
@@ -517,16 +520,28 @@ public class LowestVolumeReversalService {
 
         // Baseline volume from first 3 candles (ignoring zero-volume ticks)
         long baselineLowest = Long.MAX_VALUE;
+        BigDecimal first15mHigh = null;
+        BigDecimal first15mLow = null;
+
         for (int k = 0; k < 3 && k < candles.size(); k++) {
-            long v = candles.get(k).volume();
+            Candle c = candles.get(k);
+            long v = c.volume();
             if (v > 0) {
                 baselineLowest = Math.min(baselineLowest, v);
+            }
+            if (first15mHigh == null || c.high().compareTo(first15mHigh) > 0) {
+                first15mHigh = c.high();
+            }
+            if (first15mLow == null || c.low().compareTo(first15mLow) < 0) {
+                first15mLow = c.low();
             }
         }
         if (baselineLowest == Long.MAX_VALUE && !candles.isEmpty()) {
             baselineLowest = candles.get(0).volume();
         }
         setup.setDayLowestVolume(baselineLowest);
+        setup.setFirst15MinHigh(first15mHigh);
+        setup.setFirst15MinLow(first15mLow);
 
         // If fewer than 4 candles, scanning only (no setup on C1-C3)
         if (candles.size() < 4) {
@@ -702,6 +717,8 @@ public class LowestVolumeReversalService {
                         }
                     }
                     setup.setDayLowestVolume(evaluated.getDayLowestVolume());
+                    setup.setFirst15MinHigh(evaluated.getFirst15MinHigh());
+                    setup.setFirst15MinLow(evaluated.getFirst15MinLow());
 
                     if (setup.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
                         log.info(
@@ -786,12 +803,11 @@ public class LowestVolumeReversalService {
     /**
      * Checks if the live spot price has breached the armed trigger level to enter ATM option trade.
      */
-    private void checkSpotTriggerBreach(String symbol, LowestVolumeSetup setup) {
+    void checkSpotTriggerBreach(String symbol, LowestVolumeSetup setup) {
         checkSpotTriggerBreach(symbol, setup, null);
     }
 
-    private void checkSpotTriggerBreach(
-            String symbol, LowestVolumeSetup setup, JsonNode quoteNode) {
+    void checkSpotTriggerBreach(String symbol, LowestVolumeSetup setup, JsonNode quoteNode) {
         try {
             if (quoteNode == null) {
                 quoteNode = fetchLiveQuoteNode(symbol);
@@ -988,6 +1004,57 @@ public class LowestVolumeReversalService {
                         log.warn(
                                 "[LVR] VWAP confirmation enabled but no valid VWAP available for {}. Skipping entry (fail-closed).",
                                 symbol);
+                        return;
+                    }
+                }
+
+                // Opening 15-Minute Range Breakout Filter Check
+                if (opening15mRangeFilterEnabled
+                        && setup.getFirst15MinHigh() != null
+                        && setup.getFirst15MinLow() != null) {
+                    boolean rangeConfirmed = false;
+                    if (setup.getDirection() == LowestVolumeDirection.LONG) {
+                        rangeConfirmed = (spotPrice.compareTo(setup.getFirst15MinHigh()) > 0);
+                    } else if (setup.getDirection() == LowestVolumeDirection.SHORT) {
+                        rangeConfirmed = (spotPrice.compareTo(setup.getFirst15MinLow()) < 0);
+                    }
+
+                    if (!rangeConfirmed) {
+                        log.info(
+                                "[LVR] Setup for {} REJECTED/EXHAUSTED: Spot {} inside opening 15-min range [{} - {}] for {} direction. Stock discarded for the day.",
+                                symbol,
+                                spotPrice,
+                                setup.getFirst15MinLow(),
+                                setup.getFirst15MinHigh(),
+                                setup.getDirection());
+                        setup.transitionTo(
+                                LowestVolumeSetupState.REJECTED_EXHAUSTED,
+                                String.format(
+                                        "Spot %.2f inside 15-min range [%.2f - %.2f] for %s",
+                                        spotPrice.doubleValue(),
+                                        setup.getFirst15MinLow().doubleValue(),
+                                        setup.getFirst15MinHigh().doubleValue(),
+                                        setup.getDirection()));
+                        exhaustedSymbols.add(symbol);
+
+                        if (telegramAlerts && telegramService != null) {
+                            telegramService.sendTextMessage(
+                                    String.format(
+                                            "⚠️ *LVR Trade Discarded (15-Min Range Filter)*\n"
+                                                    + "• Symbol: *%s* (%s)\n"
+                                                    + "• Spot Price: `₹%.2f`\n"
+                                                    + "• 15-Min Range: `₹%.2f - ₹%.2f`\n"
+                                                    + "• Reason: *Spot trapped inside 15-min range* (Must break %s)\n"
+                                                    + "• Status: *Stock discarded for the day*",
+                                            symbol,
+                                            setup.getDirection(),
+                                            spotPrice.doubleValue(),
+                                            setup.getFirst15MinLow().doubleValue(),
+                                            setup.getFirst15MinHigh().doubleValue(),
+                                            (setup.getDirection() == LowestVolumeDirection.LONG
+                                                    ? "Above High ₹" + setup.getFirst15MinHigh()
+                                                    : "Below Low ₹" + setup.getFirst15MinLow())));
+                        }
                         return;
                     }
                 }
@@ -2414,6 +2481,14 @@ public class LowestVolumeReversalService {
 
     public void setVwapConfirmationEnabled(boolean vwapConfirmationEnabled) {
         this.vwapConfirmationEnabled = vwapConfirmationEnabled;
+    }
+
+    public boolean isOpening15mRangeFilterEnabled() {
+        return opening15mRangeFilterEnabled;
+    }
+
+    public void setOpening15mRangeFilterEnabled(boolean opening15mRangeFilterEnabled) {
+        this.opening15mRangeFilterEnabled = opening15mRangeFilterEnabled;
     }
 
     public int getDefaultLots() {
