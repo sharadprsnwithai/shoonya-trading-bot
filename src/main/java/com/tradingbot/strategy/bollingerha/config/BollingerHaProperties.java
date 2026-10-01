@@ -25,6 +25,24 @@ public class BollingerHaProperties {
     private String entryWindowStart = "09:15";
     private String entryWindowCutoff = "10:30";
     private String autoSquareOffTime = "15:15";
+    private boolean trendFilterEnabled = true;
+    private int trendEmaPeriod = 20;
+
+    public boolean isTrendFilterEnabled() {
+        return trendFilterEnabled;
+    }
+
+    public void setTrendFilterEnabled(boolean trendFilterEnabled) {
+        this.trendFilterEnabled = trendFilterEnabled;
+    }
+
+    public int getTrendEmaPeriod() {
+        return trendEmaPeriod;
+    }
+
+    public void setTrendEmaPeriod(int trendEmaPeriod) {
+        this.trendEmaPeriod = trendEmaPeriod;
+    }
 
     public boolean isEnabled() {
         return enabled;

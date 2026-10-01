@@ -48,6 +48,8 @@ public class BollingerHaIntradayEngine {
 
     private final Map<String, BollingerHaSetupState> setupStates = new ConcurrentHashMap<>();
     private final Map<String, List<Candle>> candleHistory = new ConcurrentHashMap<>();
+    private final List<BigDecimal> spotPriceHistory = Collections.synchronizedList(new ArrayList<>());
+    private BigDecimal latestSpotPrice;
     private BollingerHaDailyState dailyState;
     private BollingerHaPosition activePosition;
 
@@ -272,6 +274,30 @@ public class BollingerHaIntradayEngine {
 
         // 2. Check for Green HA Reversal Candle following Lower Band touch
         if (setupState.isTouchedLowerBand() && latestHa.isGreen()) {
+            // Trend Filter Alignment (Nifty 20-EMA)
+            if (properties.isTrendFilterEnabled()
+                    && latestSpotPrice != null
+                    && spotPriceHistory.size() >= properties.getTrendEmaPeriod()) {
+                BigDecimal spotEma =
+                        BollingerHaCalculator.calculateEma(
+                                spotPriceHistory, properties.getTrendEmaPeriod());
+                if (spotEma != null) {
+                    if ("CE".equalsIgnoreCase(optionType) && latestSpotPrice.compareTo(spotEma) < 0) {
+                        log.info(
+                                "[BOLLINGER-HA] ⛔ CE Signal Filtered Out: Nifty Spot ({}) < 20 EMA ({})",
+                                latestSpotPrice,
+                                spotEma);
+                        return;
+                    } else if ("PE".equalsIgnoreCase(optionType) && latestSpotPrice.compareTo(spotEma) > 0) {
+                        log.info(
+                                "[BOLLINGER-HA] ⛔ PE Signal Filtered Out: Nifty Spot ({}) > 20 EMA ({})",
+                                latestSpotPrice,
+                                spotEma);
+                        return;
+                    }
+                }
+            }
+
             BigDecimal entryPrice =
                     latestHa.high()
                             .add(properties.getBufferPoints())
@@ -351,6 +377,13 @@ public class BollingerHaIntradayEngine {
                             meta);
 
             eventBus.publish(signal);
+        }
+    }
+
+    public synchronized void updateSpotPrice(BigDecimal spotPrice) {
+        if (spotPrice != null) {
+            this.latestSpotPrice = spotPrice;
+            this.spotPriceHistory.add(spotPrice);
         }
     }
 

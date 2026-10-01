@@ -111,4 +111,39 @@ public final class BollingerHaCalculator {
 
         return new BollingerBandResult(upper, middle, lower, bandwidth);
     }
+
+    /**
+     * Calculates the Exponential Moving Average (EMA) for a series of values.
+     *
+     * @param values Chronological list of price values
+     * @param period EMA period (e.g. 20)
+     * @return Current EMA value or null if values.size() < period
+     */
+    public static BigDecimal calculateEma(List<BigDecimal> values, int period) {
+        if (values == null || values.size() < period || period <= 0) {
+            return null;
+        }
+
+        // Initial SMA of first 'period' values
+        BigDecimal sum = BigDecimal.ZERO;
+        for (int i = 0; i < period; i++) {
+            sum = sum.add(values.get(i));
+        }
+        BigDecimal currentEma = sum.divide(BigDecimal.valueOf(period), 4, RoundingMode.HALF_UP);
+
+        // Alpha multiplier = 2 / (period + 1)
+        double alphaDouble = 2.0 / (period + 1.0);
+        BigDecimal alpha = BigDecimal.valueOf(alphaDouble);
+        BigDecimal oneMinusAlpha = BigDecimal.ONE.subtract(alpha);
+
+        for (int i = period; i < values.size(); i++) {
+            currentEma =
+                    values.get(i)
+                            .multiply(alpha)
+                            .add(currentEma.multiply(oneMinusAlpha))
+                            .setScale(4, RoundingMode.HALF_UP);
+        }
+
+        return currentEma.setScale(2, RoundingMode.HALF_UP);
+    }
 }
