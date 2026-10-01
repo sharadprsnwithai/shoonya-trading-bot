@@ -45,19 +45,29 @@ public class BollingerHaIntradayEngine {
 
     private final BollingerHaProperties properties;
     private final ReactiveSignalEventBus eventBus;
+    private final com.tradingbot.telegram.TelegramService telegramService;
 
     private final Map<String, BollingerHaSetupState> setupStates = new ConcurrentHashMap<>();
     private final Map<String, List<Candle>> candleHistory = new ConcurrentHashMap<>();
-    private final List<BigDecimal> spotPriceHistory = Collections.synchronizedList(new ArrayList<>());
+    private final List<BigDecimal> spotPriceHistory =
+            Collections.synchronizedList(new ArrayList<>());
     private BigDecimal latestSpotPrice;
     private BollingerHaDailyState dailyState;
     private BollingerHaPosition activePosition;
 
-    @Autowired
     public BollingerHaIntradayEngine(
             BollingerHaProperties properties, ReactiveSignalEventBus eventBus) {
+        this(properties, eventBus, null);
+    }
+
+    @Autowired
+    public BollingerHaIntradayEngine(
+            BollingerHaProperties properties,
+            ReactiveSignalEventBus eventBus,
+            @Autowired(required = false) com.tradingbot.telegram.TelegramService telegramService) {
         this.properties = properties;
         this.eventBus = eventBus;
+        this.telegramService = telegramService;
         this.dailyState = new BollingerHaDailyState(LocalDate.now(IST));
     }
 
@@ -167,6 +177,27 @@ public class BollingerHaIntradayEngine {
                             "Trailed Stop Loss to Cost (Entry Price)",
                             meta);
             eventBus.publish(updateSl);
+
+            if (telegramService != null) {
+                BigDecimal partialPnl =
+                        activePosition
+                                .getTargetPrice()
+                                .subtract(activePosition.getEntryPrice())
+                                .multiply(BigDecimal.valueOf(exitQty));
+                String msg =
+                        String.format(
+                                "🎯 *[BOLLINGER HA] TARGET 1 (1:2 R:R) HIT!*\n"
+                                        + "📈 *Symbol:* `%s`\n"
+                                        + "💰 *Booked 50%% Qty:* %d @ ₹%s (+₹%s PnL)\n"
+                                        + "🛡️ *Cost SL Activated:* ₹%s on remaining %d Qty (Risk-Free Runner)",
+                                activePosition.getSymbol(),
+                                exitQty,
+                                activePosition.getTargetPrice(),
+                                partialPnl,
+                                activePosition.getEntryPrice(),
+                                remainingQty);
+                telegramService.sendAlert(msg);
+            }
         }
 
         // Check Stop Loss hit
@@ -210,6 +241,24 @@ public class BollingerHaIntradayEngine {
                             .subtract(activePosition.getEntryPrice())
                             .multiply(BigDecimal.valueOf(exitQty));
             dailyState.addRealizedPnl(tradePnl);
+
+            if (telegramService != null) {
+                String msg =
+                        String.format(
+                                "🔴 *[BOLLINGER HA] POSITION CLOSED*\n"
+                                        + "📉 *Symbol:* `%s`\n"
+                                        + "🛑 *Exit Price:* ₹%s\n"
+                                        + "💰 *Trade PnL:* ₹%s\n"
+                                        + "📝 *Reason:* %s\n"
+                                        + "🔢 *Trades Today:* %d / %d",
+                                activePosition.getSymbol(),
+                                activePosition.getExitPrice(),
+                                tradePnl,
+                                activePosition.getExitReason(),
+                                dailyState.getTradeCount(),
+                                properties.getMaxDailyTrades());
+                telegramService.sendAlert(msg);
+            }
 
             String stoppedOptionType = activePosition.getOptionType();
             activePosition = null;
@@ -282,13 +331,15 @@ public class BollingerHaIntradayEngine {
                         BollingerHaCalculator.calculateEma(
                                 spotPriceHistory, properties.getTrendEmaPeriod());
                 if (spotEma != null) {
-                    if ("CE".equalsIgnoreCase(optionType) && latestSpotPrice.compareTo(spotEma) < 0) {
+                    if ("CE".equalsIgnoreCase(optionType)
+                            && latestSpotPrice.compareTo(spotEma) < 0) {
                         log.info(
                                 "[BOLLINGER-HA] ⛔ CE Signal Filtered Out: Nifty Spot ({}) < 20 EMA ({})",
                                 latestSpotPrice,
                                 spotEma);
                         return;
-                    } else if ("PE".equalsIgnoreCase(optionType) && latestSpotPrice.compareTo(spotEma) > 0) {
+                    } else if ("PE".equalsIgnoreCase(optionType)
+                            && latestSpotPrice.compareTo(spotEma) > 0) {
                         log.info(
                                 "[BOLLINGER-HA] ⛔ PE Signal Filtered Out: Nifty Spot ({}) > 20 EMA ({})",
                                 latestSpotPrice,
@@ -377,6 +428,27 @@ public class BollingerHaIntradayEngine {
                             meta);
 
             eventBus.publish(signal);
+
+            if (telegramService != null) {
+                String msg =
+                        String.format(
+                                "🚀 *[BOLLINGER HA] ENTRY SIGNAL TRIGGERED*\n"
+                                        + "🎯 *Symbol:* `%s`\n"
+                                        + "📈 *Action:* BUY (%d Qty)\n"
+                                        + "💰 *Entry Price:* ₹%s\n"
+                                        + "🛑 *Stop Loss:* ₹%s (Risk: %s pts)\n"
+                                        + "🎯 *Target 1 (1:2):* ₹%s\n"
+                                        + "📊 *Trade Number:* #%d / %d Today",
+                                setupState.getSymbol(),
+                                totalQuantity,
+                                entryPrice,
+                                stopLoss,
+                                riskPoints,
+                                targetPrice,
+                                dailyState.getTradeCount(),
+                                properties.getMaxDailyTrades());
+                telegramService.sendAlert(msg);
+            }
         }
     }
 
@@ -456,6 +528,17 @@ public class BollingerHaIntradayEngine {
                             activePosition.getExitReason(),
                             meta);
             eventBus.publish(sqOffSig);
+
+            if (telegramService != null) {
+                String msg =
+                        String.format(
+                                "⏱️ *[BOLLINGER HA] POSITION SQUARED OFF*\n"
+                                        + "📈 *Symbol:* `%s`\n"
+                                        + "📝 *Reason:* %s",
+                                activePosition.getSymbol(), activePosition.getExitReason());
+                telegramService.sendAlert(msg);
+            }
+
             activePosition = null;
         }
     }
