@@ -1,6 +1,6 @@
 # Intraday 1-Minute Bollinger Bands & Heikin-Ashi Option Buying Strategy Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement an automated intraday option buying strategy engine based on 1-minute Bollinger Bands (20, 2) and Heikin-Ashi reversals for Nifty ATM weekly options, complete with pre-market strike selection, hybrid data feeding (WebSocket + REST fallback), 1:2 R:R partial booking, trailing Cost SL, a strict 2-trade daily cap, and reactive signal bus integration.
 
@@ -43,7 +43,7 @@
 **Interfaces:**
 - Produces: `BollingerHaProperties`, `BollingerHaPosition`, `BollingerHaDailyState`, `BollingerHaSetupState`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.tradingbot.strategy.bollingerha.config;
@@ -75,21 +75,21 @@ class BollingerHaPropertiesTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.config.BollingerHaPropertiesTest`
 Expected: FAIL (class not found)
 
-- [ ] **Step 3: Implement domain models and properties**
+- [x] **Step 3: Implement domain models and properties**
 
 Implement `BollingerHaProperties` with `@ConfigurationProperties(prefix = "trading-bot.strategy.bollinger-ha")`, `BollingerHaPosition` (representing active trade state with entryPrice, stopLoss, targetPrice, totalQuantity, remainingQuantity, targetHit, costSlActive), `BollingerHaDailyState` (tradeCount, realizedPnl, isLocked), and `BollingerHaSetupState` (token, symbol, strike, optionType, touchedLowerBand, touchCandleIndex, pendingSignal).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.config.BollingerHaPropertiesTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/strategy/bollingerha/ src/test/java/com/tradingbot/strategy/bollingerha/config/
@@ -110,7 +110,7 @@ git commit -m "feat(bollinger-ha): add configuration properties and domain model
 - Consumes: `com.tradingbot.model.Candle`
 - Produces: `HeikinAshiCandle`, `BollingerBandResult`, `BollingerHaCalculator.calculateHeikinAshi(List<Candle>)`, `BollingerHaCalculator.calculateBollingerBands(List<HeikinAshiCandle>, int period, double stdDev)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.tradingbot.strategy.bollingerha.indicator;
@@ -165,21 +165,21 @@ class BollingerHaCalculatorTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.indicator.BollingerHaCalculatorTest`
 Expected: FAIL (classes not found)
 
-- [ ] **Step 3: Implement `BollingerHaCalculator`, `HeikinAshiCandle`, and `BollingerBandResult`**
+- [x] **Step 3: Implement `BollingerHaCalculator`, `HeikinAshiCandle`, and `BollingerBandResult`**
 
 Implement standard Heikin-Ashi formulas and 20-period moving average with 2.0 standard deviation using `BigDecimal` with 2 decimal places.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.indicator.BollingerHaCalculatorTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/strategy/bollingerha/indicator/ src/main/java/com/tradingbot/strategy/bollingerha/model/ src/test/java/com/tradingbot/strategy/bollingerha/indicator/
@@ -199,7 +199,7 @@ git commit -m "feat(bollinger-ha): implement heikin-ashi and bollinger bands ind
 - Consumes: `ShoonyaMarketDataService`, `ShoonyaOptionChainService`
 - Produces: `SelectedStrikes` (atmStrike, ceToken, ceSymbol, peToken, peSymbol), `BollingerHaStrikeSelector.selectWeeklyAtmStrikes(BigDecimal spotPrice)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.tradingbot.strategy.bollingerha.service;
@@ -253,21 +253,21 @@ class BollingerHaStrikeSelectorTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.service.BollingerHaStrikeSelectorTest`
 Expected: FAIL (class not found)
 
-- [ ] **Step 3: Implement `BollingerHaStrikeSelector`**
+- [x] **Step 3: Implement `BollingerHaStrikeSelector`**
 
 Calculate ATM strike via `spot.divide(new BigDecimal("50"), 0, RoundingMode.HALF_UP).multiply(new BigDecimal("50"))`, call `ShoonyaOptionChainService.getNifty50OptionChain` to obtain the weekly CE & PE contract tokens.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.service.BollingerHaStrikeSelectorTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/strategy/bollingerha/service/BollingerHaStrikeSelector.java src/main/java/com/tradingbot/strategy/bollingerha/model/SelectedStrikes.java src/test/java/com/tradingbot/strategy/bollingerha/service/
@@ -288,7 +288,7 @@ git commit -m "feat(bollinger-ha): implement pre-market atm strike selector"
 - Consumes: Real-time price ticks / REST `Candle` objects
 - Produces: `CompletedCandleEvent` (token, symbol, candle, completedMinuteTimestamp), `Consumer<CompletedCandleEvent>` callbacks
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.tradingbot.strategy.bollingerha.feeder;
@@ -331,21 +331,21 @@ class BollingerHaCandleBuilderTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.feeder.BollingerHaCandleBuilderTest`
 Expected: FAIL (class not found)
 
-- [ ] **Step 3: Implement `BollingerHaCandleBuilder` and `ShoonyaHybridDataFeeder`**
+- [x] **Step 3: Implement `BollingerHaCandleBuilder` and `ShoonyaHybridDataFeeder`**
 
 Implement minute boundary grouping, OHLC tick accumulation, and `ShoonyaHybridDataFeeder` (with Java 21 WebSocket client to Shoonya `NorenWSTP` and REST `ShoonyaMarketDataService` polling fallback on socket error).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.feeder.BollingerHaCandleBuilderTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/strategy/bollingerha/feeder/ src/main/java/com/tradingbot/strategy/bollingerha/model/CompletedCandleEvent.java src/test/java/com/tradingbot/strategy/bollingerha/feeder/
@@ -364,7 +364,7 @@ git commit -m "feat(bollinger-ha): implement 1-minute candle aggregator and hybr
 - Consumes: `BollingerHaProperties`, `ReactiveSignalEventBus`, `CompletedCandleEvent`
 - Produces: `TradeSignal` emissions (`BUY`/`ENTRY_LONG`, `PARTIAL_EXIT_LONG`, `UPDATE_STOP_LOSS`, `EXIT_LONG`, `SQUARE_OFF`), state getters
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.tradingbot.strategy.bollingerha.service;
@@ -457,21 +457,21 @@ class BollingerHaIntradayEngineTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.service.BollingerHaIntradayEngineTest`
 Expected: FAIL (class not found)
 
-- [ ] **Step 3: Implement `BollingerHaIntradayEngine`**
+- [x] **Step 3: Implement `BollingerHaIntradayEngine`**
 
 Implement complete signal evaluation, lower band touch detection within 3 candles, Green HA reversal validation, 20-point max SL filter, 1:2 R:R calculation, partial booking (50% exit) and Cost SL trail on target hit, SL exit and opposite-strike flip, 2-trade daily cap, and morning 10:30 AM entry cutoff.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.service.BollingerHaIntradayEngineTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/strategy/bollingerha/service/BollingerHaIntradayEngine.java src/test/java/com/tradingbot/strategy/bollingerha/service/
@@ -491,7 +491,7 @@ git commit -m "feat(bollinger-ha): implement intraday strategy engine and state 
 - Consumes: `BollingerHaIntradayEngine`, `BollingerHaStrikeSelector`, `ShoonyaHybridDataFeeder`, `TelegramService`
 - Produces: Scheduled daily routines (09:07, 09:15, 10:30, 15:15) and REST endpoints (`/api/v1/strategy/bollinger-ha/status`, `/start`, `/stop`, `/reset`, `/simulate-candle`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.tradingbot.strategy.bollingerha.controller;
@@ -527,21 +527,21 @@ class BollingerHaControllerTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.controller.BollingerHaControllerTest`
 Expected: FAIL (controller / endpoint 404)
 
-- [ ] **Step 3: Implement `BollingerHaScheduler` and `BollingerHaController`**
+- [x] **Step 3: Implement `BollingerHaScheduler` and `BollingerHaController`**
 
 Implement Spring `@Scheduled` cron jobs for pre-market strike selection (09:07 IST), stream initialization (09:15 IST), morning entry cutoff (10:30 IST), and auto square-off (15:15 IST). Expose REST management endpoints and dispatch Telegram notifications on state changes.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.controller.BollingerHaControllerTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/tradingbot/strategy/bollingerha/scheduler/ src/main/java/com/tradingbot/strategy/bollingerha/controller/ src/test/java/com/tradingbot/strategy/bollingerha/controller/
@@ -558,7 +558,7 @@ git commit -m "feat(bollinger-ha): add strategy scheduler, rest controller and t
 **Interfaces:**
 - Consumes: All components from Tasks 1–6, `ReactiveSignalEventBus`, `ShoonyaTradeConsumer`
 
-- [ ] **Step 1: Write the integration test**
+- [x] **Step 1: Write the integration test**
 
 ```java
 package com.tradingbot.strategy.bollingerha;
@@ -625,17 +625,17 @@ class BollingerHaIntegrationTest {
 }
 ```
 
-- [ ] **Step 2: Run integration test to verify it passes**
+- [x] **Step 2: Run integration test to verify it passes**
 
 Run: `./gradlew test --tests com.tradingbot.strategy.bollingerha.BollingerHaIntegrationTest`
 Expected: PASS
 
-- [ ] **Step 3: Run full spotless and build verification**
+- [x] **Step 3: Run full spotless and build verification**
 
 Run: `./gradlew spotlessApply check test`
 Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/test/java/com/tradingbot/strategy/bollingerha/BollingerHaIntegrationTest.java
