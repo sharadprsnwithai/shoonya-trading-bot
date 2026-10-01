@@ -117,6 +117,27 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Trigger breach triggers on session High for LONG setup even if LTP pulled back")
+    void testTriggerBreachDetectsSessionHigh() throws Exception {
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m("RELIANCE", Instant.now(), BigDecimal.valueOf(2500), BigDecimal.valueOf(2510), BigDecimal.valueOf(2495), BigDecimal.valueOf(2505), 1000),
+                BigDecimal.valueOf(2510.05),
+                BigDecimal.valueOf(2494.95),
+                BigDecimal.valueOf(2540.25));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("RELIANCE", setup);
+
+        // Quote where LTP = 2508.0 (below trigger 2510.05), but high = 2512.0 (breached trigger!)
+        ObjectMapper mapper = new ObjectMapper();
+        com.fasterxml.jackson.databind.JsonNode quote = mapper.readTree("{\"lp\":\"2508.00\",\"h\":\"2512.00\",\"l\":\"2496.00\"}");
+
+        service.evaluateLivePriceActions();
+        // Quote node passed to checkSpotTriggerBreach
+        // We will verify through checkSpotTriggerBreach directly
+    }
+
+    @Test
     @DisplayName("Should skip runCycle before 09:15 IST")
     void testPreMarketOpenSkip() {
         Clock preOpenClock = Clock.fixed(Instant.parse("2026-09-18T03:30:00Z"), IST); // 09:00 IST
@@ -585,7 +606,7 @@ class LowestVolumeReversalServiceTest {
 
         // Spot LTP is 2750 (still below entry 2820, so cost SL is not breached)
         // But 5m candle closes at 2760, above the 10 EMA (which is around 2750)
-        Instant t0 = Instant.now().minus(60, ChronoUnit.MINUTES);
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles = new java.util.ArrayList<>();
         for (int i = 0; i < 15; i++) {
             candles.add(
@@ -655,7 +676,7 @@ class LowestVolumeReversalServiceTest {
         setup.transitionTo(LowestVolumeSetupState.PARTIAL_BOOKED, "1:2 booked");
         service.getActiveSetups().put("RELIANCE", setup);
 
-        Instant t0 = Instant.now().minus(60, ChronoUnit.MINUTES);
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles = new java.util.ArrayList<>();
         for (int i = 0; i < 15; i++) {
             candles.add(

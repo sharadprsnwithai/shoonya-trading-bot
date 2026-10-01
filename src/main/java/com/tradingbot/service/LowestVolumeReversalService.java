@@ -544,7 +544,7 @@ public class LowestVolumeReversalService {
                 setup.incrementArmedTimeout();
                 boolean timedOut =
                         (setupTimeoutCandles > 0
-                                && setup.getArmedCandlesElapsed() > setupTimeoutCandles);
+                                && setup.getArmedCandlesElapsed() >= setupTimeoutCandles);
 
                 if (slBroken || targetPassed || timedOut) {
                     setup.resetToScanning();
@@ -552,7 +552,7 @@ public class LowestVolumeReversalService {
             }
 
             // 2. Arm or trail trigger if candle is an opposite-color candle with lower volume
-            if (isOppositeCandle && c.volume() > 0 && c.volume() < rollingLowest) {
+            if (isOppositeCandle && c.volume() > 0 && c.volume() <= rollingLowest) {
                 // Candle is allowed if its 5-minute bar close time (timestamp + 300s) is after the
                 // previous exit time
                 boolean candleAllowed =
@@ -621,23 +621,17 @@ public class LowestVolumeReversalService {
                 List<Candle> rawCandles = marketDataService.fetch5MinCandles(symbol, 5);
                 if (rawCandles == null || rawCandles.isEmpty()) continue;
 
-                LocalDate today = LocalDate.now(IST);
+                LocalDate today = LocalDate.now(clock);
+                Instant nowInst = Instant.now(clock);
                 List<Candle> candles =
                         rawCandles.stream()
-                                .filter(c -> LocalDate.ofInstant(c.timestamp(), IST).equals(today))
+                                .filter(
+                                        c ->
+                                                c.timestamp() != null
+                                                        && LocalDate.ofInstant(c.timestamp(), IST)
+                                                                .equals(today))
+                                .filter(c -> c.timestamp().plusSeconds(300).compareTo(nowInst) <= 0)
                                 .toList();
-                if (candles.isEmpty()) {
-                    LocalDate lastDate =
-                            LocalDate.ofInstant(
-                                    rawCandles.get(rawCandles.size() - 1).timestamp(), IST);
-                    candles =
-                            rawCandles.stream()
-                                    .filter(
-                                            c ->
-                                                    LocalDate.ofInstant(c.timestamp(), IST)
-                                                            .equals(lastDate))
-                                    .toList();
-                }
                 if (candles.size() < 3) continue;
 
                 LowestVolumeSetup evaluated =
@@ -649,6 +643,12 @@ public class LowestVolumeReversalService {
                     if (vwapSeries.length > 0 && !Double.isNaN(vwapSeries[vwapSeries.length - 1])) {
                         setup.setLatestVwap(vwapSeries[vwapSeries.length - 1]);
                     }
+                }
+
+                if (setup.getState() == LowestVolumeSetupState.IN_POSITION
+                        || setup.getState() == LowestVolumeSetupState.PARTIAL_BOOKED
+                        || openPositions.containsKey(symbol)) {
+                    continue;
                 }
 
                 if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
@@ -769,17 +769,33 @@ public class LowestVolumeReversalService {
             if (spotLtp <= 0) return;
 
             BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
+            double highPrc =
+                    (quoteNode != null && quoteNode.has("h"))
+                            ? quoteNode.get("h").asDouble(0.0)
+                            : 0.0;
+            double lowPrc =
+                    (quoteNode != null && quoteNode.has("l"))
+                            ? quoteNode.get("l").asDouble(0.0)
+                            : 0.0;
 
             // Invalidate setup if spot breaches the proposed stop loss before hitting the entry
             // trigger
             if (setup.getStopLossPrice() != null) {
                 boolean slBreached = false;
                 if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                    if (spotPrice.compareTo(setup.getStopLossPrice()) >= 0) {
+                    if (spotPrice.compareTo(setup.getStopLossPrice()) >= 0
+                            || (highPrc > 0.0
+                                    && BigDecimal.valueOf(highPrc)
+                                                    .compareTo(setup.getStopLossPrice())
+                                            >= 0)) {
                         slBreached = true;
                     }
                 } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                    if (spotPrice.compareTo(setup.getStopLossPrice()) <= 0) {
+                    if (spotPrice.compareTo(setup.getStopLossPrice()) <= 0
+                            || (lowPrc > 0.0
+                                    && BigDecimal.valueOf(lowPrc)
+                                                    .compareTo(setup.getStopLossPrice())
+                                            <= 0)) {
                         slBreached = true;
                     }
                 }
@@ -799,11 +815,19 @@ public class LowestVolumeReversalService {
             if (setup.getTarget1Price() != null) {
                 boolean targetPassed = false;
                 if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                    if (spotPrice.compareTo(setup.getTarget1Price()) <= 0) {
+                    if (spotPrice.compareTo(setup.getTarget1Price()) <= 0
+                            || (lowPrc > 0.0
+                                    && BigDecimal.valueOf(lowPrc)
+                                                    .compareTo(setup.getTarget1Price())
+                                            <= 0)) {
                         targetPassed = true;
                     }
                 } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                    if (spotPrice.compareTo(setup.getTarget1Price()) >= 0) {
+                    if (spotPrice.compareTo(setup.getTarget1Price()) >= 0
+                            || (highPrc > 0.0
+                                    && BigDecimal.valueOf(highPrc)
+                                                    .compareTo(setup.getTarget1Price())
+                                            >= 0)) {
                         targetPassed = true;
                     }
                 }
@@ -822,11 +846,17 @@ public class LowestVolumeReversalService {
             boolean triggered = false;
 
             if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                if (spotPrice.compareTo(setup.getTriggerPrice()) <= 0) {
+                if (spotPrice.compareTo(setup.getTriggerPrice()) <= 0
+                        || (lowPrc > 0.0
+                                && BigDecimal.valueOf(lowPrc).compareTo(setup.getTriggerPrice())
+                                        <= 0)) {
                     triggered = true;
                 }
             } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
+                if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0
+                        || (highPrc > 0.0
+                                && BigDecimal.valueOf(highPrc).compareTo(setup.getTriggerPrice())
+                                        >= 0)) {
                     triggered = true;
                 }
             }
@@ -1547,8 +1577,20 @@ public class LowestVolumeReversalService {
                         && !pos.isClosed()
                         && (pos.getExitMode() == LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500
                                 || pos.getExitMode() == LvrExitMode.PARTIAL_RUNNER_10EMA)) {
-                    List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 2);
-                    if (candles != null && candles.size() >= 10) {
+                    List<Candle> rawCandles = marketDataService.fetch5MinCandles(symbol, 2);
+                    LocalDate today = LocalDate.now(clock);
+                    List<Candle> candles =
+                            rawCandles != null
+                                    ? rawCandles.stream()
+                                            .filter(
+                                                    c ->
+                                                            c.timestamp() != null
+                                                                    && LocalDate.ofInstant(
+                                                                                    c.timestamp(), IST)
+                                                                            .equals(today))
+                                            .toList()
+                                    : Collections.emptyList();
+                    if (candles.size() >= 10) {
                         double[] closes =
                                 candles.stream()
                                         .mapToDouble(c -> c.close().doubleValue())
@@ -1931,17 +1973,15 @@ public class LowestVolumeReversalService {
             if (marketDataService != null && taService != null) {
                 List<Candle> rawCandles = marketDataService.fetch5MinCandles(symbol, 1);
                 if (rawCandles != null && !rawCandles.isEmpty()) {
-                    LocalDate today = LocalDate.now(IST);
+                    LocalDate today = LocalDate.now(clock);
                     List<Candle> candles =
                             rawCandles.stream()
                                     .filter(
                                             c ->
-                                                    LocalDate.ofInstant(c.timestamp(), IST)
-                                                            .equals(today))
+                                                    c.timestamp() != null
+                                                            && LocalDate.ofInstant(c.timestamp(), IST)
+                                                                    .equals(today))
                                     .toList();
-                    if (candles.isEmpty()) {
-                        candles = rawCandles;
-                    }
                     if (!candles.isEmpty()) {
                         double[] vwapSeries = taService.calculateVwapSeries(candles);
                         if (vwapSeries.length > 0
