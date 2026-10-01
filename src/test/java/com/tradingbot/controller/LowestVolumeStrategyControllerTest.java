@@ -13,6 +13,7 @@ import com.tradingbot.scheduler.LowestVolumeReversalScheduler;
 import com.tradingbot.service.LowestVolumeReversalService;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,11 +65,25 @@ class LowestVolumeStrategyControllerTest {
     @Test
     @DisplayName("POST /api/strategy/lowest-volume/morning-scan triggers morning scan")
     void testRunMorningScan() throws Exception {
+        when(strategyService.getOpenPositions()).thenReturn(Collections.emptyMap());
+
         mockMvc.perform(post("/api/strategy/lowest-volume/morning-scan"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
         verify(strategyService).runMorningUniverseScan();
+    }
+
+    @Test
+    @DisplayName("POST /api/strategy/lowest-volume/morning-scan is rejected when open positions exist")
+    void testRunMorningScanRejectedWhenOpenPositions() throws Exception {
+        com.tradingbot.model.strategy.LowestVolumePaperPosition mockPos =
+                org.mockito.Mockito.mock(com.tradingbot.model.strategy.LowestVolumePaperPosition.class);
+        when(strategyService.getOpenPositions()).thenReturn(Map.of("RELIANCE", mockPos));
+
+        mockMvc.perform(post("/api/strategy/lowest-volume/morning-scan"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
     }
 
     @Test

@@ -97,6 +97,22 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Morning scan with <35 quotes fails safe and does not mark scan completed today")
+    void testMorningScanWithLowCoverageRetries() {
+        // Return only 10 quotes for universe
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new com.fasterxml.jackson.databind.ObjectMapper()
+                                .createObjectNode()
+                                .put("lp", "100.0")
+                                .put("c", "95.0"));
+
+        service.runMorningUniverseScan();
+        // Since coverage is insufficient or quotes empty, scan remains incomplete for retry
+        assertThat(service.isUniverseScanCompletedToday()).isFalse();
+    }
+
+    @Test
     @DisplayName("resolveAtmStrike never returns strike 0 even for small spot prices")
     void testResolveAtmStrikeGuardsAgainstZero() {
         BigDecimal strike = service.resolveAtmStrike(BigDecimal.valueOf(3.0), BigDecimal.valueOf(10.0));

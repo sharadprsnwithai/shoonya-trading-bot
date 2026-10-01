@@ -56,6 +56,15 @@ public class LowestVolumeStrategyController {
      */
     @PostMapping("/morning-scan")
     public ResponseEntity<Map<String, Object>> runMorningScan() {
+        if (!strategyService.getOpenPositions().isEmpty()) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "REJECTED");
+            response.put(
+                    "message",
+                    "Cannot re-run morning scan while open positions exist. Close active positions first.");
+            return ResponseEntity.badRequest().body(response);
+        }
+
         strategyService.runMorningUniverseScan();
 
         Map<String, Object> response = new LinkedHashMap<>();

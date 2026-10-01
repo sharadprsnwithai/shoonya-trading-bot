@@ -307,20 +307,36 @@ public class LowestVolumeReversalService {
                     niftyQuotes.add(q);
                 }
             }
+
+            if (niftyQuotes.size() < 35) {
+                log.warn(
+                        "[LVR] Insufficient NIFTY 50 quote coverage ({}/50 quotes received, minimum 35 required). Retrying on next cycle.",
+                        niftyQuotes.size());
+                this.universeScanCompletedToday = false;
+                if (telegramAlerts && telegramService != null) {
+                    telegramService.sendLvrScanRetryAlert(
+                            this.niftyBullish, nowTime.plusMinutes(5), 0);
+                }
+                return;
+            }
+
             LowestVolumeDirection sentiment =
                     scanner.evaluateMarketSentiment(niftyQuotes, minBreadthPct);
             if (sentiment == LowestVolumeDirection.NONE) {
                 log.info(
-                        "[LVR] Market sentiment is NEUTRAL/MIXED (below {}% breadth threshold). Standing down for the day to avoid whipsaws.",
-                        minBreadthPct);
+                        "[LVR] Market sentiment is NEUTRAL/MIXED (below {}% breadth threshold on {}/50 quotes). Standing down for the day to avoid whipsaws.",
+                        minBreadthPct,
+                        niftyQuotes.size());
                 this.universeScanCompletedToday = true;
+                this.lastScanDate = LocalDate.now(clock);
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
                                     "⚠️ *LVR Morning Scan: Market Sentiment Neutral/Mixed*\n"
-                                            + "• NIFTY 50 Advance/Decline breadth did not meet the %.0f%% directional threshold.\n"
+                                            + "• NIFTY 50 Advance/Decline breadth did not meet the %.0f%% directional threshold (%d quotes analyzed).\n"
                                             + "• Status: *Standing down today* to avoid choppy false breakouts.",
-                                    minBreadthPct));
+                                    minBreadthPct,
+                                    niftyQuotes.size()));
                 }
                 return;
             }
@@ -408,25 +424,24 @@ public class LowestVolumeReversalService {
 
             Set<String> candidateSet = new java.util.HashSet<>(candidateStocks);
 
+            currentTopGainers.clear();
+            currentTopLosers.clear();
+            currentTopGainerSnapshots.clear();
+            currentTopLoserSnapshots.clear();
+
             if (sentiment == LowestVolumeDirection.LONG) {
-                currentTopGainers.clear();
                 currentTopGainers.addAll(candidateStocks);
-                currentTopGainerSnapshots.clear();
                 currentTopGainerSnapshots.addAll(
                         winningSectorStockQuotes.stream()
                                 .filter(q -> candidateSet.contains(q.symbol()))
                                 .toList());
             } else {
-                currentTopLosers.clear();
                 currentTopLosers.addAll(candidateStocks);
-                currentTopLoserSnapshots.clear();
                 currentTopLoserSnapshots.addAll(
                         winningSectorStockQuotes.stream()
                                 .filter(q -> candidateSet.contains(q.symbol()))
                                 .toList());
             }
-
-            this.universeScanCompletedToday = true;
 
             // Populate Candidate Reservoir from reserve leading sectors
             candidateReservoir.clear();
@@ -450,6 +465,9 @@ public class LowestVolumeReversalService {
                     "[LVR] Candidate Reservoir populated with {} reserve stocks: {}",
                     candidateReservoir.size(),
                     candidateReservoir);
+
+            this.universeScanCompletedToday = true;
+            this.lastScanDate = LocalDate.now(clock);
 
             if (telegramAlerts && telegramService != null) {
                 telegramService.sendTextMessage(
@@ -1853,7 +1871,6 @@ public class LowestVolumeReversalService {
     public void runMidMorningUniverseRefresh(LocalTime nowTime) {
         if (marketDataService == null || nowTime.isAfter(TIME_ENTRY_CUTOFF)) return;
         log.info("[LVR] Triggering Mid-Morning Universe Refresh at {} IST...", nowTime);
-        this.lastMidMorningRefreshTime = nowTime;
 
         try {
             Map<String, StockQuoteSnapshot> universeQuotes = fetchMorningQuotesUnified();
@@ -1867,9 +1884,11 @@ public class LowestVolumeReversalService {
                 StockQuoteSnapshot q = universeQuotes.get(sym);
                 if (q != null) niftyQuotes.add(q);
             }
-            LowestVolumeDirection sentiment = scanner.evaluateMarketSentiment(niftyQuotes);
+            LowestVolumeDirection sentiment = scanner.evaluateMarketSentiment(niftyQuotes, minBreadthPct);
             if (sentiment == LowestVolumeDirection.NONE) {
                 sentiment = niftyBullish ? LowestVolumeDirection.LONG : LowestVolumeDirection.SHORT;
+            } else {
+                this.niftyBullish = (sentiment == LowestVolumeDirection.LONG);
             }
 
             Map<String, List<StockQuoteSnapshot>> sectorQuotes = new HashMap<>();
@@ -1901,6 +1920,7 @@ public class LowestVolumeReversalService {
                 }
             }
 
+            this.lastMidMorningRefreshTime = nowTime;
             replenishActiveCandidatesIfNeeded(nowTime);
         } catch (Exception e) {
             log.error("[LVR] Error during mid-morning universe refresh: {}", e.getMessage(), e);
