@@ -67,13 +67,15 @@ class LowestVolumeReversalServiceTest {
 
         service.getActiveSetups().put("RELIANCE", setup);
 
-        LowestVolumePaperPosition pos1 = service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2510.05));
+        LowestVolumePaperPosition pos1 =
+                service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2510.05));
         assertThat(pos1).isNotNull();
         assertThat(service.getOpenPositions()).containsKey("RELIANCE");
         assertThat(setup.getTradeAttempts()).isEqualTo(1);
 
         // Second call while in position
-        LowestVolumePaperPosition pos2 = service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2511.00));
+        LowestVolumePaperPosition pos2 =
+                service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2511.00));
         assertThat(pos2).isSameAs(pos1);
         assertThat(setup.getTradeAttempts()).isEqualTo(1); // Not incremented again
     }
@@ -83,7 +85,14 @@ class LowestVolumeReversalServiceTest {
     void testResetDailyExitsOpenPositions() {
         LowestVolumeSetup setup = new LowestVolumeSetup("TCS", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
-                Candle.of5m("TCS", Instant.now(), BigDecimal.valueOf(3500), BigDecimal.valueOf(3510), BigDecimal.valueOf(3490), BigDecimal.valueOf(3505), 500),
+                Candle.of5m(
+                        "TCS",
+                        Instant.now(),
+                        BigDecimal.valueOf(3500),
+                        BigDecimal.valueOf(3510),
+                        BigDecimal.valueOf(3490),
+                        BigDecimal.valueOf(3505),
+                        500),
                 BigDecimal.valueOf(3510.05),
                 BigDecimal.valueOf(3489.95),
                 BigDecimal.valueOf(3550.25));
@@ -148,24 +157,40 @@ class LowestVolumeReversalServiceTest {
         // Attempting to enter another position should be blocked
         LowestVolumeSetup setup2 = new LowestVolumeSetup("TCS", LowestVolumeDirection.LONG);
         setup2.setTriggerCandle(
-                Candle.of5m("TCS", Instant.now(), BigDecimal.valueOf(3500), BigDecimal.valueOf(3510), BigDecimal.valueOf(3490), BigDecimal.valueOf(3505), 500),
+                Candle.of5m(
+                        "TCS",
+                        Instant.now(),
+                        BigDecimal.valueOf(3500),
+                        BigDecimal.valueOf(3510),
+                        BigDecimal.valueOf(3490),
+                        BigDecimal.valueOf(3505),
+                        500),
                 BigDecimal.valueOf(3510.05),
                 BigDecimal.valueOf(3489.95),
                 BigDecimal.valueOf(3550.25));
         setup2.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed");
 
-        LowestVolumePaperPosition pos2 = service.executePositionEntry("TCS", setup2, BigDecimal.valueOf(3510.05));
+        LowestVolumePaperPosition pos2 =
+                service.executePositionEntry("TCS", setup2, BigDecimal.valueOf(3510.05));
         assertThat(pos2).isNull();
     }
 
     @Test
-    @DisplayName("Option entry is skipped when live option quote is unavailable (no fabricated premium)")
+    @DisplayName(
+            "Option entry is skipped when live option quote is unavailable (no fabricated premium)")
     void testOptionEntryAbortedWhenOptionLtpUnavailable() {
         service.setInstrumentType(LvrInstrumentType.OPTIONS);
 
         LowestVolumeSetup setup = new LowestVolumeSetup("INFY", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
-                Candle.of5m("INFY", Instant.now(), BigDecimal.valueOf(1500), BigDecimal.valueOf(1510), BigDecimal.valueOf(1495), BigDecimal.valueOf(1505), 500),
+                Candle.of5m(
+                        "INFY",
+                        Instant.now(),
+                        BigDecimal.valueOf(1500),
+                        BigDecimal.valueOf(1510),
+                        BigDecimal.valueOf(1495),
+                        BigDecimal.valueOf(1505),
+                        500),
                 BigDecimal.valueOf(1510.05),
                 BigDecimal.valueOf(1494.95),
                 BigDecimal.valueOf(1540.25));
@@ -174,7 +199,8 @@ class LowestVolumeReversalServiceTest {
         // mock fetchQuote returning 0 / null for option token
         when(marketDataService.fetchQuote(any(), any())).thenReturn(null);
 
-        LowestVolumePaperPosition pos = service.executePositionEntry("INFY", setup, BigDecimal.valueOf(1510.05));
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("INFY", setup, BigDecimal.valueOf(1510.05));
         assertThat(pos).isNull();
         assertThat(service.getOpenPositions()).doesNotContainKey("INFY");
     }
@@ -182,7 +208,8 @@ class LowestVolumeReversalServiceTest {
     @Test
     @DisplayName("resolveAtmStrike never returns strike 0 even for small spot prices")
     void testResolveAtmStrikeGuardsAgainstZero() {
-        BigDecimal strike = service.resolveAtmStrike(BigDecimal.valueOf(3.0), BigDecimal.valueOf(10.0));
+        BigDecimal strike =
+                service.resolveAtmStrike(BigDecimal.valueOf(3.0), BigDecimal.valueOf(10.0));
         assertThat(strike).isEqualByComparingTo(BigDecimal.valueOf(10.0));
 
         strike = service.resolveAtmStrike(BigDecimal.valueOf(1234.50), BigDecimal.valueOf(50.0));
@@ -204,7 +231,14 @@ class LowestVolumeReversalServiceTest {
     void testTriggerBreachDetectsSessionHigh() throws Exception {
         LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
-                Candle.of5m("RELIANCE", Instant.now(), BigDecimal.valueOf(2500), BigDecimal.valueOf(2510), BigDecimal.valueOf(2495), BigDecimal.valueOf(2505), 1000),
+                Candle.of5m(
+                        "RELIANCE",
+                        Instant.now(),
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2510),
+                        BigDecimal.valueOf(2495),
+                        BigDecimal.valueOf(2505),
+                        1000),
                 BigDecimal.valueOf(2510.05),
                 BigDecimal.valueOf(2494.95),
                 BigDecimal.valueOf(2540.25));
@@ -213,7 +247,8 @@ class LowestVolumeReversalServiceTest {
 
         // Quote where LTP = 2508.0 (below trigger 2510.05), but high = 2512.0 (breached trigger!)
         ObjectMapper mapper = new ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode quote = mapper.readTree("{\"lp\":\"2508.00\",\"h\":\"2512.00\",\"l\":\"2496.00\"}");
+        com.fasterxml.jackson.databind.JsonNode quote =
+                mapper.readTree("{\"lp\":\"2508.00\",\"h\":\"2512.00\",\"l\":\"2496.00\"}");
 
         service.evaluateLivePriceActions();
         // Quote node passed to checkSpotTriggerBreach

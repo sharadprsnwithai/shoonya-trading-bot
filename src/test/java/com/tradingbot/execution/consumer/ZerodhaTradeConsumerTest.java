@@ -61,10 +61,14 @@ class ZerodhaTradeConsumerTest {
     }
 
     @Test
-    void testZerodhaOptionBuyingEntryShortExecutesBuyWithoutSpotTrigger() throws InterruptedException {
+    void testZerodhaOptionBuyingEntryShortExecutesBuyWithoutSpotTrigger()
+            throws InterruptedException {
         BrokerOrderGateway mockGateway = mock(BrokerOrderGateway.class);
         when(mockGateway.placeOrder(any(OrderRequest.class)))
-                .thenAnswer(inv -> OrderResponse.success("KITE_124", inv.getArgument(0), "Order placed"));
+                .thenAnswer(
+                        inv ->
+                                OrderResponse.success(
+                                        "KITE_124", inv.getArgument(0), "Order placed"));
 
         ZerodhaTradeConsumer consumer =
                 new ZerodhaTradeConsumer(
@@ -80,7 +84,9 @@ class ZerodhaTradeConsumerTest {
                         "INFY26OCT1450PE",
                         SignalAction.ENTRY_SHORT,
                         BigDecimal.valueOf(35),
-                        BigDecimal.valueOf(1480), // Spot SL, should NOT be passed as trigger price on derivative order
+                        BigDecimal.valueOf(
+                                1480), // Spot SL, should NOT be passed as trigger price on
+                        // derivative order
                         BigDecimal.valueOf(1420),
                         400,
                         "LVR Option Entry Triggered",

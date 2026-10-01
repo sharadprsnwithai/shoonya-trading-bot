@@ -68,12 +68,17 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
             }
         }
         String sym = signal.tradingSymbol();
-        return sym != null && (sym.endsWith("CE") || sym.endsWith("PE") || sym.contains(" CE") || sym.contains(" PE"));
+        return sym != null
+                && (sym.endsWith("CE")
+                        || sym.endsWith("PE")
+                        || sym.contains(" CE")
+                        || sym.contains(" PE"));
     }
 
     private TransactionType resolveTransactionType(TradeSignal signal) {
         if (isOptionSignal(signal)) {
-            // Option Buying: Entries are BUY (both CE and PE), Exits are SELL (close long option position)
+            // Option Buying: Entries are BUY (both CE and PE), Exits are SELL (close long option
+            // position)
             if (signal.action() == SignalAction.ENTRY_LONG
                     || signal.action() == SignalAction.ENTRY_SHORT
                     || signal.action() == SignalAction.BUY) {

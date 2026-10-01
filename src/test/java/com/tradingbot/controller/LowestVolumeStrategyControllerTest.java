@@ -75,10 +75,12 @@ class LowestVolumeStrategyControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/strategy/lowest-volume/morning-scan is rejected when open positions exist")
+    @DisplayName(
+            "POST /api/strategy/lowest-volume/morning-scan is rejected when open positions exist")
     void testRunMorningScanRejectedWhenOpenPositions() throws Exception {
         com.tradingbot.model.strategy.LowestVolumePaperPosition mockPos =
-                org.mockito.Mockito.mock(com.tradingbot.model.strategy.LowestVolumePaperPosition.class);
+                org.mockito.Mockito.mock(
+                        com.tradingbot.model.strategy.LowestVolumePaperPosition.class);
         when(strategyService.getOpenPositions()).thenReturn(Map.of("RELIANCE", mockPos));
 
         mockMvc.perform(post("/api/strategy/lowest-volume/morning-scan"))

@@ -63,7 +63,10 @@ class ShoonyaTradeConsumerTest {
     void testShoonyaOptionBuyingEntryShortExecutesBuyPE() throws InterruptedException {
         BrokerOrderGateway mockGateway = mock(BrokerOrderGateway.class);
         when(mockGateway.placeOrder(any(OrderRequest.class)))
-                .thenAnswer(inv -> OrderResponse.success("ORD_124", inv.getArgument(0), "Order placed"));
+                .thenAnswer(
+                        inv ->
+                                OrderResponse.success(
+                                        "ORD_124", inv.getArgument(0), "Order placed"));
 
         ShoonyaTradeConsumer consumer =
                 new ShoonyaTradeConsumer(
@@ -102,7 +105,10 @@ class ShoonyaTradeConsumerTest {
     void testShoonyaOptionBuyingExitShortExecutesSellPE() throws InterruptedException {
         BrokerOrderGateway mockGateway = mock(BrokerOrderGateway.class);
         when(mockGateway.placeOrder(any(OrderRequest.class)))
-                .thenAnswer(inv -> OrderResponse.success("ORD_125", inv.getArgument(0), "Order placed"));
+                .thenAnswer(
+                        inv ->
+                                OrderResponse.success(
+                                        "ORD_125", inv.getArgument(0), "Order placed"));
 
         ShoonyaTradeConsumer consumer =
                 new ShoonyaTradeConsumer(

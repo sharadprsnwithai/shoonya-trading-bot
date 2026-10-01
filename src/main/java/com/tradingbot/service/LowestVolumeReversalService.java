@@ -199,7 +199,10 @@ public class LowestVolumeReversalService {
         try {
             LocalDate today = LocalDate.now(clock);
             if (lastScanDate != null && !today.equals(lastScanDate)) {
-                log.info("[LVR] New trading day detected ({} vs last {}). Resetting daily state.", today, lastScanDate);
+                log.info(
+                        "[LVR] New trading day detected ({} vs last {}). Resetting daily state.",
+                        today,
+                        lastScanDate);
                 resetDaily();
             }
 
@@ -241,7 +244,8 @@ public class LowestVolumeReversalService {
             }
 
             if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
-                log.info("[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
+                log.info(
+                        "[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
                 evaluateOpenPositions(nowTime);
                 return;
             }
@@ -250,7 +254,8 @@ public class LowestVolumeReversalService {
             // threshold
             replenishActiveCandidatesIfNeeded(nowTime);
 
-            // If 0 actionable setups and past 10:30, trigger mid-morning refresh (paced at max once per
+            // If 0 actionable setups and past 10:30, trigger mid-morning refresh (paced at max once
+            // per
             // 30 mins)
             if (countActionableSetups() == 0
                     && nowTime.isAfter(LocalTime.of(10, 30))
@@ -327,8 +332,7 @@ public class LowestVolumeReversalService {
             if (sentiment == LowestVolumeDirection.NONE) {
                 log.info(
                         "[LVR] Market sentiment is NEUTRAL/MIXED (below {}% breadth threshold on {}/50 quotes). Standing down for the day to avoid whipsaws.",
-                        minBreadthPct,
-                        niftyQuotes.size());
+                        minBreadthPct, niftyQuotes.size());
                 this.universeScanCompletedToday = true;
                 this.lastScanDate = LocalDate.now(clock);
                 if (telegramAlerts && telegramService != null) {
@@ -337,8 +341,7 @@ public class LowestVolumeReversalService {
                                     "⚠️ *LVR Morning Scan: Market Sentiment Neutral/Mixed*\n"
                                             + "• NIFTY 50 Advance/Decline breadth did not meet the %.0f%% directional threshold (%d quotes analyzed).\n"
                                             + "• Status: *Standing down today* to avoid choppy false breakouts.",
-                                    minBreadthPct,
-                                    niftyQuotes.size()));
+                                    minBreadthPct, niftyQuotes.size()));
                 }
                 return;
             }
@@ -593,7 +596,9 @@ public class LowestVolumeReversalService {
                         BigDecimal risk = rawSl.subtract(triggerPrc).max(minRisk);
                         slPrc = roundToTick(triggerPrc.add(risk));
                         target1Prc =
-                                roundToTick(triggerPrc.subtract(risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                                roundToTick(
+                                        triggerPrc.subtract(
+                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
                     } else {
                         triggerPrc = roundToTick(c.high().add(BigDecimal.valueOf(0.05)));
                         BigDecimal rawSl = c.low().subtract(BigDecimal.valueOf(0.05));
@@ -602,7 +607,9 @@ public class LowestVolumeReversalService {
                         BigDecimal risk = triggerPrc.subtract(rawSl).max(minRisk);
                         slPrc = roundToTick(triggerPrc.subtract(risk));
                         target1Prc =
-                                roundToTick(triggerPrc.add(risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                                roundToTick(
+                                        triggerPrc.add(
+                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
                     }
 
                     setup.setTriggerCandle(c, triggerPrc, slPrc, target1Prc);
@@ -705,7 +712,10 @@ public class LowestVolumeReversalService {
                                 setup.getStopLossPrice(),
                                 setup.getTarget1Price());
 
-                        if (telegramAlerts && telegramArmedAlerts && telegramService != null && newlyArmedOrTrailed) {
+                        if (telegramAlerts
+                                && telegramArmedAlerts
+                                && telegramService != null
+                                && newlyArmedOrTrailed) {
                             telegramService.sendTextMessage(
                                     String.format(
                                             Locale.US,
@@ -748,9 +758,12 @@ public class LowestVolumeReversalService {
 
         Map<String, JsonNode> liveQuoteCache = new HashMap<>();
 
-        // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff, if strategy enabled, and if
+        // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff, if strategy
+        // enabled, and if
         // circuit breaker not tripped)
-        if (enabled && nowTime.isBefore(TIME_ENTRY_CUTOFF) && !isDailyCircuitBreakerTripped(liveQuoteCache)) {
+        if (enabled
+                && nowTime.isBefore(TIME_ENTRY_CUTOFF)
+                && !isDailyCircuitBreakerTripped(liveQuoteCache)) {
             for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
                 String symbol = entry.getKey();
                 LowestVolumeSetup setup = entry.getValue();
@@ -838,8 +851,7 @@ public class LowestVolumeReversalService {
                 if (setup.getDirection() == LowestVolumeDirection.SHORT) {
                     if (spotPrice.compareTo(setup.getTarget1Price()) <= 0
                             || (lowPrc > 0.0
-                                    && BigDecimal.valueOf(lowPrc)
-                                                    .compareTo(setup.getTarget1Price())
+                                    && BigDecimal.valueOf(lowPrc).compareTo(setup.getTarget1Price())
                                             <= 0)) {
                         targetPassed = true;
                     }
@@ -1005,7 +1017,9 @@ public class LowestVolumeReversalService {
             String symbol, LowestVolumeSetup setup, BigDecimal spotPrice) {
         if (setup == null || symbol == null) return null;
         if (isDailyCircuitBreakerTripped()) {
-            log.warn("[LVR] Daily max loss circuit breaker is active. Skipping new entry for {}.", symbol);
+            log.warn(
+                    "[LVR] Daily max loss circuit breaker is active. Skipping new entry for {}.",
+                    symbol);
             return null;
         }
         if (openPositions.containsKey(symbol)) {
@@ -1058,7 +1072,9 @@ public class LowestVolumeReversalService {
                             .multiply(BigDecimal.valueOf(totalQty))
                             .setScale(2, RoundingMode.HALF_UP);
         } else {
-            plannedRisk = unitRisk.multiply(BigDecimal.valueOf(totalQty)).setScale(2, RoundingMode.HALF_UP);
+            plannedRisk =
+                    unitRisk.multiply(BigDecimal.valueOf(totalQty))
+                            .setScale(2, RoundingMode.HALF_UP);
         }
         BigDecimal plannedReward =
                 unitRisk.multiply(BigDecimal.valueOf(2)).multiply(BigDecimal.valueOf(totalQty));
@@ -1067,7 +1083,8 @@ public class LowestVolumeReversalService {
         // distortion
         BigDecimal actualTarget1;
         if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-            actualTarget1 = roundToTick(spotPrice.subtract(unitRisk.multiply(BigDecimal.valueOf(2))));
+            actualTarget1 =
+                    roundToTick(spotPrice.subtract(unitRisk.multiply(BigDecimal.valueOf(2))));
         } else {
             actualTarget1 = roundToTick(spotPrice.add(unitRisk.multiply(BigDecimal.valueOf(2))));
         }
@@ -1097,7 +1114,9 @@ public class LowestVolumeReversalService {
 
             LowestVolumePaperPosition existing = openPositions.putIfAbsent(symbol, position);
             if (existing != null) {
-                log.warn("[LVR] Concurrent position insertion race detected for {}. Skipping.", symbol);
+                log.warn(
+                        "[LVR] Concurrent position insertion race detected for {}. Skipping.",
+                        symbol);
                 return existing;
             }
             setup.recordTradeAttempt();
@@ -1189,7 +1208,9 @@ public class LowestVolumeReversalService {
 
             LowestVolumePaperPosition existing = openPositions.putIfAbsent(symbol, position);
             if (existing != null) {
-                log.warn("[LVR] Concurrent position insertion race detected for {}. Skipping.", symbol);
+                log.warn(
+                        "[LVR] Concurrent position insertion race detected for {}. Skipping.",
+                        symbol);
                 return existing;
             }
             setup.recordTradeAttempt();
@@ -1393,7 +1414,10 @@ public class LowestVolumeReversalService {
                                             pts.doubleValue(),
                                             pos.getTotalRealizedPnl().doubleValue(),
                                             setup != null
-                                                    ? Math.max(0, maxAttemptsPerSymbol - setup.getTradeAttempts())
+                                                    ? Math.max(
+                                                            0,
+                                                            maxAttemptsPerSymbol
+                                                                    - setup.getTradeAttempts())
                                                     : 0));
                         } else {
                             telegramService.sendTextMessage(
@@ -1624,7 +1648,8 @@ public class LowestVolumeReversalService {
                                                     c ->
                                                             c.timestamp() != null
                                                                     && LocalDate.ofInstant(
-                                                                                    c.timestamp(), IST)
+                                                                                    c.timestamp(),
+                                                                                    IST)
                                                                             .equals(today))
                                             .toList()
                                     : Collections.emptyList();
@@ -1721,7 +1746,9 @@ public class LowestVolumeReversalService {
     public synchronized void executeHardExit(LocalTime nowTime) {
         if (openPositions.isEmpty()) return;
 
-        log.info("[LVR] {} Hard EOD Square-off reached. Closing all open positions.", nowTime != null ? nowTime : "15:00 IST");
+        log.info(
+                "[LVR] {} Hard EOD Square-off reached. Closing all open positions.",
+                nowTime != null ? nowTime : "15:00 IST");
         List<String> symbols = new ArrayList<>(openPositions.keySet());
         for (String symbol : symbols) {
             LowestVolumePaperPosition pos = openPositions.get(symbol);
@@ -1796,7 +1823,9 @@ public class LowestVolumeReversalService {
 
     public synchronized void resetDaily() {
         if (!openPositions.isEmpty()) {
-            log.warn("[LVR] resetDaily() called while {} open position(s) exist. Executing hard exit first.", openPositions.size());
+            log.warn(
+                    "[LVR] resetDaily() called while {} open position(s) exist. Executing hard exit first.",
+                    openPositions.size());
             executeHardExit(LocalTime.of(15, 0));
         }
         activeSetups.clear();
@@ -1904,7 +1933,8 @@ public class LowestVolumeReversalService {
                 StockQuoteSnapshot q = universeQuotes.get(sym);
                 if (q != null) niftyQuotes.add(q);
             }
-            LowestVolumeDirection sentiment = scanner.evaluateMarketSentiment(niftyQuotes, minBreadthPct);
+            LowestVolumeDirection sentiment =
+                    scanner.evaluateMarketSentiment(niftyQuotes, minBreadthPct);
             if (sentiment == LowestVolumeDirection.NONE) {
                 sentiment = niftyBullish ? LowestVolumeDirection.LONG : LowestVolumeDirection.SHORT;
             } else {
@@ -2019,7 +2049,8 @@ public class LowestVolumeReversalService {
                                     .filter(
                                             c ->
                                                     c.timestamp() != null
-                                                            && LocalDate.ofInstant(c.timestamp(), IST)
+                                                            && LocalDate.ofInstant(
+                                                                            c.timestamp(), IST)
                                                                     .equals(today))
                                     .toList();
                     if (!candles.isEmpty()) {
@@ -2798,12 +2829,10 @@ public class LowestVolumeReversalService {
                     int totalQty = lots * lotSize;
                     BigDecimal plannedRisk =
                             (instrumentType == LvrInstrumentType.OPTIONS)
-                                    ? unitRisk
-                                            .multiply(BigDecimal.valueOf(0.50))
+                                    ? unitRisk.multiply(BigDecimal.valueOf(0.50))
                                             .multiply(BigDecimal.valueOf(totalQty))
                                             .setScale(2, RoundingMode.HALF_UP)
-                                    : unitRisk
-                                            .multiply(BigDecimal.valueOf(totalQty))
+                                    : unitRisk.multiply(BigDecimal.valueOf(totalQty))
                                             .setScale(2, RoundingMode.HALF_UP);
                     BigDecimal actualTarget1;
                     if (direction == LowestVolumeDirection.SHORT) {
@@ -2814,8 +2843,7 @@ public class LowestVolumeReversalService {
                     } else {
                         actualTarget1 =
                                 roundToTick(
-                                        triggerPrice.add(
-                                                unitRisk.multiply(BigDecimal.valueOf(2))));
+                                        triggerPrice.add(unitRisk.multiply(BigDecimal.valueOf(2))));
                     }
                     String tradeId = "REPLAY-" + attempt;
                     if (instrumentType == LvrInstrumentType.FUTURES) {
