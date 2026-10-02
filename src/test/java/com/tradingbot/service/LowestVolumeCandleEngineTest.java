@@ -236,4 +236,61 @@ class LowestVolumeCandleEngineTest {
         assertEquals(0, BigDecimal.valueOf(532.25).compareTo(setup.getTarget1Price()));
         assertEquals(4000L, setup.getDayLowestVolume());
     }
+
+    @Test
+    @DisplayName("Should arm LONG setup on Setup 3 Vande Bharat (Mother Green + Inside Red)")
+    void testArmLongSetupOnVandeBharatInsideBar() {
+        LowestVolumeReversalService service =
+                new LowestVolumeReversalService(null, null, null, null, null);
+
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z"); // 09:15 IST
+        List<Candle> candles =
+                List.of(
+                        // C1, C2, C3 baseline
+                        Candle.of5m("RADICO", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1010), BigDecimal.valueOf(995), BigDecimal.valueOf(1008), 50000),
+                        Candle.of5m("RADICO", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(1008), BigDecimal.valueOf(1015), BigDecimal.valueOf(1005), BigDecimal.valueOf(1012), 40000),
+                        Candle.of5m("RADICO", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(1012), BigDecimal.valueOf(1018), BigDecimal.valueOf(1010), BigDecimal.valueOf(1016), 35000),
+                        // C4 (09:30): Strong Mother Green Candle
+                        Candle.of5m("RADICO", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(1016), BigDecimal.valueOf(1030), BigDecimal.valueOf(1015), BigDecimal.valueOf(1028), 60000),
+                        // C5 (09:35): Inside Red Candle (High 1027 <= 1030, Low 1018 >= 1015)
+                        Candle.of5m("RADICO", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(1026), BigDecimal.valueOf(1027), BigDecimal.valueOf(1018), BigDecimal.valueOf(1020), 45000)
+                );
+
+        LowestVolumeSetup setup =
+                service.evaluateCandleSequence("RADICO", LowestVolumeDirection.LONG, candles);
+
+        assertNotNull(setup);
+        assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
+        assertEquals("VANDE_BHARAT_INSIDE_BAR", setup.getSetupPattern());
+        assertEquals(0, BigDecimal.valueOf(1030.05).compareTo(setup.getTriggerPrice())); // Mother High + 0.05
+        assertEquals(0, BigDecimal.valueOf(1017.95).compareTo(setup.getStopLossPrice())); // Inside Low - 0.05
+    }
+
+    @Test
+    @DisplayName("Should arm SHORT setup on Setup 3 Vande Bharat (Mother Red + Inside Green)")
+    void testArmShortSetupOnVandeBharatInsideBar() {
+        LowestVolumeReversalService service =
+                new LowestVolumeReversalService(null, null, null, null, null);
+
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
+        List<Candle> candles =
+                List.of(
+                        Candle.of5m("VOLTAS", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1005), BigDecimal.valueOf(990), BigDecimal.valueOf(992), 50000),
+                        Candle.of5m("VOLTAS", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(992), BigDecimal.valueOf(995), BigDecimal.valueOf(985), BigDecimal.valueOf(988), 40000),
+                        Candle.of5m("VOLTAS", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(988), BigDecimal.valueOf(990), BigDecimal.valueOf(980), BigDecimal.valueOf(982), 35000),
+                        // C4 (09:30): Strong Mother Red Candle
+                        Candle.of5m("VOLTAS", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(982), BigDecimal.valueOf(984), BigDecimal.valueOf(965), BigDecimal.valueOf(968), 60000),
+                        // C5 (09:35): Inside Green Candle (High 980 <= 984, Low 970 >= 965)
+                        Candle.of5m("VOLTAS", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(970), BigDecimal.valueOf(980), BigDecimal.valueOf(970), BigDecimal.valueOf(978), 45000)
+                );
+
+        LowestVolumeSetup setup =
+                service.evaluateCandleSequence("VOLTAS", LowestVolumeDirection.SHORT, candles);
+
+        assertNotNull(setup);
+        assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
+        assertEquals("VANDE_BHARAT_INSIDE_BAR", setup.getSetupPattern());
+        assertEquals(0, BigDecimal.valueOf(964.95).compareTo(setup.getTriggerPrice())); // Mother Low - 0.05
+        assertEquals(0, BigDecimal.valueOf(980.05).compareTo(setup.getStopLossPrice())); // Inside High + 0.05
+    }
 }

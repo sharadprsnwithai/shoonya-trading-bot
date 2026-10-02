@@ -628,12 +628,75 @@ public class LowestVolumeReversalService {
                     }
 
                     setup.setTriggerCandle(c, triggerPrc, slPrc, target1Prc);
+                    setup.setSetupPattern("LVR_VOLUME_PULLBACK");
                 }
                 rollingLowest = c.volume();
                 setup.setDayLowestVolume(rollingLowest);
             } else if (c.volume() > 0 && c.volume() < rollingLowest) {
                 rollingLowest = c.volume();
                 setup.setDayLowestVolume(rollingLowest);
+            }
+
+            // 3. Setup 3: Vande Bharat (Inside Bar Entry)
+            if (i >= 1) {
+                Candle prev = candles.get(i - 1);
+                boolean isVandeBharat = false;
+                BigDecimal vbTriggerPrc = null;
+                BigDecimal vbSlPrc = null;
+                BigDecimal vbTarget1Prc = null;
+
+                if (direction == LowestVolumeDirection.LONG) {
+                    boolean motherGreen = prev.isGreen();
+                    boolean childRed = c.isRed();
+                    boolean isInside =
+                            (c.high().compareTo(prev.high()) <= 0
+                                    && c.low().compareTo(prev.low()) >= 0);
+
+                    if (motherGreen && childRed && isInside) {
+                        isVandeBharat = true;
+                        vbTriggerPrc = roundToTick(prev.high().add(BigDecimal.valueOf(0.05)));
+                        BigDecimal rawSl = roundToTick(c.low().subtract(BigDecimal.valueOf(0.05)));
+                        BigDecimal minRisk =
+                                vbTriggerPrc.multiply(BigDecimal.valueOf(minStopLossPct / 100.0));
+                        BigDecimal risk = vbTriggerPrc.subtract(rawSl).max(minRisk);
+                        vbSlPrc = roundToTick(vbTriggerPrc.subtract(risk));
+                        vbTarget1Prc =
+                                roundToTick(
+                                        vbTriggerPrc.add(
+                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                    }
+                } else if (direction == LowestVolumeDirection.SHORT) {
+                    boolean motherRed = prev.isRed();
+                    boolean childGreen = c.isGreen();
+                    boolean isInside =
+                            (c.high().compareTo(prev.high()) <= 0
+                                    && c.low().compareTo(prev.low()) >= 0);
+
+                    if (motherRed && childGreen && isInside) {
+                        isVandeBharat = true;
+                        vbTriggerPrc = roundToTick(prev.low().subtract(BigDecimal.valueOf(0.05)));
+                        BigDecimal rawSl = roundToTick(c.high().add(BigDecimal.valueOf(0.05)));
+                        BigDecimal minRisk =
+                                vbTriggerPrc.multiply(BigDecimal.valueOf(minStopLossPct / 100.0));
+                        BigDecimal risk = rawSl.subtract(vbTriggerPrc).max(minRisk);
+                        vbSlPrc = roundToTick(vbTriggerPrc.add(risk));
+                        vbTarget1Prc =
+                                roundToTick(
+                                        vbTriggerPrc.subtract(
+                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                    }
+                }
+
+                if (isVandeBharat) {
+                    boolean candleAllowed =
+                            (filterAfter == null
+                                    || (c.timestamp() != null
+                                            && c.timestamp().plusSeconds(300).isAfter(filterAfter)));
+                    if (candleAllowed) {
+                        setup.setTriggerCandle(c, vbTriggerPrc, vbSlPrc, vbTarget1Prc);
+                        setup.setSetupPattern("VANDE_BHARAT_INSIDE_BAR");
+                    }
+                }
             }
         }
 
