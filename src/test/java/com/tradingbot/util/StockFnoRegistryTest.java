@@ -365,4 +365,13 @@ class StockFnoRegistryTest {
         assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 29));
         assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
     }
+
+    @Test
+    void testFuturesSymbolRollsAfterMonthlyExpiry() {
+        // September 2026 expiry is Thursday Sep 24, 2026.
+        // On Friday Sep 25, 2026, expiry must roll to Oct 2026.
+        LocalDate dayAfterExpiry = LocalDate.of(2026, 9, 25);
+        String sym = StockFnoRegistry.formatFuturesTradingSymbol("RELIANCE", dayAfterExpiry);
+        assertThat(sym).isEqualTo("RELIANCE26OCTFUT");
+    }
 }

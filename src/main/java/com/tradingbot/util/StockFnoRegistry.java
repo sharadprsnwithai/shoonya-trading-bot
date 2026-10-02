@@ -492,12 +492,11 @@ public final class StockFnoRegistry {
             cleanUnderlying = "SENSEX";
         }
 
-        if (expiryDate == null) {
-            expiryDate = getMonthlyExpiry(LocalDate.now(IST));
-        }
+        LocalDate refDate = (expiryDate != null) ? expiryDate : LocalDate.now(IST);
+        LocalDate resolvedExpiry = calculateTargetExpiry(cleanUnderlying, refDate, false, 1);
 
-        String yearStr = String.valueOf(expiryDate.getYear()).substring(2);
-        String monthStr = expiryDate.getMonth().name().substring(0, 3).toUpperCase();
+        String yearStr = String.valueOf(resolvedExpiry.getYear()).substring(2);
+        String monthStr = resolvedExpiry.getMonth().name().substring(0, 3).toUpperCase();
         return String.format("%s%s%sFUT", cleanUnderlying, yearStr, monthStr);
     }
 
@@ -523,7 +522,7 @@ public final class StockFnoRegistry {
         }
 
         if (expiryDate == null) {
-            expiryDate = LocalDate.now(IST);
+            expiryDate = calculateTargetExpiry(cleanUnderlying, LocalDate.now(IST), isWeekly, 1);
         }
 
         String yearStr = String.valueOf(expiryDate.getYear()).substring(2);
