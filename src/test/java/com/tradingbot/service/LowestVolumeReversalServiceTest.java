@@ -227,32 +227,79 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Trigger breach triggers on session High for LONG setup even if LTP pulled back")
-    void testTriggerBreachDetectsSessionHigh() throws Exception {
-        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+    @DisplayName("C1 Fix: Setup must NOT invalidate prior to entry when session day low is below SL but current spot is healthy")
+    void testSetupDoesNotInvalidateOnSessionDayLow() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
                 Candle.of5m(
-                        "RELIANCE",
+                        "SUNPHARMA",
                         Instant.now(),
-                        BigDecimal.valueOf(2500),
-                        BigDecimal.valueOf(2510),
-                        BigDecimal.valueOf(2495),
-                        BigDecimal.valueOf(2505),
-                        1000),
-                BigDecimal.valueOf(2510.05),
-                BigDecimal.valueOf(2494.95),
-                BigDecimal.valueOf(2540.25));
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1865),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1864.95), // SL at 1864.95
+                BigDecimal.valueOf(1895.25));
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
-        service.getActiveSetups().put("RELIANCE", setup);
+        service.getActiveSetups().put("SUNPHARMA", setup);
 
-        // Quote where LTP = 2508.0 (below trigger 2510.05), but high = 2512.0 (breached trigger!)
+        // Quote where session low 'l' is 1850.00 (from 09:15 AM open), but current spot 'lp' is 1872.00 (healthy)
         ObjectMapper mapper = new ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode quote =
-                mapper.readTree("{\"lp\":\"2508.00\",\"h\":\"2512.00\",\"l\":\"2496.00\"}");
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "1872.00")
+                                .put("h", "1874.00")
+                                .put("l", "1850.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
 
         service.evaluateLivePriceActions();
-        // Quote node passed to checkSpotTriggerBreach
-        // We will verify through checkSpotTriggerBreach directly
+
+        // Setup must STAY ARMED and NOT be reset to SCANNING
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(setup.getTriggerPrice()).isEqualByComparingTo("1875.05");
+    }
+
+    @Test
+    @DisplayName("C2 Fix: Trigger breach must NOT fire when current spot is below trigger, even if session day high was above trigger")
+    void testTriggerDoesNotFireOnStaleDayHigh() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setPdh(BigDecimal.valueOf(1870.00));
+        setup.setPdl(BigDecimal.valueOf(1850.00));
+        setup.setLatestVwap(1870.00);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1865),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1864.95),
+                BigDecimal.valueOf(1895.25));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        // Quote where session high 'h' is 1880.00 (from 09:15 AM spike), but current spot 'lp' is 1872.00 (below trigger 1875.05)
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "1872.00")
+                                .put("ap", "1870.00")
+                                .put("h", "1880.00")
+                                .put("l", "1868.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        service.evaluateLivePriceActions();
+
+        // No trade should be entered since live spot (1872) hasn't breached trigger (1875.05)
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
     }
 
     @Test

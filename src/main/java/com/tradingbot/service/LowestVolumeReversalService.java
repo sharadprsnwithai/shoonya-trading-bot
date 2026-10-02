@@ -936,40 +936,23 @@ public class LowestVolumeReversalService {
             if (spotLtp <= 0) return;
 
             BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
-            double highPrc =
-                    (quoteNode != null && quoteNode.has("h"))
-                            ? quoteNode.get("h").asDouble(0.0)
-                            : 0.0;
-            double lowPrc =
-                    (quoteNode != null && quoteNode.has("l"))
-                            ? quoteNode.get("l").asDouble(0.0)
-                            : 0.0;
 
-            // Invalidate setup if spot breaches the proposed stop loss before hitting the entry
-            // trigger
+            // Invalidate setup if live spot breaches the proposed stop loss before hitting the entry trigger
             if (setup.getStopLossPrice() != null) {
                 boolean slBreached = false;
                 if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                    if (spotPrice.compareTo(setup.getStopLossPrice()) >= 0
-                            || (highPrc > 0.0
-                                    && BigDecimal.valueOf(highPrc)
-                                                    .compareTo(setup.getStopLossPrice())
-                                            >= 0)) {
+                    if (spotPrice.compareTo(setup.getStopLossPrice()) >= 0) {
                         slBreached = true;
                     }
                 } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                    if (spotPrice.compareTo(setup.getStopLossPrice()) <= 0
-                            || (lowPrc > 0.0
-                                    && BigDecimal.valueOf(lowPrc)
-                                                    .compareTo(setup.getStopLossPrice())
-                                            <= 0)) {
+                    if (spotPrice.compareTo(setup.getStopLossPrice()) <= 0) {
                         slBreached = true;
                     }
                 }
 
                 if (slBreached) {
                     log.info(
-                            "[LVR] Setup for {} invalidated prior to entry: Spot {} breached proposed SL {}. Resetting to SCANNING.",
+                            "[LVR] Setup for {} invalidated prior to entry: Live spot {} breached proposed SL {}. Resetting to SCANNING.",
                             symbol,
                             spotPrice,
                             setup.getStopLossPrice());
@@ -978,29 +961,22 @@ public class LowestVolumeReversalService {
                 }
             }
 
-            // Invalidate setup if spot already reached/passed 1:4 target before entry
+            // Invalidate setup if live spot already reached/passed 1:2 target before entry
             if (setup.getTarget1Price() != null) {
                 boolean targetPassed = false;
                 if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                    if (spotPrice.compareTo(setup.getTarget1Price()) <= 0
-                            || (lowPrc > 0.0
-                                    && BigDecimal.valueOf(lowPrc).compareTo(setup.getTarget1Price())
-                                            <= 0)) {
+                    if (spotPrice.compareTo(setup.getTarget1Price()) <= 0) {
                         targetPassed = true;
                     }
                 } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                    if (spotPrice.compareTo(setup.getTarget1Price()) >= 0
-                            || (highPrc > 0.0
-                                    && BigDecimal.valueOf(highPrc)
-                                                    .compareTo(setup.getTarget1Price())
-                                            >= 0)) {
+                    if (spotPrice.compareTo(setup.getTarget1Price()) >= 0) {
                         targetPassed = true;
                     }
                 }
 
                 if (targetPassed) {
                     log.info(
-                            "[LVR] Setup for {} expired prior to entry: Spot {} already passed Target1 {}. Resetting to SCANNING.",
+                            "[LVR] Setup for {} expired prior to entry: Live spot {} already passed Target1 {}. Resetting to SCANNING.",
                             symbol,
                             spotPrice,
                             setup.getTarget1Price());
@@ -1012,17 +988,11 @@ public class LowestVolumeReversalService {
             boolean triggered = false;
 
             if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                if (spotPrice.compareTo(setup.getTriggerPrice()) <= 0
-                        || (lowPrc > 0.0
-                                && BigDecimal.valueOf(lowPrc).compareTo(setup.getTriggerPrice())
-                                        <= 0)) {
+                if (spotPrice.compareTo(setup.getTriggerPrice()) <= 0) {
                     triggered = true;
                 }
             } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0
-                        || (highPrc > 0.0
-                                && BigDecimal.valueOf(highPrc).compareTo(setup.getTriggerPrice())
-                                        >= 0)) {
+                if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
                     triggered = true;
                 }
             }
