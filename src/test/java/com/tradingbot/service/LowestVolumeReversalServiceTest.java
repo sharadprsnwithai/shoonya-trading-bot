@@ -46,6 +46,7 @@ class LowestVolumeReversalServiceTest {
         service = new LowestVolumeReversalService(marketDataService, taService, null, config, null);
         service.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST)); // 10:00 IST
         service.setMorningScanDelayMs(0); // No delay in unit tests
+        service.setPdhPdlFilterEnabled(false);
     }
 
     @Test
@@ -780,6 +781,7 @@ class LowestVolumeReversalServiceTest {
     @Test
     @DisplayName("Runner 10 EMA Trailing Exit closes remaining lots on EMA breach")
     void testRunner10EmaTrailingExit() {
+        service.setClock(Clock.fixed(Instant.parse("2026-09-18T06:00:00Z"), IST)); // 11:30 IST
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
                         "LVR-1",
@@ -853,6 +855,7 @@ class LowestVolumeReversalServiceTest {
     @Test
     @DisplayName("30s Live Check skips 10 EMA trailing exit until confirmed 5m candle close")
     void testLive30sCheckSkips10EmaTrailingUntilCandleClose() {
+        service.setClock(Clock.fixed(Instant.parse("2026-09-18T06:00:00Z"), IST)); // 11:30 IST
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
                         "LVR-1",

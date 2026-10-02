@@ -834,7 +834,7 @@ public class LowestVolumeReversalService {
                     } else {
                         setup.incrementArmedTimeout();
                         if (setupTimeoutCandles > 0
-                                && setup.getArmedCandlesElapsed() > setupTimeoutCandles) {
+                                && setup.getArmedCandlesElapsed() >= setupTimeoutCandles) {
                             log.info(
                                     "[LVR] Setup for {} expired after {} armed candles. Resetting to SCANNING.",
                                     symbol,
@@ -1870,6 +1870,7 @@ public class LowestVolumeReversalService {
                                 || pos.getExitMode() == LvrExitMode.PARTIAL_RUNNER_10EMA)) {
                     List<Candle> rawCandles = marketDataService.fetch5MinCandles(symbol, 2);
                     LocalDate today = LocalDate.now(clock);
+                    Instant nowInst = Instant.now(clock);
                     List<Candle> candles =
                             rawCandles != null
                                     ? rawCandles.stream()
@@ -1880,6 +1881,12 @@ public class LowestVolumeReversalService {
                                                                                     c.timestamp(),
                                                                                     IST)
                                                                             .equals(today))
+                                            .filter(
+                                                    c ->
+                                                            c.timestamp()
+                                                                            .plusSeconds(300)
+                                                                            .compareTo(nowInst)
+                                                                    <= 0)
                                             .toList()
                                     : Collections.emptyList();
                     if (candles.size() >= 10) {
