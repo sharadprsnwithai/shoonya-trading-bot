@@ -522,8 +522,8 @@ class LowestVolumeReversalServiceTest {
                                 "SUNPHARMA",
                                 t0.plus(35, ChronoUnit.MINUTES),
                                 BigDecimal.valueOf(1817),
-                                BigDecimal.valueOf(1819),
-                                BigDecimal.valueOf(1815),
+                                BigDecimal.valueOf(1820),
+                                BigDecimal.valueOf(1813),
                                 BigDecimal.valueOf(1816),
                                 9000));
 
@@ -2163,6 +2163,8 @@ class LowestVolumeReversalServiceTest {
     @DisplayName("Opening 15m Range Filter rejects LONG entry when spot is inside 15m range")
     void testOpening15mRangeFilterRejectsInsidePrice() {
         service.setMaxSlippagePct(2.0);
+        service.setOpening15mRangeFilterEnabled(true);
+        service.setPdhPdlFilterEnabled(false);
         service.setSectorMomentumFilterEnabled(false);
         ObjectMapper mapper = new ObjectMapper();
         LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
@@ -2199,6 +2201,8 @@ class LowestVolumeReversalServiceTest {
     @DisplayName("Opening 15m Range Filter allows LONG entry when spot breaks out of 15m range")
     void testOpening15mRangeFilterAllowsBreakoutPrice() {
         service.setMaxSlippagePct(2.0);
+        service.setOpening15mRangeFilterEnabled(true);
+        service.setPdhPdlFilterEnabled(false);
         service.setSectorMomentumFilterEnabled(false);
         ObjectMapper mapper = new ObjectMapper();
 
@@ -2228,6 +2232,164 @@ class LowestVolumeReversalServiceTest {
                 mapper.createObjectNode().put("lp", "2522.00").put("ap", "2500.00"));
 
         assertThat(service.getOpenPositions()).containsKey("RELIANCE");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
+    }
+
+    @Test
+    @DisplayName("Should reject LONG trade when spot price is below or equal to PDH (trapped in range)")
+    void testRejectLongTradeWhenInsidePdhPdlRange() {
+        service.setMaxSlippagePct(2.0);
+        service.setPdhPdlFilterEnabled(true);
+        service.setOpening15mRangeFilterEnabled(false);
+        service.setSectorMomentumFilterEnabled(false);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setPdh(BigDecimal.valueOf(1880.00));
+        setup.setPdl(BigDecimal.valueOf(1850.00));
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1868),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1867.95),
+                BigDecimal.valueOf(1889.25));
+        setup.setLatestVwap(1870.00);
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        // LTP = 1876.00 (Breached trigger 1875.05, above VWAP 1870, but <= PDH 1880.00)
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1876.00").put("ap", "1870.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        service.evaluateLivePriceActions();
+
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
+    }
+
+    @Test
+    @DisplayName("Should execute LONG trade when spot price is strictly above PDH")
+    void testAllowLongTradeWhenAbovePdh() {
+        service.setMaxSlippagePct(2.0);
+        service.setPdhPdlFilterEnabled(true);
+        service.setOpening15mRangeFilterEnabled(false);
+        service.setSectorMomentumFilterEnabled(false);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setPdh(BigDecimal.valueOf(1870.00));
+        setup.setPdl(BigDecimal.valueOf(1850.00));
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1868),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1867.95),
+                BigDecimal.valueOf(1889.25));
+        setup.setLatestVwap(1870.00);
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        // LTP = 1876.00 (Breached trigger 1875.05, above VWAP 1870, and strictly above PDH 1870.00)
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1876.00").put("ap", "1870.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        service.evaluateLivePriceActions();
+
+        assertThat(service.getOpenPositions()).containsKey("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
+    }
+
+    @Test
+    @DisplayName("Should reject SHORT trade when spot price is above or equal to PDL (trapped in range)")
+    void testRejectShortTradeWhenInsidePdhPdlRange() {
+        service.setMaxSlippagePct(2.0);
+        service.setPdhPdlFilterEnabled(true);
+        service.setOpening15mRangeFilterEnabled(false);
+        service.setSectorMomentumFilterEnabled(false);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
+        setup.setPdh(BigDecimal.valueOf(1050.00));
+        setup.setPdl(BigDecimal.valueOf(1000.00));
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "PVRINOX",
+                        Instant.now(),
+                        BigDecimal.valueOf(1020),
+                        BigDecimal.valueOf(1025),
+                        BigDecimal.valueOf(1015),
+                        BigDecimal.valueOf(1018),
+                        5000),
+                BigDecimal.valueOf(1014.95),
+                BigDecimal.valueOf(1025.05),
+                BigDecimal.valueOf(994.75));
+        setup.setLatestVwap(1020.00);
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("PVRINOX", setup);
+
+        // LTP = 1010.00 (Breached trigger 1014.95, below VWAP 1020, but >= PDL 1000.00 - trapped!)
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1010.00").put("ap", "1020.00"));
+        when(marketDataService.resolveToken("PVRINOX")).thenReturn("13147");
+
+        service.evaluateLivePriceActions();
+
+        assertThat(service.getOpenPositions()).doesNotContainKey("PVRINOX");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getExhaustedSymbols()).contains("PVRINOX");
+    }
+
+    @Test
+    @DisplayName("Should execute SHORT trade when spot price is strictly below PDL")
+    void testAllowShortTradeWhenBelowPdl() {
+        service.setMaxSlippagePct(2.0);
+        service.setPdhPdlFilterEnabled(true);
+        service.setOpening15mRangeFilterEnabled(false);
+        service.setSectorMomentumFilterEnabled(false);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
+        setup.setPdh(BigDecimal.valueOf(1050.00));
+        setup.setPdl(BigDecimal.valueOf(1015.00));
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "PVRINOX",
+                        Instant.now(),
+                        BigDecimal.valueOf(1020),
+                        BigDecimal.valueOf(1025),
+                        BigDecimal.valueOf(1015),
+                        BigDecimal.valueOf(1018),
+                        5000),
+                BigDecimal.valueOf(1014.95),
+                BigDecimal.valueOf(1025.05),
+                BigDecimal.valueOf(994.75));
+        setup.setLatestVwap(1020.00);
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("PVRINOX", setup);
+
+        // LTP = 1010.00 (Breached trigger 1014.95, below VWAP 1020, and strictly below PDL 1015.00)
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1010.00").put("ap", "1020.00"));
+        when(marketDataService.resolveToken("PVRINOX")).thenReturn("13147");
+
+        service.evaluateLivePriceActions();
+
+        assertThat(service.getOpenPositions()).containsKey("PVRINOX");
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
     }
 }

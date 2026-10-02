@@ -113,8 +113,17 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.vwap-confirmation-enabled:true}")
     private volatile boolean vwapConfirmationEnabled = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.opening-15m-range-filter-enabled:true}")
-    private volatile boolean opening15mRangeFilterEnabled = true;
+    @Value("${trading-bot.strategy.lowest-volume.opening-15m-range-filter-enabled:false}")
+    private volatile boolean opening15mRangeFilterEnabled = false;
+
+    @Value("${trading-bot.strategy.lowest-volume.pdh-pdl-filter-enabled:true}")
+    private volatile boolean pdhPdlFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.lowest-volume.scanner-mode:SECTOR_ROTATION}")
+    private volatile String scannerMode = "SECTOR_ROTATION";
+
+    @Value("${trading-bot.strategy.lowest-volume.oi-spurts-top-n:5}")
+    private volatile int oiSpurtsTopN = 5;
 
     @Value("${trading-bot.strategy.lowest-volume.sector-momentum-filter-enabled:true}")
     private volatile boolean sectorMomentumFilterEnabled = true;
@@ -309,6 +318,49 @@ public class LowestVolumeReversalService {
                 return;
             }
 
+            // If OI_SPURTS mode is active, select top institutional F&O stocks directly
+            if ("OI_SPURTS".equalsIgnoreCase(scannerMode) && scanner != null) {
+                List<String> oiCandidates = scanner.scanOiSpurts(universeQuotes, oiSpurtsTopN);
+                if (!oiCandidates.isEmpty()) {
+                    activeSetups.clear();
+                    for (String sym : oiCandidates) {
+                        StockQuoteSnapshot snap = universeQuotes.get(sym);
+                        LowestVolumeDirection symDir =
+                                (snap != null && snap.pctChange() < 0)
+                                        ? LowestVolumeDirection.SHORT
+                                        : LowestVolumeDirection.LONG;
+                        LowestVolumeSetup s = new LowestVolumeSetup(sym, symDir);
+                        if (snap != null) {
+                            s.setOiChangePct(snap.oiPctChange());
+                        }
+                        initPdhPdlForSetup(s);
+                        activeSetups.put(sym, s);
+                    }
+
+                    this.universeScanCompletedToday = true;
+                    this.lastScanDate = LocalDate.now(clock);
+
+                    log.info(
+                            "[LVR] Morning OI Spurts Scan complete. Top {} candidates: {}",
+                            oiCandidates.size(),
+                            oiCandidates);
+
+                    if (telegramAlerts && telegramService != null) {
+                        telegramService.sendTextMessage(
+                                String.format(
+                                        "📊 *LVR 09:25 AM OI Spurts Morning Scan*\n"
+                                                + "• Candidates (%d): `%s`\n"
+                                                + "• Setup Mode: *5m LVR & Vande Bharat*",
+                                        oiCandidates.size(),
+                                        String.join(", ", oiCandidates)));
+                    }
+                    return;
+                } else {
+                    log.warn(
+                            "[LVR] OI Spurts returned 0 candidates. Falling back to Sector Rotation scan.");
+                }
+            }
+
             // 2. Evaluate NIFTY 50 Sentiment
             List<StockQuoteSnapshot> niftyQuotes = new ArrayList<>();
             for (String sym : NiftySectorRegistry.NIFTY_50_CONSTITUENTS) {
@@ -427,7 +479,9 @@ public class LowestVolumeReversalService {
             // Populate active setups
             activeSetups.clear();
             for (String symbol : candidateStocks) {
-                activeSetups.put(symbol, new LowestVolumeSetup(symbol, sentiment));
+                LowestVolumeSetup setup = new LowestVolumeSetup(symbol, sentiment);
+                initPdhPdlForSetup(setup);
+                activeSetups.put(symbol, setup);
             }
 
             Set<String> candidateSet = new java.util.HashSet<>(candidateStocks);
@@ -1117,6 +1171,57 @@ public class LowestVolumeReversalService {
                                             (setup.getDirection() == LowestVolumeDirection.LONG
                                                     ? "Above High ₹" + setup.getFirst15MinHigh()
                                                     : "Below Low ₹" + setup.getFirst15MinLow())));
+                        }
+                        return;
+                    }
+                }
+
+                // PDH / PDL Breakout Filter Check
+                if (pdhPdlFilterEnabled && setup.getPdh() != null && setup.getPdl() != null) {
+                    boolean pdhPdlConfirmed = false;
+                    if (setup.getDirection() == LowestVolumeDirection.LONG) {
+                        pdhPdlConfirmed = (spotPrice.compareTo(setup.getPdh()) > 0);
+                    } else if (setup.getDirection() == LowestVolumeDirection.SHORT) {
+                        pdhPdlConfirmed = (spotPrice.compareTo(setup.getPdl()) < 0);
+                    }
+
+                    if (!pdhPdlConfirmed) {
+                        log.info(
+                                "[LVR] Setup for {} REJECTED/EXHAUSTED: Spot {} inside PDH-PDL range [{} - {}] for {} direction. Stock discarded for the day.",
+                                symbol,
+                                spotPrice,
+                                setup.getPdl(),
+                                setup.getPdh(),
+                                setup.getDirection());
+                        setup.transitionTo(
+                                LowestVolumeSetupState.REJECTED_EXHAUSTED,
+                                String.format(
+                                        Locale.US,
+                                        "Spot %.2f inside PDH-PDL range [%.2f - %.2f] for %s",
+                                        spotPrice.doubleValue(),
+                                        setup.getPdl().doubleValue(),
+                                        setup.getPdh().doubleValue(),
+                                        setup.getDirection()));
+                        exhaustedSymbols.add(symbol);
+
+                        if (telegramAlerts && telegramService != null) {
+                            telegramService.sendTextMessage(
+                                    String.format(
+                                            Locale.US,
+                                            "⚠️ *LVR Trade Discarded (PDH/PDL Range Filter)*\n"
+                                                    + "• Symbol: *%s* (%s)\n"
+                                                    + "• Spot Price: `₹%.2f`\n"
+                                                    + "• PDH/PDL Range: `₹%.2f - ₹%.2f`\n"
+                                                    + "• Reason: *Spot trapped inside yesterday's range* (Must break %s)\n"
+                                                    + "• Status: *Stock discarded for the day*",
+                                            symbol,
+                                            setup.getDirection(),
+                                            spotPrice.doubleValue(),
+                                            setup.getPdl().doubleValue(),
+                                            setup.getPdh().doubleValue(),
+                                            (setup.getDirection() == LowestVolumeDirection.LONG
+                                                    ? "Above PDH ₹" + setup.getPdh()
+                                                    : "Below PDL ₹" + setup.getPdl())));
                         }
                         return;
                     }
@@ -2552,6 +2657,63 @@ public class LowestVolumeReversalService {
 
     public void setOpening15mRangeFilterEnabled(boolean opening15mRangeFilterEnabled) {
         this.opening15mRangeFilterEnabled = opening15mRangeFilterEnabled;
+    }
+
+    public boolean isPdhPdlFilterEnabled() {
+        return pdhPdlFilterEnabled;
+    }
+
+    public void setPdhPdlFilterEnabled(boolean pdhPdlFilterEnabled) {
+        this.pdhPdlFilterEnabled = pdhPdlFilterEnabled;
+    }
+
+    public String getScannerMode() {
+        return scannerMode;
+    }
+
+    public void setScannerMode(String scannerMode) {
+        this.scannerMode = scannerMode;
+    }
+
+    public int getOiSpurtsTopN() {
+        return oiSpurtsTopN;
+    }
+
+    public void setOiSpurtsTopN(int oiSpurtsTopN) {
+        this.oiSpurtsTopN = oiSpurtsTopN;
+    }
+
+    public void initPdhPdlForSetup(LowestVolumeSetup setup) {
+        if (setup == null || marketDataService == null) return;
+        try {
+            LocalDate today = LocalDate.now(clock);
+            List<Candle> dailyCandles = marketDataService.fetchDailyCandles(setup.getSymbol(), 5);
+            if (dailyCandles != null && !dailyCandles.isEmpty()) {
+                List<Candle> pastDaily =
+                        dailyCandles.stream()
+                                .filter(
+                                        c ->
+                                                c.timestamp() != null
+                                                        && LocalDate.ofInstant(c.timestamp(), IST)
+                                                                .isBefore(today))
+                                .toList();
+                if (!pastDaily.isEmpty()) {
+                    Candle prevDay = pastDaily.get(pastDaily.size() - 1);
+                    setup.setPdh(prevDay.high());
+                    setup.setPdl(prevDay.low());
+                    log.info(
+                            "[LVR] Initialized PDH/PDL for {}: PDH={}, PDL={}",
+                            setup.getSymbol(),
+                            prevDay.high(),
+                            prevDay.low());
+                }
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[LVR] Could not fetch daily candles for {} to set PDH/PDL: {}",
+                    setup.getSymbol(),
+                    e.getMessage());
+        }
     }
 
     public int getDefaultLots() {
