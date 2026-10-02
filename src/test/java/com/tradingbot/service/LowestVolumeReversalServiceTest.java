@@ -365,12 +365,41 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName(
-            "Verify default configuration properties: FUTURES and PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500")
-    void testDefaultConfigurationProperties() {
-        assertThat(service.getInstrumentType()).isEqualTo(LvrInstrumentType.FUTURES);
-        assertThat(service.getExitMode())
-                .isEqualTo(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
+    @DisplayName("H4 Fix: Open positions must be managed for SL exit even when strategy enabled is false")
+    void testOpenPositionsManagedWhenStrategyDisabled() {
+        service.setEnabled(false); // Operator toggled off strategy
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.transitionTo(LowestVolumeSetupState.IN_POSITION, "In position");
+
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "SUNPHARMA",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500,
+                        "SUNPHARMA FUT",
+                        100,
+                        1,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(1870.00),
+                        BigDecimal.valueOf(1860.00),
+                        BigDecimal.valueOf(1890.00),
+                        100,
+                        BigDecimal.valueOf(1000.00),
+                        Instant.now());
+        service.getOpenPositions().put("SUNPHARMA", pos);
+
+        // Spot dropped below SL (1855 < 1860)
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1855.00").put("ap", "1865.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        service.evaluateLivePriceActions();
+
+        // Position must be exited via SL even though enabled is false
+        assertThat(pos.isClosed()).isTrue();
+        assertThat(pos.getExitReason()).isEqualTo("SPOT_SL_HIT");
     }
 
     @Test

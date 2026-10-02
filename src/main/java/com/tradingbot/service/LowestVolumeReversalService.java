@@ -163,6 +163,7 @@ public class LowestVolumeReversalService {
             new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private final Map<String, Instant> sectorRejectionAlertCooldown = new ConcurrentHashMap<>();
+    private volatile boolean standDownToday = false;
 
     private volatile LowestVolumeSectorState sectorState = LowestVolumeSectorState.empty();
     private volatile boolean niftyBullish = true;
@@ -220,20 +221,25 @@ public class LowestVolumeReversalService {
                 resetDaily();
             }
 
-            if (!enabled) {
-                log.debug("[LVR] Strategy is currently disabled.");
-                return;
-            }
-
             LocalTime nowTime = LocalTime.now(clock);
-
-            if (nowTime.isBefore(TIME_SESSION_START)) {
-                log.debug("[LVR] Before market open (09:15 IST). Standing by.");
-                return;
-            }
 
             if (!nowTime.isBefore(TIME_HARD_EXIT)) {
                 executeHardExit(nowTime);
+                return;
+            }
+
+            // Always manage open positions even if strategy is disabled for new entries
+            if (!openPositions.isEmpty()) {
+                evaluateOpenPositions(nowTime);
+            }
+
+            if (!enabled) {
+                log.debug("[LVR] Strategy is currently disabled for new entries.");
+                return;
+            }
+
+            if (nowTime.isBefore(TIME_SESSION_START)) {
+                log.debug("[LVR] Before market open (09:15 IST). Standing by.");
                 return;
             }
 
@@ -391,6 +397,7 @@ public class LowestVolumeReversalService {
                         "[LVR] Market sentiment is NEUTRAL/MIXED (below {}% breadth threshold on {}/50 quotes). Standing down for the day to avoid whipsaws.",
                         minBreadthPct, niftyQuotes.size());
                 this.universeScanCompletedToday = true;
+                this.standDownToday = true;
                 this.lastScanDate = LocalDate.now(clock);
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
@@ -887,7 +894,7 @@ public class LowestVolumeReversalService {
      * 30-second live check: Monitors spot price breaches for Armed Triggers, SL, and 1:4 Target.
      */
     public void evaluateLivePriceActions() {
-        if (!enabled || marketDataService == null) return;
+        if (marketDataService == null) return;
 
         LocalTime nowTime = LocalTime.now(clock);
         if (nowTime.isBefore(TIME_SCANNER_START) || !nowTime.isBefore(TIME_HARD_EXIT)) return;
@@ -895,8 +902,7 @@ public class LowestVolumeReversalService {
         Map<String, JsonNode> liveQuoteCache = new HashMap<>();
 
         // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff, if strategy
-        // enabled, and if
-        // circuit breaker not tripped)
+        // enabled, and if circuit breaker not tripped)
         if (enabled
                 && nowTime.isBefore(TIME_ENTRY_CUTOFF)
                 && !isDailyCircuitBreakerTripped(liveQuoteCache)) {
@@ -914,9 +920,11 @@ public class LowestVolumeReversalService {
             }
         }
 
-        // 2. Check Open Positions for Spot SL & 1:2 Target (Intra-candle check: isCandleClose =
-        // false)
-        evaluateOpenPositions(nowTime, liveQuoteCache, false);
+        // 2. Check Open Positions for Spot SL & 1:2 Target (Intra-candle check: isCandleClose = false)
+        // Runs unconditionally even if enabled == false to protect open trades
+        if (!openPositions.isEmpty()) {
+            evaluateOpenPositions(nowTime, liveQuoteCache, false);
+        }
     }
 
     /**
@@ -2054,6 +2062,7 @@ public class LowestVolumeReversalService {
         if (marketDataService != null) {
             marketDataService.prewarmSession();
         }
+        this.standDownToday = false;
         log.info("[LVR] Daily state reset complete.");
     }
 
@@ -2125,7 +2134,7 @@ public class LowestVolumeReversalService {
      * exhausted before 13:00 IST cutoff.
      */
     public void runMidMorningUniverseRefresh(LocalTime nowTime) {
-        if (marketDataService == null || nowTime.isAfter(TIME_ENTRY_CUTOFF)) return;
+        if (marketDataService == null || nowTime.isAfter(TIME_ENTRY_CUTOFF) || standDownToday) return;
         log.info("[LVR] Triggering Mid-Morning Universe Refresh at {} IST...", nowTime);
 
         try {
