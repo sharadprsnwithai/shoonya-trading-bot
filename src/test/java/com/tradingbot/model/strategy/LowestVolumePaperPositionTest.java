@@ -203,4 +203,25 @@ class LowestVolumePaperPositionTest {
         assertThat(pos.getBookedQuantity()).isEqualTo(200);
         assertThat(pos.getRemainingQuantity()).isEqualTo(100);
     }
+
+    @Test
+    @DisplayName("Should store PDH, PDL, setupPattern and OI change in LowestVolumeSetup")
+    void testLowestVolumeSetupPdhPdlAndPattern() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setPdh(BigDecimal.valueOf(3000.00));
+        setup.setPdl(BigDecimal.valueOf(2950.00));
+        setup.setSetupPattern("VANDE_BHARAT_INSIDE_BAR");
+        setup.setOiChangePct(12.5);
+
+        assertThat(setup.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(3000.00));
+        assertThat(setup.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(2950.00));
+        assertThat(setup.getSetupPattern()).isEqualTo("VANDE_BHARAT_INSIDE_BAR");
+        assertThat(setup.getOiChangePct()).isEqualTo(12.5);
+
+        // Reset to scanning should preserve PDH/PDL but reset trigger & pattern
+        setup.resetToScanning();
+        assertThat(setup.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(3000.00));
+        assertThat(setup.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(2950.00));
+        assertThat(setup.getSetupPattern()).isNull();
+    }
 }

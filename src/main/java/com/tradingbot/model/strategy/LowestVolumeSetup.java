@@ -31,6 +31,10 @@ public class LowestVolumeSetup {
     private Double latestVwap;
     private BigDecimal first15MinHigh;
     private BigDecimal first15MinLow;
+    private BigDecimal pdh;
+    private BigDecimal pdl;
+    private String setupPattern;
+    private Double oiChangePct;
     private Instant updatedAt;
     private Instant setupCreatedTime;
     private Instant lastExitTime;
@@ -61,6 +65,7 @@ public class LowestVolumeSetup {
         this.latestVwap = null;
         this.first15MinHigh = null;
         this.first15MinLow = null;
+        this.setupPattern = null;
         this.updatedAt = Instant.now();
     }
 
@@ -195,6 +200,38 @@ public class LowestVolumeSetup {
 
     public void setFirst15MinLow(BigDecimal first15MinLow) {
         this.first15MinLow = first15MinLow;
+    }
+
+    public BigDecimal getPdh() {
+        return pdh;
+    }
+
+    public void setPdh(BigDecimal pdh) {
+        this.pdh = pdh;
+    }
+
+    public BigDecimal getPdl() {
+        return pdl;
+    }
+
+    public void setPdl(BigDecimal pdl) {
+        this.pdl = pdl;
+    }
+
+    public String getSetupPattern() {
+        return setupPattern;
+    }
+
+    public void setSetupPattern(String setupPattern) {
+        this.setupPattern = setupPattern;
+    }
+
+    public Double getOiChangePct() {
+        return oiChangePct;
+    }
+
+    public void setOiChangePct(Double oiChangePct) {
+        this.oiChangePct = oiChangePct;
     }
 
     public boolean isInPosition() {
