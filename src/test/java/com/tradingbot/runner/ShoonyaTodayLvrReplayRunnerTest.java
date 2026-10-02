@@ -194,7 +194,7 @@ class ShoonyaTodayLvrReplayRunnerTest {
                 "--------------------------------------------------------------------------");
 
         lvrService.setInstrumentType(LvrInstrumentType.FUTURES);
-        lvrService.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+        lvrService.setExitMode(LvrExitMode.FULL_TARGET_1_2);
         lvrService.setTelegramAlerts(false);
 
         System.out.println("\n>>> [LONG REPLAY ACROSS ALL 107 STOCKS] <<<");
@@ -244,9 +244,9 @@ class ShoonyaTodayLvrReplayRunnerTest {
                                         : (entryPrc.subtract(exitPrc).doubleValue()));
                 double rValue = (unitRisk > 0 && !isOptions) ? (ptsCaptured / unitRisk) : 0.0;
 
-                if (pos.getExitReason().contains("TARGET_1_4")) {
+                if (pos.getExitReason().contains("TARGET_1_2_FULL_EXIT")) {
                     wins++;
-                    rValue = (pos.getExitMode() == LvrExitMode.FULL_TARGET_1_4) ? 4.0 : 2.0;
+                    rValue = 2.0;
                 } else if (pos.getExitReason().contains("SL")) {
                     losses++;
                     rValue = pos.isPartialBooked() ? 0.0 : -1.0;

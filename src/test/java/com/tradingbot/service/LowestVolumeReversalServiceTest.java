@@ -47,6 +47,9 @@ class LowestVolumeReversalServiceTest {
         service.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST)); // 10:00 IST
         service.setMorningScanDelayMs(0); // No delay in unit tests
         service.setPdhPdlFilterEnabled(false);
+        // M9: the sector gate now fails closed on NO_DATA (unit-test quote mocks carry no
+        // breadth data); gate-specific tests re-enable it or call the check directly.
+        service.setSectorMomentumFilterEnabled(false);
     }
 
     @Test
@@ -318,6 +321,8 @@ class LowestVolumeReversalServiceTest {
     void testSignalPublishedOnEntryAndExit() {
         com.tradingbot.bus.SignalPublisher mockPublisher =
                 mock(com.tradingbot.bus.SignalPublisher.class);
+        // H11: a rejected publish rolls the entry back — the happy-path test must accept it.
+        when(mockPublisher.publish(org.mockito.ArgumentMatchers.any())).thenReturn(true);
         service =
                 new LowestVolumeReversalService(
                         marketDataService, taService, null, config, null, null, mockPublisher);
@@ -952,12 +957,51 @@ class LowestVolumeReversalServiceTest {
         service.getOpenPositions().put("SUNPHARMA", pos);
         assertThat(service.getOpenPositions()).hasSize(1);
 
+        // H12: the square-off needs a real quote — a missing quote now defers the exit instead
+        // of fabricating a zero-loss fill from the entry price.
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new com.fasterxml.jackson.databind.ObjectMapper()
+                                .createObjectNode()
+                                .put("lp", "520.0")
+                                .put("c", "515.0"));
+
         service.executeHardExit(LocalTime.of(15, 0));
 
         assertThat(service.getOpenPositions()).isEmpty();
         assertThat(service.getTradeHistory()).hasSize(1);
         assertThat(service.getTradeHistory().get(0).getExitReason())
                 .isEqualTo("EOD_1500_HARD_EXIT");
+    }
+
+    @Test
+    @DisplayName("H12 Fix: hard exit with no quote keeps the position instead of fabricating a fill")
+    void testHardEodExitKeepsPositionWhenQuoteUnavailable() {
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "SUNPHARMA",
+                        "CE",
+                        "SUNPHARMA ATM 500CE",
+                        BigDecimal.valueOf(500),
+                        350,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(15.0),
+                        BigDecimal.valueOf(516.0),
+                        BigDecimal.valueOf(508.0),
+                        BigDecimal.valueOf(548.0),
+                        700,
+                        BigDecimal.valueOf(5600.0),
+                        Instant.now());
+        service.getOpenPositions().put("SUNPHARMA", pos);
+        // No fetchQuote mock → quote unavailable.
+
+        service.executeHardExit(LocalTime.of(15, 0));
+
+        assertThat(service.getOpenPositions()).containsKey("SUNPHARMA");
+        assertThat(pos.isClosed()).isFalse();
+        assertThat(service.getTradeHistory()).isEmpty();
     }
 
     @Test
@@ -1214,6 +1258,94 @@ class LowestVolumeReversalServiceTest {
                 service.replaySession("SUNPHARMA", LowestVolumeDirection.LONG, candles);
 
         assertThat(trades).isNotNull();
+    }
+
+    private List<Candle> replayFixtureCandles() {
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
+        return List.of(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        t0,
+                        BigDecimal.valueOf(1800),
+                        BigDecimal.valueOf(1810),
+                        BigDecimal.valueOf(1795),
+                        BigDecimal.valueOf(1805),
+                        10000),
+                Candle.of5m(
+                        "SUNPHARMA",
+                        t0.plus(5, ChronoUnit.MINUTES),
+                        BigDecimal.valueOf(1805),
+                        BigDecimal.valueOf(1820),
+                        BigDecimal.valueOf(1800),
+                        BigDecimal.valueOf(1815),
+                        12000),
+                Candle.of5m(
+                        "SUNPHARMA",
+                        t0.plus(10, ChronoUnit.MINUTES),
+                        BigDecimal.valueOf(1815),
+                        BigDecimal.valueOf(1830),
+                        BigDecimal.valueOf(1810),
+                        BigDecimal.valueOf(1825),
+                        15000),
+                Candle.of5m(
+                        "SUNPHARMA",
+                        t0.plus(15, ChronoUnit.MINUTES),
+                        BigDecimal.valueOf(1825),
+                        BigDecimal.valueOf(1826),
+                        BigDecimal.valueOf(1818),
+                        BigDecimal.valueOf(1820),
+                        3000),
+                Candle.of5m(
+                        "SUNPHARMA",
+                        t0.plus(20, ChronoUnit.MINUTES),
+                        BigDecimal.valueOf(1822),
+                        BigDecimal.valueOf(1840),
+                        BigDecimal.valueOf(1821),
+                        BigDecimal.valueOf(1838),
+                        20000));
+    }
+
+    @Test
+    @DisplayName("L6: replaySession honors the shared breaker gate — no trades when tripped")
+    void testReplaySessionBlockedWhenCircuitBreakerTripped() {
+        service.setMaxDailyLoss(10000.0);
+        Instant testInstant = Instant.parse("2026-09-18T04:30:00Z");
+        LowestVolumePaperPosition lossPos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "PERSISTENT",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500,
+                        "PERSISTENT FUT",
+                        100,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(5340.00),
+                        BigDecimal.valueOf(5320.00),
+                        BigDecimal.valueOf(5380.00),
+                        200,
+                        BigDecimal.valueOf(4000.00),
+                        testInstant);
+        lossPos.close(BigDecimal.valueOf(5280.00), "SPOT_SL_HIT", testInstant);
+        service.getTradeHistory().add(lossPos);
+        assertThat(service.isDailyCircuitBreakerTripped()).isTrue();
+
+        List<LowestVolumePaperPosition> trades =
+                service.replaySession("SUNPHARMA", LowestVolumeDirection.LONG, replayFixtureCandles());
+
+        assertThat(trades).isEmpty();
+    }
+
+    @Test
+    @DisplayName("L6: replaySession honors the shared budget gate — no trades when planned risk exceeds budget")
+    void testReplaySessionBlockedWhenPlannedRiskExceedsBudget() {
+        // SUNPHARMA futures: unitRisk 10 × (2 lots × 350) = ₹7,000 planned risk vs ₹1 budget.
+        service.setMaxDailyLoss(1.0);
+
+        List<LowestVolumePaperPosition> trades =
+                service.replaySession("SUNPHARMA", LowestVolumeDirection.LONG, replayFixtureCandles());
+
+        assertThat(trades).isEmpty();
     }
 
     @Test
@@ -1482,7 +1614,7 @@ class LowestVolumeReversalServiceTest {
                         "LVR-1",
                         "SUNPHARMA",
                         LvrInstrumentType.FUTURES,
-                        LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_COST_EOD_1500,
                         "SUNPHARMA FUT",
                         350,
                         2,
@@ -1513,7 +1645,7 @@ class LowestVolumeReversalServiceTest {
             "replaySession correctly computes Futures partial booking PnL using spot target price")
     void testReplaySessionFuturesPartialExitTarget14ComputesExactPnl() {
         service.setInstrumentType(LvrInstrumentType.FUTURES);
-        service.setExitMode(LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500);
+        service.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_COST_EOD_1500);
 
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles =
@@ -1707,6 +1839,12 @@ class LowestVolumeReversalServiceTest {
     @Test
     @DisplayName("resetDaily resets tradeCounter back to 1 for clean trade ID generation")
     void testDailyResetClearsTradeCounter() {
+        service = new LowestVolumeReversalService(marketDataService, taService, null, config, null);
+        service.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST));
+        // M2: raise the daily budget — this test is about trade-ID sequencing, not the
+        // pre-trade risk budget (TATASTEEL's 5500 lot would exceed the default ₹15k limit).
+        service.setMaxDailyLoss(1_000_000.0);
+
         LowestVolumeSetup setup1 = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup1.setTriggerCandle(
                 Candle.of5m(
@@ -1770,7 +1908,7 @@ class LowestVolumeReversalServiceTest {
     @DisplayName("Replay session prioritizes SL breach over target breach on wide volatile candle")
     void testReplaySessionSlHitPrioritizedOverTargetHit() {
         service.setInstrumentType(LvrInstrumentType.FUTURES);
-        service.setExitMode(LvrExitMode.PARTIAL_1_4_TRAIL_1_1_EOD_1500);
+        service.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_COST_EOD_1500);
 
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles =
@@ -2467,9 +2605,399 @@ class LowestVolumeReversalServiceTest {
         when(marketDataService.fetchDailyCandles("SUNPHARMA", 5)).thenReturn(java.util.Collections.emptyList());
 
         service.evaluateLivePriceActions();
+        // N5: first failed lazy fetch only retries — the SECOND attempt exhausts (fail-closed).
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        service.evaluateLivePriceActions();
 
         assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
         assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
+    }
+
+    @Test
+    @DisplayName(
+            "N1 Fix: fresh wick past the arming baseline triggers; a stale session high never does")
+    void testFreshWickRequiresSessionExtremeToAdvanceAfterArming() {
+        service.setMaxSlippagePct(2.0);
+        service.setOpening15mRangeFilterEnabled(false);
+        service.setPdhPdlFilterEnabled(false);
+        service.setSectorMomentumFilterEnabled(false);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setLatestVwap(1870.00);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1865),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1864.95),
+                BigDecimal.valueOf(1895.25));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        ObjectMapper mapper = new ObjectMapper();
+        // Tick 1: first tick after arming captures the baseline session high (1874).
+        var armTick =
+                mapper.createObjectNode()
+                        .put("lp", "1872.00")
+                        .put("ap", "1870.00")
+                        .put("h", "1874.00")
+                        .put("l", "1866.00");
+        // Tick 2: session high did NOT advance — stale relative to baseline → no trigger.
+        var staleTick =
+                mapper.createObjectNode()
+                        .put("lp", "1872.00")
+                        .put("ap", "1870.00")
+                        .put("h", "1874.00")
+                        .put("l", "1866.00");
+        // Tick 3: session high ADVANCED past baseline (1880 ≥ trigger) while LTP pulled back
+        // below the trigger — a genuine fresh wick breach.
+        var freshTick =
+                mapper.createObjectNode()
+                        .put("lp", "1872.00")
+                        .put("ap", "1870.00")
+                        .put("h", "1880.00")
+                        .put("l", "1866.00");
+        when(marketDataService.fetchQuote(any(), any())).thenReturn(armTick, staleTick, freshTick);
+
+        service.evaluateLivePriceActions();
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+
+        service.evaluateLivePriceActions();
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+
+        service.evaluateLivePriceActions();
+        assertThat(service.getOpenPositions()).containsKey("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
+    }
+
+    @Test
+    @DisplayName(
+            "N2 Fix: OI_SPURTS scan fails loudly when no quote carries OI — no silent fallback")
+    void testOiSpurtsScanFailsLoudlyWhenOiMissing() {
+        service.setScannerMode("OI_SPURTS");
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new ObjectMapper().createObjectNode().put("lp", "102.0").put("c", "100.0"));
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isFalse();
+        assertThat(service.getActiveSetups()).isEmpty();
+        assertThat(service.getCandidateReservoir()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("N2 Fix: OI_SPURTS scan selects top candidates when quotes carry real oi/poi")
+    void testOiSpurtsScanSelectsCandidatesWithOiData() {
+        service.setScannerMode("OI_SPURTS");
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new ObjectMapper()
+                                .createObjectNode()
+                                .put("lp", "102.0")
+                                .put("c", "100.0")
+                                .put("oi", 110000)
+                                .put("poi", 100000));
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).hasSize(5);
+        assertThat(service.getActiveSetups().values())
+                .allSatisfy(
+                        s -> {
+                            assertThat(s.getOiChangePct()).isNotNull();
+                            assertThat(s.getOiChangePct()).isCloseTo(10.0, org.assertj.core.data.Offset.offset(0.01));
+                        });
+    }
+
+    @Test
+    @DisplayName("N6/H10 Fix: neutral-breadth scan stands down for the day and refuses entries")
+    void testStandDownAfterNeutralSentimentRefusesEntries() {
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        // Flat quotes (lp == c) → 0% advance breadth across the universe → sentiment NONE.
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new ObjectMapper().createObjectNode().put("lp", "100.0").put("c", "100.0"));
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.isStandDownToday()).isTrue();
+        assertThat(service.getActiveSetups()).isEmpty();
+        assertThat(service.getCandidateReservoir()).isEmpty();
+
+        // N6: even a fully armed trigger cannot enter while standing down.
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1865),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1864.95),
+                BigDecimal.valueOf(1895.25));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        assertThat(service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1876.00)))
+                .isNull();
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+
+        // H10: stand-down is sticky — the reservoir is never promoted back in.
+        service.getCandidateReservoir().add("TATAMOTORS");
+        service.replenishActiveCandidatesIfNeeded(LocalTime.of(10, 15));
+        assertThat(service.getActiveSetups()).doesNotContainKey("TATAMOTORS");
+    }
+
+    @Test
+    @DisplayName(
+            "M9 Fix: sector NO_DATA defers on a cooldown and fails closed after bounded retries")
+    void testSectorGateNoDataDefersThenExhausts() {
+        service.setSectorMomentumFilterEnabled(true);
+        service.setMaxSlippagePct(2.0);
+        service.setOpening15mRangeFilterEnabled(false);
+        service.setPdhPdlFilterEnabled(false);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setLatestVwap(1870.00);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1865),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1864.95),
+                BigDecimal.valueOf(1895.25));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+        when(marketDataService.resolveToken(any())).thenReturn("3351");
+        // LTP present but no previous close 'c' → every sector constituent yields no usable
+        // breadth data → SectorGate.NO_DATA.
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(new ObjectMapper().createObjectNode().put("lp", "1876.00"));
+
+        Instant base = Instant.parse("2026-09-18T04:30:00Z");
+        // Attempts 1..5: deferred on the 60s cooldown, never entering, never silently allowed.
+        for (int i = 1; i <= 5; i++) {
+            service.setClock(
+                    Clock.fixed(base.plus(i * 70L, ChronoUnit.SECONDS), IST));
+            service.evaluateLivePriceActions();
+            assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+            assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+        }
+
+        // Attempt 6: bounded retries exhausted → fail closed.
+        service.setClock(Clock.fixed(base.plus(6 * 70L, ChronoUnit.SECONDS), IST));
+        service.evaluateLivePriceActions();
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+    }
+
+    @Test
+    @DisplayName(
+            "M2 Fix: circuit breaker latches after tripping even when P&L recovers; only an explicit reset clears it")
+    void testCircuitBreakerLatchesAfterTrip() {
+        service.setMaxDailyLoss(10000.0);
+        Instant testInstant = Instant.parse("2026-09-18T04:30:00Z");
+        LowestVolumePaperPosition lossPos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "PERSISTENT",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500,
+                        "PERSISTENT FUT",
+                        100,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(5340.00),
+                        BigDecimal.valueOf(5320.00),
+                        BigDecimal.valueOf(5380.00),
+                        200,
+                        BigDecimal.valueOf(4000.00),
+                        testInstant);
+        lossPos.close(BigDecimal.valueOf(5280.00), "SPOT_SL_HIT", testInstant);
+        service.getTradeHistory().add(lossPos);
+        assertThat(service.isDailyCircuitBreakerTripped()).isTrue();
+
+        // P&L recovers above water — the breaker must STAY tripped for the day (latched).
+        service.getTradeHistory().clear();
+        LowestVolumePaperPosition winPos =
+                new LowestVolumePaperPosition(
+                        "LVR-2",
+                        "PERSISTENT",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500,
+                        "PERSISTENT FUT",
+                        100,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(5340.00),
+                        BigDecimal.valueOf(5320.00),
+                        BigDecimal.valueOf(5380.00),
+                        200,
+                        BigDecimal.valueOf(4000.00),
+                        testInstant);
+        winPos.close(BigDecimal.valueOf(5440.00), "TARGET_1_2_FULL_EXIT", testInstant);
+        service.getTradeHistory().add(winPos);
+        assertThat(service.calculateTodayRealizedPnl()).isPositive();
+        assertThat(service.isDailyCircuitBreakerTripped()).isTrue();
+
+        // Only an explicit reset clears the latch.
+        service.resetDaily(true);
+        assertThat(service.isDailyCircuitBreakerTripped()).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+            "M10 Fix: persisted state round-trips — open position, history and exhausted symbols survive a restart")
+    void testPersistedStateRoundTrip() throws Exception {
+        java.nio.file.Path stateFile =
+                java.nio.file.Files.createTempDirectory("lvr-m10").resolve("lvr-state.json");
+        service.setStateFilePath(stateFile.toString());
+        service.setStatePersistenceEnabled(true);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "RELIANCE",
+                        Instant.now(),
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2510),
+                        BigDecimal.valueOf(2495),
+                        BigDecimal.valueOf(2505),
+                        1000),
+                BigDecimal.valueOf(2510.05),
+                BigDecimal.valueOf(2494.95),
+                BigDecimal.valueOf(2540.25));
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2510.05));
+        assertThat(pos).isNotNull();
+
+        Instant testInstant = Instant.parse("2026-09-18T04:30:00Z");
+        LowestVolumePaperPosition closedPos =
+                new LowestVolumePaperPosition(
+                        "LVR-99",
+                        "TCS",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.FULL_TARGET_1_2,
+                        "TCS FUT",
+                        80,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(4000.00),
+                        BigDecimal.valueOf(3980.00),
+                        BigDecimal.valueOf(4060.00),
+                        160,
+                        BigDecimal.valueOf(3200.00),
+                        testInstant);
+        closedPos.close(BigDecimal.valueOf(4040.00), "SPOT_SL_HIT", testInstant);
+        service.getTradeHistory().add(closedPos);
+        service.getExhaustedSymbols().add("TATAMOTORS");
+        service.persistState();
+        assertThat(java.nio.file.Files.exists(stateFile)).isTrue();
+
+        LowestVolumeReversalService restored =
+                new LowestVolumeReversalService(marketDataService, taService, null, config, null);
+        restored.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST));
+        restored.setStateFilePath(stateFile.toString());
+        restored.setStatePersistenceEnabled(true);
+        restored.restorePersistedState();
+
+        assertThat(restored.getOpenPositions()).containsKey("RELIANCE");
+        LowestVolumePaperPosition rp = restored.getOpenPositions().get("RELIANCE");
+        assertThat(rp.getStockEntryPrice()).isEqualByComparingTo(pos.getStockEntryPrice());
+        assertThat(rp.getCurrentStockSl()).isEqualByComparingTo(pos.getCurrentStockSl());
+        assertThat(rp.getRemainingQuantity()).isEqualTo(pos.getRemainingQuantity());
+        assertThat(rp.isClosed()).isFalse();
+        assertThat(restored.getTradeHistory()).hasSize(1);
+        assertThat(restored.getTradeHistory().get(0).getSymbol()).isEqualTo("TCS");
+        assertThat(restored.getExhaustedSymbols()).contains("TATAMOTORS");
+    }
+
+    @Test
+    @DisplayName(
+            "H6 Fix: resetDaily snapshots positions/history to disk BEFORE clearing — nothing is silently lost")
+    void testResetDailySnapshotsStateBeforeClearing() throws Exception {
+        java.nio.file.Path stateFile =
+                java.nio.file.Files.createTempDirectory("lvr-h6").resolve("lvr-state.json");
+        service.setStateFilePath(stateFile.toString());
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("RELIANCE", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "RELIANCE",
+                        Instant.now(),
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2510),
+                        BigDecimal.valueOf(2495),
+                        BigDecimal.valueOf(2505),
+                        1000),
+                BigDecimal.valueOf(2510.05),
+                BigDecimal.valueOf(2494.95),
+                BigDecimal.valueOf(2540.25));
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("RELIANCE", setup, BigDecimal.valueOf(2510.05));
+        assertThat(pos).isNotNull();
+        service.getExhaustedSymbols().add("TATAMOTORS");
+
+        service.resetDaily(true);
+
+        assertThat(service.getOpenPositions()).isEmpty();
+        assertThat(java.nio.file.Files.exists(stateFile)).isTrue();
+        com.tradingbot.persistence.LvrStateStore.DailyState state =
+                com.tradingbot.persistence.LvrStateStore.load(stateFile);
+        assertThat(state).isNotNull();
+        assertThat(state.openPositions.size() + state.tradeHistory.size()).isEqualTo(1);
+        assertThat(state.exhaustedSymbols).contains("TATAMOTORS");
+    }
+
+    @Test
+    @DisplayName("H7 Fix: replenished setups get PDH/PDL initialized instead of failing closed forever")
+    void testReplenishedSetupGetsPdhPdl() {
+        service.setPdhPdlFilterEnabled(true);
+        service.getActiveSetups().clear();
+        service.getCandidateReservoir().clear();
+        service.getCandidateReservoir().add("TATAMOTORS");
+        service.getCandidateReservoir().add("BAJFINANCE");
+
+        Candle prevDay =
+                Candle.of5m(
+                        "TATAMOTORS",
+                        Instant.parse("2026-09-17T00:00:00Z"),
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(105),
+                        BigDecimal.valueOf(99),
+                        BigDecimal.valueOf(104),
+                        1000);
+        when(marketDataService.fetchDailyCandles(any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(prevDay));
+
+        service.replenishActiveCandidatesIfNeeded(LocalTime.of(10, 15));
+
+        LowestVolumeSetup tata = service.getActiveSetups().get("TATAMOTORS");
+        assertThat(tata).isNotNull();
+        assertThat(tata.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(105));
+        assertThat(tata.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(99));
     }
 }

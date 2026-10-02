@@ -14,7 +14,23 @@ public interface TradeExecutionConsumer {
 
     boolean isEnabled();
 
+    /**
+     * Per-strategy execution overrides (H2: used to detect duplicate LIVE routing across
+     * consumers). Defaults to empty for consumers without overrides.
+     */
+    default java.util.Map<String, ExecutionMode> getStrategyModes() {
+        return java.util.Collections.emptyMap();
+    }
+
     double getQuantityMultiplier();
+
+    /**
+     * C3: underlying symbols with a broker-confirmed ENTRY (failed-fill ledger, used for drift
+     * reconciliation). Defaults to empty for consumers that don't track entries.
+     */
+    default java.util.Set<String> getConfirmedEntrySymbols() {
+        return java.util.Set.of();
+    }
 
     void start(Flux<TradeSignal> signalStream);
 

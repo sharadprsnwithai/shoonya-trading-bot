@@ -1,5 +1,7 @@
 package com.tradingbot.controller;
 
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -63,15 +65,17 @@ class LowestVolumeStrategyControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/strategy/lowest-volume/morning-scan triggers morning scan")
+    @DisplayName("POST /api/strategy/lowest-volume/morning-scan triggers morning scan async")
     void testRunMorningScan() throws Exception {
         when(strategyService.getOpenPositions()).thenReturn(Collections.emptyMap());
 
         mockMvc.perform(post("/api/strategy/lowest-volume/morning-scan"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("SUCCESS"));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.jobId").exists())
+                .andExpect(jsonPath("$.statusUrl").exists());
 
-        verify(strategyService).runMorningUniverseScan();
+        verify(strategyService, timeout(2000)).runMorningUniverseScan();
     }
 
     @Test
@@ -89,13 +93,34 @@ class LowestVolumeStrategyControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/strategy/lowest-volume/scan triggers strategy cycle")
+    @DisplayName("POST /api/strategy/lowest-volume/scan submits an async job (L1: 202 + jobId)")
     void testRunCycle() throws Exception {
         mockMvc.perform(post("/api/strategy/lowest-volume/scan"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.jobId").exists())
+                .andExpect(jsonPath("$.statusUrl").value("/api/strategy/lowest-volume/scan/status"));
+
+        verify(strategyService, timeout(2000)).runCycle();
+    }
+
+    @Test
+    @DisplayName("POST /scan?sync=true keeps the legacy synchronous contract")
+    void testRunCycleSync() throws Exception {
+        mockMvc.perform(post("/api/strategy/lowest-volume/scan").param("sync", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
         verify(strategyService).runCycle();
+    }
+
+    @Test
+    @DisplayName("GET /scan/status returns the async job list")
+    void testScanStatus() throws Exception {
+        mockMvc.perform(get("/api/strategy/lowest-volume/scan/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.running").exists())
+                .andExpect(jsonPath("$.jobs").isArray());
     }
 
     @Test
@@ -105,7 +130,35 @@ class LowestVolumeStrategyControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
-        verify(strategyService).resetDaily();
+        verify(strategyService).resetDaily(false);
+    }
+
+    @Test
+    @DisplayName("POST /reset is refused intraday unless force=true (H6)")
+    void testResetRefusedIntraday() throws Exception {
+        when(strategyService.isWithinTradingHours()).thenReturn(true);
+        when(strategyService.getOpenPositions()).thenReturn(Collections.emptyMap());
+
+        mockMvc.perform(post("/api/strategy/lowest-volume/reset"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        verify(strategyService, never()).resetDaily(true);
+        verify(strategyService, never()).resetDaily(false);
+    }
+
+    @Test
+    @DisplayName("POST /reset?force=true is allowed intraday (H6)")
+    void testResetForcedIntraday() throws Exception {
+        when(strategyService.isWithinTradingHours()).thenReturn(true);
+        when(strategyService.getOpenPositions()).thenReturn(Collections.emptyMap());
+
+        mockMvc.perform(post("/api/strategy/lowest-volume/reset").param("force", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.force").value(true));
+
+        verify(strategyService).resetDaily(true);
     }
 
     @Test

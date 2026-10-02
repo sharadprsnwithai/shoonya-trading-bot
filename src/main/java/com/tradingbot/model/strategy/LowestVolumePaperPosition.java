@@ -429,4 +429,105 @@ public class LowestVolumePaperPosition {
     public void setTrailingSuperTrendValue(BigDecimal trailingSuperTrendValue) {
         this.trailingSuperTrendValue = trailingSuperTrendValue;
     }
+
+    // --- M10: disk snapshot mapping ---
+
+    /** M10: captures this position (entry state + mutable trading state) into a snapshot. */
+    public static LvrPositionSnapshot snapshotOf(LowestVolumePaperPosition pos) {
+        if (pos == null) return null;
+        LvrPositionSnapshot s = new LvrPositionSnapshot();
+        s.tradeId = pos.tradeId;
+        s.symbol = pos.symbol;
+        s.instrumentType = pos.instrumentType;
+        s.exitMode = pos.exitMode;
+        s.optionType = pos.optionType;
+        s.optionSymbol = pos.optionSymbol;
+        s.atmStrike = pos.atmStrike;
+        s.lotSize = pos.lotSize;
+        s.lots = pos.lots;
+        s.direction = pos.direction;
+        s.entryPremium = pos.entryPremium;
+        s.stockEntryPrice = pos.stockEntryPrice;
+        s.initialStockSl = pos.initialStockSl;
+        s.currentStockSl = pos.currentStockSl;
+        s.target1StockPrice = pos.target1StockPrice;
+        s.totalQuantity = pos.totalQuantity;
+        s.remainingQuantity = pos.remainingQuantity;
+        s.plannedRisk = pos.plannedRisk;
+        s.entryTime = pos.entryTime;
+        s.partialBooked = pos.partialBooked;
+        s.partialExitPremium = pos.partialExitPremium;
+        s.partialExitTime = pos.partialExitTime;
+        s.partialPnl = pos.partialPnl;
+        s.runnerExitPremium = pos.runnerExitPremium;
+        s.exitTime = pos.exitTime;
+        s.runnerPnl = pos.runnerPnl;
+        s.totalRealizedPnl = pos.totalRealizedPnl;
+        s.exitReason = pos.exitReason;
+        s.closed = pos.closed;
+        s.trailingSuperTrendValue = pos.trailingSuperTrendValue;
+        return s;
+    }
+
+    /** M10: rebuilds a position (including mutable state) from a persisted snapshot. */
+    public static LowestVolumePaperPosition restoreFrom(LvrPositionSnapshot s) {
+        if (s == null || s.symbol == null) return null;
+        LvrInstrumentType type =
+                s.instrumentType != null ? s.instrumentType : LvrInstrumentType.FUTURES;
+        LowestVolumePaperPosition pos;
+        if (type == LvrInstrumentType.FUTURES) {
+            pos =
+                    new LowestVolumePaperPosition(
+                            s.tradeId,
+                            s.symbol,
+                            type,
+                            s.exitMode,
+                            s.optionSymbol,
+                            s.lotSize,
+                            s.lots,
+                            s.direction,
+                            s.stockEntryPrice,
+                            s.initialStockSl,
+                            s.target1StockPrice,
+                            s.totalQuantity,
+                            s.plannedRisk,
+                            s.entryTime);
+        } else {
+            pos =
+                    new LowestVolumePaperPosition(
+                            s.tradeId,
+                            s.symbol,
+                            s.exitMode,
+                            s.optionType,
+                            s.optionSymbol,
+                            s.atmStrike,
+                            s.lotSize,
+                            s.lots,
+                            s.direction,
+                            s.entryPremium,
+                            s.stockEntryPrice,
+                            s.initialStockSl,
+                            s.target1StockPrice,
+                            s.totalQuantity,
+                            s.plannedRisk,
+                            s.entryTime);
+        }
+        // Restore mutable trading state the constructors don't cover.
+        // (entryPremium is final and correctly set by both constructors above.)
+        pos.currentStockSl =
+                s.currentStockSl != null ? s.currentStockSl : pos.currentStockSl;
+        pos.remainingQuantity = s.remainingQuantity > 0 ? s.remainingQuantity : pos.remainingQuantity;
+        pos.partialBooked = s.partialBooked;
+        pos.partialExitPremium = s.partialExitPremium;
+        pos.partialExitTime = s.partialExitTime;
+        pos.partialPnl = s.partialPnl != null ? s.partialPnl : pos.partialPnl;
+        pos.runnerExitPremium = s.runnerExitPremium;
+        pos.exitTime = s.exitTime;
+        pos.runnerPnl = s.runnerPnl != null ? s.runnerPnl : pos.runnerPnl;
+        pos.totalRealizedPnl = s.totalRealizedPnl != null ? s.totalRealizedPnl : pos.totalRealizedPnl;
+        pos.exitReason = s.exitReason;
+        pos.closed = s.closed;
+        pos.trailingSuperTrendValue = s.trailingSuperTrendValue;
+        return pos;
+    }
 }

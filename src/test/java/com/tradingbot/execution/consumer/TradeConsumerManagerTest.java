@@ -45,4 +45,72 @@ class TradeConsumerManagerTest {
 
         manager.shutdown();
     }
+
+    @Test
+    void testDriftReconciliationRunsForSingleLiveConsumer() {
+        ExecutionProperties props = new ExecutionProperties();
+        ExecutionProperties.ConsumerConfig c1 = new ExecutionProperties.ConsumerConfig();
+        c1.setId("shoonya-live");
+        c1.setBroker("SHOONYA");
+        c1.setMode(ExecutionMode.LIVE);
+        c1.setQuantityMultiplier(1.0);
+        c1.setEnabled(true);
+
+        // Second consumer explicitly disabled → exactly ONE live consumer → reconcile runs.
+        ExecutionProperties.ConsumerConfig c2 = new ExecutionProperties.ConsumerConfig();
+        c2.setId("zerodha-disabled");
+        c2.setBroker("ZERODHA");
+        c2.setMode(ExecutionMode.LIVE);
+        c2.setQuantityMultiplier(1.0);
+        c2.setEnabled(false);
+
+        props.setConsumers(List.of(c1, c2));
+
+        ReactiveSignalEventBus bus = new ReactiveSignalEventBus();
+        ShoonyaBrokerGateway shoonyaGw = mock(ShoonyaBrokerGateway.class);
+        when(shoonyaGw.getPositions()).thenReturn(List.of());
+        ZerodhaBrokerGateway zerodhaGw = mock(ZerodhaBrokerGateway.class);
+
+        TradeConsumerManager manager = new TradeConsumerManager(props, bus, shoonyaGw, zerodhaGw);
+        manager.init();
+
+        manager.reconcileBrokerDrift();
+
+        verify(shoonyaGw, times(1)).getPositions();
+        manager.shutdown();
+    }
+
+    @Test
+    void testDriftReconciliationSkippedWhenDualLiveConsumers() {
+        ExecutionProperties props = new ExecutionProperties();
+        ExecutionProperties.ConsumerConfig c1 = new ExecutionProperties.ConsumerConfig();
+        c1.setId("shoonya-live");
+        c1.setBroker("SHOONYA");
+        c1.setMode(ExecutionMode.LIVE);
+        c1.setQuantityMultiplier(1.0);
+        c1.setEnabled(true);
+
+        ExecutionProperties.ConsumerConfig c2 = new ExecutionProperties.ConsumerConfig();
+        c2.setId("zerodha-live");
+        c2.setBroker("ZERODHA");
+        c2.setMode(ExecutionMode.LIVE);
+        c2.setQuantityMultiplier(1.0);
+        c2.setEnabled(true);
+
+        props.setConsumers(List.of(c1, c2));
+
+        ReactiveSignalEventBus bus = new ReactiveSignalEventBus();
+        ShoonyaBrokerGateway shoonyaGw = mock(ShoonyaBrokerGateway.class);
+        ZerodhaBrokerGateway zerodhaGw = mock(ZerodhaBrokerGateway.class);
+
+        TradeConsumerManager manager = new TradeConsumerManager(props, bus, shoonyaGw, zerodhaGw);
+        manager.init();
+
+        // Ownership is ambiguous with two live consumers → reconcile must not run (H2).
+        manager.reconcileBrokerDrift();
+
+        verify(shoonyaGw, never()).getPositions();
+        verify(zerodhaGw, never()).getPositions();
+        manager.shutdown();
+    }
 }

@@ -83,8 +83,24 @@ class TelegramBotCommandListenerTest {
     @Test
     void testHandleResetCommand() {
         String resp = commandListener.processCommand("/reset");
-        verify(lvrService, times(1)).resetDaily();
+        verify(lvrService, times(1)).resetDaily(false);
         assertTrue(resp.contains("LVR daily session state reset"));
+    }
+
+    @Test
+    void testResetRefusedDuringTradingHours() {
+        when(lvrService.isWithinTradingHours()).thenReturn(true);
+        String resp = commandListener.processCommand("/reset");
+        assertTrue(resp.contains("refused"));
+        verify(lvrService, never()).resetDaily(anyBoolean());
+    }
+
+    @Test
+    void testResetForcedDuringTradingHours() {
+        when(lvrService.isWithinTradingHours()).thenReturn(true);
+        String resp = commandListener.processCommand("/reset force");
+        verify(lvrService, times(1)).resetDaily(true);
+        assertTrue(resp.contains("reset successfully"));
     }
 
     @Test

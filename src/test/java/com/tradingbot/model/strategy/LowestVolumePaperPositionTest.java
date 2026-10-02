@@ -69,7 +69,7 @@ class LowestVolumePaperPositionTest {
                         "LVR-2",
                         "TORNTPHARM",
                         LvrInstrumentType.FUTURES,
-                        LvrExitMode.FULL_TARGET_1_4,
+                        LvrExitMode.FULL_TARGET_1_2,
                         "TORNTPHARM FUT",
                         lotSize,
                         lots,

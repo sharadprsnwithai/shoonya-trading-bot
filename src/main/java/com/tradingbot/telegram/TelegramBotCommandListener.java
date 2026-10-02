@@ -237,7 +237,28 @@ public class TelegramBotCommandListener {
 
             case "/reset":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
-                lvrService.resetDaily();
+                {
+                    boolean force =
+                            java.util.Arrays.stream(parts)
+                                    .skip(1)
+                                    .anyMatch(a -> a.equalsIgnoreCase("force"));
+                    boolean duringTradingHours = lvrService.isWithinTradingHours();
+                    // H6: an intraday /reset flattens live positions — refuse unless forced.
+                    if (duringTradingHours && !force) {
+                        log.warn(
+                                "[AUDIT] Telegram /reset REFUSED: caller=telegram,"
+                                        + " duringTradingHours=true, force=false");
+                        return "⛔ Intraday reset refused — market is open and positions may be"
+                                + " live. Send `/reset force` to flatten positions and reset"
+                                + " (realized P&L is preserved).";
+                    }
+                    lvrService.resetDaily(force);
+                    log.warn(
+                            "[AUDIT] Telegram /reset EXECUTED: caller=telegram, force={},"
+                                    + " duringTradingHours={}",
+                            force,
+                            duringTradingHours);
+                }
                 return "🔄 LVR daily session state reset successfully.";
 
             case "/help":
@@ -247,7 +268,8 @@ public class TelegramBotCommandListener {
                         + "• `/scan` - Execute immediate 5m strategy cycle\n"
                         + "• `/morning_scan` - Force 09:25 AM morning scan\n"
                         + "• `/exit` - Square off all open positions immediately\n"
-                        + "• `/reset` - Reset daily session state\n"
+                        + "• `/reset [force]` - Reset daily session state (`force` required"
+                        + " intraday)\n"
                         + "• `/help` - Show this command menu";
         }
     }

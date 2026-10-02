@@ -150,6 +150,38 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                 request, lastException != null ? lastException.getMessage() : "Unknown error");
     }
 
+    /** C3: Kite order history is available, so status polling is supported. */
+    @Override
+    public boolean supportsOrderStatusPolling() {
+        return true;
+    }
+
+    @Override
+    public OrderStatus getOrderStatus(String orderId) {
+        String status = kiteRestClient.getOrderStatus(orderId);
+        if (status == null) {
+            return OrderStatus.PENDING;
+        }
+        String s = status.toUpperCase();
+        if (s.contains("COMPLETE") || s.contains("FILLED")) {
+            return OrderStatus.COMPLETE;
+        }
+        if (s.contains("REJECT")) {
+            return OrderStatus.REJECTED;
+        }
+        if (s.contains("CANCEL")) {
+            return OrderStatus.CANCELLED;
+        }
+        if (s.contains("TRIGGER")) {
+            return OrderStatus.TRIGGER_PENDING;
+        }
+        if (s.contains("OPEN")) {
+            return OrderStatus.OPEN;
+        }
+        // UNKNOWN / intermediate states (PUT ORDER REQ RECEIVED, etc.)
+        return OrderStatus.PENDING;
+    }
+
     @Override
     public OrderResponse cancelOrder(String orderId) {
         int maxAttempts = (kiteAuthService != null) ? 2 : 1;

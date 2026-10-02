@@ -3,12 +3,12 @@ package com.tradingbot.execution.consumer;
 import com.tradingbot.execution.gateway.BrokerOrderGateway;
 import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.model.order.OrderRequest;
-import com.tradingbot.model.order.OrderResponse;
 import com.tradingbot.model.order.OrderType;
 import com.tradingbot.model.order.ProductType;
 import com.tradingbot.model.order.TransactionType;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
+import java.math.BigDecimal;
 
 public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
 
@@ -52,7 +52,22 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
 
     @Override
     protected void handleLiveExecution(TradeSignal signal, int quantity) {
+        // C3: never send an EXIT for an entry that was never confirmed at this broker.
+        if (!guardExitAllowed(signal)) {
+            return;
+        }
         TransactionType txnType = resolveTransactionType(signal);
+
+        // C3-4: anchor the limit to the CONTRACT's own reference price (option premium /
+        // futures reference) from signal metadata rather than the spot price, so fill doesn't
+        // depend on basis.
+        BigDecimal refPrice = signal.price();
+        if (signal.metadata() != null) {
+            BigDecimal metaRef = parseBigDecimal(signal.metadata().get("referencePrice"));
+            if (metaRef != null && metaRef.compareTo(BigDecimal.ZERO) > 0) {
+                refPrice = metaRef;
+            }
+        }
 
         OrderRequest request =
                 new OrderRequest(
@@ -62,21 +77,12 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
                         OrderType.LMT,
                         ProductType.MIS,
                         quantity,
-                        signal.price(),
+                        refPrice,
                         null,
                         signal.signalId());
 
-        OrderResponse resp = orderGateway.placeOrder(request);
-
-        log.info(
-                "[CONSUMER:{}] Zerodha live order executed: {} {} x {} @ RefPrice: {} |"
-                        + " Result: {}",
-                getConsumerId(),
-                txnType,
-                signal.tradingSymbol(),
-                quantity,
-                signal.price(),
-                resp);
+        // C3: validated placement + failed-fill ledger + best-effort protective SL.
+        placeOrderConfirmed(signal, request, orderGateway);
     }
 
     private boolean isOptionSignal(TradeSignal signal) {

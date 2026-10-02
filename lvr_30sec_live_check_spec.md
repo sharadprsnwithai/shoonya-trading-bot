@@ -52,9 +52,14 @@ evaluateLivePriceActions():
      c. If null/zero → skip (retry next tick, 5-min cycle is fallback)
 
   3a. ARMED TRIGGER CHECK (for TRIGGER_ARMED setups):
-      - LONG:  session high >= trigger price
-      - SHORT: session low  <= trigger price
-      - If triggered → executePaperTradeEntry(setup, fillPrice, slPrc)
+      - LTP breach (primary): LONG: lp >= trigger price | SHORT: lp <= trigger price
+      - Fresh-wick breach (secondary, N1 fix — a stale session extreme from BEFORE arming
+        can never fire an entry):
+        * On the first tick after arming, capture the session high/low as a freshness baseline.
+        * LONG:  session high > baseline AND session high >= trigger (LTP may have pulled
+          back below the trigger after the breach)
+        * SHORT: session low  < baseline AND session low  <= trigger
+      - If triggered → shared entry gate (slippage/VWAP/15m/PDH-PDL/…) → executePositionEntry
       - Does NOT increment armed timeout counter
 
   3b. OPEN POSITION CHECK (for each open position):
@@ -127,7 +132,7 @@ Both 30-sec and 5-min cycles can detect the same breach. Prevents double-action:
 **File:** `LowestVolumeReversalServiceTest.java`
 
 New test cases:
-- `testLiveCheck_TriggersArmedSetup` — LONG armed, session high breaches trigger → entry fires
+- `testFreshWickRequiresSessionExtremeToAdvanceAfterArming` — LONG armed, session high advances past the arming baseline and breaches trigger → entry fires; stale/unchanged session high does not
 - `testLiveCheck_ExitsOnSLHit` — open LONG position, LTP drops below SL → exit fires
 - `testLiveCheck_PartialBooksOnTarget1` — open LONG position, LTP rises above target1 → partial book fires
 - `testLiveCheck_SkipsClosedPosition` — closed position → no action

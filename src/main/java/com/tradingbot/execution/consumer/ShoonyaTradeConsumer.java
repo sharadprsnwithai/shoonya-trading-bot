@@ -3,7 +3,6 @@ package com.tradingbot.execution.consumer;
 import com.tradingbot.execution.gateway.BrokerOrderGateway;
 import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.model.order.OrderRequest;
-import com.tradingbot.model.order.OrderResponse;
 import com.tradingbot.model.order.OrderType;
 import com.tradingbot.model.order.ProductType;
 import com.tradingbot.model.order.TransactionType;
@@ -53,6 +52,10 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
 
     @Override
     protected void handleLiveExecution(TradeSignal signal, int quantity) {
+        // C3: never send an EXIT for an entry that was never confirmed at this broker.
+        if (!guardExitAllowed(signal)) {
+            return;
+        }
         TransactionType txnType = resolveTransactionType(signal);
 
         OrderRequest request =
@@ -67,12 +70,8 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
                         null,
                         signal.signalId());
 
-        OrderResponse resp = orderGateway.placeOrder(request);
-        log.info(
-                "[CONSUMER:{}] Live order placed: {} | Result: {}",
-                getConsumerId(),
-                signal.tradingSymbol(),
-                resp);
+        // C3: validated placement + failed-fill ledger + best-effort protective SL.
+        placeOrderConfirmed(signal, request, orderGateway);
     }
 
     private boolean isOptionSignal(TradeSignal signal) {

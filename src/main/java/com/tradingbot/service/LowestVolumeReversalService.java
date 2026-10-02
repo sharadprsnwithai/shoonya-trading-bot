@@ -18,6 +18,7 @@ import com.tradingbot.util.NiftySectorRegistry;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -60,6 +61,12 @@ public class LowestVolumeReversalService {
 
     public static final String STRATEGY_ID = "LOWEST_VOLUME_REVERSAL";
 
+    /** N5: bounded lazy fetch attempts before the PDH/PDL gate fails closed permanently. */
+    private static final int MAX_PDH_FETCH_ATTEMPTS = 2;
+
+    /** H5: consecutive quote failures before a loud stall alert is emitted for a symbol. */
+    private static final int QUOTE_STALL_ALERT_THRESHOLD = 3;
+
     private final ShoonyaMarketDataService marketDataService;
     private final TechnicalAnalysisService taService;
     private final TelegramService telegramService;
@@ -88,8 +95,8 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
     private volatile int maxConcurrentTrades = 5;
 
-    @Value("${trading-bot.strategy.lowest-volume.max-attempts-per-symbol:1}")
-    private volatile int maxAttemptsPerSymbol = 1;
+    @Value("${trading-bot.strategy.lowest-volume.max-attempts-per-symbol:2}")
+    private volatile int maxAttemptsPerSymbol = 2;
 
     @Value("${trading-bot.strategy.lowest-volume.min-breadth-pct:56.0}")
     private volatile double minBreadthPct = 56.0;
@@ -129,6 +136,14 @@ public class LowestVolumeReversalService {
 
     @Value("${trading-bot.strategy.lowest-volume.sector-momentum-filter-enabled:true}")
     private volatile boolean sectorMomentumFilterEnabled = true;
+
+    /**
+     * M11 / {@code lvr_30sec_live_check_spec.md §3}: gates the 30-second live breach check
+     * (trigger/SL/target monitoring on live LTP). When disabled the strategy falls back to
+     * 5-minute-cycle-only behavior.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.live-breach-check-enabled:true}")
+    private volatile boolean liveBreachCheckEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.setup-timeout-candles:6}")
     private volatile int setupTimeoutCandles = 6;
@@ -174,6 +189,53 @@ public class LowestVolumeReversalService {
     private final java.util.concurrent.atomic.AtomicBoolean isScanning =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    // ---- Bug-fix state (round 2) ----
+    /** H5: per-symbol consecutive quote-failure counters for open positions. */
+    private final Map<String, Integer> quoteFailureCounts = new ConcurrentHashMap<>();
+
+    /** H5: symbols already alerted about stalled quotes (one alert per symbol per day). */
+    private final Set<String> quoteStallAlerted = ConcurrentHashMap.newKeySet();
+
+    /** M1: per-symbol cooldown before a data-dependent gate (slippage/sector/premium) is retried. */
+    private final Map<String, Instant> gateRetryNotBefore = new ConcurrentHashMap<>();
+
+    /** M1/M9: per-symbol consecutive no-data retries for the sector gate before exhaustion. */
+    private final Map<String, Integer> gateRetryCounts = new ConcurrentHashMap<>();
+
+    /** M2: latched daily circuit breaker — once tripped it stays tripped until resetDaily(). */
+    private final java.util.concurrent.atomic.AtomicBoolean dailyCircuitBreakerTripped =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** H6: archive of closed trades preserved across intraday resets (never wipe realized P&L). */
+    private final List<LowestVolumePaperPosition> tradeArchive =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** H6: realized P&L carried in the archive for today (feeds circuit breaker + /status). */
+    private volatile double archivedRealizedPnl = 0.0;
+
+    /** H6: trading day the archive belongs to. */
+    private volatile LocalDate archiveDate = null;
+
+    /** L2: cached unrealized P&L refreshed by the 30s tick so /status does no network I/O. */
+    private volatile double cachedUnrealizedPnl = 0.0;
+
+    private volatile java.time.Instant lastUnrealizedRefresh = null;
+
+    /** M10: JSON snapshot file for open positions / trade history / daily state. */
+    @Value("${trading-bot.strategy.lowest-volume.state-file:./data/lvr-state.json}")
+    private volatile String stateFilePath = "./data/lvr-state.json";
+
+    /**
+     * M10: enable/disable disk persistence. Safe default OFF for directly-instantiated (test)
+     * services; Spring environments turn it on via application.properties / env override.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.state-persistence-enabled:false}")
+    private volatile boolean statePersistenceEnabled = false;
+
+    /** H9/M11: cutoff after which a failed morning scan permanently stands down (now bound). */
+    @Value("${trading-bot.strategy.lowest-volume.scanner-fallback-cutoff:10:00}")
+    private volatile LocalTime scannerFallbackCutoff = TIME_SCANNER_CUTOFF;
+
     @Autowired
     public LowestVolumeReversalService(
             ShoonyaMarketDataService marketDataService,
@@ -191,6 +253,110 @@ public class LowestVolumeReversalService {
         this.optionChainService = optionChainService;
         this.scanner = (scanner != null) ? scanner : new LowestVolumeReversalScanner();
         this.signalPublisher = signalPublisher;
+    }
+
+    // --- M10: disk persistence ---
+
+    /** Builds the current state snapshot for persistence. */
+    private com.tradingbot.persistence.LvrStateStore.DailyState buildState() {
+        com.tradingbot.persistence.LvrStateStore.DailyState state =
+                new com.tradingbot.persistence.LvrStateStore.DailyState();
+        state.date = LocalDate.now(clock);
+        state.savedAt = Instant.now(clock);
+        for (LowestVolumePaperPosition p : openPositions.values()) {
+            state.openPositions.add(LowestVolumePaperPosition.snapshotOf(p));
+        }
+        for (LowestVolumePaperPosition p : tradeHistory) {
+            state.tradeHistory.add(LowestVolumePaperPosition.snapshotOf(p));
+        }
+        state.exhaustedSymbols.addAll(exhaustedSymbols);
+        state.archivedRealizedPnl = archivedRealizedPnl;
+        state.archiveDate = archiveDate;
+        state.circuitBreakerTripped = dailyCircuitBreakerTripped.get();
+        state.standDownToday = standDownToday;
+        return state;
+    }
+
+    /** M10: persists current state; failures are logged, never thrown (best-effort). */
+    void persistState() {
+        if (!statePersistenceEnabled) return;
+        try {
+            com.tradingbot.persistence.LvrStateStore.save(
+                    Path.of(stateFilePath), buildState());
+        } catch (Exception e) {
+            log.error("[LVR] Failed to persist state to {}: {}", stateFilePath, e.getMessage());
+        }
+    }
+
+    /** M10: restores persisted state on startup so a restart never orphans positions. */
+    @jakarta.annotation.PostConstruct
+    void restorePersistedState() {
+        if (!statePersistenceEnabled) return;
+        try {
+            com.tradingbot.persistence.LvrStateStore.DailyState state =
+                    com.tradingbot.persistence.LvrStateStore.load(Path.of(stateFilePath));
+            if (state == null) {
+                log.info("[LVR] No persisted state found at {} — starting fresh.", stateFilePath);
+                return;
+            }
+            LocalDate today = LocalDate.now(clock);
+            if (state.date != null && !state.date.equals(today)) {
+                log.warn(
+                        "[LVR] Persisted state at {} is from {} (today is {}) — ignoring stale"
+                                + " snapshot.",
+                        stateFilePath,
+                        state.date,
+                        today);
+                return;
+            }
+            int restoredOpen = 0;
+            int restoredClosed = 0;
+            if (state.openPositions != null) {
+                for (var snap : state.openPositions) {
+                    LowestVolumePaperPosition p = LowestVolumePaperPosition.restoreFrom(snap);
+                    if (p != null && !p.isClosed()) {
+                        openPositions.putIfAbsent(p.getSymbol(), p);
+                        restoredOpen++;
+                    }
+                }
+            }
+            if (state.tradeHistory != null) {
+                for (var snap : state.tradeHistory) {
+                    LowestVolumePaperPosition p = LowestVolumePaperPosition.restoreFrom(snap);
+                    if (p != null && p.isClosed()) {
+                        tradeHistory.add(p);
+                        restoredClosed++;
+                    }
+                }
+            }
+            if (state.exhaustedSymbols != null) {
+                exhaustedSymbols.addAll(state.exhaustedSymbols);
+            }
+            archivedRealizedPnl = state.archivedRealizedPnl;
+            archiveDate = state.archiveDate;
+            if (state.circuitBreakerTripped) {
+                dailyCircuitBreakerTripped.set(true);
+            }
+            standDownToday = state.standDownToday;
+            log.info(
+                    "[LVR] Restored persisted state: {} open position(s), {} closed trade(s),"
+                            + " breakerLatched={}, standDown={} (file: {}).",
+                    restoredOpen,
+                    restoredClosed,
+                    state.circuitBreakerTripped,
+                    state.standDownToday,
+                    stateFilePath);
+        } catch (Exception e) {
+            log.error("[LVR] Failed to restore persisted state from {}: {}", stateFilePath, e.getMessage(), e);
+        }
+    }
+
+    /** M10: best-effort final snapshot on shutdown. */
+    @jakarta.annotation.PreDestroy
+    void persistStateOnShutdown() {
+        if (openPositions.isEmpty() && tradeHistory.isEmpty()) return;
+        log.info("[LVR] Writing final state snapshot on shutdown...");
+        persistState();
     }
 
     public LowestVolumeReversalService(
@@ -228,7 +394,9 @@ public class LowestVolumeReversalService {
                 return;
             }
 
-            // Always manage open positions even if strategy is disabled for new entries
+            // N4: open positions are evaluated exactly once per cycle here (candle-close pass).
+            // Later guards return early without re-evaluating, so each position costs one quote
+            // fetch per cycle instead of two.
             if (!openPositions.isEmpty()) {
                 evaluateOpenPositions(nowTime);
             }
@@ -249,10 +417,23 @@ public class LowestVolumeReversalService {
             }
 
             if (!universeScanCompletedToday) {
-                if (nowTime.isAfter(TIME_SCANNER_CUTOFF)) {
-                    log.info(
-                            "[LVR] Past 10:00 AM fallback cutoff. No valid morning candidates found"
-                                    + " today. Standing down.");
+                if (nowTime.isAfter(scannerFallbackCutoff)) {
+                    // H9: past the fallback cutoff with no candidates — stand down for the day
+                    // (sticky, H10) and alert once instead of logging every cycle.
+                    if (!standDownToday) {
+                        standDownToday = true;
+                        log.warn(
+                                "[LVR] Past {} fallback cutoff. No valid morning candidates found"
+                                    + " today. Standing down for the day.",
+                                scannerFallbackCutoff);
+                        if (telegramAlerts && telegramService != null) {
+                            telegramService.sendTextMessage(
+                                    "⚠️ *LVR Stand-Down*\n• Reason: Morning scan produced no"
+                                            + " candidates past "
+                                            + scannerFallbackCutoff
+                                            + "\n• Status: *Standing down for the day*");
+                        }
+                    }
                     return;
                 }
                 log.info("[LVR] Triggering 09:25 AM morning sentiment & sector scan...");
@@ -266,7 +447,6 @@ public class LowestVolumeReversalService {
             if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
                 log.info(
                         "[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
-                evaluateOpenPositions(nowTime);
                 return;
             }
 
@@ -287,7 +467,8 @@ public class LowestVolumeReversalService {
 
             log.info("[LVR] Executing 5-min strategy cycle at {} IST...", nowTime);
             processCandidateSetups(nowTime);
-            evaluateOpenPositions(nowTime, null, true);
+            // N4: no second evaluateOpenPositions here — positions were evaluated once above;
+            // the 30s tick covers intra-cycle exits for any position opened this cycle.
         } finally {
             isCycleRunning.set(false);
         }
@@ -328,6 +509,25 @@ public class LowestVolumeReversalService {
 
             // If OI_SPURTS mode is active, select top institutional F&O stocks directly
             if ("OI_SPURTS".equalsIgnoreCase(scannerMode) && scanner != null) {
+                boolean oiDataAvailable =
+                        universeQuotes.values().stream()
+                                .anyMatch(q -> q.openInterest() > 0);
+                if (!oiDataAvailable) {
+                    // H8: OI data missing entirely — fail the scan loudly instead of silently
+                    // running a different selection mode than the operator configured.
+                    log.error(
+                            "[LVR] OI_SPURTS mode active but no quote carried open interest"
+                                    + " (`oi` missing/zero across the universe). Scan failed;"
+                                    + " will retry next cycle. Sector Rotation fallback disabled.");
+                    this.universeScanCompletedToday = false;
+                    if (telegramAlerts && telegramService != null) {
+                        telegramService.sendTextMessage(
+                                "🔴 *LVR OI_SPURTS Scan Failed*\n"
+                                        + "• Reason: No open-interest data in GetQuotes response\n"
+                                        + "• Status: *Retrying next cycle (fallback disabled)*");
+                    }
+                    return;
+                }
                 List<String> oiCandidates = scanner.scanOiSpurts(universeQuotes, oiSpurtsTopN);
                 if (!oiCandidates.isEmpty()) {
                     activeSetups.clear();
@@ -365,7 +565,13 @@ public class LowestVolumeReversalService {
                     return;
                 } else {
                     log.warn(
-                            "[LVR] OI Spurts returned 0 candidates. Falling back to Sector Rotation scan.");
+                            "[LVR] OI Spurts returned 0 candidates (OI data present). Falling back to Sector Rotation scan.");
+                    if (telegramAlerts && telegramService != null) {
+                        telegramService.sendTextMessage(
+                                "ℹ️ *LVR OI Spurts: no qualifying spurt*\n"
+                                        + "• OI data present but no symbol crossed the threshold\n"
+                                        + "• Falling back to *Sector Rotation* selection this cycle");
+                    }
                 }
             }
 
@@ -399,6 +605,11 @@ public class LowestVolumeReversalService {
                 this.universeScanCompletedToday = true;
                 this.standDownToday = true;
                 this.lastScanDate = LocalDate.now(clock);
+                // N6: a stand-down decision must also drop any setups carried over from an
+                // earlier scan pass so nothing can still be armed/traded after standing down.
+                activeSetups.clear();
+                candidateReservoir.clear();
+                exhaustedSymbols.clear();
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
@@ -751,11 +962,25 @@ public class LowestVolumeReversalService {
                 }
 
                 if (isVandeBharat) {
+                    // M5: Vande Bharat must not override an armed LVR trigger in the same pass.
+                    boolean allowVb =
+                            setup.getState() != LowestVolumeSetupState.TRIGGER_ARMED
+                                    || "VANDE_BHARAT_INSIDE_BAR".equals(setup.getSetupPattern());
+                    // M5: volume floor — the inside bar must be QUIETER than its mother candle
+                    // and never a volume spike versus the day's rolling low, so random inside
+                    // bars can't arm (mirrors the LVR volume dry-up gate).
+                    boolean vbVolumeFloor =
+                            c.volume() > 0
+                                    && c.volume() <= prev.volume()
+                                    && (rollingLowest == Long.MAX_VALUE
+                                            || c.volume() <= (long) (rollingLowest * 2.0));
                     boolean candleAllowed =
                             (filterAfter == null
                                     || (c.timestamp() != null
-                                            && c.timestamp().plusSeconds(300).isAfter(filterAfter)));
-                    if (candleAllowed) {
+                                            && c.timestamp()
+                                                    .plusSeconds(300)
+                                                    .isAfter(filterAfter)));
+                    if (allowVb && vbVolumeFloor && candleAllowed) {
                         setup.setTriggerCandle(c, vbTriggerPrc, vbSlPrc, vbTarget1Prc);
                         setup.setSetupPattern("VANDE_BHARAT_INSIDE_BAR");
                     }
@@ -826,19 +1051,32 @@ public class LowestVolumeReversalService {
                                                     .compareTo(evaluated.getTriggerPrice())
                                             != 0);
                     if (newlyArmedOrTrailed) {
+                        // M7: re-read state immediately before mutating — an entry may have
+                        // landed on another thread since the guard above.
+                        LowestVolumeSetupState preMutState = setup.getState();
+                        if (preMutState == LowestVolumeSetupState.IN_POSITION
+                                || preMutState == LowestVolumeSetupState.PARTIAL_BOOKED
+                                || openPositions.containsKey(symbol)) {
+                            continue;
+                        }
+                        // M4: setTriggerCandle no longer zeroes the armed-timeout counter on a
+                        // trail (only a fresh arm does), so re-anchoring can't extend a setup
+                        // forever. Every armed candle counts below, trail or not.
                         setup.setTriggerCandle(
                                 evaluated.getTriggerCandle(),
                                 evaluated.getTriggerPrice(),
                                 evaluated.getStopLossPrice(),
                                 evaluated.getTarget1Price());
-                    } else {
-                        setup.incrementArmedTimeout();
-                        if (setupTimeoutCandles > 0
-                                && setup.getArmedCandlesElapsed() >= setupTimeoutCandles) {
-                            log.info(
-                                    "[LVR] Setup for {} expired after {} armed candles. Resetting to SCANNING.",
-                                    symbol,
-                                    setup.getArmedCandlesElapsed());
+                    }
+                    setup.incrementArmedTimeout();
+                    if (setupTimeoutCandles > 0
+                            && setup.getArmedCandlesElapsed() >= setupTimeoutCandles) {
+                        log.info(
+                                "[LVR] Setup for {} expired after {} armed candles. Resetting to SCANNING.",
+                                symbol,
+                                setup.getArmedCandlesElapsed());
+                        // M7: only expire if the setup is still armed (state may have moved).
+                        if (setup.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
                             setup.resetToScanning();
                         }
                     }
@@ -895,6 +1133,11 @@ public class LowestVolumeReversalService {
      */
     public void evaluateLivePriceActions() {
         if (marketDataService == null) return;
+        if (!liveBreachCheckEnabled) {
+            // Spec §3: disabled → 5-minute-cycle-only behavior.
+            log.debug("[LVR] Live 30s breach check disabled — skipping evaluateLivePriceActions.");
+            return;
+        }
 
         LocalTime nowTime = LocalTime.now(clock);
         if (nowTime.isBefore(TIME_SCANNER_START) || !nowTime.isBefore(TIME_HARD_EXIT)) return;
@@ -936,6 +1179,12 @@ public class LowestVolumeReversalService {
 
     void checkSpotTriggerBreach(String symbol, LowestVolumeSetup setup, JsonNode quoteNode) {
         try {
+            // M1: data-dependent gate failures retry on a cooldown instead of re-running the
+            // full filter stack (and its quote fetches) every 30 seconds.
+            Instant notBefore = gateRetryNotBefore.get(symbol);
+            if (notBefore != null && Instant.now(clock).isBefore(notBefore)) {
+                return;
+            }
             if (quoteNode == null) {
                 quoteNode = fetchLiveQuoteNode(symbol);
             }
@@ -943,7 +1192,14 @@ public class LowestVolumeReversalService {
                     (quoteNode != null && quoteNode.has("lp"))
                             ? quoteNode.get("lp").asDouble(0.0)
                             : 0.0;
-            if (spotLtp <= 0) return;
+            if (spotLtp <= 0) {
+                // H5: never skip a breach check silently.
+                log.warn(
+                        "[LVR] No usable LTP for {} while trigger armed (quote fetch failed)."
+                                + " Breach check skipped for this tick.",
+                        symbol);
+                return;
+            }
 
             BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
 
@@ -995,240 +1251,199 @@ public class LowestVolumeReversalService {
                 }
             }
 
+            // N1: freshness baseline — the session high/low observed on the first tick after
+            // arming. A session extreme from BEFORE arming can never fire an entry; only an
+            // extreme that ADVANCES past this baseline after arming counts as a fresh wick
+            // (restores the 30s spec's wick-breach detection without the stale-high bug).
+            if (setup.getSessionHighAtArming() == null
+                    && quoteNode.has("h")
+                    && quoteNode.get("h").asDouble(0.0) > 0) {
+                setup.setSessionHighAtArming(quoteNode.get("h").asDouble(0.0));
+            }
+            if (setup.getSessionLowAtArming() == null
+                    && quoteNode.has("l")
+                    && quoteNode.get("l").asDouble(0.0) > 0) {
+                setup.setSessionLowAtArming(quoteNode.get("l").asDouble(0.0));
+            }
+
             boolean triggered = false;
 
             if (setup.getDirection() == LowestVolumeDirection.SHORT) {
                 if (spotPrice.compareTo(setup.getTriggerPrice()) <= 0) {
                     triggered = true;
+                } else if (quoteNode.has("l") && setup.getSessionLowAtArming() != null) {
+                    double sessionLow = quoteNode.get("l").asDouble(0.0);
+                    double baselineLow = setup.getSessionLowAtArming();
+                    // Fresh wick: the session LOW advanced below its arming baseline AND
+                    // reached the trigger, even though LTP has since bounced back above it.
+                    if (sessionLow > 0
+                            && sessionLow < baselineLow
+                            && sessionLow <= setup.getTriggerPrice().doubleValue()) {
+                        triggered = true;
+                        log.info(
+                                "[LVR] Fresh session-low wick breach for {} (low {} advanced past"
+                                    + " arming baseline {} and reached trigger {}).",
+                                symbol,
+                                sessionLow,
+                                baselineLow,
+                                setup.getTriggerPrice());
+                    }
                 }
             } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
                 if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
                     triggered = true;
+                } else if (quoteNode.has("h") && setup.getSessionHighAtArming() != null) {
+                    double sessionHigh = quoteNode.get("h").asDouble(0.0);
+                    double baselineHigh = setup.getSessionHighAtArming();
+                    // Fresh wick: session HIGH advanced past its arming baseline and reached
+                    // the trigger while LTP sits below it (pullback after the breach).
+                    if (sessionHigh > 0
+                            && sessionHigh > baselineHigh
+                            && sessionHigh >= setup.getTriggerPrice().doubleValue()) {
+                        triggered = true;
+                        log.info(
+                                "[LVR] Fresh session-high wick breach for {} (high {} advanced"
+                                    + " past arming baseline {} and reached trigger {}).",
+                                symbol,
+                                sessionHigh,
+                                baselineHigh,
+                                setup.getTriggerPrice());
+                    }
                 }
             }
 
             if (triggered) {
-                // Slippage Guard Check: Reject entry if spot gapped/slipped past allowable
-                // tolerance
-                if (maxSlippagePct > 0.0) {
-                    boolean excessiveSlippage = false;
-                    if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                        BigDecimal maxAllowed =
-                                setup.getTriggerPrice()
-                                        .multiply(
-                                                BigDecimal.valueOf(1.0 + (maxSlippagePct / 100.0)));
-                        if (spotPrice.compareTo(maxAllowed) > 0) {
-                            excessiveSlippage = true;
-                        }
-                    } else if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                        BigDecimal minAllowed =
-                                setup.getTriggerPrice()
-                                        .multiply(
-                                                BigDecimal.valueOf(1.0 - (maxSlippagePct / 100.0)));
-                        if (spotPrice.compareTo(minAllowed) < 0) {
-                            excessiveSlippage = true;
-                        }
-                    }
+                // L6: all pre-entry price gates (slippage, VWAP, 15m range, PDH/PDL) are
+                // evaluated by the SHARED entry gate below — the same function replaySession
+                // uses — so live and replay can never diverge on a gate decision.
 
-                    if (excessiveSlippage) {
-                        log.warn(
-                                "[LVR] Trigger breach for {} skipped due to excessive slippage:"
-                                        + " Spot {} exceeds {}% threshold from trigger {}.",
-                                symbol, spotPrice, maxSlippagePct, setup.getTriggerPrice());
-                        return;
+                // Resolve VWAP first (data collection only; the decision belongs to the gate).
+                double liveVwap = resolveLiveVwap(setup, quoteNode);
+
+                // Opening 15-Minute Range Breakout values are consumed by the gate.
+
+                // PDH / PDL: N5 transient-fetch retry stays here (it is data plumbing, not a
+                // decision); the fail-closed exhaustion for permanently-missing values and the
+                // breakout confirmation are gate decisions.
+                if (pdhPdlFilterEnabled) {
+                    if (setup.getPdh() == null || setup.getPdl() == null) {
+                        // N5: a single transient daily-candle failure must not permanently kill
+                        // the setup — retry the lazy fetch once more (next tick) before the
+                        // fail-closed exhaustion.
+                        int attempt = setup.recordPdhFetchAttempt();
+                        initPdhPdlForSetup(setup);
+                        if ((setup.getPdh() == null || setup.getPdl() == null)
+                                && attempt < MAX_PDH_FETCH_ATTEMPTS) {
+                            log.warn(
+                                    "[LVR] PDH/PDL unavailable for {} (attempt {}/{}). Retrying"
+                                            + " on next tick before fail-closed exhaustion.",
+                                    symbol,
+                                    attempt,
+                                    MAX_PDH_FETCH_ATTEMPTS);
+                            return;
+                        }
                     }
                 }
 
-                // VWAP Confirmation Check
-                if (vwapConfirmationEnabled) {
-                    double vwap =
-                            (quoteNode != null && quoteNode.has("ap"))
-                                    ? quoteNode.get("ap").asDouble(0.0)
-                                    : 0.0;
-                    if (vwap <= 0.0 && setup.getLatestVwap() != null) {
-                        vwap = setup.getLatestVwap();
-                    }
-                    if (vwap <= 0.0) {
-                        vwap = fetchLiveVwap(symbol, quoteNode);
-                    }
+                EntryGateInput gateInput = new EntryGateInput();
+                gateInput.symbol = symbol;
+                gateInput.direction = setup.getDirection();
+                gateInput.triggerPrice = setup.getTriggerPrice();
+                gateInput.decisionPrice = spotPrice;
+                gateInput.entryPrice = spotPrice;
+                gateInput.maxSlippagePct = maxSlippagePct;
+                gateInput.vwapEnabled = vwapConfirmationEnabled;
+                gateInput.vwap = (liveVwap > 0.0) ? liveVwap : null;
+                gateInput.range15mEnabled = opening15mRangeFilterEnabled;
+                gateInput.first15mHigh = setup.getFirst15MinHigh();
+                gateInput.first15mLow = setup.getFirst15MinLow();
+                gateInput.pdhPdlEnabled = pdhPdlFilterEnabled;
+                gateInput.pdh = setup.getPdh();
+                gateInput.pdl = setup.getPdl();
+                // Session-level gates (breaker/cutoff/attempts/concurrency/budget) are enforced
+                // by evaluateLivePriceActions' outer loop and inside executePositionEntry.
 
-                    if (vwap > 0.0) {
-                        boolean vwapConfirmed = false;
-                        if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                            vwapConfirmed = (spotPrice.compareTo(BigDecimal.valueOf(vwap)) > 0);
-                        } else if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                            vwapConfirmed = (spotPrice.compareTo(BigDecimal.valueOf(vwap)) < 0);
-                        }
-
-                        if (!vwapConfirmed) {
-                            log.info(
-                                    "[LVR] Setup for {} REJECTED/EXHAUSTED: Spot {} failed VWAP confirmation ({}) for {} direction. Stock discarded for the day.",
+                EntryGateDecision gate = evaluateEntryGate(gateInput);
+                if (!gate.allowed()) {
+                    switch (gate.disposition()) {
+                        case RETRY_COOLDOWN -> {
+                            log.warn(
+                                    "[LVR] Trigger breach for {} skipped: {}. Retrying after"
+                                            + " cooldown.",
                                     symbol,
-                                    spotPrice,
-                                    vwap,
-                                    setup.getDirection());
+                                    gate.reason());
+                            // M1: slippage is price-data dependent → retry with cooldown.
+                            gateRetryNotBefore.put(symbol, Instant.now(clock).plusSeconds(60));
+                        }
+                        case RETRY -> log.warn(
+                                "[LVR] Entry for {} deferred (fail-closed): {}",
+                                symbol,
+                                gate.reason());
+                        case EXHAUST -> {
+                            log.info(
+                                    "[LVR] Setup for {} REJECTED/EXHAUSTED: {}. Stock discarded"
+                                            + " for the day.",
+                                    symbol,
+                                    gate.reason());
                             setup.transitionTo(
-                                    LowestVolumeSetupState.REJECTED_EXHAUSTED,
-                                    String.format(
-                                            "Spot %.2f failed VWAP %.2f confirmation for %s",
-                                            spotPrice.doubleValue(), vwap, setup.getDirection()));
+                                    LowestVolumeSetupState.REJECTED_EXHAUSTED, gate.reason());
                             exhaustedSymbols.add(symbol);
-
                             if (telegramAlerts && telegramService != null) {
                                 telegramService.sendTextMessage(
                                         String.format(
-                                                "⚠️ *LVR Trade Discarded (VWAP Filter)*\n"
-                                                        + "• Symbol: *%s* (%s)\n"
-                                                        + "• Spot Price: `₹%.2f`\n"
-                                                        + "• VWAP: `₹%.2f`\n"
-                                                        + "• Reason: *Spot %s VWAP* (Must be %s"
-                                                        + " VWAP)\n"
+                                                Locale.US,
+                                                "⚠️ *LVR Trade Discarded*\n• Symbol: *%s*\n"
+                                                        + "• Reason: %s\n"
                                                         + "• Status: *Stock discarded for the day*",
                                                 symbol,
-                                                setup.getDirection(),
-                                                spotPrice.doubleValue(),
-                                                vwap,
-                                                (setup.getDirection() == LowestVolumeDirection.LONG
-                                                        ? "<= "
-                                                        : ">= "),
-                                                (setup.getDirection() == LowestVolumeDirection.LONG
-                                                        ? "Above (>)"
-                                                        : "Below (<)")));
+                                                gate.reason()));
                             }
-                            return;
                         }
-                    } else {
-                        log.warn(
-                                "[LVR] VWAP confirmation enabled but no valid VWAP available for {}. Skipping entry (fail-closed).",
-                                symbol);
-                        return;
-                    }
-                }
-
-                // Opening 15-Minute Range Breakout Filter Check
-                if (opening15mRangeFilterEnabled
-                        && setup.getFirst15MinHigh() != null
-                        && setup.getFirst15MinLow() != null) {
-                    boolean rangeConfirmed = false;
-                    if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                        rangeConfirmed = (spotPrice.compareTo(setup.getFirst15MinHigh()) > 0);
-                    } else if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                        rangeConfirmed = (spotPrice.compareTo(setup.getFirst15MinLow()) < 0);
-                    }
-
-                    if (!rangeConfirmed) {
-                        log.info(
-                                "[LVR] Setup for {} REJECTED/EXHAUSTED: Spot {} inside opening 15-min range [{} - {}] for {} direction. Stock discarded for the day.",
+                        default -> log.warn(
+                                "[LVR] Entry for {} not allowed: {}",
                                 symbol,
-                                spotPrice,
-                                setup.getFirst15MinLow(),
-                                setup.getFirst15MinHigh(),
-                                setup.getDirection());
-                        setup.transitionTo(
-                                LowestVolumeSetupState.REJECTED_EXHAUSTED,
-                                String.format(
-                                        "Spot %.2f inside 15-min range [%.2f - %.2f] for %s",
-                                        spotPrice.doubleValue(),
-                                        setup.getFirst15MinLow().doubleValue(),
-                                        setup.getFirst15MinHigh().doubleValue(),
-                                        setup.getDirection()));
-                        exhaustedSymbols.add(symbol);
-
-                        if (telegramAlerts && telegramService != null) {
-                            telegramService.sendTextMessage(
-                                    String.format(
-                                            "⚠️ *LVR Trade Discarded (15-Min Range Filter)*\n"
-                                                    + "• Symbol: *%s* (%s)\n"
-                                                    + "• Spot Price: `₹%.2f`\n"
-                                                    + "• 15-Min Range: `₹%.2f - ₹%.2f`\n"
-                                                    + "• Reason: *Spot trapped inside 15-min range* (Must break %s)\n"
-                                                    + "• Status: *Stock discarded for the day*",
-                                            symbol,
-                                            setup.getDirection(),
-                                            spotPrice.doubleValue(),
-                                            setup.getFirst15MinLow().doubleValue(),
-                                            setup.getFirst15MinHigh().doubleValue(),
-                                            (setup.getDirection() == LowestVolumeDirection.LONG
-                                                    ? "Above High ₹" + setup.getFirst15MinHigh()
-                                                    : "Below Low ₹" + setup.getFirst15MinLow())));
-                        }
-                        return;
+                                gate.reason());
                     }
-                }
-
-                // PDH / PDL Breakout Filter Check
-                if (pdhPdlFilterEnabled) {
-                    if (setup.getPdh() == null || setup.getPdl() == null) {
-                        initPdhPdlForSetup(setup);
-                    }
-                    if (setup.getPdh() == null || setup.getPdl() == null) {
-                        log.warn(
-                                "[LVR] Setup for {} REJECTED/EXHAUSTED: PDH/PDL unavailable. Rejecting trade (fail-closed).",
-                                symbol);
-                        setup.transitionTo(
-                                LowestVolumeSetupState.REJECTED_EXHAUSTED,
-                                "PDH/PDL unavailable (fail-closed)");
-                        exhaustedSymbols.add(symbol);
-                        return;
-                    }
-
-                    boolean pdhPdlConfirmed = false;
-                    if (setup.getDirection() == LowestVolumeDirection.LONG) {
-                        pdhPdlConfirmed = (spotPrice.compareTo(setup.getPdh()) > 0);
-                    } else if (setup.getDirection() == LowestVolumeDirection.SHORT) {
-                        pdhPdlConfirmed = (spotPrice.compareTo(setup.getPdl()) < 0);
-                    }
-
-                    if (!pdhPdlConfirmed) {
-                        log.info(
-                                "[LVR] Setup for {} REJECTED/EXHAUSTED: Spot {} inside PDH-PDL range [{} - {}] for {} direction. Stock discarded for the day.",
-                                symbol,
-                                spotPrice,
-                                setup.getPdl(),
-                                setup.getPdh(),
-                                setup.getDirection());
-                        setup.transitionTo(
-                                LowestVolumeSetupState.REJECTED_EXHAUSTED,
-                                String.format(
-                                        Locale.US,
-                                        "Spot %.2f inside PDH-PDL range [%.2f - %.2f] for %s",
-                                        spotPrice.doubleValue(),
-                                        setup.getPdl().doubleValue(),
-                                        setup.getPdh().doubleValue(),
-                                        setup.getDirection()));
-                        exhaustedSymbols.add(symbol);
-
-                        if (telegramAlerts && telegramService != null) {
-                            telegramService.sendTextMessage(
-                                    String.format(
-                                            Locale.US,
-                                            "⚠️ *LVR Trade Discarded (PDH/PDL Range Filter)*\n"
-                                                    + "• Symbol: *%s* (%s)\n"
-                                                    + "• Spot Price: `₹%.2f`\n"
-                                                    + "• PDH/PDL Range: `₹%.2f - ₹%.2f`\n"
-                                                    + "• Reason: *Spot trapped inside yesterday's range* (Must break %s)\n"
-                                                    + "• Status: *Stock discarded for the day*",
-                                            symbol,
-                                            setup.getDirection(),
-                                            spotPrice.doubleValue(),
-                                            setup.getPdl().doubleValue(),
-                                            setup.getPdh().doubleValue(),
-                                            (setup.getDirection() == LowestVolumeDirection.LONG
-                                                    ? "Above PDH ₹" + setup.getPdh()
-                                                    : "Below PDL ₹" + setup.getPdl())));
-                        }
-                        return;
-                    }
+                    return;
                 }
 
                 // Sector Momentum Alignment Check at Entry Time
                 if (sectorMomentumFilterEnabled) {
-                    boolean sectorAligned = checkLiveSectorAlignment(symbol, setup.getDirection());
-                    if (!sectorAligned) {
+                    SectorGate sectorGate =
+                            evaluateLiveSectorAlignment(symbol, setup.getDirection());
+                    if (sectorGate == SectorGate.NO_DATA) {
+                        // M9: no usable constituent quotes — retry on cooldown, fail closed
+                        // after bounded attempts instead of silently allowing.
+                        int noDataRetries =
+                                gateRetryCounts.merge(symbol, 1, Integer::sum);
+                        if (noDataRetries >= MAX_SECTOR_NO_DATA_RETRIES) {
+                            log.warn(
+                                    "[LVR] Entry for {} BLOCKED: sector data unavailable after {}"
+                                            + " retries. Failing closed (REJECTED_EXHAUSTED).",
+                                    symbol,
+                                    noDataRetries);
+                            setup.transitionTo(
+                                    LowestVolumeSetupState.REJECTED_EXHAUSTED,
+                                    "Sector data unavailable after " + noDataRetries + " retries");
+                            exhaustedSymbols.add(symbol);
+                            return;
+                        }
                         log.warn(
-                                "[LVR] Entry for {} BLOCKED: Parent sector has flipped or lost momentum opposite to {} direction. Skipping entry.",
+                                "[LVR] Entry for {} deferred: sector quotes unavailable (retry"
+                                        + " {}/{}). Retrying after cooldown.",
+                                symbol,
+                                noDataRetries,
+                                MAX_SECTOR_NO_DATA_RETRIES);
+                        gateRetryNotBefore.put(symbol, Instant.now(clock).plusSeconds(60));
+                        return;
+                    }
+                    if (sectorGate == SectorGate.MISALIGNED) {
+                        log.warn(
+                                "[LVR] Entry for {} BLOCKED: Parent sector has flipped or lost momentum opposite to {} direction. Deferring entry (cooldown retry).",
                                 symbol,
                                 setup.getDirection());
+                        // M1: misalignment is quote-data dependent → retry with cooldown.
+                        gateRetryNotBefore.put(symbol, Instant.now(clock).plusSeconds(60));
                         return;
                     }
                 }
@@ -1245,6 +1460,11 @@ public class LowestVolumeReversalService {
     public synchronized LowestVolumePaperPosition executePositionEntry(
             String symbol, LowestVolumeSetup setup, BigDecimal spotPrice) {
         if (setup == null || symbol == null) return null;
+        if (standDownToday) {
+            // N6: stand-down (post-cutoff or sentiment collapse) must also gate entries.
+            log.warn("[LVR] Stand-down active for the day. Skipping entry for {}.", symbol);
+            return null;
+        }
         if (isDailyCircuitBreakerTripped()) {
             log.warn(
                     "[LVR] Daily max loss circuit breaker is active. Skipping new entry for {}.",
@@ -1278,8 +1498,21 @@ public class LowestVolumeReversalService {
         }
 
         StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(symbol);
-        int lotSize = (fno != null) ? fno.lotSize() : 100;
-        BigDecimal strikeStep = (fno != null) ? fno.strikeStep() : BigDecimal.valueOf(10);
+        if (fno == null) {
+            // M8: no registry entry → lot size / strike step would be fabricated (100 / 10).
+            // Reject loudly and exhaust — the registry is static for the day, a miss is permanent.
+            log.error(
+                    "[LVR] {} has no F&O registry entry — refusing to fabricate lot size/strike"
+                            + " step. REJECTED_EXHAUSTED.",
+                    symbol);
+            setup.transitionTo(
+                    LowestVolumeSetupState.REJECTED_EXHAUSTED,
+                    "F&O registry miss for " + symbol);
+            exhaustedSymbols.add(symbol);
+            return null;
+        }
+        int lotSize = fno.lotSize();
+        BigDecimal strikeStep = fno.strikeStep();
 
         BigDecimal unitRisk = spotPrice.subtract(setup.getStopLossPrice()).abs();
         int lots = defaultLots > 0 ? defaultLots : 2;
@@ -1307,6 +1540,25 @@ public class LowestVolumeReversalService {
         }
         BigDecimal plannedReward =
                 unitRisk.multiply(BigDecimal.valueOf(2)).multiply(BigDecimal.valueOf(totalQty));
+
+        // M2 pre-trade budget: don't open a position whose planned risk alone would breach the
+        // daily loss budget (in addition to the tripped-breaker latch which uses live P&L).
+        if (maxDailyLoss > 0.0) {
+            double totalRiskPnl =
+                    calculateTodayRealizedPnl() + getCachedUnrealizedPnl();
+            double remainingBudget = maxDailyLoss + totalRiskPnl;
+            if (plannedRisk.doubleValue() > remainingBudget) {
+                log.warn(
+                        "[LVR] Entry for {} REJECTED: planned risk {} exceeds remaining daily"
+                                + " loss budget {} (limit {}, current P&L {}).",
+                        symbol,
+                        String.format(Locale.US, "%.2f", plannedRisk.doubleValue()),
+                        String.format(Locale.US, "%.2f", Math.max(0.0, remainingBudget)),
+                        String.format(Locale.US, "%.2f", maxDailyLoss),
+                        String.format(Locale.US, "%.2f", totalRiskPnl));
+                return null;
+            }
+        }
 
         // Dynamically compute exact 1:2 Target from actual entry spot price to prevent RR
         // distortion
@@ -1352,18 +1604,31 @@ public class LowestVolumeReversalService {
             setup.transitionTo(
                     LowestVolumeSetupState.IN_POSITION, "Trigger breached at spot " + spotPrice);
 
-            publishSignal(
-                    symbol,
-                    brokerTradingSymbol,
-                    setup.getDirection() == LowestVolumeDirection.LONG
-                            ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
-                            : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,
-                    spotPrice,
-                    setup.getStopLossPrice(),
-                    actualTarget1,
-                    totalQty,
-                    "LVR Futures Entry Triggered",
-                    Map.of("instrumentType", "FUTURES"));
+            boolean published =
+                    publishSignal(
+                            symbol,
+                            brokerTradingSymbol,
+                            setup.getDirection() == LowestVolumeDirection.LONG
+                                    ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
+                                    : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,
+                            spotPrice,
+                            setup.getStopLossPrice(),
+                            actualTarget1,
+                            totalQty,
+                            "LVR Futures Entry Triggered",
+                            Map.of(
+                                    "instrumentType", "FUTURES",
+                                    "tradeId", tradeId,
+                                    // C3: contract reference + protective levels so the consumer
+                                    // can place a best-effort broker-side SL/exit order.
+                                    "referencePrice", spotPrice,
+                                    "brokerStopLossPrice", setup.getStopLossPrice(),
+                                    "brokerTargetPrice", actualTarget1));
+            if (!published) {
+                rollbackEntryAfterPublishFailure(
+                        symbol, setup, tradeId, "signal bus rejected FUTURES ENTRY");
+                return null;
+            }
 
             log.info(
                     "[LVR] FUTURES ENTRY EXECUTED: {} | TradeId={} | Contract={} | SpotEntry={} |"
@@ -1407,6 +1672,7 @@ public class LowestVolumeReversalService {
 
             double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
             if (optLtp <= 0.0) {
+                recordQuoteFailure(symbol, "option LTP at entry");
                 log.warn(
                         "[LVR] Option LTP unavailable for {} {} ATM {}. Skipping entry this tick to avoid fabricated premium.",
                         symbol,
@@ -1414,6 +1680,7 @@ public class LowestVolumeReversalService {
                         atmStrike);
                 return null;
             }
+            recordQuoteSuccess(symbol);
             BigDecimal entryPremium = BigDecimal.valueOf(optLtp).setScale(2, RoundingMode.HALF_UP);
 
             position =
@@ -1446,18 +1713,39 @@ public class LowestVolumeReversalService {
             setup.transitionTo(
                     LowestVolumeSetupState.IN_POSITION, "Trigger breached at spot " + spotPrice);
 
-            publishSignal(
-                    symbol,
-                    brokerTradingSymbol,
-                    setup.getDirection() == LowestVolumeDirection.LONG
-                            ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
-                            : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,
-                    entryPremium,
-                    setup.getStopLossPrice(),
-                    actualTarget1,
-                    totalQty,
-                    "LVR Option Entry Triggered",
-                    Map.of("instrumentType", "OPTION", "spotPrice", spotPrice));
+            boolean published =
+                    publishSignal(
+                            symbol,
+                            brokerTradingSymbol,
+                            setup.getDirection() == LowestVolumeDirection.LONG
+                                    ? com.tradingbot.strategy.SignalAction.ENTRY_LONG
+                                    : com.tradingbot.strategy.SignalAction.ENTRY_SHORT,
+                            entryPremium,
+                            setup.getStopLossPrice(),
+                            actualTarget1,
+                            totalQty,
+                            "LVR Option Entry Triggered",
+                            Map.of(
+                                    "instrumentType", "OPTION",
+                                    "spotPrice", spotPrice,
+                                    "tradeId", tradeId,
+                                    // C3: premium-level reference + protective SL/target (ATM
+                                    // delta ≈ 0.5 → premium moves ≈ 0.5x the spot move).
+                                    "referencePrice", entryPremium,
+                                    "brokerStopLossPrice",
+                                    entryPremium
+                                            .subtract(
+                                                    unitRisk.multiply(BigDecimal.valueOf(0.50)))
+                                            .setScale(2, RoundingMode.HALF_UP),
+                                    "brokerTargetPrice",
+                                    entryPremium
+                                            .add(unitRisk)
+                                            .setScale(2, RoundingMode.HALF_UP)));
+            if (!published) {
+                rollbackEntryAfterPublishFailure(
+                        symbol, setup, tradeId, "signal bus rejected OPTION ENTRY");
+                return null;
+            }
 
             log.info(
                     "[LVR] OPTION ENTRY EXECUTED: {} | TradeId={} | Option={} | EntryPrem={} |"
@@ -1491,6 +1779,7 @@ public class LowestVolumeReversalService {
             }
         }
 
+        persistState();
         return position;
     }
 
@@ -1511,7 +1800,39 @@ public class LowestVolumeReversalService {
         evaluateOpenPositions(nowTime, quoteCache, true);
     }
 
-    public synchronized void evaluateOpenPositions(
+    /**
+     * Evaluates open positions for Spot SL, 1:2 Target Partial Exit, Cost SL, and 10 EMA Trailing.
+     *
+     * <p>M7: quotes are gathered OUTSIDE the service lock (a slow fetch must not block entries or
+     * hard exits), then evaluation + mutation run atomically inside the lock so state cannot change
+     * between checks and mutations.
+     */
+    public void evaluateOpenPositions(
+            LocalTime nowTime, Map<String, JsonNode> quoteCache, boolean isCandleClose) {
+        if (openPositions.isEmpty()) return;
+        Map<String, JsonNode> gathered = new HashMap<>();
+        if (quoteCache != null) {
+            gathered.putAll(quoteCache);
+        }
+        for (String symbol : openPositions.keySet()) {
+            if (!gathered.containsKey(symbol)) {
+                try {
+                    JsonNode q = fetchLiveQuoteNode(symbol);
+                    if (q != null) {
+                        gathered.put(symbol, q);
+                    }
+                } catch (Exception e) {
+                    log.warn(
+                            "[LVR] Quote fetch failed for open position {} during evaluation: {}",
+                            symbol,
+                            e.getMessage());
+                }
+            }
+        }
+        evaluateOpenPositionsWithQuotes(nowTime, gathered, isCandleClose);
+    }
+
+    private synchronized void evaluateOpenPositionsWithQuotes(
             LocalTime nowTime, Map<String, JsonNode> quoteCache, boolean isCandleClose) {
         if (openPositions.isEmpty()) return;
 
@@ -1524,15 +1845,17 @@ public class LowestVolumeReversalService {
             }
 
             try {
-                JsonNode quoteNode =
-                        (quoteCache != null && quoteCache.containsKey(symbol))
-                                ? quoteCache.get(symbol)
-                                : fetchLiveQuoteNode(symbol);
+                JsonNode quoteNode = (quoteCache != null) ? quoteCache.get(symbol) : null;
                 double spotLtp =
                         (quoteNode != null && quoteNode.has("lp"))
                                 ? quoteNode.get("lp").asDouble(0.0)
                                 : 0.0;
-                if (spotLtp <= 0) continue;
+                if (spotLtp <= 0) {
+                    // H5: never skip an exit evaluation silently.
+                    recordQuoteFailure(symbol, "open-position exit evaluation");
+                    continue;
+                }
+                recordQuoteSuccess(symbol);
 
                 BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
                 BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
@@ -1682,8 +2005,7 @@ public class LowestVolumeReversalService {
                     if (targetHit) {
                         LvrExitMode currentExitMode =
                                 (pos.getExitMode() != null) ? pos.getExitMode() : exitMode;
-                        if (currentExitMode == LvrExitMode.FULL_TARGET_1_2
-                                || currentExitMode == LvrExitMode.FULL_TARGET_1_4) {
+                        if (currentExitMode == LvrExitMode.FULL_TARGET_1_2) {
                             // 100% Full Exit at 1:2 Target
                             int exitQty =
                                     pos.getRemainingQuantity() > 0
@@ -1976,6 +2298,7 @@ public class LowestVolumeReversalService {
                         "[LVR] Error evaluating open position for {}: {}", symbol, e.getMessage());
             }
         }
+        persistState();
     }
 
     /** 15:00 IST Hard EOD Square-Off. */
@@ -1986,6 +2309,8 @@ public class LowestVolumeReversalService {
                 "[LVR] {} Hard EOD Square-off reached. Closing all open positions.",
                 nowTime != null ? nowTime : "15:00 IST");
         List<String> symbols = new ArrayList<>(openPositions.keySet());
+        int failedExits = 0;
+        int closedCount = 0;
         for (String symbol : symbols) {
             LowestVolumePaperPosition pos = openPositions.get(symbol);
             if (pos == null || pos.isClosed()) {
@@ -1994,24 +2319,68 @@ public class LowestVolumeReversalService {
             }
 
             try {
-                double spotLtp = fetchLiveSpotPrice(symbol);
-                BigDecimal spotPrice =
-                        BigDecimal.valueOf(
-                                spotLtp > 0 ? spotLtp : pos.getStockEntryPrice().doubleValue());
+                // H12: never fabricate a fill from a failed quote — retry a few times first.
+                double spotLtp = 0.0;
+                for (int attempt = 1; attempt <= 3 && spotLtp <= 0; attempt++) {
+                    spotLtp = fetchLiveSpotPrice(symbol);
+                    if (spotLtp <= 0 && attempt < 3) {
+                        try {
+                            Thread.sleep(250);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+
+                int exitQty =
+                        pos.getRemainingQuantity() > 0
+                                ? pos.getRemainingQuantity()
+                                : pos.getTotalQuantity();
+                String brokerSymbol = resolveBrokerTradingSymbol(pos);
+
+                if (spotLtp <= 0) {
+                    // H12: quote still unavailable — publish a MKT EXIT so the broker flattens,
+                    // but KEEP the paper position open for the next retry cycle instead of
+                    // recording a fabricated zero-loss fill.
+                    failedExits++;
+                    publishSignal(
+                            symbol,
+                            brokerSymbol,
+                            pos.getDirection() == LowestVolumeDirection.LONG
+                                    ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                                    : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                            BigDecimal.ZERO,
+                            pos.getCurrentStockSl(),
+                            null,
+                            exitQty,
+                            "EOD_1500_QUOTE_UNAVAILABLE",
+                            Map.of(
+                                    "instrumentType",
+                                    pos.getInstrumentType().name(),
+                                    "orderType",
+                                    "MKT",
+                                    "estimated",
+                                    true));
+                    log.error(
+                            "[LVR] Hard exit for {} deferred: no quote after 3 attempts."
+                                    + " MKT EXIT published; paper position kept for retry.",
+                            symbol);
+                    continue;
+                }
+
+                BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
                 BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
 
                 BigDecimal exitVal =
                         (pos.getInstrumentType() == LvrInstrumentType.FUTURES)
                                 ? spotPrice
                                 : optionPremium;
-                int exitQty =
-                        pos.getRemainingQuantity() > 0
-                                ? pos.getRemainingQuantity()
-                                : pos.getTotalQuantity();
-                String brokerSymbol = resolveBrokerTradingSymbol(pos);
+
                 pos.close(exitVal, "EOD_1500_HARD_EXIT", Instant.now());
                 openPositions.remove(symbol);
                 tradeHistory.add(pos);
+                closedCount++;
 
                 publishSignal(
                         symbol,
@@ -2050,41 +2419,126 @@ public class LowestVolumeReversalService {
                                     pos.getTotalRealizedPnl().doubleValue()));
                 }
             } catch (Exception e) {
-                log.error("[LVR] Error during hard exit for {}: {}", symbol, e.getMessage(), e);
-                openPositions.remove(symbol);
+                // H12: an exception must not drop the position without a record — keep it in
+                // openPositions so the next retry cycle (or reset) can close it properly.
+                failedExits++;
+                log.error(
+                        "[LVR] Error during hard exit for {} — position kept for retry: {}",
+                        symbol,
+                        e.getMessage(),
+                        e);
             }
         }
-        openPositions.clear();
+        if (failedExits > 0) {
+            log.warn(
+                    "[LVR] EOD hard exit pass: {} closed, {} failed (retrying on next cycle).",
+                    closedCount,
+                    failedExits);
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                Locale.US,
+                                "⚠️ *LVR EOD Exit Partially Complete*\n• Closed: `%d`\n"
+                                        + "• Failed (retrying): `%d`\n• Failed symbols stay"
+                                        + " managed until flattened.",
+                                closedCount,
+                                failedExits));
+            }
+        }
+        persistState();
     }
 
     public synchronized void resetDaily() {
+        resetDaily(false);
+    }
+
+    /**
+     * H6: resets daily strategy state.
+     *
+     * <p>A same-day reset (intraday {@code /reset}, {@code force=false}) is SOFT: scanning state
+     * is rebuilt but realized P&L ({@code tradeHistory}), the circuit-breaker latch and the
+     * archived carry are preserved — an intraday reset can never erase the day's losses. A
+     * new-day reset or {@code force=true} archives everything to disk first, then clears. Either
+     * way the full state is snapshotted to JSON (M10) before anything is cleared.
+     *
+     * @param force {@code true} to perform a full hard reset even on the same day
+     */
+    public synchronized void resetDaily(boolean force) {
+        LocalDate today = LocalDate.now(clock);
+        boolean sameDaySoftReset = !force && lastScanDate != null && lastScanDate.equals(today);
+
         if (!openPositions.isEmpty()) {
             log.warn(
                     "[LVR] resetDaily() called while {} open position(s) exist. Executing hard exit first.",
                     openPositions.size());
             executeHardExit(LocalTime.of(15, 0));
         }
+
+        // M10: snapshot to disk BEFORE clearing anything — nothing is ever silently lost.
+        try {
+            com.tradingbot.persistence.LvrStateStore.DailyState snapshot = buildState();
+            Path statePath = Path.of(stateFilePath);
+            com.tradingbot.persistence.LvrStateStore.save(statePath, snapshot);
+            com.tradingbot.persistence.LvrStateStore.saveDatedArchive(statePath, snapshot, today);
+        } catch (Exception e) {
+            log.error("[LVR] Failed to archive daily snapshot: {}", e.getMessage());
+        }
+
         activeSetups.clear();
         openPositions.clear();
-        tradeHistory.clear();
         exhaustedSymbols.clear();
         candidateReservoir.clear();
         lastMidMorningRefreshTime = null;
-        lastScanDate = null;
-        niftyBullish = true;
         currentTopGainers.clear();
         currentTopLosers.clear();
         currentTopGainerSnapshots.clear();
         currentTopLoserSnapshots.clear();
         sectorState = LowestVolumeSectorState.empty();
         universeScanCompletedToday = false;
-        dailyCircuitBreakerAlertSent.set(false);
-        tradeCounter.set(1);
+        // H10: the stand-down decision may only be cleared here (explicit reset).
+        this.standDownToday = false;
+
+        if (sameDaySoftReset) {
+            log.info(
+                    "[LVR] Same-day SOFT reset: {} closed trade(s) and breaker latch PRESERVED;"
+                            + " scanning state rebuilt (lastScanDate kept to avoid a phantom"
+                            + " new-day wipe).",
+                    tradeHistory.size());
+        } else {
+            if (lastScanDate != null && lastScanDate.equals(today) && !tradeHistory.isEmpty()) {
+                // Forced intraday wipe of same-day history → carry the sum so the breaker,
+                // /status and budget checks keep counting today's realized losses (H6).
+                double sameDaySum =
+                        tradeHistory.stream()
+                                .filter(
+                                        p ->
+                                                p.getExitTime() != null
+                                                        && LocalDate.ofInstant(p.getExitTime(), IST)
+                                                                .equals(today))
+                                .mapToDouble(p -> p.getTotalRealizedPnl().doubleValue())
+                                .sum();
+                archivedRealizedPnl += sameDaySum;
+                archiveDate = today;
+            } else {
+                // New day: yesterday's carry belongs to yesterday's (archived) snapshot.
+                archivedRealizedPnl = 0.0;
+                archiveDate = null;
+            }
+            tradeHistory.clear();
+            lastScanDate = null;
+            niftyBullish = true;
+            dailyCircuitBreakerAlertSent.set(false);
+            dailyCircuitBreakerTripped.set(false);
+            tradeCounter.set(1);
+        }
+
         if (marketDataService != null) {
             marketDataService.prewarmSession();
         }
-        this.standDownToday = false;
-        log.info("[LVR] Daily state reset complete.");
+        persistState();
+        log.info(
+                "[LVR] Daily state reset complete ({}).",
+                sameDaySoftReset ? "soft, P&L preserved" : "hard, P&L archived");
     }
 
     /**
@@ -2093,6 +2547,11 @@ public class LowestVolumeReversalService {
      */
     public synchronized void replenishActiveCandidatesIfNeeded(LocalTime nowTime) {
         if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) return;
+        if (standDownToday) {
+            // H10: the stand-down decision is sticky — never refill the watchlist after it.
+            log.debug("[LVR] Stand-down active; skipping candidate replenishment.");
+            return;
+        }
 
         long actionableCount = countActionableSetups();
 
@@ -2172,13 +2631,26 @@ public class LowestVolumeReversalService {
                 StockQuoteSnapshot q = universeQuotes.get(sym);
                 if (q != null) niftyQuotes.add(q);
             }
+            // H10: same coverage guard as the morning scan — never trust sentiment from a
+            // tiny quote sample.
+            if (niftyQuotes.size() < 35) {
+                log.warn(
+                        "[LVR] Mid-morning refresh skipped: only {}/35 NIFTY quotes available."
+                                + " Keeping morning decision.",
+                        niftyQuotes.size());
+                return;
+            }
             LowestVolumeDirection sentiment =
                     scanner.evaluateMarketSentiment(niftyQuotes, minBreadthPct);
             if (sentiment == LowestVolumeDirection.NONE) {
-                sentiment = niftyBullish ? LowestVolumeDirection.LONG : LowestVolumeDirection.SHORT;
-            } else {
-                this.niftyBullish = (sentiment == LowestVolumeDirection.LONG);
+                // H10: a NONE (choppy) reading must not re-arm candidate promotion in some
+                // direction — the morning stand-down/decision is sticky; skip the refresh.
+                log.warn(
+                        "[LVR] Mid-morning refresh skipped: sentiment NONE (choppy). Keeping"
+                                + " morning decision.");
+                return;
             }
+            this.niftyBullish = (sentiment == LowestVolumeDirection.LONG);
 
             Map<String, List<StockQuoteSnapshot>> sectorQuotes = new HashMap<>();
             for (Map.Entry<String, List<String>> entry :
@@ -2308,6 +2780,22 @@ public class LowestVolumeReversalService {
         return 0.0;
     }
 
+    /**
+     * L6: VWAP value resolution for the shared entry gate (quote "ap" → setup's last known VWAP
+     * → candle-based fallback). Data collection only — the confirmation decision belongs to
+     * {@link #evaluateEntryGate}.
+     */
+    private double resolveLiveVwap(LowestVolumeSetup setup, JsonNode quoteNode) {
+        double vwap = (quoteNode != null && quoteNode.has("ap")) ? quoteNode.get("ap").asDouble(0.0) : 0.0;
+        if (vwap <= 0.0 && setup.getLatestVwap() != null) {
+            vwap = setup.getLatestVwap();
+        }
+        if (vwap <= 0.0) {
+            vwap = fetchLiveVwap(setup.getSymbol(), quoteNode);
+        }
+        return vwap;
+    }
+
     public BigDecimal estimateOptionPremium(LowestVolumePaperPosition pos, BigDecimal currentSpot) {
         if (pos == null || currentSpot == null) return BigDecimal.valueOf(20.0);
         BigDecimal entrySpot = pos.getStockEntryPrice();
@@ -2350,6 +2838,20 @@ public class LowestVolumeReversalService {
 
         double estPremVal =
                 Math.max(intrinsic, entryPrem.doubleValue() + (spotMove * dynamicDelta));
+
+        // M3: simple intraday time-decay on the synthetic estimate (live LTP path above wins when
+        // available). ATM premium decays ~10% across the ~6.25h session (9:15→15:30), floored so
+        // a stale entry never drives the premium to zero.
+        try {
+            java.time.Duration held =
+                    java.time.Duration.between(pos.getEntryTime(), Instant.now(clock));
+            double hoursHeld = Math.max(0.0, held.toMinutes() / 60.0);
+            double decayFactor = Math.max(0.90, 1.0 - (0.10 * (hoursHeld / 6.25)));
+            estPremVal *= decayFactor;
+        } catch (Exception ignore) {
+            // position entry time missing/unparseable → keep undecayed estimate
+        }
+
         if (estPremVal < 0.50) {
             estPremVal = 0.50;
         }
@@ -2392,14 +2894,18 @@ public class LowestVolumeReversalService {
                                 symbol, expiry, strike, optionType, false);
                 String tok = marketDataService.resolveToken(tsym);
                 if (tok == null || tok.isBlank()) {
-                    tok = marketDataService.resolveToken(symbol);
+                    // L5: never fall back to the underlying's equity token — that would fabricate
+                    // the option premium from the STOCK's LTP. Exact contract match or nothing.
+                    log.debug(
+                            "[LVR] Option contract {} not resolvable to a token; no direct"
+                                    + " fallback available.",
+                            tsym);
+                    return 0.0;
                 }
-                if (tok != null && !tok.isBlank()) {
-                    JsonNode q = marketDataService.fetchQuote("NFO", tok);
-                    if (q != null && q.has("lp")) {
-                        double lp = q.get("lp").asDouble(0.0);
-                        if (lp > 0.0) return lp;
-                    }
+                JsonNode q = marketDataService.fetchQuote("NFO", tok);
+                if (q != null && q.has("lp")) {
+                    double lp = q.get("lp").asDouble(0.0);
+                    if (lp > 0.0) return lp;
                 }
             }
         } catch (Exception ex) {
@@ -2444,15 +2950,15 @@ public class LowestVolumeReversalService {
                     double o = quote.has("o") ? quote.get("o").asDouble(lp) : lp;
                     long v = quote.has("v") ? quote.get("v").asLong(0L) : 0L;
                     double ap = quote.has("ap") ? quote.get("ap").asDouble(0.0) : 0.0;
-                    long oi = quote.has("oi") ? quote.get("oi").asLong(0L) : 0L;
-                    long oio = quote.has("oio") ? quote.get("oio").asLong(0L) : 0L;
-                    double oiPct = quote.has("oipct") ? quote.get("oipct").asDouble(0.0) : 0.0;
+                    long oi = quote.path("oi").asLong(0L);
+                    // H8/N2: official Shoonya/Noren fields are `oi` (current OI) and `poi`
+                    // (previous-day closing OI). The earlier `oio`/`oipct` names do not exist in
+                    // GetQuotes, which silently zeroed the OI_SPURTS mode.
+                    long prevOi = quote.path("poi").asLong(0L);
                     if (c > 0) {
                         double pct = (lp - c) / c * 100.0;
-                        quoteMap.put(
-                                sym,
-                                new StockQuoteSnapshot(
-                                        sym, lp, c, o, pct, v, ap, oi, oio, oiPct));
+                        // 9-arg constructor computes oiPctChange from oi vs prevOi.
+                        quoteMap.put(sym, new StockQuoteSnapshot(sym, lp, c, o, pct, v, ap, oi, prevOi));
                     }
                 }
 
@@ -2552,13 +3058,304 @@ public class LowestVolumeReversalService {
         this.sectorMomentumFilterEnabled = sectorMomentumFilterEnabled;
     }
 
+    public boolean isLiveBreachCheckEnabled() {
+        return liveBreachCheckEnabled;
+    }
+
+    public void setLiveBreachCheckEnabled(boolean liveBreachCheckEnabled) {
+        this.liveBreachCheckEnabled = liveBreachCheckEnabled;
+    }
+
+    /** M9: tri-state outcome of the live sector gate at entry time. */
+    // ===== L6: shared pre-entry gate — used by BOTH the live trigger path and replaySession =====
+
+    /** What the caller should do when the gate denies an entry. */
+    public enum EntryGateDisposition {
+        /** All evaluated gates passed. */
+        ALLOWED,
+        /** Transient/unavailable data — retry on the next natural tick (no cooldown). */
+        RETRY,
+        /** Price-data-dependent rejection — retry after the standard 60s cooldown. */
+        RETRY_COOLDOWN,
+        /** Permanent rejection — discard the symbol for the day (REJECTED_EXHAUSTED). */
+        EXHAUST
+    }
+
+    /** Decision produced by {@link #evaluateEntryGate}. */
+    public record EntryGateDecision(EntryGateDisposition disposition, String gate, String reason) {
+        public boolean allowed() {
+            return disposition == EntryGateDisposition.ALLOWED;
+        }
+    }
+
+    /**
+     * L6: inputs for the shared entry gate. Fields left {@code null} (or {@code maxSlippagePct <
+     * 0}) are NOT evaluated — the live trigger path leaves session-level gates to the outer loop
+     * of {@code evaluateLivePriceActions} and to {@link #executePositionEntry}, while
+     * {@link #replaySession} fills everything.
+     */
+    public static final class EntryGateInput {
+        public String symbol;
+        public LowestVolumeDirection direction;
+        /** Armed trigger price — the reference for the slippage band. */
+        public BigDecimal triggerPrice;
+        /** Market price the decision gates (VWAP / 15m / PDH) are evaluated against. */
+        public BigDecimal decisionPrice;
+        /** Price used for the slippage band (live: LTP at touch; replay: entry candle open). */
+        public BigDecimal entryPrice;
+        /** {@code < 0} disables the slippage gate. */
+        public double maxSlippagePct = -1;
+        public Boolean vwapEnabled;
+        /** {@code null} or {@code <= 0} = unavailable (fail-closed RETRY when enabled). */
+        public Double vwap;
+        public Boolean range15mEnabled;
+        public BigDecimal first15mHigh;
+        public BigDecimal first15mLow;
+        public Boolean pdhPdlEnabled;
+        public BigDecimal pdh;
+        public BigDecimal pdl;
+        public Boolean standDown;
+        public Boolean breakerTripped;
+        public LocalTime nowTime;
+        public LocalTime entryCutoff;
+        public Integer tradeAttempts;
+        public Integer maxAttempts;
+        public Integer openConcurrent;
+        public Integer maxConcurrent;
+        public Boolean hasRegistryEntry;
+        public BigDecimal plannedRisk;
+        public Double remainingBudget;
+    }
+
+    private static EntryGateDecision deny(
+            EntryGateDisposition disposition, String gate, String reason) {
+        return new EntryGateDecision(disposition, gate, reason);
+    }
+
+    /**
+     * L6: THE single pre-entry decision. Pure and stateless — the live trigger path and
+     * {@link #replaySession} both evaluate this exact function, so a gate can never pass live and
+     * fail replay (or vice versa) for identical inputs. Evaluation order mirrors the live chain:
+     * slippage → VWAP → 15m range → PDH/PDL → stand-down → breaker → cutoff → attempts →
+     * concurrency → registry → budget.
+     */
+    public static EntryGateDecision evaluateEntryGate(EntryGateInput in) {
+        // 1. Slippage band (price-data dependent → cooldown retry).
+        if (in.maxSlippagePct > 0
+                && in.triggerPrice != null
+                && in.entryPrice != null
+                && in.direction != null) {
+            boolean excessive;
+            String band;
+            if (in.direction == LowestVolumeDirection.LONG) {
+                BigDecimal maxAllowed =
+                        in.triggerPrice
+                                .multiply(BigDecimal.valueOf(1.0 + (in.maxSlippagePct / 100.0)));
+                excessive = in.entryPrice.compareTo(maxAllowed) > 0;
+                band = "max " + String.format(Locale.US, "%.2f", maxAllowed);
+            } else {
+                BigDecimal minAllowed =
+                        in.triggerPrice
+                                .multiply(BigDecimal.valueOf(1.0 - (in.maxSlippagePct / 100.0)));
+                excessive = in.entryPrice.compareTo(minAllowed) < 0;
+                band = "min " + String.format(Locale.US, "%.2f", minAllowed);
+            }
+            if (excessive) {
+                return deny(
+                        EntryGateDisposition.RETRY_COOLDOWN,
+                        "SLIPPAGE",
+                        String.format(
+                                Locale.US,
+                                "excessive slippage: entry price %s outside %s%% band from"
+                                        + " trigger %s (%s)",
+                                in.entryPrice,
+                                String.format(Locale.US, "%.2f", in.maxSlippagePct),
+                                in.triggerPrice,
+                                band));
+            }
+        }
+
+        // 2. VWAP confirmation (unavailable → fail-closed retry; wrong side → exhaust).
+        if (Boolean.TRUE.equals(in.vwapEnabled)) {
+            if (in.vwap == null || in.vwap <= 0.0) {
+                return deny(
+                        EntryGateDisposition.RETRY,
+                        "VWAP",
+                        "VWAP confirmation enabled but no valid VWAP available (fail-closed)");
+            }
+            if (in.decisionPrice != null && in.direction != null) {
+                boolean confirmed;
+                if (in.direction == LowestVolumeDirection.LONG) {
+                    confirmed =
+                            in.decisionPrice.compareTo(BigDecimal.valueOf(in.vwap)) > 0;
+                } else {
+                    confirmed =
+                            in.decisionPrice.compareTo(BigDecimal.valueOf(in.vwap)) < 0;
+                }
+                if (!confirmed) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "VWAP",
+                            String.format(
+                                    Locale.US,
+                                    "Spot %s failed VWAP %s confirmation for %s direction",
+                                    in.decisionPrice,
+                                    String.format(Locale.US, "%.2f", in.vwap),
+                                    in.direction));
+                }
+            }
+        }
+
+        // 3. Opening 15-minute range breakout.
+        if (Boolean.TRUE.equals(in.range15mEnabled)
+                && in.first15mHigh != null
+                && in.first15mLow != null
+                && in.decisionPrice != null
+                && in.direction != null) {
+            boolean confirmed;
+            if (in.direction == LowestVolumeDirection.LONG) {
+                confirmed = in.decisionPrice.compareTo(in.first15mHigh) > 0;
+            } else {
+                confirmed = in.decisionPrice.compareTo(in.first15mLow) < 0;
+            }
+            if (!confirmed) {
+                return deny(
+                        EntryGateDisposition.EXHAUST,
+                        "15M_RANGE",
+                        String.format(
+                                Locale.US,
+                                "Spot %s inside 15-min range [%s - %s] for %s",
+                                in.decisionPrice,
+                                in.first15mLow,
+                                in.first15mHigh,
+                                in.direction));
+            }
+        }
+
+        // 4. PDH/PDL breakout (fail-closed when values are missing).
+        if (Boolean.TRUE.equals(in.pdhPdlEnabled)) {
+            if (in.pdh == null || in.pdl == null) {
+                return deny(
+                        EntryGateDisposition.EXHAUST,
+                        "PDH_PDL",
+                        "PDH/PDL unavailable (fail-closed)");
+            }
+            if (in.decisionPrice != null && in.direction != null) {
+                boolean confirmed;
+                if (in.direction == LowestVolumeDirection.LONG) {
+                    confirmed = in.decisionPrice.compareTo(in.pdh) > 0;
+                } else {
+                    confirmed = in.decisionPrice.compareTo(in.pdl) < 0;
+                }
+                if (!confirmed) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "PDH_PDL",
+                            String.format(
+                                    Locale.US,
+                                    "Spot %s inside PDH-PDL range [%s - %s] for %s",
+                                    in.decisionPrice,
+                                    in.pdl,
+                                    in.pdh,
+                                    in.direction));
+                }
+            }
+        }
+
+        // 5. Stand-down (post-cutoff or sentiment collapse).
+        if (Boolean.TRUE.equals(in.standDown)) {
+            return deny(
+                    EntryGateDisposition.RETRY,
+                    "STAND_DOWN",
+                    "stand-down active for the day");
+        }
+
+        // 6. Latched daily circuit breaker.
+        if (Boolean.TRUE.equals(in.breakerTripped)) {
+            return deny(
+                    EntryGateDisposition.RETRY,
+                    "BREAKER",
+                    "daily max loss circuit breaker is active");
+        }
+
+        // 7. Entry cutoff window.
+        if (in.nowTime != null
+                && in.entryCutoff != null
+                && !in.nowTime.isBefore(in.entryCutoff)) {
+            return deny(
+                    EntryGateDisposition.RETRY,
+                    "CUTOFF",
+                    "entry cutoff " + in.entryCutoff + " reached (now " + in.nowTime + ")");
+        }
+
+        // 8. Per-symbol attempt budget.
+        if (in.tradeAttempts != null && in.maxAttempts != null && in.tradeAttempts >= in.maxAttempts) {
+            return deny(
+                    EntryGateDisposition.RETRY,
+                    "ATTEMPTS",
+                    "max " + in.maxAttempts + " attempt(s) already used");
+        }
+
+        // 9. Max concurrent trades.
+        if (in.openConcurrent != null && in.maxConcurrent != null && in.openConcurrent >= in.maxConcurrent) {
+            return deny(
+                    EntryGateDisposition.RETRY,
+                    "CONCURRENCY",
+                    "max concurrent trades (" + in.maxConcurrent + ") reached");
+        }
+
+        // 10. F&O registry (static for the day — a miss is permanent → exhaust).
+        if (Boolean.FALSE.equals(in.hasRegistryEntry)) {
+            return deny(
+                    EntryGateDisposition.EXHAUST,
+                    "REGISTRY",
+                    "F&O registry miss for " + in.symbol + " — lot size/strike step unknown");
+        }
+
+        // 11. M2 pre-trade daily budget.
+        if (in.plannedRisk != null && in.remainingBudget != null
+                && in.plannedRisk.doubleValue() > in.remainingBudget) {
+            return deny(
+                    EntryGateDisposition.RETRY,
+                    "BUDGET",
+                    String.format(
+                            Locale.US,
+                            "planned risk %s exceeds remaining daily loss budget %s",
+                            String.format(Locale.US, "%.2f", in.plannedRisk.doubleValue()),
+                            String.format(Locale.US, "%.2f", Math.max(0.0, in.remainingBudget))));
+        }
+
+        return new EntryGateDecision(EntryGateDisposition.ALLOWED, "OK", "all gates passed");
+    }
+
+    public enum SectorGate {
+        /** Sector confirmed aligned with the trade direction — entry may proceed. */
+        ALIGNED,
+        /** Sector actively opposed the direction — data-driven, retry on cooldown. */
+        MISALIGNED,
+        /** No usable constituent quotes — retry on cooldown, exhaust after bounded attempts. */
+        NO_DATA
+    }
+
+    /** M9: bounded consecutive NO_DATA outcomes before the sector gate fails closed. */
+    private static final int MAX_SECTOR_NO_DATA_RETRIES = 6;
+
     /**
      * Re-checks whether the stock's parent sector is still aligned with the strategy direction. For
      * LONG: Sector average % change must be > 0.0% and advances >= declines. For SHORT: Sector
      * average % change must be < 0.0% and declines >= advances.
+     *
+     * <p>Boolean view: returns false only for a confirmed misalignment; NO_DATA fails open to
+     * preserve historical behaviour. The entry gate uses {@link #evaluateLiveSectorAlignment} for
+     * the full tri-state policy.
      */
     public boolean checkLiveSectorAlignment(String symbol, LowestVolumeDirection direction) {
-        if (marketDataService == null) return true;
+        return evaluateLiveSectorAlignment(symbol, direction) != SectorGate.MISALIGNED;
+    }
+
+    /** M9: tri-state sector check — aligned, misaligned, or no usable data. */
+    public SectorGate evaluateLiveSectorAlignment(String symbol, LowestVolumeDirection direction) {
+        if (marketDataService == null) return SectorGate.ALIGNED;
 
         String sectorName = NiftySectorRegistry.getSectorForSymbol(symbol);
         if (sectorName == null || sectorName.isBlank()) {
@@ -2567,13 +3364,13 @@ public class LowestVolumeReversalService {
                     && !sectorState.topSector().isBlank()) {
                 sectorName = sectorState.topSector();
             } else {
-                return true;
+                return SectorGate.ALIGNED;
             }
         }
 
         List<String> constituents = NiftySectorRegistry.getStocksForSector(sectorName);
         if (constituents == null || constituents.isEmpty()) {
-            return true;
+            return SectorGate.ALIGNED;
         }
 
         double totalPctChange = 0.0;
@@ -2604,29 +3401,35 @@ public class LowestVolumeReversalService {
         }
 
         if (count == 0) {
-            return true; // If data unavailable, fail safe and allow
+            return SectorGate.NO_DATA;
         }
 
         double avgSectorPct = totalPctChange / count;
-        boolean aligned;
+        SectorGate gate;
 
         if (direction == LowestVolumeDirection.LONG) {
-            aligned = (avgSectorPct > 0.0 && advances >= declines);
+            gate =
+                    (avgSectorPct > 0.0 && advances >= declines)
+                            ? SectorGate.ALIGNED
+                            : SectorGate.MISALIGNED;
         } else {
-            aligned = (avgSectorPct < 0.0 && declines >= advances);
+            gate =
+                    (avgSectorPct < 0.0 && declines >= advances)
+                            ? SectorGate.ALIGNED
+                            : SectorGate.MISALIGNED;
         }
 
         log.info(
-                "[LVR-SECTOR-CHECK] Rechecked {} sector '{}' at entry: AvgChange={}% (Advances={}, Declines={}, Total={}) | Aligned={}",
+                "[LVR-SECTOR-CHECK] Rechecked {} sector '{}' at entry: AvgChange={}% (Advances={}, Declines={}, Total={}) | Gate={}",
                 symbol,
                 sectorName,
                 String.format(java.util.Locale.US, "%.2f", avgSectorPct),
                 advances,
                 declines,
                 count,
-                aligned);
+                gate);
 
-        if (!aligned) {
+        if (gate == SectorGate.MISALIGNED) {
             Instant lastAlert = sectorRejectionAlertCooldown.get(symbol);
             if (lastAlert == null || Instant.now(clock).isAfter(lastAlert.plusSeconds(300))) {
                 sectorRejectionAlertCooldown.put(symbol, Instant.now(clock));
@@ -2652,7 +3455,7 @@ public class LowestVolumeReversalService {
             }
         }
 
-        return aligned;
+        return gate;
     }
 
     public boolean isVwapConfirmationEnabled() {
@@ -2770,13 +3573,20 @@ public class LowestVolumeReversalService {
 
     public double calculateTodayRealizedPnl() {
         LocalDate today = LocalDate.now(clock);
-        return tradeHistory.stream()
-                .filter(
-                        p ->
-                                p.getExitTime() != null
-                                        && LocalDate.ofInstant(p.getExitTime(), IST).equals(today))
-                .mapToDouble(p -> p.getTotalRealizedPnl().doubleValue())
-                .sum();
+        // H6: carry same-day archived P&L (from a forced intraday hard reset) so the breaker
+        // and /status never lose realized losses.
+        double archived =
+                (archiveDate != null && archiveDate.equals(today)) ? archivedRealizedPnl : 0.0;
+        double live =
+                tradeHistory.stream()
+                        .filter(
+                                p ->
+                                        p.getExitTime() != null
+                                                && LocalDate.ofInstant(p.getExitTime(), IST)
+                                                        .equals(today))
+                        .mapToDouble(p -> p.getTotalRealizedPnl().doubleValue())
+                        .sum();
+        return archived + live;
     }
 
     public double calculateOpenPositionsUnrealizedPnl() {
@@ -2834,15 +3644,78 @@ public class LowestVolumeReversalService {
         return calculateTodayRealizedPnl() + calculateOpenPositionsUnrealizedPnl();
     }
 
+    /**
+     * L2: unrealized P&L refreshed at most every 30s — used by pre-trade budget checks and status
+     * endpoints so they don't re-fetch quotes on every call.
+     */
+    public double getCachedUnrealizedPnl() {
+        java.time.Instant now = Instant.now(clock);
+        if (lastUnrealizedRefresh == null
+                || now.isAfter(lastUnrealizedRefresh.plusSeconds(30))) {
+            cachedUnrealizedPnl = calculateOpenPositionsUnrealizedPnl(null);
+            lastUnrealizedRefresh = now;
+        }
+        return cachedUnrealizedPnl;
+    }
+
+    /**
+     * H6: true while the market session is open (09:30–15:00 IST), evaluated on the injected
+     * clock so tests can pin it. Endpoint and Telegram guards refuse destructive intraday actions
+     * (e.g. {@code /reset}, which flattens open positions) unless explicitly forced.
+     */
+    public boolean isWithinTradingHours() {
+        LocalTime now = LocalTime.now(clock);
+        return !now.isBefore(TIME_EVALUATION_START) && now.isBefore(TIME_HARD_EXIT);
+    }
+
+    /**
+     * H5: records a failed quote fetch for {@code symbol}; after
+     * {@link #QUOTE_STALL_ALERT_THRESHOLD} consecutive failures a single loud Telegram alert is
+     * emitted (further alerts suppressed until a success resets the counter).
+     */
+    private void recordQuoteFailure(String symbol, String context) {
+        int failures = quoteFailureCounts.merge(symbol, 1, Integer::sum);
+        log.warn(
+                "[LVR] Quote fetch failed for {} during {} ({} consecutive failures).",
+                symbol,
+                context,
+                failures);
+        if (failures >= QUOTE_STALL_ALERT_THRESHOLD && quoteStallAlerted.add(symbol)) {
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                "🔴 *LVR Quote Stall Alert*\n"
+                                        + "• Symbol: `%s`\n"
+                                        + "• Context: %s\n"
+                                        + "• Consecutive failures: %d\n"
+                                        + "• Impact: breach checks/exits for this symbol are"
+                                        + " being skipped until quotes recover.",
+                                symbol,
+                                context,
+                                failures));
+            }
+        }
+    }
+
+    /** H5: records a successful quote fetch, resetting the failure streak for the symbol. */
+    private void recordQuoteSuccess(String symbol) {
+        quoteFailureCounts.remove(symbol);
+        quoteStallAlerted.remove(symbol);
+    }
+
     public boolean isDailyCircuitBreakerTripped() {
         return isDailyCircuitBreakerTripped(null);
     }
 
     public boolean isDailyCircuitBreakerTripped(Map<String, JsonNode> quoteCache) {
         if (maxDailyLoss <= 0.0) return false;
+        // M2: once tripped, the breaker latches for the rest of the day — a floating recovery
+        // must never silently re-enable new entries.
+        if (dailyCircuitBreakerTripped.get()) return true;
         double totalRiskPnl =
                 calculateTodayRealizedPnl() + calculateOpenPositionsUnrealizedPnl(quoteCache);
         if (totalRiskPnl <= -maxDailyLoss) {
+            dailyCircuitBreakerTripped.set(true);
             if (dailyCircuitBreakerAlertSent.compareAndSet(false, true)) {
                 log.warn(
                         "[LVR] Daily Max Loss Circuit Breaker tripped: Total risk loss (₹{}) reached limit (₹{}). Halting new entries.",
@@ -2909,6 +3782,9 @@ public class LowestVolumeReversalService {
         LowestVolumeSetup activeSetup = null;
         LowestVolumePaperPosition openPos = null;
         int attempt = 0;
+        // L6: a gate EXHAUST outcome discards the symbol for the day (mirrors live
+        // exhaustedSymbols) and stops setup re-arming for the rest of the session.
+        boolean discardedForDay = false;
         Instant lastExitTime = null;
 
         for (int i = 3; i < sessionCandles.size(); i++) {
@@ -2970,8 +3846,7 @@ public class LowestVolumeReversalService {
                 } else if (targetHit) {
                     LvrExitMode currentExitMode =
                             (openPos.getExitMode() != null) ? openPos.getExitMode() : exitMode;
-                    if (currentExitMode == LvrExitMode.FULL_TARGET_1_2
-                            || currentExitMode == LvrExitMode.FULL_TARGET_1_4) {
+                    if (currentExitMode == LvrExitMode.FULL_TARGET_1_2) {
                         // 100% Full Exit at Target
                         if (openPos.getInstrumentType() == LvrInstrumentType.FUTURES) {
                             openPos.closeFullFutures(
@@ -3066,7 +3941,9 @@ public class LowestVolumeReversalService {
             }
 
             // 2. Setup Evaluation & Trigger Arming / Trailing
-            if (candleTime.isBefore(TIME_ENTRY_CUTOFF) && attempt < maxAttemptsPerSymbol) {
+            if (!discardedForDay
+                    && candleTime.isBefore(TIME_ENTRY_CUTOFF)
+                    && attempt < maxAttemptsPerSymbol) {
                 LowestVolumeSetup evaluated =
                         evaluateCandleSequence(symbol, direction, historicalSubList, lastExitTime);
                 if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
@@ -3106,31 +3983,17 @@ public class LowestVolumeReversalService {
                 }
 
                 if (triggered) {
+                    // VWAP value resolution (data collection — the decision belongs to the gate).
+                    double replayVwap = 0.0;
                     if (vwapConfirmationEnabled && taService != null) {
                         double[] vwapSeries = taService.calculateVwapSeries(historicalSubList);
-                        double currentVwap =
-                                (vwapSeries.length > 0) ? vwapSeries[vwapSeries.length - 1] : 0.0;
-                        if (currentVwap > 0.0) {
-                            boolean vwapConfirmed = false;
-                            if (direction == LowestVolumeDirection.LONG) {
-                                vwapConfirmed =
-                                        (triggerPrice.compareTo(BigDecimal.valueOf(currentVwap))
-                                                > 0);
-                            } else if (direction == LowestVolumeDirection.SHORT) {
-                                vwapConfirmed =
-                                        (triggerPrice.compareTo(BigDecimal.valueOf(currentVwap))
-                                                < 0);
-                            }
-
-                            if (!vwapConfirmed) {
-                                // Discard stock for the day
-                                activeSetup = null;
-                                break;
-                            }
+                        if (vwapSeries.length > 0) {
+                            replayVwap = vwapSeries[vwapSeries.length - 1];
                         }
                     }
 
-                    attempt++;
+                    // Sizing preview — also feeds the budget gate (identical math to the
+                    // position construction below and to executePositionEntry's budget check).
                     StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(symbol);
                     int lotSize = (fno != null) ? fno.lotSize() : 100;
                     BigDecimal strikeStep =
@@ -3157,6 +4020,70 @@ public class LowestVolumeReversalService {
                                 roundToTick(
                                         triggerPrice.add(unitRisk.multiply(BigDecimal.valueOf(2))));
                     }
+
+                    // L6: evaluate the SAME shared entry gate the live trigger path uses —
+                    // slippage, VWAP, 15m range, PDH/PDL, stand-down, breaker, cutoff,
+                    // attempts, concurrency, registry and M2 budget can never diverge between
+                    // live and replay for identical inputs.
+                    EntryGateInput gateInput = new EntryGateInput();
+                    gateInput.symbol = symbol;
+                    gateInput.direction = direction;
+                    gateInput.triggerPrice = triggerPrice;
+                    // First touch of the trigger ≈ decision price at the live tick.
+                    gateInput.decisionPrice = triggerPrice;
+                    // Gap analogue: a candle opening beyond the band would have been seen as
+                    // an already-slipped LTP by the live path.
+                    gateInput.entryPrice = currentCandle.open();
+                    gateInput.maxSlippagePct = maxSlippagePct;
+                    gateInput.vwapEnabled = vwapConfirmationEnabled;
+                    gateInput.vwap = (replayVwap > 0.0) ? replayVwap : null;
+                    gateInput.range15mEnabled = opening15mRangeFilterEnabled;
+                    gateInput.first15mHigh = activeSetup.getFirst15MinHigh();
+                    gateInput.first15mLow = activeSetup.getFirst15MinLow();
+                    gateInput.pdhPdlEnabled = pdhPdlFilterEnabled;
+                    gateInput.pdh = activeSetup.getPdh();
+                    gateInput.pdl = activeSetup.getPdl();
+                    gateInput.standDown = standDownToday;
+                    gateInput.breakerTripped = dailyCircuitBreakerTripped.get();
+                    gateInput.nowTime = candleTime;
+                    gateInput.entryCutoff = TIME_ENTRY_CUTOFF;
+                    gateInput.tradeAttempts = attempt;
+                    gateInput.maxAttempts = maxAttemptsPerSymbol;
+                    gateInput.openConcurrent = openPos != null ? 1 : 0;
+                    gateInput.maxConcurrent = maxConcurrentTrades;
+                    gateInput.hasRegistryEntry = fno != null;
+                    gateInput.plannedRisk = plannedRisk;
+                    gateInput.remainingBudget =
+                            (maxDailyLoss > 0.0)
+                                    ? maxDailyLoss
+                                            + calculateTodayRealizedPnl()
+                                            + getCachedUnrealizedPnl()
+                                    : null;
+
+                    EntryGateDecision gate = evaluateEntryGate(gateInput);
+                    if (!gate.allowed()) {
+                        if (gate.disposition() == EntryGateDisposition.EXHAUST) {
+                            // Mirror live: discard for the day.
+                            log.info(
+                                    "[LVR][REPLAY] {} discarded for the day: [{}] {}",
+                                    symbol,
+                                    gate.gate(),
+                                    gate.reason());
+                            discardedForDay = true;
+                            activeSetup = null;
+                            continue;
+                        }
+                        // RETRY / RETRY_COOLDOWN: stay armed and skip entry on this candle —
+                        // a 5-minute replay candle is already >= live's 60s retry cooldown.
+                        log.debug(
+                                "[LVR][REPLAY] Entry for {} deferred ({}): {}",
+                                symbol,
+                                gate.gate(),
+                                gate.reason());
+                        continue;
+                    }
+
+                    attempt++;
                     String tradeId = "REPLAY-" + attempt;
                     if (instrumentType == LvrInstrumentType.FUTURES) {
                         openPos =
@@ -3221,6 +4148,29 @@ public class LowestVolumeReversalService {
         this.universeScanCompletedToday = universeScanCompletedToday;
     }
 
+    /** H10/N6: {@code true} once the strategy has stood down for the rest of the day. */
+    public boolean isStandDownToday() {
+        return standDownToday;
+    }
+
+    /** M10: overrides where the JSON state snapshot is written/read (tests, deployments). */
+    public void setStateFilePath(String stateFilePath) {
+        this.stateFilePath = stateFilePath;
+    }
+
+    public String getStateFilePath() {
+        return stateFilePath;
+    }
+
+    /** M10: enables/disables JSON snapshot persistence. */
+    public void setStatePersistenceEnabled(boolean statePersistenceEnabled) {
+        this.statePersistenceEnabled = statePersistenceEnabled;
+    }
+
+    public boolean isStatePersistenceEnabled() {
+        return statePersistenceEnabled;
+    }
+
     public LowestVolumeSectorState getSectorState() {
         return sectorState;
     }
@@ -3276,7 +4226,34 @@ public class LowestVolumeReversalService {
         return pos.getContractSymbol();
     }
 
-    private void publishSignal(
+    /**
+     * H11: when the signal bus rejects an ENTRY (full buffer / no subscriber), undo every side
+     * effect of the entry so the paper position, trade attempt, and setup state stay consistent
+     * with reality — nothing was (or will be) executed at the broker.
+     */
+    private void rollbackEntryAfterPublishFailure(
+            String symbol, LowestVolumeSetup setup, String tradeId, String reason) {
+        openPositions.remove(symbol);
+        setup.undoTradeAttempt();
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Entry rolled back: " + reason);
+        gateRetryNotBefore.put(symbol, Instant.now(clock).plusSeconds(60));
+        log.error(
+                "[LVR] Entry for {} rolled back ({}) — signal bus rejected the ENTRY."
+                        + " Setup re-armed; will retry after cooldown.",
+                symbol,
+                reason);
+        if (telegramAlerts && telegramService != null) {
+            telegramService.sendTextMessage(
+                    String.format(
+                            "🔴 *LVR Entry Rolled Back*\n• Symbol: `%s`\n• TradeId: `%s`\n"
+                                    + "• Reason: %s\n• Setup re-armed; retries after cooldown.",
+                            symbol,
+                            tradeId,
+                            reason));
+        }
+    }
+
+    private boolean publishSignal(
             String underlying,
             String contract,
             com.tradingbot.strategy.SignalAction action,
@@ -3305,7 +4282,9 @@ public class LowestVolumeReversalService {
                             quantity,
                             reason,
                             enrichedMeta);
-            signalPublisher.publish(signal);
+            return signalPublisher.publish(signal);
         }
+        // Paper-only mode (no bus wired) — nothing to fail.
+        return true;
     }
 }
