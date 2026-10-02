@@ -58,6 +58,8 @@ public class LowestVolumeReversalService {
     public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(13, 0);
     public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
 
+    public static final String STRATEGY_ID = "LOWEST_VOLUME_REVERSAL";
+
     private final ShoonyaMarketDataService marketDataService;
     private final TechnicalAnalysisService taService;
     private final TelegramService telegramService;
@@ -3245,9 +3247,15 @@ public class LowestVolumeReversalService {
             String reason,
             Map<String, Object> metadata) {
         if (signalPublisher != null && action != null) {
+            Map<String, Object> enrichedMeta = new HashMap<>();
+            if (metadata != null) {
+                enrichedMeta.putAll(metadata);
+            }
+            enrichedMeta.putIfAbsent("instrumentType", instrumentType.name());
+
             com.tradingbot.strategy.TradeSignal signal =
                     com.tradingbot.strategy.TradeSignal.of(
-                            "LVR_" + instrumentType,
+                            STRATEGY_ID,
                             underlying,
                             contract != null ? contract : underlying,
                             action,
@@ -3256,7 +3264,7 @@ public class LowestVolumeReversalService {
                             target,
                             quantity,
                             reason,
-                            metadata);
+                            enrichedMeta);
             signalPublisher.publish(signal);
         }
     }

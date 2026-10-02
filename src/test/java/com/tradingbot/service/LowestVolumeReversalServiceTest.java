@@ -347,6 +347,7 @@ class LowestVolumeReversalServiceTest {
                         org.mockito.ArgumentMatchers.argThat(
                                 sig ->
                                         sig.underlyingSymbol().equals("SUNPHARMA")
+                                                && "LOWEST_VOLUME_REVERSAL".equals(sig.strategyId())
                                                 && sig.action()
                                                         == com.tradingbot.strategy.SignalAction
                                                                 .ENTRY_LONG));
