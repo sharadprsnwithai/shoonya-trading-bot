@@ -6,9 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
-/**
- * Historical record of a completed monthly Put Condor cycle for SQLite archiving.
- */
+/** Historical record of a completed monthly Put Condor cycle for SQLite archiving. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PutCondorCycleHistory {

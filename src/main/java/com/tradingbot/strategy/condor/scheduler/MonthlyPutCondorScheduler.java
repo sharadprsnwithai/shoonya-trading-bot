@@ -17,10 +17,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Scheduled cron orchestrator for the Monthly Put Condor Strategy:
- * 1. Morning entry trigger @ 10:30 AM on first trading day of month (or mid-cycle start)
- * 2. Real-time active tick evaluation every 60 seconds during market hours (09:15–15:20)
- * 3. Expiry settlement square-off @ 15:10 on monthly expiry Thursdays
+ * Scheduled cron orchestrator for the Monthly Put Condor Strategy: 1. Morning entry trigger @ 10:30
+ * AM on first trading day of month (or mid-cycle start) 2. Real-time active tick evaluation every
+ * 60 seconds during market hours (09:15–15:20) 3. Expiry settlement square-off @ 15:10 on monthly
+ * expiry Thursdays
  */
 @Component
 public class MonthlyPutCondorScheduler {
@@ -41,9 +41,7 @@ public class MonthlyPutCondorScheduler {
         this.properties = properties;
     }
 
-    /**
-     * Executes at 10:30 AM IST every weekday.
-     */
+    /** Executes at 10:30 AM IST every weekday. */
     @Scheduled(cron = "0 30 10 * * MON-FRI", zone = "Asia/Kolkata")
     public void executeMorningCycleEntry() {
         executeMorningCycleEntry(LocalDate.now(NseTradingCalendarUtil.IST_ZONE));
@@ -58,20 +56,24 @@ public class MonthlyPutCondorScheduler {
         if (active == null || active.getState() == PutCondorState.IDLE) {
             BigDecimal spot = fetchNiftySpotPrice();
             if (spot.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("[CONDOR SCHEDULER] Triggering morning cycle entry for date {} at Nifty Spot: ₹{}", today, spot);
+                log.info(
+                        "[CONDOR SCHEDULER] Triggering morning cycle entry for date {} at Nifty Spot: ₹{}",
+                        today,
+                        spot);
                 condorService.evaluateAndEnterCycle(spot);
             } else {
-                log.error("[CONDOR SCHEDULER] Failed to fetch valid Nifty spot price for morning entry.");
+                log.error(
+                        "[CONDOR SCHEDULER] Failed to fetch valid Nifty spot price for morning entry.");
             }
         }
     }
 
-    /**
-     * Executes every 60 seconds between 09:15 and 15:20 IST on active trading days.
-     */
+    /** Executes every 60 seconds between 09:15 and 15:20 IST on active trading days. */
     @Scheduled(cron = "0 */1 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void pollActiveMarketTicks() {
-        pollActiveMarketTicks(LocalDate.now(NseTradingCalendarUtil.IST_ZONE), LocalTime.now(NseTradingCalendarUtil.IST_ZONE));
+        pollActiveMarketTicks(
+                LocalDate.now(NseTradingCalendarUtil.IST_ZONE),
+                LocalTime.now(NseTradingCalendarUtil.IST_ZONE));
     }
 
     public void pollActiveMarketTicks(LocalDate today, LocalTime now) {
@@ -80,7 +82,9 @@ public class MonthlyPutCondorScheduler {
         }
 
         PutCondorPosition active = condorService.getActivePosition();
-        if (active != null && active.getState() != PutCondorState.IDLE && active.getState() != PutCondorState.SQUARED_OFF) {
+        if (active != null
+                && active.getState() != PutCondorState.IDLE
+                && active.getState() != PutCondorState.SQUARED_OFF) {
             BigDecimal spot = fetchNiftySpotPrice();
             if (spot.compareTo(BigDecimal.ZERO) > 0) {
                 condorService.onMarketTick(spot, today);
@@ -103,14 +107,13 @@ public class MonthlyPutCondorScheduler {
 
         PutCondorPosition active = condorService.getActivePosition();
         if (active != null && today.equals(active.getCycleExpiryDate())) {
-            log.info("[CONDOR SCHEDULER] Monthly expiry day reached. Squaring off active Put Condor legs.");
+            log.info(
+                    "[CONDOR SCHEDULER] Monthly expiry day reached. Squaring off active Put Condor legs.");
             condorService.squareOffAll("MONTHLY_EXPIRY_SETTLEMENT");
         }
     }
 
-    /**
-     * Fetches real-time NIFTY 50 spot price from Shoonya API.
-     */
+    /** Fetches real-time NIFTY 50 spot price from Shoonya API. */
     public BigDecimal fetchNiftySpotPrice() {
         try {
             if (marketDataService != null) {
@@ -124,7 +127,9 @@ public class MonthlyPutCondorScheduler {
                 }
             }
         } catch (Exception e) {
-            log.warn("[CONDOR SCHEDULER] Error fetching live Nifty quote from Shoonya: {}", e.getMessage());
+            log.warn(
+                    "[CONDOR SCHEDULER] Error fetching live Nifty quote from Shoonya: {}",
+                    e.getMessage());
         }
         return BigDecimal.valueOf(25000.0); // Safe fallback
     }

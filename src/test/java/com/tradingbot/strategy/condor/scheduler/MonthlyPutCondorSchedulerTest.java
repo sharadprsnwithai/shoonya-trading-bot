@@ -11,7 +11,6 @@ import com.tradingbot.strategy.condor.config.MonthlyPutCondorProperties;
 import com.tradingbot.strategy.condor.model.PutCondorPosition;
 import com.tradingbot.strategy.condor.model.PutCondorState;
 import com.tradingbot.strategy.condor.service.MonthlyPutCondorService;
-import java.math.BigDecimal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -34,7 +34,8 @@ public class SqlitePutCondorRepository {
     private final String dbPath;
     private final ObjectMapper objectMapper;
 
-    public SqlitePutCondorRepository(@Value("${trading-bot.ohlc.sqlite-db-path:data/trading_bot.db}") String dbPath) {
+    public SqlitePutCondorRepository(
+            @Value("${trading-bot.ohlc.sqlite-db-path:data/trading_bot.db}") String dbPath) {
         this.dbPath = dbPath;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -50,10 +51,11 @@ public class SqlitePutCondorRepository {
             }
 
             try (Connection conn = getConnection();
-                 Statement stmt = conn.createStatement()) {
+                    Statement stmt = conn.createStatement()) {
 
                 // Table for active strategy state (single active record key = 1)
-                stmt.execute("""
+                stmt.execute(
+                        """
                     CREATE TABLE IF NOT EXISTS put_condor_state (
                         id INTEGER PRIMARY KEY CHECK (id = 1),
                         state TEXT NOT NULL,
@@ -63,7 +65,8 @@ public class SqlitePutCondorRepository {
                 """);
 
                 // Table for completed cycle history
-                stmt.execute("""
+                stmt.execute(
+                        """
                     CREATE TABLE IF NOT EXISTS put_condor_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         cycle_month TEXT NOT NULL,
@@ -94,14 +97,13 @@ public class SqlitePutCondorRepository {
         return DriverManager.getConnection("jdbc:sqlite:" + dbPath);
     }
 
-    /**
-     * Saves or updates the active Put Condor position.
-     */
+    /** Saves or updates the active Put Condor position. */
     public synchronized void saveActivePosition(PutCondorPosition position) {
         if (position == null) {
             return;
         }
-        String sql = """
+        String sql =
+                """
             INSERT INTO put_condor_state (id, state, position_json, updated_at)
             VALUES (1, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
@@ -110,7 +112,7 @@ public class SqlitePutCondorRepository {
                 updated_at = excluded.updated_at;
         """;
         try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+                PreparedStatement ps = conn.prepareStatement(sql)) {
             String json = objectMapper.writeValueAsString(position);
             ps.setString(1, position.getState().name());
             ps.setString(2, json);
@@ -122,47 +124,46 @@ public class SqlitePutCondorRepository {
         }
     }
 
-    /**
-     * Loads the active Put Condor position from SQLite if present.
-     */
+    /** Loads the active Put Condor position from SQLite if present. */
     public synchronized Optional<PutCondorPosition> loadActivePosition() {
         String sql = "SELECT position_json FROM put_condor_state WHERE id = 1";
         try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+                PreparedStatement ps = conn.prepareStatement(sql);
+                ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
                 String json = rs.getString("position_json");
                 PutCondorPosition pos = objectMapper.readValue(json, PutCondorPosition.class);
                 return Optional.ofNullable(pos);
             }
         } catch (Exception e) {
-            log.error("Failed to load active Put Condor position from SQLite: {}", e.getMessage(), e);
+            log.error(
+                    "Failed to load active Put Condor position from SQLite: {}", e.getMessage(), e);
         }
         return Optional.empty();
     }
 
-    /**
-     * Clears the active Put Condor position.
-     */
+    /** Clears the active Put Condor position. */
     public synchronized void clearActivePosition() {
         String sql = "DELETE FROM put_condor_state WHERE id = 1";
         try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+                PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.executeUpdate();
             log.info("Active Put Condor position cleared from SQLite");
         } catch (SQLException e) {
-            log.error("Failed to clear active Put Condor position from SQLite: {}", e.getMessage(), e);
+            log.error(
+                    "Failed to clear active Put Condor position from SQLite: {}",
+                    e.getMessage(),
+                    e);
         }
     }
 
-    /**
-     * Records a completed monthly cycle into history.
-     */
+    /** Records a completed monthly cycle into history. */
     public synchronized void saveCycleHistory(PutCondorCycleHistory history) {
         if (history == null) {
             return;
         }
-        String sql = """
+        String sql =
+                """
             INSERT INTO put_condor_history (
                 cycle_month, entry_date, exit_date, entry_spot, exit_spot,
                 lots, total_quantity, initial_debit_rs, realized_pnl_rs,
@@ -170,36 +171,57 @@ public class SqlitePutCondorRepository {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """;
         try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+                PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, history.getCycleMonth() != null ? history.getCycleMonth() : "");
-            ps.setString(2, history.getEntryDate() != null ? history.getEntryDate().toString() : "");
+            ps.setString(
+                    2, history.getEntryDate() != null ? history.getEntryDate().toString() : "");
             ps.setString(3, history.getExitDate() != null ? history.getExitDate().toString() : "");
-            ps.setDouble(4, history.getEntrySpot() != null ? history.getEntrySpot().doubleValue() : 0.0);
-            ps.setDouble(5, history.getExitSpot() != null ? history.getExitSpot().doubleValue() : 0.0);
+            ps.setDouble(
+                    4, history.getEntrySpot() != null ? history.getEntrySpot().doubleValue() : 0.0);
+            ps.setDouble(
+                    5, history.getExitSpot() != null ? history.getExitSpot().doubleValue() : 0.0);
             ps.setInt(6, history.getLots());
             ps.setInt(7, history.getTotalQuantity());
-            ps.setDouble(8, history.getInitialNetDebitRs() != null ? history.getInitialNetDebitRs().doubleValue() : 0.0);
-            ps.setDouble(9, history.getRealizedPnlRs() != null ? history.getRealizedPnlRs().doubleValue() : 0.0);
+            ps.setDouble(
+                    8,
+                    history.getInitialNetDebitRs() != null
+                            ? history.getInitialNetDebitRs().doubleValue()
+                            : 0.0);
+            ps.setDouble(
+                    9,
+                    history.getRealizedPnlRs() != null
+                            ? history.getRealizedPnlRs().doubleValue()
+                            : 0.0);
             ps.setDouble(10, history.getRoiPct() != null ? history.getRoiPct().doubleValue() : 0.0);
-            ps.setDouble(11, history.getMaxDrawdownRs() != null ? history.getMaxDrawdownRs().doubleValue() : 0.0);
-            ps.setString(12, history.getAdjustmentsSummary() != null ? history.getAdjustmentsSummary() : "");
+            ps.setDouble(
+                    11,
+                    history.getMaxDrawdownRs() != null
+                            ? history.getMaxDrawdownRs().doubleValue()
+                            : 0.0);
+            ps.setString(
+                    12,
+                    history.getAdjustmentsSummary() != null ? history.getAdjustmentsSummary() : "");
             ps.setString(13, history.getExitReason() != null ? history.getExitReason() : "");
-            ps.setLong(14, history.getCreatedAt() != null ? history.getCreatedAt().getEpochSecond() : Instant.now().getEpochSecond());
+            ps.setLong(
+                    14,
+                    history.getCreatedAt() != null
+                            ? history.getCreatedAt().getEpochSecond()
+                            : Instant.now().getEpochSecond());
             ps.executeUpdate();
-            log.info("Put Condor cycle history archived to SQLite for month {}", history.getCycleMonth());
+            log.info(
+                    "Put Condor cycle history archived to SQLite for month {}",
+                    history.getCycleMonth());
         } catch (SQLException e) {
             log.error("Failed to save Put Condor cycle history to SQLite: {}", e.getMessage(), e);
         }
     }
 
-    /**
-     * Retrieves historical cycle records ordered by most recent.
-     */
+    /** Retrieves historical cycle records ordered by most recent. */
     public synchronized List<PutCondorCycleHistory> getHistory(int limit) {
         List<PutCondorCycleHistory> list = new ArrayList<>();
         String sql = "SELECT * FROM put_condor_history ORDER BY id DESC LIMIT ?";
         try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+                PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, limit > 0 ? limit : 50);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {

@@ -3,9 +3,7 @@ package com.tradingbot.strategy.condor.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Configuration properties for the Monthly Asymmetric Put Condor Strategy.
- */
+/** Configuration properties for the Monthly Asymmetric Put Condor Strategy. */
 @Configuration
 @ConfigurationProperties(prefix = "trading-bot.strategy.put-condor")
 public class MonthlyPutCondorProperties {

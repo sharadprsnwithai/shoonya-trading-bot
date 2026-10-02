@@ -6,7 +6,6 @@ import static org.mockito.Mockito.*;
 
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.marketdata.ShoonyaOptionChainService;
-import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.strategy.condor.config.MonthlyPutCondorProperties;
 import com.tradingbot.strategy.condor.model.PutCondorPosition;
 import com.tradingbot.strategy.condor.model.PutCondorState;
@@ -53,18 +52,19 @@ class MonthlyPutCondorServiceTest {
         when(orderSlicer.executeLegOrders(any(), any())).thenReturn(true);
         when(repository.loadActivePosition()).thenReturn(Optional.empty());
 
-        service = new MonthlyPutCondorService(
-                marketDataService,
-                optionChainService,
-                orderSlicer,
-                repository,
-                telegramService,
-                properties
-        );
+        service =
+                new MonthlyPutCondorService(
+                        marketDataService,
+                        optionChainService,
+                        orderSlicer,
+                        repository,
+                        telegramService,
+                        properties);
     }
 
     @Test
-    @DisplayName("Evaluate and enter monthly cycle resolves 200-pt strikes and transitions to CONDOR_ACTIVE")
+    @DisplayName(
+            "Evaluate and enter monthly cycle resolves 200-pt strikes and transitions to CONDOR_ACTIVE")
     void testEvaluateAndEnterCycle() {
         BigDecimal spot = BigDecimal.valueOf(25020.0); // ATM = 25000
         boolean entered = service.evaluateAndEnterCycle(spot);
@@ -84,7 +84,8 @@ class MonthlyPutCondorServiceTest {
     }
 
     @Test
-    @DisplayName("Market tick triggers Adjustment A (Upside Financing) when spot rallies >= ATM + 150")
+    @DisplayName(
+            "Market tick triggers Adjustment A (Upside Financing) when spot rallies >= ATM + 150")
     void testAdjustmentAUpsideFinancing() {
         service.evaluateAndEnterCycle(BigDecimal.valueOf(25000.0));
         assertEquals(PutCondorState.CONDOR_ACTIVE, service.getActivePosition().getState());
@@ -100,7 +101,8 @@ class MonthlyPutCondorServiceTest {
     }
 
     @Test
-    @DisplayName("Market tick triggers Adjustment B (Sweet Spot Roll) when spot drops <= K2 (24600)")
+    @DisplayName(
+            "Market tick triggers Adjustment B (Sweet Spot Roll) when spot drops <= K2 (24600)")
     void testAdjustmentBSweetSpotRoll() {
         service.evaluateAndEnterCycle(BigDecimal.valueOf(25000.0));
         assertEquals(PutCondorState.CONDOR_ACTIVE, service.getActivePosition().getState());
@@ -111,11 +113,15 @@ class MonthlyPutCondorServiceTest {
 
         assertEquals(PutCondorState.SWEET_SPOT_LOCK, service.getActivePosition().getState());
         assertTrue(service.getActivePosition().isSweetSpotRollActive());
-        assertEquals(24700, service.getActivePosition().getActiveK1Strike(), "K1 should roll down 100 pts from 24800 to 24700");
+        assertEquals(
+                24700,
+                service.getActivePosition().getActiveK1Strike(),
+                "K1 should roll down 100 pts from 24800 to 24700");
     }
 
     @Test
-    @DisplayName("Market tick triggers Adjustment C (Deep Crash Defense) when spot drops <= K4 - 100")
+    @DisplayName(
+            "Market tick triggers Adjustment C (Deep Crash Defense) when spot drops <= K4 - 100")
     void testAdjustmentCDeepCrashDefense() {
         service.evaluateAndEnterCycle(BigDecimal.valueOf(25000.0));
         assertEquals(PutCondorState.CONDOR_ACTIVE, service.getActivePosition().getState());

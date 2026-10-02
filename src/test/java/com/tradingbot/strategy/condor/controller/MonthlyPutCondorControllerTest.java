@@ -23,17 +23,13 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(MonthlyPutCondorController.class)
 class MonthlyPutCondorControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    @Autowired private MockMvc mockMvc;
 
-    @MockBean
-    private MonthlyPutCondorService condorService;
+    @MockBean private MonthlyPutCondorService condorService;
 
-    @MockBean
-    private SqlitePutCondorRepository repository;
+    @MockBean private SqlitePutCondorRepository repository;
 
-    @MockBean
-    private MonthlyPutCondorScheduler scheduler;
+    @MockBean private MonthlyPutCondorScheduler scheduler;
 
     @Test
     @DisplayName("GET /api/strategy/put-condor/status returns active position details")
@@ -55,9 +51,10 @@ class MonthlyPutCondorControllerTest {
         when(condorService.evaluateAndEnterCycle(any())).thenReturn(true);
         when(scheduler.fetchNiftySpotPrice()).thenReturn(BigDecimal.valueOf(25000.0));
 
-        mockMvc.perform(post("/api/strategy/put-condor/enter")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"spotPrice\": 25050.0}"))
+        mockMvc.perform(
+                        post("/api/strategy/put-condor/enter")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"spotPrice\": 25050.0}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 

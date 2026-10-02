@@ -33,12 +33,16 @@ class PutCondorOrderSlicerTest {
     }
 
     @Test
-    @DisplayName("50 Lots (3250 Qty) with 1800 freeze limit slices into exactly 2 slices of multiples of 65")
+    @DisplayName(
+            "50 Lots (3250 Qty) with 1800 freeze limit slices into exactly 2 slices of multiples of 65")
     void testSliceCalculation50Lots() {
         List<Integer> slices = orderSlicer.calculateSlices(3250, 65, 1800);
         assertNotNull(slices);
         assertEquals(2, slices.size(), "3250 qty should slice into 2 orders");
-        assertEquals(3250, slices.stream().mapToInt(Integer::intValue).sum(), "Sum must match total quantity");
+        assertEquals(
+                3250,
+                slices.stream().mapToInt(Integer::intValue).sum(),
+                "Sum must match total quantity");
         for (int slice : slices) {
             assertTrue(slice <= 1800, "Each slice must be <= 1800 freeze limit");
             assertEquals(0, slice % 65, "Each slice must be a multiple of lot size (65)");
@@ -46,11 +50,15 @@ class PutCondorOrderSlicerTest {
     }
 
     @Test
-    @DisplayName("70 Lots (4550 Qty) with 1800 freeze limit slices into exactly 3 slices of multiples of 65")
+    @DisplayName(
+            "70 Lots (4550 Qty) with 1800 freeze limit slices into exactly 3 slices of multiples of 65")
     void testSliceCalculation70Lots() {
         List<Integer> slices = orderSlicer.calculateSlices(4550, 65, 1800);
         assertEquals(3, slices.size(), "4550 qty should slice into 3 orders");
-        assertEquals(4550, slices.stream().mapToInt(Integer::intValue).sum(), "Sum must match total quantity");
+        assertEquals(
+                4550,
+                slices.stream().mapToInt(Integer::intValue).sum(),
+                "Sum must match total quantity");
         for (int slice : slices) {
             assertTrue(slice <= 1800, "Each slice must be <= 1800 freeze limit");
             assertEquals(0, slice % 65, "Each slice must be a multiple of lot size (65)");
@@ -68,8 +76,9 @@ class PutCondorOrderSlicerTest {
     @Test
     @DisplayName("Paper execution mode succeeds without invoking Zerodha gateway")
     void testPaperExecution() {
-        PutCondorOrderSlicer.LegOrder leg = new PutCondorOrderSlicer.LegOrder(
-                "NIFTY26OCT24800PE", TransactionType.BUY, 3250, BigDecimal.valueOf(140.0));
+        PutCondorOrderSlicer.LegOrder leg =
+                new PutCondorOrderSlicer.LegOrder(
+                        "NIFTY26OCT24800PE", TransactionType.BUY, 3250, BigDecimal.valueOf(140.0));
 
         boolean success = orderSlicer.executeLegOrders(List.of(leg), ExecutionMode.PAPER);
         assertTrue(success, "Paper execution should succeed");
@@ -79,11 +88,13 @@ class PutCondorOrderSlicerTest {
     @Test
     @DisplayName("Live execution mode slices order and invokes Zerodha gateway")
     void testLiveExecution() {
-        when(zerodhaBrokerGateway.placeOrderWithReferencePrice(any(OrderRequest.class), any(BigDecimal.class)))
+        when(zerodhaBrokerGateway.placeOrderWithReferencePrice(
+                        any(OrderRequest.class), any(BigDecimal.class)))
                 .thenReturn(OrderResponse.success("ORD123", null, "Complete"));
 
-        PutCondorOrderSlicer.LegOrder leg = new PutCondorOrderSlicer.LegOrder(
-                "NIFTY26OCT24800PE", TransactionType.BUY, 3250, BigDecimal.valueOf(140.0));
+        PutCondorOrderSlicer.LegOrder leg =
+                new PutCondorOrderSlicer.LegOrder(
+                        "NIFTY26OCT24800PE", TransactionType.BUY, 3250, BigDecimal.valueOf(140.0));
 
         boolean success = orderSlicer.executeLegOrders(List.of(leg), ExecutionMode.LIVE);
         assertTrue(success, "Live execution should succeed");

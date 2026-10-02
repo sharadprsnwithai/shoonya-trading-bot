@@ -1,8 +1,6 @@
 package com.tradingbot.strategy.condor.model;
 
-/**
- * State lifecycle of the Monthly Asymmetric Put Condor Strategy.
- */
+/** State lifecycle of the Monthly Asymmetric Put Condor Strategy. */
 public enum PutCondorState {
     /** Waiting for the 1st trading day of the monthly cycle */
     IDLE,

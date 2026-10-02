@@ -51,14 +51,14 @@ class PutCondorPositionTest {
         // Simulate Current LTPs: k1=160, k2=90, k3=50, k4=30
         // Current value: (160 + 30) - (90 + 50) = 190 - 140 = 50.0 pts
         // Net MTM pts: 50.0 - 21.0 = +29.0 pts -> Total MTM: 29.0 * 3250 = +Rs 94,250
-        BigDecimal currentMtm = pos.computeCurrentMtm(
-                BigDecimal.valueOf(160.0),
-                BigDecimal.valueOf(90.0),
-                BigDecimal.valueOf(50.0),
-                BigDecimal.valueOf(30.0),
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
-        );
+        BigDecimal currentMtm =
+                pos.computeCurrentMtm(
+                        BigDecimal.valueOf(160.0),
+                        BigDecimal.valueOf(90.0),
+                        BigDecimal.valueOf(50.0),
+                        BigDecimal.valueOf(30.0),
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
 
         assertEquals(0, BigDecimal.valueOf(94250.0).compareTo(currentMtm));
     }

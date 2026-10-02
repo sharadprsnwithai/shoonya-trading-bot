@@ -1,8 +1,6 @@
 package com.tradingbot.strategy.condor.model;
 
-/**
- * Categorization of dynamic adjustments performed during an active Put Condor cycle.
- */
+/** Categorization of dynamic adjustments performed during an active Put Condor cycle. */
 public enum PutCondorAdjustmentType {
     NONE,
     UPSIDE_FINANCING,

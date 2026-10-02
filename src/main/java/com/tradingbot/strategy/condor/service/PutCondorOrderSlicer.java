@@ -17,8 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Handles NSE freeze limit order slicing (> 1800 qty) and margin-prioritized order execution
- * for the Monthly Put Condor strategy.
+ * Handles NSE freeze limit order slicing (> 1800 qty) and margin-prioritized order execution for
+ * the Monthly Put Condor strategy.
  */
 @Service
 public class PutCondorOrderSlicer {
@@ -30,15 +30,12 @@ public class PutCondorOrderSlicer {
 
     @Autowired
     public PutCondorOrderSlicer(
-            ZerodhaBrokerGateway zerodhaBrokerGateway,
-            MonthlyPutCondorProperties properties) {
+            ZerodhaBrokerGateway zerodhaBrokerGateway, MonthlyPutCondorProperties properties) {
         this.zerodhaBrokerGateway = zerodhaBrokerGateway;
         this.properties = properties;
     }
 
-    /**
-     * Represents a single leg order specification before slicing.
-     */
+    /** Represents a single leg order specification before slicing. */
     public record LegOrder(
             String tradingsymbol,
             TransactionType transactionType,
@@ -46,11 +43,11 @@ public class PutCondorOrderSlicer {
             BigDecimal referencePrice) {}
 
     /**
-     * Slices a total quantity into sub-orders that are each <= maxFreezeLimit
-     * and strictly multiples of lotSize.
+     * Slices a total quantity into sub-orders that are each <= maxFreezeLimit and strictly
+     * multiples of lotSize.
      *
-     * @param totalQuantity  total order quantity (e.g., 3250)
-     * @param lotSize        instrument lot size (e.g., 65)
+     * @param totalQuantity total order quantity (e.g., 3250)
+     * @param lotSize instrument lot size (e.g., 65)
      * @param maxFreezeLimit max quantity per slice (e.g., 1800)
      * @return list of integer slice quantities summing exactly to totalQuantity
      */
@@ -78,11 +75,11 @@ public class PutCondorOrderSlicer {
     }
 
     /**
-     * Executes a list of leg orders with order slicing and margin sequencing.
-     * BUY orders are submitted first, followed by SELL orders.
+     * Executes a list of leg orders with order slicing and margin sequencing. BUY orders are
+     * submitted first, followed by SELL orders.
      *
      * @param orders list of LegOrders to execute
-     * @param mode   PAPER or LIVE
+     * @param mode PAPER or LIVE
      * @return true if all orders executed successfully
      */
     public boolean executeLegOrders(List<LegOrder> orders, ExecutionMode mode) {
@@ -91,49 +88,67 @@ public class PutCondorOrderSlicer {
         }
 
         // Separate into BUYs first, then SELLs (Margin benefit)
-        List<LegOrder> buyOrders = orders.stream()
-                .filter(o -> o.transactionType() == TransactionType.BUY)
-                .toList();
+        List<LegOrder> buyOrders =
+                orders.stream().filter(o -> o.transactionType() == TransactionType.BUY).toList();
 
-        List<LegOrder> sellOrders = orders.stream()
-                .filter(o -> o.transactionType() == TransactionType.SELL)
-                .toList();
+        List<LegOrder> sellOrders =
+                orders.stream().filter(o -> o.transactionType() == TransactionType.SELL).toList();
 
         List<LegOrder> prioritizedOrders = new ArrayList<>(buyOrders);
         prioritizedOrders.addAll(sellOrders);
 
         int lotSize = properties.getLotSize() > 0 ? properties.getLotSize() : 65;
-        int maxFreezeLimit = properties.getMaxFreezeLimit() > 0 ? properties.getMaxFreezeLimit() : 1800;
+        int maxFreezeLimit =
+                properties.getMaxFreezeLimit() > 0 ? properties.getMaxFreezeLimit() : 1800;
 
         for (LegOrder order : prioritizedOrders) {
             List<Integer> slices = calculateSlices(order.quantity(), lotSize, maxFreezeLimit);
-            log.info("Executing {} {} for {} (Sliced into {} order(s): {}) in mode {}",
-                    order.transactionType(), order.quantity(), order.tradingsymbol(), slices.size(), slices, mode);
+            log.info(
+                    "Executing {} {} for {} (Sliced into {} order(s): {}) in mode {}",
+                    order.transactionType(),
+                    order.quantity(),
+                    order.tradingsymbol(),
+                    slices.size(),
+                    slices,
+                    mode);
 
             for (int sliceQty : slices) {
                 if (mode == ExecutionMode.PAPER) {
-                    log.info("[PAPER] Simulated fill: {} {} {} @ ₹{}",
-                            order.transactionType(), sliceQty, order.tradingsymbol(), order.referencePrice());
-                } else {
-                    OrderRequest req = new OrderRequest(
-                            order.tradingsymbol(),
-                            "NFO",
+                    log.info(
+                            "[PAPER] Simulated fill: {} {} {} @ ₹{}",
                             order.transactionType(),
-                            OrderType.LMT,
-                            ProductType.NRML,
                             sliceQty,
-                            order.referencePrice(),
-                            BigDecimal.ZERO,
-                            "DAY"
-                    );
-                    OrderResponse resp = zerodhaBrokerGateway.placeOrderWithReferencePrice(req, order.referencePrice());
+                            order.tradingsymbol(),
+                            order.referencePrice());
+                } else {
+                    OrderRequest req =
+                            new OrderRequest(
+                                    order.tradingsymbol(),
+                                    "NFO",
+                                    order.transactionType(),
+                                    OrderType.LMT,
+                                    ProductType.NRML,
+                                    sliceQty,
+                                    order.referencePrice(),
+                                    BigDecimal.ZERO,
+                                    "DAY");
+                    OrderResponse resp =
+                            zerodhaBrokerGateway.placeOrderWithReferencePrice(
+                                    req, order.referencePrice());
                     if (resp == null || !resp.success()) {
-                        String errMsg = resp != null ? resp.message() : "Null response from broker gateway";
-                        log.error("[LIVE] Failed to place order slice for {}: {}", order.tradingsymbol(), errMsg);
+                        String errMsg =
+                                resp != null ? resp.message() : "Null response from broker gateway";
+                        log.error(
+                                "[LIVE] Failed to place order slice for {}: {}",
+                                order.tradingsymbol(),
+                                errMsg);
                         return false;
                     }
-                    log.info("[LIVE] Order slice executed: ID={}, Symbol={}, Qty={}",
-                            resp.orderId(), order.tradingsymbol(), sliceQty);
+                    log.info(
+                            "[LIVE] Order slice executed: ID={}, Symbol={}, Qty={}",
+                            resp.orderId(),
+                            order.tradingsymbol(),
+                            sliceQty);
                     try {
                         Thread.sleep(200); // 200ms spacing between slices
                     } catch (InterruptedException ignored) {

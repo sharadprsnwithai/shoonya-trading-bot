@@ -17,8 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class SqlitePutCondorRepositoryTest {
 
-    @TempDir
-    File tempDir;
+    @TempDir File tempDir;
 
     private SqlitePutCondorRepository repository;
     private File dbFile;
@@ -83,6 +82,7 @@ class SqlitePutCondorRepositoryTest {
         List<PutCondorCycleHistory> historyList = repository.getHistory(10);
         assertEquals(1, historyList.size());
         assertEquals("OCT 2026", historyList.get(0).getCycleMonth());
-        assertEquals(0, BigDecimal.valueOf(312000).compareTo(historyList.get(0).getRealizedPnlRs()));
+        assertEquals(
+                0, BigDecimal.valueOf(312000).compareTo(historyList.get(0).getRealizedPnlRs()));
     }
 }

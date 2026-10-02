@@ -23,7 +23,8 @@ class MonthlyPutCondorPropertiesTest {
         assertEquals(3.0, props.getStopLossPct(), 0.001, "Stop loss should be 3.0%");
         assertEquals(150, props.getUpsideTriggerPts(), "Upside trigger should be 150 pts");
         assertEquals("10:30", props.getEntryTime(), "Default entry time should be 10:30");
-        assertEquals(60, props.getMonitorIntervalSeconds(), "Default monitor interval should be 60s");
+        assertEquals(
+                60, props.getMonitorIntervalSeconds(), "Default monitor interval should be 60s");
         assertTrue(props.isTelegramAlerts(), "Telegram alerts should be enabled by default");
         assertEquals(1800, props.getMaxFreezeLimit(), "NSE freeze limit should be 1800 qty");
     }

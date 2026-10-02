@@ -8,8 +8,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 
 /**
- * Tracks the state, strikes, tradingsymbols, entry prices, realized adjustments,
- * and real-time MTM of an active Monthly Asymmetric Put Condor position.
+ * Tracks the state, strikes, tradingsymbols, entry prices, realized adjustments, and real-time MTM
+ * of an active Monthly Asymmetric Put Condor position.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -73,19 +73,16 @@ public class PutCondorPosition {
         this.lastUpdated = Instant.now();
     }
 
-    /**
-     * Computes and sets the initial net debit paid per share and in rupees.
-     */
+    /** Computes and sets the initial net debit paid per share and in rupees. */
     public void calculateAndSetInitialDebit() {
         BigDecimal totalBuy = k1EntryPrice.add(k4EntryPrice);
         BigDecimal totalSell = k2EntryPrice.add(k3EntryPrice);
         this.initialNetDebitPts = totalBuy.subtract(totalSell);
-        this.initialNetDebitRs = this.initialNetDebitPts.multiply(BigDecimal.valueOf(totalQuantity));
+        this.initialNetDebitRs =
+                this.initialNetDebitPts.multiply(BigDecimal.valueOf(totalQuantity));
     }
 
-    /**
-     * Calculates the real-time MTM given current LTPs of all active legs.
-     */
+    /** Calculates the real-time MTM given current LTPs of all active legs. */
     public BigDecimal computeCurrentMtm(
             BigDecimal k1Ltp,
             BigDecimal k2Ltp,
@@ -100,11 +97,15 @@ public class PutCondorPosition {
         BigDecimal currentK3 = k3Ltp != null ? k3Ltp : BigDecimal.ZERO;
         BigDecimal currentK4 = k4Ltp != null ? k4Ltp : BigDecimal.ZERO;
 
-        BigDecimal longPnl = (currentK1.subtract(activeK1EntryPrice.compareTo(BigDecimal.ZERO) > 0 ? activeK1EntryPrice : k1EntryPrice))
-                .add(currentK4.subtract(k4EntryPrice));
+        BigDecimal longPnl =
+                (currentK1.subtract(
+                                activeK1EntryPrice.compareTo(BigDecimal.ZERO) > 0
+                                        ? activeK1EntryPrice
+                                        : k1EntryPrice))
+                        .add(currentK4.subtract(k4EntryPrice));
 
-        BigDecimal shortPnl = (k2EntryPrice.subtract(currentK2))
-                .add(k3EntryPrice.subtract(currentK3));
+        BigDecimal shortPnl =
+                (k2EntryPrice.subtract(currentK2)).add(k3EntryPrice.subtract(currentK3));
 
         BigDecimal condorPnlPts = longPnl.add(shortPnl);
 
@@ -118,7 +119,8 @@ public class PutCondorPosition {
 
         BigDecimal totalPts = condorPnlPts.add(upsidePnlPts);
         BigDecimal unrealizedRs = totalPts.multiply(BigDecimal.valueOf(totalQuantity));
-        this.currentMtmRs = this.realizedBookedProfitRs.add(unrealizedRs).setScale(2, RoundingMode.HALF_UP);
+        this.currentMtmRs =
+                this.realizedBookedProfitRs.add(unrealizedRs).setScale(2, RoundingMode.HALF_UP);
 
         if (this.currentMtmRs.compareTo(this.peakMtmRs) > 0) {
             this.peakMtmRs = this.currentMtmRs;
