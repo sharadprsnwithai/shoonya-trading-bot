@@ -1157,7 +1157,21 @@ public class LowestVolumeReversalService {
                 }
 
                 // PDH / PDL Breakout Filter Check
-                if (pdhPdlFilterEnabled && setup.getPdh() != null && setup.getPdl() != null) {
+                if (pdhPdlFilterEnabled) {
+                    if (setup.getPdh() == null || setup.getPdl() == null) {
+                        initPdhPdlForSetup(setup);
+                    }
+                    if (setup.getPdh() == null || setup.getPdl() == null) {
+                        log.warn(
+                                "[LVR] Setup for {} REJECTED/EXHAUSTED: PDH/PDL unavailable. Rejecting trade (fail-closed).",
+                                symbol);
+                        setup.transitionTo(
+                                LowestVolumeSetupState.REJECTED_EXHAUSTED,
+                                "PDH/PDL unavailable (fail-closed)");
+                        exhaustedSymbols.add(symbol);
+                        return;
+                    }
+
                     boolean pdhPdlConfirmed = false;
                     if (setup.getDirection() == LowestVolumeDirection.LONG) {
                         pdhPdlConfirmed = (spotPrice.compareTo(setup.getPdh()) > 0);
@@ -2084,7 +2098,9 @@ public class LowestVolumeReversalService {
                 String nextSymbol = candidateReservoir.remove(0);
                 if (!activeSetups.containsKey(nextSymbol)
                         && !exhaustedSymbols.contains(nextSymbol)) {
-                    activeSetups.put(nextSymbol, new LowestVolumeSetup(nextSymbol, dir));
+                    LowestVolumeSetup setup = new LowestVolumeSetup(nextSymbol, dir);
+                    initPdhPdlForSetup(setup);
+                    activeSetups.put(nextSymbol, setup);
                     promotedSymbols.add(nextSymbol);
                     actionableCount++;
                 }
@@ -2419,9 +2435,17 @@ public class LowestVolumeReversalService {
                     double lp = quote.get("lp").asDouble(0.0);
                     double c = quote.get("c").asDouble(0.0);
                     double o = quote.has("o") ? quote.get("o").asDouble(lp) : lp;
+                    long v = quote.has("v") ? quote.get("v").asLong(0L) : 0L;
+                    double ap = quote.has("ap") ? quote.get("ap").asDouble(0.0) : 0.0;
+                    long oi = quote.has("oi") ? quote.get("oi").asLong(0L) : 0L;
+                    long oio = quote.has("oio") ? quote.get("oio").asLong(0L) : 0L;
+                    double oiPct = quote.has("oipct") ? quote.get("oipct").asDouble(0.0) : 0.0;
                     if (c > 0) {
                         double pct = (lp - c) / c * 100.0;
-                        quoteMap.put(sym, new StockQuoteSnapshot(sym, lp, c, o, pct));
+                        quoteMap.put(
+                                sym,
+                                new StockQuoteSnapshot(
+                                        sym, lp, c, o, pct, v, ap, oi, oio, oiPct));
                     }
                 }
 

@@ -2432,41 +2432,41 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Should execute SHORT trade when spot price is strictly below PDL")
-    void testAllowShortTradeWhenBelowPdl() {
+    @DisplayName("H7 Fix: PDH/PDL filter must fail closed and reject trade if PDH is null after fetch attempts")
+    void testPdhPdlFailsClosedWhenPdhNull() {
         service.setMaxSlippagePct(2.0);
         service.setPdhPdlFilterEnabled(true);
         service.setOpening15mRangeFilterEnabled(false);
         service.setSectorMomentumFilterEnabled(false);
 
-        LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
-        setup.setPdh(BigDecimal.valueOf(1050.00));
-        setup.setPdl(BigDecimal.valueOf(1015.00));
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
                 Candle.of5m(
-                        "PVRINOX",
+                        "SUNPHARMA",
                         Instant.now(),
-                        BigDecimal.valueOf(1020),
-                        BigDecimal.valueOf(1025),
-                        BigDecimal.valueOf(1015),
-                        BigDecimal.valueOf(1018),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1868),
+                        BigDecimal.valueOf(1872),
                         5000),
-                BigDecimal.valueOf(1014.95),
-                BigDecimal.valueOf(1025.05),
-                BigDecimal.valueOf(994.75));
-        setup.setLatestVwap(1020.00);
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1867.95),
+                BigDecimal.valueOf(1889.25));
+        setup.setLatestVwap(1870.00);
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
-        service.getActiveSetups().put("PVRINOX", setup);
+        // setup.getPdh() remains null
+        service.getActiveSetups().put("SUNPHARMA", setup);
 
-        // LTP = 1010.00 (Breached trigger 1014.95, below VWAP 1020, and strictly below PDL 1015.00)
         ObjectMapper mapper = new ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
-                .thenReturn(mapper.createObjectNode().put("lp", "1010.00").put("ap", "1020.00"));
-        when(marketDataService.resolveToken("PVRINOX")).thenReturn("13147");
+                .thenReturn(mapper.createObjectNode().put("lp", "1876.00").put("ap", "1870.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+        when(marketDataService.fetchDailyCandles("SUNPHARMA", 5)).thenReturn(java.util.Collections.emptyList());
 
         service.evaluateLivePriceActions();
 
-        assertThat(service.getOpenPositions()).containsKey("PVRINOX");
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
     }
 }
