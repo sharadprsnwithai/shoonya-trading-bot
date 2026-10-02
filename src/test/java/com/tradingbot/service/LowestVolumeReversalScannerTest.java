@@ -138,4 +138,54 @@ class LowestVolumeReversalScannerTest {
         assertFalse(candidates.contains("RED_STOCK"));
         assertFalse(candidates.contains("EXHAUSTED_GAIN"));
     }
+
+    @Test
+    @DisplayName("Should rank stocks by absolute OI % change descending and exclude indices")
+    void testScanOiSpurtsRankingAndFiltering() {
+        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
+
+        // Add candidate quotes: symbol, ltp, prevClose, open, pctChange, volume, vwap, openInterest, prevDayOpenInterest
+        quotes.put(
+                "MCDOWELL-N",
+                new StockQuoteSnapshot(
+                        "MCDOWELL-N", 1200.0, 1170.0, 1175.0, 2.5, 50000, 1195.0, 110000, 100000)); // +10.0%
+        quotes.put(
+                "RADICO",
+                new StockQuoteSnapshot(
+                        "RADICO", 1800.0, 1745.0, 1750.0, 3.1, 40000, 1790.0, 105500, 100000)); // +5.5%
+        quotes.put(
+                "RVNL",
+                new StockQuoteSnapshot(
+                        "RVNL", 400.0, 406.0, 405.0, -1.5, 80000, 402.0, 104000, 100000)); // +4.0%
+        quotes.put(
+                "NIFTY 50",
+                new StockQuoteSnapshot(
+                        "NIFTY 50", 25000.0, 24875.0, 24900.0, 0.5, 1000000, 24980.0, 5000000, 4000000)); // +25.0% (Index - must be excluded)
+        quotes.put(
+                "TCS",
+                new StockQuoteSnapshot(
+                        "TCS", 4200.0, 4195.0, 4200.0, 0.1, 10000, 4205.0, 101000, 100000)); // +1.0%
+
+        List<String> topStocks = scanner.scanOiSpurts(quotes, 3);
+
+        assertEquals(3, topStocks.size());
+        assertEquals("MCDOWELL-N", topStocks.get(0));
+        assertEquals("RADICO", topStocks.get(1));
+        assertEquals("RVNL", topStocks.get(2));
+        assertFalse(topStocks.contains("NIFTY 50"));
+    }
+
+    @Test
+    @DisplayName("Should handle null, empty and invalid OI inputs safely")
+    void testScanOiSpurtsEdgeCases() {
+        assertTrue(scanner.scanOiSpurts(null, 5).isEmpty());
+        assertTrue(scanner.scanOiSpurts(Map.of(), 5).isEmpty());
+
+        Map<String, StockQuoteSnapshot> quotes =
+                Map.of(
+                        "INVALID_OI",
+                        new StockQuoteSnapshot(
+                                "INVALID_OI", 100.0, 100.0, 100.0, 0.0, 100, 100.0, 0, 0));
+        assertTrue(scanner.scanOiSpurts(quotes, 5).isEmpty());
+    }
 }

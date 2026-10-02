@@ -20,6 +20,19 @@ public class LowestVolumeReversalScanner {
 
     private static final Logger log = LoggerFactory.getLogger(LowestVolumeReversalScanner.class);
 
+    private static final java.util.Set<String> EXCLUDED_INDICES =
+            java.util.Set.of(
+                    "NIFTY",
+                    "NIFTY 50",
+                    "NIFTY BANK",
+                    "BANKNIFTY",
+                    "FINNIFTY",
+                    "MIDCPNIFTY",
+                    "NIFTY NEXT 50",
+                    "NIFTY MIDCAP 50",
+                    "NIFTY FINANCIAL SERVICES",
+                    "NIFTY FIN SERVICE");
+
     public record SectorRankResult(String sectorName, double pctChange, int stockCount) {}
 
     /**
@@ -166,5 +179,71 @@ public class LowestVolumeReversalScanner {
         }
 
         return eligible.stream().limit(3).map(StockQuoteSnapshot::symbol).toList();
+    }
+
+    /**
+     * Ranks all active F&O candidate stocks by absolute % Change in Open Interest (|ΔOI%|) at 09:25
+     * IST, excluding broad market indices.
+     */
+    public List<String> scanOiSpurts(Map<String, StockQuoteSnapshot> fnoQuotes, int topN) {
+        if (fnoQuotes == null || fnoQuotes.isEmpty() || topN <= 0) {
+            return Collections.emptyList();
+        }
+
+        List<StockQuoteSnapshot> eligible = new ArrayList<>();
+        for (StockQuoteSnapshot q : fnoQuotes.values()) {
+            if (q == null || q.symbol() == null) {
+                continue;
+            }
+            String upperSym = q.symbol().trim().toUpperCase(java.util.Locale.US);
+            if (EXCLUDED_INDICES.contains(upperSym) || upperSym.startsWith("NIFTY ")) {
+                continue;
+            }
+
+            double oiChange = q.oiPctChange();
+            if (oiChange == 0.0 && q.prevDayOpenInterest() > 0) {
+                oiChange =
+                        ((q.openInterest() - q.prevDayOpenInterest())
+                                        / (double) q.prevDayOpenInterest())
+                                * 100.0;
+            }
+
+            if (Math.abs(oiChange) > 0.0001) {
+                eligible.add(
+                        new StockQuoteSnapshot(
+                                q.symbol(),
+                                q.ltp(),
+                                q.prevClose(),
+                                q.open(),
+                                q.pctChange(),
+                                q.volume(),
+                                q.vwap(),
+                                q.openInterest(),
+                                q.prevDayOpenInterest(),
+                                oiChange));
+            }
+        }
+
+        eligible.sort(
+                (a, b) ->
+                        Double.compare(
+                                Math.abs(b.oiPctChange()), Math.abs(a.oiPctChange())));
+
+        log.info(
+                "[LVR-SCANNER] OI Spurts ranking evaluated on {} F&O stocks. Top {}: {}",
+                eligible.size(),
+                topN,
+                eligible.stream()
+                        .limit(topN)
+                        .map(
+                                s ->
+                                        String.format(
+                                                java.util.Locale.US,
+                                                "%s (%+.2f%% OI)",
+                                                s.symbol(),
+                                                s.oiPctChange()))
+                        .toList());
+
+        return eligible.stream().limit(topN).map(StockQuoteSnapshot::symbol).toList();
     }
 }
