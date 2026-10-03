@@ -10,6 +10,9 @@ from collections import defaultdict
 # Ensure UTF-8 output
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+# ==============================================================================
+# Universe of Top Liquid F&O Stocks (Broad Nifty 50 / F&O Segment)
+# ==============================================================================
 UNIVERSE = [
     "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", 
     "SBIN.NS", "TATASTEEL.NS", "MARUTI.NS", "SUNPHARMA.NS", "BHARTIARTL.NS", 
@@ -41,13 +44,41 @@ def calculate_vwap(df):
 def calculate_ema(series, span=10):
     return series.ewm(span=span, adjust=False).mean()
 
-def run_experiment(data_5m, daily_data, trading_dates, 
-                   use_vande_bharat=True, 
-                   max_consecutive_losses=2, 
-                   max_sl_pct=1.0, 
-                   daily_ema_filter=False,
-                   max_daily_trades=2):
-    
+def run_backtest(dynamic_sizing=False):
+    sizing_label = "DYNAMIC POSITION SIZING (1% Risk / Trade on ₹10L Capital)" if dynamic_sizing else "FIXED SIZING (2 Lots per Trade)"
+    print("\n" + "="*80)
+    print(f" 🚀 BACKTEST MODE: {sizing_label}")
+    print("="*80)
+
+    data_5m = {}
+    daily_data = {}
+
+    for ticker in UNIVERSE:
+        sym = ticker.replace(".NS", "")
+        try:
+            df_5m = yf.download(ticker, interval='5m', period='60d', progress=False)
+            if df_5m.empty or len(df_5m) < 50:
+                continue
+            if isinstance(df_5m.columns, pd.MultiIndex):
+                df_5m.columns = df_5m.columns.get_level_values(0)
+            df_5m.index = pd.to_datetime(df_5m.index).tz_convert('Asia/Kolkata')
+            data_5m[sym] = df_5m
+
+            df_d = yf.download(ticker, interval='1d', period='90d', progress=False)
+            if not df_d.empty:
+                if isinstance(df_d.columns, pd.MultiIndex):
+                    df_d.columns = df_d.columns.get_level_values(0)
+                if df_d.index.tz is None:
+                    df_d.index = df_d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+                else:
+                    df_d.index = df_d.index.tz_convert('Asia/Kolkata')
+                daily_data[sym] = df_d
+        except Exception as e:
+            continue
+
+    all_dates = sorted(list(set(d for df in data_5m.values() for d in df.index.date)))
+    trading_dates = all_dates[1:]
+
     trades = []
     daily_pnls = defaultdict(float)
 
@@ -55,20 +86,18 @@ def run_experiment(data_5m, daily_data, trading_dates,
         candidates_pool = []
         for sym, df in data_5m.items():
             day_df = df[df.index.date == trade_date]
-            if len(day_df) < 5: continue
+            if len(day_df) < 5: 
+                continue
             
             d_df = daily_data.get(sym)
-            if d_df is None or d_df.empty: continue
+            if d_df is None or d_df.empty:
+                continue
             past_days = d_df[d_df.index.date < trade_date]
-            if past_days.empty: continue
+            if past_days.empty:
+                continue
             prev_day = past_days.iloc[-1]
             pdh = float(prev_day['High'])
             pdl = float(prev_day['Low'])
-
-            # Daily 20 EMA calculation
-            daily_ema20 = None
-            if len(past_days) >= 20:
-                daily_ema20 = float(calculate_ema(past_days['Close'], span=20).iloc[-1])
 
             c1 = day_df.iloc[0]
             c2 = day_df.iloc[1]
@@ -82,39 +111,28 @@ def run_experiment(data_5m, daily_data, trading_dates,
                 'day_df': day_df,
                 'pdh': pdh,
                 'pdl': pdl,
-                'daily_ema20': daily_ema20,
                 'lot_size': LOT_SIZES.get(sym, 250)
             })
 
-        if not candidates_pool: continue
+        if not candidates_pool:
+            continue
 
         gainers = sorted([c for c in candidates_pool if c['pct_chg'] > 0.0], key=lambda x: x['pct_chg'], reverse=True)[:5]
         losers = sorted([c for c in candidates_pool if c['pct_chg'] < 0.0], key=lambda x: x['pct_chg'])[:5]
         watchlist = [(c, 'LONG') for c in gainers] + [(c, 'SHORT') for c in losers]
 
         session_trades = 0
-        consecutive_losses_today = 0
+        max_daily_trades = 3
 
         for candidate, direction in watchlist:
-            if session_trades >= max_daily_trades: break
-            if consecutive_losses_today >= max_consecutive_losses: break
+            if session_trades >= max_daily_trades:
+                break
 
             sym = candidate['symbol']
             day_df = candidate['day_df']
             pdh = candidate['pdh']
             pdl = candidate['pdl']
-            daily_ema20 = candidate['daily_ema20']
             lot_size = candidate['lot_size']
-            lots = 2
-            total_qty = lots * lot_size
-
-            # Macro Trend Filter: Long only if above Daily 20 EMA, Short only if below Daily 20 EMA
-            if daily_ema_filter and daily_ema20 is not None:
-                c_open = float(day_df.iloc[0]['Open'])
-                if direction == 'LONG' and c_open < daily_ema20:
-                    continue
-                elif direction == 'SHORT' and c_open > daily_ema20:
-                    continue
 
             day_df = day_df.copy()
             day_df['VWAP'] = calculate_vwap(day_df)
@@ -130,7 +148,9 @@ def run_experiment(data_5m, daily_data, trading_dates,
             for i in range(3, len(day_df)):
                 candle = day_df.iloc[i]
                 c_time = candle.name.time()
-                if c_time >= datetime.time(13, 0): break
+
+                if c_time >= datetime.time(13, 0):
+                    break
 
                 c_open = float(candle['Open'])
                 c_high = float(candle['High'])
@@ -147,12 +167,6 @@ def run_experiment(data_5m, daily_data, trading_dates,
                     t1_p = armed_setup['t1_price']
                     setup_dir = armed_setup['direction']
 
-                    # Check max SL % filter
-                    sl_dist_pct = (abs(trigger_p - sl_p) / trigger_p) * 100.0
-                    if sl_dist_pct > max_sl_pct:
-                        armed_setup = None
-                        continue
-
                     if setup_dir == 'LONG' and c_low <= sl_p:
                         armed_setup = None
                     elif setup_dir == 'SHORT' and c_high >= sl_p:
@@ -160,15 +174,17 @@ def run_experiment(data_5m, daily_data, trading_dates,
                     elif setup_dir == 'LONG' and c_high >= trigger_p:
                         entry_price = trigger_p
                         if entry_price > c_vwap and entry_price > pdh:
+                            unit_risk = abs(entry_price - sl_p)
+                            if dynamic_sizing and unit_risk > 0:
+                                lots = max(1, min(10, int(10000.0 / (unit_risk * lot_size))))
+                            else:
+                                lots = 2
+                            total_qty = lots * lot_size
+
                             trade_res = simulate_trade(day_df, i, 'LONG', entry_price, sl_p, t1_p, total_qty, lot_size, lots, sym, trade_date, armed_setup['pattern'])
                             trades.append(trade_res)
-                            pnl = trade_res['realized_pnl']
-                            daily_pnls[trade_date] += pnl
+                            daily_pnls[trade_date] += trade_res['realized_pnl']
                             session_trades += 1
-                            if pnl < 0:
-                                consecutive_losses_today += 1
-                            else:
-                                consecutive_losses_today = 0
                             armed_setup = None
                             break
                         else:
@@ -176,15 +192,17 @@ def run_experiment(data_5m, daily_data, trading_dates,
                     elif setup_dir == 'SHORT' and c_low <= trigger_p:
                         entry_price = trigger_p
                         if entry_price < c_vwap and entry_price < pdl:
+                            unit_risk = abs(entry_price - sl_p)
+                            if dynamic_sizing and unit_risk > 0:
+                                lots = max(1, min(10, int(10000.0 / (unit_risk * lot_size))))
+                            else:
+                                lots = 2
+                            total_qty = lots * lot_size
+
                             trade_res = simulate_trade(day_df, i, 'SHORT', entry_price, sl_p, t1_p, total_qty, lot_size, lots, sym, trade_date, armed_setup['pattern'])
                             trades.append(trade_res)
-                            pnl = trade_res['realized_pnl']
-                            daily_pnls[trade_date] += pnl
+                            daily_pnls[trade_date] += trade_res['realized_pnl']
                             session_trades += 1
-                            if pnl < 0:
-                                consecutive_losses_today += 1
-                            else:
-                                consecutive_losses_today = 0
                             armed_setup = None
                             break
                         else:
@@ -220,7 +238,7 @@ def run_experiment(data_5m, daily_data, trading_dates,
                 elif c_vol > 0 and c_vol < rolling_lowest_vol:
                     rolling_lowest_vol = c_vol
 
-                if use_vande_bharat and not lvr_matched and i >= 1:
+                if not lvr_matched and i >= 1:
                     prev = day_df.iloc[i - 1]
                     prev_open = float(prev['Open'])
                     prev_close = float(prev['Close'])
@@ -260,7 +278,7 @@ def run_experiment(data_5m, daily_data, trading_dates,
                             'armed_index': i
                         }
 
-    return calculate_metrics(trades, daily_pnls)
+    print_results(trades, daily_pnls, len(trading_dates))
 
 def simulate_trade(day_df, entry_idx, direction, entry_p, sl_p, t1_p, total_qty, lot_size, lots, sym, trade_date, pattern):
     half_qty = (lots // 2) * lot_size if lots > 1 else total_qty // 2
@@ -360,14 +378,16 @@ def simulate_trade(day_df, entry_idx, direction, entry_p, sl_p, t1_p, total_qty,
         'partial_booked': partial_booked
     }
 
-def calculate_metrics(trades, daily_pnls):
+def print_results(trades, daily_pnls, total_days):
     if not trades:
-        return {'total_trades': 0, 'net_pnl': 0, 'win_rate': 0, 'profit_factor': 0, 'max_dd': 0}
+        print(" No trades executed during the backtest window.")
+        return
 
     df_trades = pd.DataFrame(trades)
     total_trades = len(df_trades)
     wins = df_trades[df_trades['realized_pnl'] > 0]
     losses = df_trades[df_trades['realized_pnl'] < 0]
+    evens = df_trades[df_trades['realized_pnl'] == 0]
 
     win_rate = (len(wins) / total_trades) * 100.0
     total_pnl = df_trades['realized_pnl'].sum()
@@ -375,90 +395,43 @@ def calculate_metrics(trades, daily_pnls):
     gross_loss = abs(losses['realized_pnl'].sum())
     profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf')
 
+    avg_win = wins['realized_pnl'].mean() if len(wins) > 0 else 0.0
+    avg_loss = abs(losses['realized_pnl'].mean()) if len(losses) > 0 else 0.0
+    reward_to_risk = (avg_win / avg_loss) if avg_loss > 0 else float('inf')
+
     pnl_series = pd.Series(list(daily_pnls.values()))
     cum_pnl = pnl_series.cumsum()
     peak = cum_pnl.cummax()
     drawdown = peak - cum_pnl
     max_dd = drawdown.max() if not drawdown.empty else 0.0
 
-    return {
-        'total_trades': total_trades,
-        'wins': len(wins),
-        'losses': len(losses),
-        'win_rate': win_rate,
-        'gross_profit': gross_profit,
-        'gross_loss': gross_loss,
-        'net_pnl': total_pnl,
-        'profit_factor': profit_factor,
-        'max_dd': max_dd
-    }
+    print(f" Total Trading Days:        {total_days}")
+    print(f" Total Trades Executed:     {total_trades}")
+    print(f" Winning Trades:            {len(wins)} ({win_rate:.1f}%)")
+    print(f" Losing Trades:             {len(losses)} ({len(losses)/total_trades*100.0:.1f}%)")
+    print(f" Breakeven / Cost SL Trades:{len(evens)}")
+    print(f"--------------------------------------------------------------------------------")
+    print(f" Gross Profit:              +₹{gross_profit:,.2f}")
+    print(f" Gross Loss:                -₹{gross_loss:,.2f}")
+    print(f" Net Realized P&L:          +₹{total_pnl:,.2f}" if total_pnl >= 0 else f" Net Realized P&L:          -₹{abs(total_pnl):,.2f}")
+    print(f" Profit Factor:             {profit_factor:.2f}")
+    print(f" Avg Win / Avg Loss (R:R):  {reward_to_risk:.2f} : 1")
+    print(f" Average Trade Return:      ₹{df_trades['realized_pnl'].mean():,.2f}")
+    print(f" Max Strategy Drawdown:     ₹{max_dd:,.2f}")
+    print(f"--------------------------------------------------------------------------------")
+    print(" Performance by Setup Pattern:")
+    for pat, grp in df_trades.groupby('pattern'):
+        p_wins = len(grp[grp['realized_pnl'] > 0])
+        p_wr = (p_wins / len(grp)) * 100.0
+        p_pnl = grp['realized_pnl'].sum()
+        print(f"  • {pat:<24}: {len(grp):2d} trades | Win Rate: {p_wr:5.1f}% | Net P&L: ₹{p_pnl:+10,.2f}")
 
-def main():
-    print("================================================================================")
-    print(" 🔬 SYSTEMATIC DRAWDOWN REDUCTION OPTIMIZATION EXPERIMENTS")
-    print("================================================================================")
-
-    data_5m = {}
-    daily_data = {}
-
-    for ticker in UNIVERSE:
-        sym = ticker.replace(".NS", "")
-        try:
-            df_5m = yf.download(ticker, interval='5m', period='60d', progress=False)
-            if df_5m.empty or len(df_5m) < 50: continue
-            if isinstance(df_5m.columns, pd.MultiIndex): df_5m.columns = df_5m.columns.get_level_values(0)
-            df_5m.index = pd.to_datetime(df_5m.index).tz_convert('Asia/Kolkata')
-            data_5m[sym] = df_5m
-
-            df_d = yf.download(ticker, interval='1d', period='90d', progress=False)
-            if not df_d.empty:
-                if isinstance(df_d.columns, pd.MultiIndex): df_d.columns = df_d.columns.get_level_values(0)
-                if df_d.index.tz is None:
-                    df_d.index = df_d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
-                else:
-                    df_d.index = df_d.index.tz_convert('Asia/Kolkata')
-                daily_data[sym] = df_d
-        except Exception:
-            continue
-
-    all_dates = sorted(list(set(d for df in data_5m.values() for d in df.index.date)))
-    trading_dates = all_dates[1:]
-
-    experiments = [
-        ("1. Baseline (Current Fixed 2 Lots, Max 3 Trades)", {
-            'use_vande_bharat': True, 'max_consecutive_losses': 3, 'max_sl_pct': 10.0, 'daily_ema_filter': False, 'max_daily_trades': 3
-        }),
-        ("2. Pure LVR Pullback Only (Disable Setup 3 Vande Bharat)", {
-            'use_vande_bharat': False, 'max_consecutive_losses': 3, 'max_sl_pct': 10.0, 'daily_ema_filter': False, 'max_daily_trades': 3
-        }),
-        ("3. Tight SL Range Filter (Max SL <= 0.75% of stock price)", {
-            'use_vande_bharat': False, 'max_consecutive_losses': 3, 'max_sl_pct': 0.75, 'daily_ema_filter': False, 'max_daily_trades': 3
-        }),
-        ("4. Daily 1-Loss Circuit Breaker (Max 1 Loss per day, Max 2 Trades)", {
-            'use_vande_bharat': False, 'max_consecutive_losses': 1, 'max_sl_pct': 0.75, 'daily_ema_filter': False, 'max_daily_trades': 2
-        }),
-        ("5. Macro Daily 20 EMA Trend Alignment Filter", {
-            'use_vande_bharat': False, 'max_consecutive_losses': 1, 'max_sl_pct': 0.75, 'daily_ema_filter': True, 'max_daily_trades': 2
-        }),
-        ("6. Master Low-Drawdown System (Pure LVR + SL <= 0.60% + Daily Trend + Max 1 Loss/Day)", {
-            'use_vande_bharat': False, 'max_consecutive_losses': 1, 'max_sl_pct': 0.60, 'daily_ema_filter': True, 'max_daily_trades': 2
-        }),
-    ]
-
-    results = []
-    for name, params in experiments:
-        res = run_experiment(data_5m, daily_data, trading_dates, **params)
-        res['name'] = name
-        results.append(res)
-
-    print("\n" + "="*105)
-    print(f"{'Experiment Configuration':<48} | {'Trades':<6} | {'Win Rate':<8} | {'Profit Factor':<13} | {'Net P&L (₹)':<14} | {'Max Drawdown (₹)':<16}")
-    print("="*105)
-    for r in results:
-        pnl_str = f"+₹{r['net_pnl']:,.0f}" if r['net_pnl'] >= 0 else f"-₹{abs(r['net_pnl']):,.0f}"
-        dd_str = f"₹{r['max_dd']:,.0f}"
-        print(f"{r['name']:<48} | {r['total_trades']:<6d} | {r['win_rate']:<7.1f}% | {r['profit_factor']:<13.2f} | {pnl_str:<14} | {dd_str:<16}")
-    print("="*105)
+    print(f"--------------------------------------------------------------------------------")
+    print(" Exit Breakdown:")
+    for reason, grp in df_trades.groupby('exit_reason'):
+        print(f"  • {reason:<24}: {len(grp):2d} trades | Net P&L: ₹{grp['realized_pnl'].sum():+10,.2f}")
+    print("="*80)
 
 if __name__ == '__main__':
-    main()
+    run_backtest(dynamic_sizing=False)
+    run_backtest(dynamic_sizing=True)
