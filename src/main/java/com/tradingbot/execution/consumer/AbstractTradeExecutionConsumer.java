@@ -449,15 +449,50 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                 entryRequest.transactionType() == TransactionType.BUY
                         ? TransactionType.SELL
                         : TransactionType.BUY;
+        boolean isOption = false;
+        if (signal.metadata() != null) {
+            String instType = String.valueOf(signal.metadata().get("instrumentType"));
+            if ("OPTION".equalsIgnoreCase(instType) || "OPTIONS".equalsIgnoreCase(instType)) {
+                isOption = true;
+            }
+        }
+        String sym = entryRequest.symbol();
+        if (sym != null
+                && (sym.endsWith("CE")
+                        || sym.endsWith("PE")
+                        || sym.contains(" CE")
+                        || sym.contains(" PE"))) {
+            isOption = true;
+        }
+
+        OrderType orderType;
+        BigDecimal limitPrice;
+        if (isOption) {
+            // 1.3: Options require SL_LMT with limit price buffer (SL-M is blocked on options by NSE/BSE)
+            orderType = OrderType.SL_LMT;
+            if (side == TransactionType.SELL) {
+                // Long Option position SL exit: Sell when premium falls to slPrice. Limit buffer = 10% below slPrice
+                BigDecimal buffered = slPrice.multiply(BigDecimal.valueOf(0.90));
+                limitPrice = roundToTick(buffered).max(BigDecimal.valueOf(0.05));
+            } else {
+                // Short Option position SL exit: Buy when premium rises to slPrice. Limit buffer = 10% above slPrice
+                BigDecimal buffered = slPrice.multiply(BigDecimal.valueOf(1.10));
+                limitPrice = roundToTick(buffered);
+            }
+        } else {
+            orderType = OrderType.SL_MKT;
+            limitPrice = BigDecimal.ZERO;
+        }
+
         OrderRequest slRequest =
                 new OrderRequest(
                         entryRequest.symbol(),
                         entryRequest.exchange(),
                         side,
-                        OrderType.SL_MKT,
+                        orderType,
                         entryRequest.productType(),
                         entryRequest.quantity(),
-                        BigDecimal.ZERO,
+                        limitPrice,
                         slPrice,
                         signal.signalId() + "-SL");
         try {
@@ -504,6 +539,13 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
 
     protected static String orderIdOf(OrderResponse resp) {
         return resp != null ? resp.orderId() : null;
+    }
+
+    private static BigDecimal roundToTick(BigDecimal price) {
+        if (price == null) return BigDecimal.ZERO;
+        return price.divide(BigDecimal.valueOf(0.05), 0, java.math.RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(0.05))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     /** C3: symbols with a broker-confirmed entry (used for drift reconciliation). */

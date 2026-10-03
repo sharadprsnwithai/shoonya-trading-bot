@@ -409,4 +409,28 @@ class ShoonyaTradeConsumerTest {
         // Verify new runner SL was placed for 100 qty at Cost SL 2500
         verify(gateway, times(1)).placeOrder(argThat(req -> req.orderType() == OrderType.SL_MKT && req.quantity() == 100 && req.triggerPrice().compareTo(BigDecimal.valueOf(2500)) == 0));
     }
+
+    @Test
+    void testOptionProtectiveSlUsesOrderTypeSlWithLimitBuffer() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any())).thenReturn(
+                new OrderResponse(true, "OPT-ENTRY-1", OrderStatus.COMPLETE, "Filled", null, Instant.now()),
+                new OrderResponse(true, "OPT-SL-1", OrderStatus.OPEN, "SL placed", null, Instant.now())
+        );
+
+        ShoonyaTradeConsumer consumer = new ShoonyaTradeConsumer("shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal optSignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "SUNPHARMA", "SUNPHARMA26OCT1800CE",
+                SignalAction.ENTRY_LONG, BigDecimal.valueOf(50.00), BigDecimal.valueOf(1860.00), BigDecimal.valueOf(1890.00), 350, "Option Entry",
+                java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO", "brokerStopLossPrice", BigDecimal.valueOf(35.00)));
+
+        consumer.handleLiveExecution(optSignal, 350);
+
+        // Verify Option SL is placed with OrderType.SL_LMT (NOT SL_MKT), triggerPrice = 35.00, limitPrice = 31.50 (10% execution buffer)
+        verify(gateway, times(1)).placeOrder(argThat(req ->
+                req.orderType() == OrderType.SL_LMT
+                        && req.exchange().equals("NFO")
+                        && req.triggerPrice().compareTo(BigDecimal.valueOf(35.00)) == 0
+                        && req.price().compareTo(BigDecimal.valueOf(31.50)) == 0));
+    }
 }

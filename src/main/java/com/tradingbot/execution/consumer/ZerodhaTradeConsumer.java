@@ -58,6 +58,11 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
         }
         TransactionType txnType = resolveTransactionType(signal);
 
+        String exchange = "NFO";
+        if (signal.metadata() != null && signal.metadata().get("exchange") != null) {
+            exchange = String.valueOf(signal.metadata().get("exchange"));
+        }
+
         // C3-4: anchor the limit to the CONTRACT's own reference price (option premium /
         // futures reference) from signal metadata rather than the spot price, so fill doesn't
         // depend on basis.
@@ -72,7 +77,7 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
         OrderRequest request =
                 new OrderRequest(
                         signal.tradingSymbol(),
-                        "NFO",
+                        exchange,
                         txnType,
                         OrderType.LMT,
                         ProductType.MIS,

@@ -58,10 +58,15 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
         }
         TransactionType txnType = resolveTransactionType(signal);
 
+        String exchange = "NFO";
+        if (signal.metadata() != null && signal.metadata().get("exchange") != null) {
+            exchange = String.valueOf(signal.metadata().get("exchange"));
+        }
+
         OrderRequest request =
                 new OrderRequest(
                         signal.tradingSymbol(),
-                        "NFO",
+                        exchange,
                         txnType,
                         OrderType.MKT,
                         ProductType.MIS,
