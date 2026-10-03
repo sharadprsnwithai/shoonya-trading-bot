@@ -1275,10 +1275,11 @@ public class LowestVolumeReversalService {
                     double sessionLow = quoteNode.get("l").asDouble(0.0);
                     double baselineLow = setup.getSessionLowAtArming();
                     // Fresh wick: the session LOW advanced below its arming baseline AND
-                    // reached the trigger, even though LTP has since bounced back above it.
+                    // reached the trigger, and live spot has not retreated above trigger
                     if (sessionLow > 0
                             && sessionLow < baselineLow
-                            && sessionLow <= setup.getTriggerPrice().doubleValue()) {
+                            && sessionLow <= setup.getTriggerPrice().doubleValue()
+                            && spotPrice.compareTo(setup.getTriggerPrice()) <= 0) {
                         triggered = true;
                         log.info(
                                 "[LVR] Fresh session-low wick breach for {} (low {} advanced past"
@@ -1296,10 +1297,11 @@ public class LowestVolumeReversalService {
                     double sessionHigh = quoteNode.get("h").asDouble(0.0);
                     double baselineHigh = setup.getSessionHighAtArming();
                     // Fresh wick: session HIGH advanced past its arming baseline and reached
-                    // the trigger while LTP sits below it (pullback after the breach).
+                    // the trigger, and live spot has not retreated below trigger
                     if (sessionHigh > 0
                             && sessionHigh > baselineHigh
-                            && sessionHigh >= setup.getTriggerPrice().doubleValue()) {
+                            && sessionHigh >= setup.getTriggerPrice().doubleValue()
+                            && spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
                         triggered = true;
                         log.info(
                                 "[LVR] Fresh session-high wick breach for {} (high {} advanced"
@@ -1592,6 +1594,7 @@ public class LowestVolumeReversalService {
                             totalQty,
                             plannedRisk,
                             Instant.now());
+            position.setBrokerTradingSymbol(brokerTradingSymbol);
 
             LowestVolumePaperPosition existing = openPositions.putIfAbsent(symbol, position);
             if (existing != null) {
@@ -1701,6 +1704,7 @@ public class LowestVolumeReversalService {
                             totalQty,
                             plannedRisk,
                             Instant.now());
+            position.setBrokerTradingSymbol(brokerTradingSymbol);
 
             LowestVolumePaperPosition existing = openPositions.putIfAbsent(symbol, position);
             if (existing != null) {
@@ -4216,6 +4220,9 @@ public class LowestVolumeReversalService {
     private String resolveBrokerTradingSymbol(LowestVolumePaperPosition pos) {
         if (pos == null) {
             return "";
+        }
+        if (pos.getBrokerTradingSymbol() != null && !pos.getBrokerTradingSymbol().isBlank()) {
+            return pos.getBrokerTradingSymbol();
         }
         if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
             return StockFnoRegistry.formatFuturesTradingSymbol(pos.getSymbol(), null);

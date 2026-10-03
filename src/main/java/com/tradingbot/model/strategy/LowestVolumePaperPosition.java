@@ -51,6 +51,7 @@ public class LowestVolumePaperPosition {
     private boolean closed = false;
 
     private BigDecimal trailingSuperTrendValue;
+    private String brokerTradingSymbol;
 
     /** Primary constructor for Futures / Full specification. */
     public LowestVolumePaperPosition(
@@ -292,6 +293,14 @@ public class LowestVolumePaperPosition {
 
     public String getContractSymbol() {
         return optionSymbol;
+    }
+
+    public String getBrokerTradingSymbol() {
+        return brokerTradingSymbol;
+    }
+
+    public void setBrokerTradingSymbol(String brokerTradingSymbol) {
+        this.brokerTradingSymbol = brokerTradingSymbol;
     }
 
     public BigDecimal getAtmStrike() {

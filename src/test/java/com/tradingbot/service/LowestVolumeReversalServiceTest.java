@@ -2533,6 +2533,52 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("2.2 Fix: Fresh-wick does NOT trigger entry if live spot has retreated below trigger price")
+    void testFreshWickDoesNotTriggerOnRetreatingPrice() {
+        service.setMaxSlippagePct(2.0);
+        service.setPdhPdlFilterEnabled(true);
+        service.setOpening15mRangeFilterEnabled(false);
+        service.setSectorMomentumFilterEnabled(false);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1865),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1864.95),
+                BigDecimal.valueOf(1895.25));
+        setup.setSessionHighAtArming(1874.00);
+        setup.setLatestVwap(1870.00);
+        setup.setPdh(BigDecimal.valueOf(1870.00));
+        setup.setPdl(BigDecimal.valueOf(1850.00));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        // Session high advanced to 1876.00 (touched trigger 1875.05), but spot has retreated to 1872.00 (below trigger)
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "1872.00")
+                                .put("ap", "1870.00")
+                                .put("h", "1876.00")
+                                .put("l", "1868.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        service.evaluateLivePriceActions();
+
+        // Entry must be skipped while spot is retreating below trigger
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+    }
+
+    @Test
     @DisplayName("Should reject SHORT trade when spot price is above or equal to PDL (trapped in range)")
     void testRejectShortTradeWhenInsidePdhPdlRange() {
         service.setMaxSlippagePct(2.0);
