@@ -707,7 +707,7 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
         assertThat(setup.getTriggerPrice()).isEqualByComparingTo("96.95");
         assertThat(setup.getStopLossPrice()).isEqualByComparingTo("102.05");
-        assertThat(setup.getTarget1Price()).isEqualByComparingTo("86.75"); // 1:2 RR
+        assertThat(setup.getTarget1Price()).isEqualByComparingTo("84.20"); // 1:2.5 RR
     }
 
     @Test
