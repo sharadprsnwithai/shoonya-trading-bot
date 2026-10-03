@@ -3000,4 +3000,48 @@ class LowestVolumeReversalServiceTest {
         assertThat(tata.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(105));
         assertThat(tata.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(99));
     }
+
+    @Test
+    @DisplayName("Should halt new trade entries when max daily loss count is reached")
+    void testHaltsEntriesWhenMaxDailyLossCountReached() {
+        service.setMaxDailyLosses(2);
+        service.getTodayLossCount().set(2); // 2 losses incurred today
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1868),
+                        BigDecimal.valueOf(1872),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1867.95),
+                BigDecimal.valueOf(1895.30));
+        setup.setLatestVwap(1870.00);
+        setup.setPdh(BigDecimal.valueOf(1870.00));
+        setup.setPdl(BigDecimal.valueOf(1850.00));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1876.00").put("ap", "1870.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        service.evaluateLivePriceActions();
+
+        // Entry must be blocked due to daily loss limit
+        assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
+    }
+
+    @Test
+    @DisplayName("Should reset todayLossCount to 0 upon daily reset")
+    void testDailyLossCountResetsOnDailyReset() {
+        service.getTodayLossCount().set(2);
+        service.resetDaily();
+        assertThat(service.getTodayLossCount().get()).isZero();
+    }
 }

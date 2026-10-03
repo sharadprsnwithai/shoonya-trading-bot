@@ -143,6 +143,11 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.target-rr:2.5}")
     private volatile double targetRr = 2.5;
 
+    @Value("${trading-bot.strategy.lowest-volume.max-daily-losses:2}")
+    private volatile int maxDailyLosses = 2;
+
+    private final AtomicInteger todayLossCount = new AtomicInteger(0);
+
     /**
      * M11 / {@code lvr_30sec_live_check_spec.md §3}: gates the 30-second live breach check
      * (trigger/SL/target monitoring on live LTP). When disabled the strategy falls back to
@@ -1151,10 +1156,11 @@ public class LowestVolumeReversalService {
         Map<String, JsonNode> liveQuoteCache = new HashMap<>();
 
         // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff, if strategy
-        // enabled, and if circuit breaker not tripped)
+        // enabled, circuit breaker not tripped, and max daily losses not reached)
         if (enabled
                 && nowTime.isBefore(TIME_ENTRY_CUTOFF)
-                && !isDailyCircuitBreakerTripped(liveQuoteCache)) {
+                && !isDailyCircuitBreakerTripped(liveQuoteCache)
+                && (maxDailyLosses <= 0 || todayLossCount.get() < maxDailyLosses)) {
             for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
                 String symbol = entry.getKey();
                 LowestVolumeSetup setup = entry.getValue();
@@ -1897,6 +1903,9 @@ public class LowestVolumeReversalService {
 
                     pos.close(exitPrc, slReason, Instant.now());
                     tradeHistory.add(pos);
+                    if (!pos.isPartialBooked()) {
+                        todayLossCount.incrementAndGet();
+                    }
 
                     LowestVolumeSetup setup = activeSetups.get(symbol);
                     if (setup != null) {
@@ -2537,6 +2546,7 @@ public class LowestVolumeReversalService {
             niftyBullish = true;
             dailyCircuitBreakerAlertSent.set(false);
             dailyCircuitBreakerTripped.set(false);
+            todayLossCount.set(0);
             tradeCounter.set(1);
         }
 
@@ -3488,6 +3498,18 @@ public class LowestVolumeReversalService {
 
     public void setTargetRr(double targetRr) {
         this.targetRr = targetRr;
+    }
+
+    public int getMaxDailyLosses() {
+        return maxDailyLosses;
+    }
+
+    public void setMaxDailyLosses(int maxDailyLosses) {
+        this.maxDailyLosses = maxDailyLosses;
+    }
+
+    public AtomicInteger getTodayLossCount() {
+        return todayLossCount;
     }
 
     public boolean isOpening15mRangeFilterEnabled() {
