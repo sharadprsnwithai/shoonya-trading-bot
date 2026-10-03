@@ -195,6 +195,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.Set<String> unconfirmedEntries =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Map<String, String> protectiveSlOrders =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     protected static boolean isEntryAction(com.tradingbot.strategy.SignalAction action) {
         if (action == null) return false;
@@ -280,6 +282,24 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             placeBestEffortProtectiveStop(signal, request, gateway);
         } else if (isExitAction(signal.action())) {
             confirmedEntries.remove(key);
+            String slOrderId = protectiveSlOrders.remove(key);
+            if (slOrderId != null && !slOrderId.isBlank()) {
+                try {
+                    gateway.cancelOrder(slOrderId);
+                    log.info(
+                            "[CONSUMER:{}] Cancelled resting protective SL order {} for {} on exit.",
+                            consumerId,
+                            slOrderId,
+                            key);
+                } catch (Exception e) {
+                    log.warn(
+                            "[CONSUMER:{}] Failed to cancel protective SL order {} for {}: {}",
+                            consumerId,
+                            slOrderId,
+                            key,
+                            e.getMessage());
+                }
+            }
         }
 
         log.info(
@@ -394,6 +414,11 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         try {
             OrderResponse slResp = gateway.placeOrder(slRequest);
             if (slResp != null && slResp.success()) {
+                String slOrderId = orderIdOf(slResp);
+                if (slOrderId != null && !slOrderId.isBlank()) {
+                    String key = ledgerKey(signal);
+                    protectiveSlOrders.put(key, slOrderId);
+                }
                 log.info(
                         "[CONSUMER:{}] Protective SL placed for {} @ trigger {} (orderId={}).",
                         consumerId,

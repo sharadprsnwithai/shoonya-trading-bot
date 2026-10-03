@@ -14,6 +14,7 @@ import com.tradingbot.model.order.TransactionType;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
 import java.math.BigDecimal;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Sinks;
 
@@ -341,5 +342,38 @@ class ShoonyaTradeConsumerTest {
         assertThat(consumer.getConfirmedEntrySymbols()).doesNotContain("TCS");
         verify(mockGateway, times(2)).placeOrder(any(OrderRequest.class));
         consumer.stop();
+    }
+
+    @Test
+    void testCancelsRestingProtectiveSlOnExit() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any())).thenReturn(
+                new OrderResponse(true, "ENTRY-101", OrderStatus.COMPLETE, "Entry filled", null, Instant.now()),
+                new OrderResponse(true, "SL-201", OrderStatus.OPEN, "SL placed", null, Instant.now()),
+                new OrderResponse(true, "EXIT-301", OrderStatus.COMPLETE, "Exit filled", null, Instant.now())
+        );
+        when(gateway.cancelOrder("SL-201")).thenReturn(
+                new OrderResponse(true, "SL-201", OrderStatus.CANCELLED, "SL cancelled on broker", null, Instant.now())
+        );
+
+        ShoonyaTradeConsumer consumer = new ShoonyaTradeConsumer("shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        // 1. Process ENTRY
+        TradeSignal entrySignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
+                SignalAction.ENTRY_LONG, BigDecimal.valueOf(2500), BigDecimal.valueOf(2490), BigDecimal.valueOf(2520), 100, "Entry",
+                java.util.Map.of("instrumentType", "FUTURES", "brokerStopLossPrice", BigDecimal.valueOf(2490)));
+        consumer.handleLiveExecution(entrySignal, 100);
+
+        // Verify protective SL was placed
+        verify(gateway, times(1)).placeOrder(argThat(req -> req.orderType() == OrderType.SL_MKT && "RELIANCE26OCTFUT".equals(req.tradingSymbol())));
+
+        // 2. Process EXIT
+        TradeSignal exitSignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
+                SignalAction.EXIT_LONG, BigDecimal.valueOf(2520), BigDecimal.valueOf(2500), null, 100, "Target Hit",
+                java.util.Map.of("instrumentType", "FUTURES"));
+        consumer.handleLiveExecution(exitSignal, 100);
+
+        // Verify resting protective SL order was cancelled
+        verify(gateway, times(1)).cancelOrder("SL-201");
     }
 }
