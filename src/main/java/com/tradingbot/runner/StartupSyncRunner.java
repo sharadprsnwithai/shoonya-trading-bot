@@ -129,7 +129,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                     String exchange, String token, String symbol, String timeframe) {}
             List<InstrumentTarget> targets =
                     List.of(
-                            new InstrumentTarget("NFO", "68407", "NIFTY50", "5"),
+                            new InstrumentTarget("NSE", "26000", "NSE:NIFTY50", "5"),
                             new InstrumentTarget("NSE", "2885", "NSE:RELIANCE", "5"),
                             new InstrumentTarget("NSE", "11536", "NSE:TCS", "5"),
                             new InstrumentTarget("NSE", "1594", "NSE:INFY", "5"));
