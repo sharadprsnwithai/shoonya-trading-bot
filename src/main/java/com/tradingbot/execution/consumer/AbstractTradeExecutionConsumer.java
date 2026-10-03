@@ -7,6 +7,7 @@ import com.tradingbot.model.order.OrderResponse;
 import com.tradingbot.model.order.OrderStatus;
 import com.tradingbot.model.order.OrderType;
 import com.tradingbot.model.order.TransactionType;
+import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -208,6 +209,11 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         return action != null && action.name().startsWith("EXIT");
     }
 
+    protected static boolean isPartialExitAction(com.tradingbot.strategy.SignalAction action) {
+        if (action == null) return false;
+        return action == SignalAction.PARTIAL_EXIT_LONG || action == SignalAction.PARTIAL_EXIT_SHORT;
+    }
+
     protected String ledgerKey(TradeSignal signal) {
         String underlying = signal.underlyingSymbol();
         return (underlying != null && !underlying.isBlank()) ? underlying : signal.tradingSymbol();
@@ -280,6 +286,49 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             confirmedEntries.add(key);
             unconfirmedEntries.remove(key);
             placeBestEffortProtectiveStop(signal, request, gateway);
+        } else if (isPartialExitAction(signal.action())) {
+            // 1.2: On partial exit, cancel the 100% SL order and replace with a 50% runner SL order at Cost SL
+            String slOrderId = protectiveSlOrders.remove(key);
+            if (slOrderId != null && !slOrderId.isBlank()) {
+                try {
+                    gateway.cancelOrder(slOrderId);
+                    log.info(
+                            "[CONSUMER:{}] Cancelled original 100% protective SL order {} for {} on partial exit.",
+                            consumerId,
+                            slOrderId,
+                            key);
+                } catch (Exception e) {
+                    log.warn(
+                            "[CONSUMER:{}] Failed to cancel original SL order {} for {}: {}",
+                            consumerId,
+                            slOrderId,
+                            key,
+                            e.getMessage());
+                }
+            }
+
+            int remainingQty = request.quantity();
+            if (signal.metadata() != null && signal.metadata().get("remainingQuantity") != null) {
+                try {
+                    remainingQty = Integer.parseInt(String.valueOf(signal.metadata().get("remainingQuantity")));
+                } catch (Exception ignore) {}
+            }
+            if (remainingQty > 0) {
+                OrderRequest runnerEntryReq =
+                        new OrderRequest(
+                                request.symbol(),
+                                request.exchange(),
+                                request.transactionType() == TransactionType.BUY
+                                        ? TransactionType.SELL
+                                        : TransactionType.BUY, // entry side was opposite of exit side
+                                OrderType.MKT,
+                                request.productType(),
+                                remainingQty,
+                                BigDecimal.ZERO,
+                                null,
+                                signal.signalId() + "-RUNNER");
+                placeBestEffortProtectiveStop(signal, runnerEntryReq, gateway);
+            }
         } else if (isExitAction(signal.action())) {
             confirmedEntries.remove(key);
             String slOrderId = protectiveSlOrders.remove(key);

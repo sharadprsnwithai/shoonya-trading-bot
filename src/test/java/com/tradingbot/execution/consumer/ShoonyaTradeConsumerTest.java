@@ -376,4 +376,37 @@ class ShoonyaTradeConsumerTest {
         // Verify resting protective SL order was cancelled
         verify(gateway, times(1)).cancelOrder("SL-201");
     }
+
+    @Test
+    void testAdjustsProtectiveSlOnPartialExit() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any())).thenReturn(
+                new OrderResponse(true, "ENTRY-101", OrderStatus.COMPLETE, "Entry filled", null, Instant.now()),
+                new OrderResponse(true, "SL-ORIGINAL", OrderStatus.OPEN, "Original 100% SL", null, Instant.now()),
+                new OrderResponse(true, "PARTIAL-EXIT-1", OrderStatus.COMPLETE, "50% Partial exit", null, Instant.now()),
+                new OrderResponse(true, "SL-RUNNER-NEW", OrderStatus.OPEN, "Runner 50% Cost SL", null, Instant.now())
+        );
+        when(gateway.cancelOrder("SL-ORIGINAL")).thenReturn(
+                new OrderResponse(true, "SL-ORIGINAL", OrderStatus.CANCELLED, "Cancelled original SL", null, Instant.now())
+        );
+
+        ShoonyaTradeConsumer consumer = new ShoonyaTradeConsumer("shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        // 1. Process ENTRY (200 qty)
+        TradeSignal entrySignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
+                SignalAction.ENTRY_LONG, BigDecimal.valueOf(2500), BigDecimal.valueOf(2490), BigDecimal.valueOf(2520), 200, "Entry",
+                java.util.Map.of("instrumentType", "FUTURES", "brokerStopLossPrice", BigDecimal.valueOf(2490)));
+        consumer.handleLiveExecution(entrySignal, 200);
+
+        // 2. Process PARTIAL EXIT (100 qty booked, 100 qty runner remaining with Cost SL at 2500)
+        TradeSignal partialSignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
+                SignalAction.PARTIAL_EXIT_LONG, BigDecimal.valueOf(2520), BigDecimal.valueOf(2500), BigDecimal.valueOf(2520), 100, "1:2 Target Partial Booked",
+                java.util.Map.of("instrumentType", "FUTURES", "brokerStopLossPrice", BigDecimal.valueOf(2500), "remainingQuantity", 100));
+        consumer.handleLiveExecution(partialSignal, 100);
+
+        // Verify original 100% SL was cancelled
+        verify(gateway, times(1)).cancelOrder("SL-ORIGINAL");
+        // Verify new runner SL was placed for 100 qty at Cost SL 2500
+        verify(gateway, times(1)).placeOrder(argThat(req -> req.orderType() == OrderType.SL_MKT && req.quantity() == 100 && req.triggerPrice().compareTo(BigDecimal.valueOf(2500)) == 0));
+    }
 }
