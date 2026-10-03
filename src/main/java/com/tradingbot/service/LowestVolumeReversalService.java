@@ -137,6 +137,12 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.sector-momentum-filter-enabled:true}")
     private volatile boolean sectorMomentumFilterEnabled = true;
 
+    @Value("${trading-bot.strategy.lowest-volume.vande-bharat-enabled:false}")
+    private volatile boolean vandeBharatEnabled = false;
+
+    @Value("${trading-bot.strategy.lowest-volume.target-rr:2.5}")
+    private volatile double targetRr = 2.5;
+
     /**
      * M11 / {@code lvr_30sec_live_check_spec.md §3}: gates the 30-second live breach check
      * (trigger/SL/target monitoring on live LTP). When disabled the strategy falls back to
@@ -887,7 +893,7 @@ public class LowestVolumeReversalService {
                         target1Prc =
                                 roundToTick(
                                         triggerPrc.subtract(
-                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                                                risk.multiply(BigDecimal.valueOf(targetRr))));
                     } else {
                         triggerPrc = roundToTick(c.high().add(BigDecimal.valueOf(0.05)));
                         BigDecimal rawSl = c.low().subtract(BigDecimal.valueOf(0.05));
@@ -898,7 +904,7 @@ public class LowestVolumeReversalService {
                         target1Prc =
                                 roundToTick(
                                         triggerPrc.add(
-                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                                                risk.multiply(BigDecimal.valueOf(targetRr))));
                     }
 
                     setup.setTriggerCandle(c, triggerPrc, slPrc, target1Prc);
@@ -937,7 +943,7 @@ public class LowestVolumeReversalService {
                         vbTarget1Prc =
                                 roundToTick(
                                         vbTriggerPrc.add(
-                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                                                risk.multiply(BigDecimal.valueOf(targetRr))));
                     }
                 } else if (direction == LowestVolumeDirection.SHORT) {
                     boolean motherRed = prev.isRed();
@@ -957,7 +963,7 @@ public class LowestVolumeReversalService {
                         vbTarget1Prc =
                                 roundToTick(
                                         vbTriggerPrc.subtract(
-                                                risk.multiply(BigDecimal.valueOf(2)))); // 1:2 RR
+                                                risk.multiply(BigDecimal.valueOf(targetRr))));
                     }
                 }
 
@@ -980,7 +986,7 @@ public class LowestVolumeReversalService {
                                             && c.timestamp()
                                                     .plusSeconds(300)
                                                     .isAfter(filterAfter)));
-                    if (allowVb && vbVolumeFloor && candleAllowed) {
+                    if (vandeBharatEnabled && allowVb && vbVolumeFloor && candleAllowed) {
                         setup.setTriggerCandle(c, vbTriggerPrc, vbSlPrc, vbTarget1Prc);
                         setup.setSetupPattern("VANDE_BHARAT_INSIDE_BAR");
                     }
@@ -3466,6 +3472,22 @@ public class LowestVolumeReversalService {
 
     public void setVwapConfirmationEnabled(boolean vwapConfirmationEnabled) {
         this.vwapConfirmationEnabled = vwapConfirmationEnabled;
+    }
+
+    public boolean isVandeBharatEnabled() {
+        return vandeBharatEnabled;
+    }
+
+    public void setVandeBharatEnabled(boolean vandeBharatEnabled) {
+        this.vandeBharatEnabled = vandeBharatEnabled;
+    }
+
+    public double getTargetRr() {
+        return targetRr;
+    }
+
+    public void setTargetRr(double targetRr) {
+        this.targetRr = targetRr;
     }
 
     public boolean isOpening15mRangeFilterEnabled() {

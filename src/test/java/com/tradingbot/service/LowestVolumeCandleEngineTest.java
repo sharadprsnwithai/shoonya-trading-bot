@@ -109,8 +109,8 @@ class LowestVolumeCandleEngineTest {
         assertEquals(0, BigDecimal.valueOf(96.95).compareTo(setup.getTriggerPrice())); // Low - 0.05
         assertEquals(
                 0, BigDecimal.valueOf(102.05).compareTo(setup.getStopLossPrice())); // High + 0.05
-        // Spot Risk = 102.05 - 96.95 = 5.10. 1:2 Target = 96.95 - (2 * 5.10) = 86.75
-        assertEquals(0, BigDecimal.valueOf(86.75).compareTo(setup.getTarget1Price()));
+        // Spot Risk = 102.05 - 96.95 = 5.10. 1:2.5 Target = 96.95 - (2.5 * 5.10) = 84.20
+        assertEquals(0, BigDecimal.valueOf(84.20).compareTo(setup.getTarget1Price()));
         assertEquals(4500L, setup.getDayLowestVolume());
     }
 
@@ -175,8 +175,8 @@ class LowestVolumeCandleEngineTest {
         assertEquals(0, BigDecimal.valueOf(99.95).compareTo(setup.getTriggerPrice())); // Low - 0.05
         assertEquals(
                 0, BigDecimal.valueOf(105.05).compareTo(setup.getStopLossPrice())); // High + 0.05
-        // Spot Risk = 105.05 - 99.95 = 5.10. 1:2 Target = 99.95 - (2 * 5.10) = 89.75
-        assertEquals(0, BigDecimal.valueOf(89.75).compareTo(setup.getTarget1Price()));
+        // Spot Risk = 105.05 - 99.95 = 5.10. 1:2.5 Target = 99.95 - (2.5 * 5.10) = 87.20
+        assertEquals(0, BigDecimal.valueOf(87.20).compareTo(setup.getTarget1Price()));
         assertEquals(3000L, setup.getDayLowestVolume());
     }
 
@@ -232,8 +232,8 @@ class LowestVolumeCandleEngineTest {
                 0, BigDecimal.valueOf(516.05).compareTo(setup.getTriggerPrice())); // High + 0.05
         assertEquals(
                 0, BigDecimal.valueOf(507.95).compareTo(setup.getStopLossPrice())); // Low - 0.05
-        // Spot Risk = 516.05 - 507.95 = 8.10. 1:2 Target = 516.05 + (2 * 8.10) = 532.25
-        assertEquals(0, BigDecimal.valueOf(532.25).compareTo(setup.getTarget1Price()));
+        // Spot Risk = 516.05 - 507.95 = 8.10. 1:2.5 Target = 516.05 + (2.5 * 8.10) = 536.30
+        assertEquals(0, BigDecimal.valueOf(536.30).compareTo(setup.getTarget1Price()));
         assertEquals(4000L, setup.getDayLowestVolume());
     }
 
@@ -242,6 +242,7 @@ class LowestVolumeCandleEngineTest {
     void testArmLongSetupOnVandeBharatInsideBar() {
         LowestVolumeReversalService service =
                 new LowestVolumeReversalService(null, null, null, null, null);
+        service.setVandeBharatEnabled(true);
 
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z"); // 09:15 IST
         List<Candle> candles =
@@ -264,6 +265,7 @@ class LowestVolumeCandleEngineTest {
         assertEquals("VANDE_BHARAT_INSIDE_BAR", setup.getSetupPattern());
         assertEquals(0, BigDecimal.valueOf(1030.05).compareTo(setup.getTriggerPrice())); // Mother High + 0.05
         assertEquals(0, BigDecimal.valueOf(1017.95).compareTo(setup.getStopLossPrice())); // Inside Low - 0.05
+        assertEquals(0, BigDecimal.valueOf(1060.30).compareTo(setup.getTarget1Price())); // 1:2.5 RR Target
     }
 
     @Test
@@ -271,6 +273,7 @@ class LowestVolumeCandleEngineTest {
     void testArmShortSetupOnVandeBharatInsideBar() {
         LowestVolumeReversalService service =
                 new LowestVolumeReversalService(null, null, null, null, null);
+        service.setVandeBharatEnabled(true);
 
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles =
@@ -292,5 +295,81 @@ class LowestVolumeCandleEngineTest {
         assertEquals("VANDE_BHARAT_INSIDE_BAR", setup.getSetupPattern());
         assertEquals(0, BigDecimal.valueOf(964.95).compareTo(setup.getTriggerPrice())); // Mother Low - 0.05
         assertEquals(0, BigDecimal.valueOf(980.05).compareTo(setup.getStopLossPrice())); // Inside High + 0.05
+        assertEquals(0, BigDecimal.valueOf(927.20).compareTo(setup.getTarget1Price())); // 1:2.5 RR Target
+    }
+
+    @Test
+    @DisplayName("2.1 Fix: Setup 2 LVR low volume pullback takes precedence when candle also satisfies Setup 3 inside bar")
+    void testSetup2TakesPrecedenceOverSetup3OnSameBar() {
+        LowestVolumeReversalService service = new LowestVolumeReversalService(null, null, null, null, null);
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z"); // 09:15 IST
+        List<Candle> candles = List.of(
+                Candle.of5m("RADICO", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1010), BigDecimal.valueOf(995), BigDecimal.valueOf(1008), 50000),
+                Candle.of5m("RADICO", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(1008), BigDecimal.valueOf(1015), BigDecimal.valueOf(1005), BigDecimal.valueOf(1012), 40000),
+                Candle.of5m("RADICO", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(1012), BigDecimal.valueOf(1018), BigDecimal.valueOf(1010), BigDecimal.valueOf(1016), 35000), // Day lowest = 35000
+                // C4: Green Mother Candle (H=1030, L=1015)
+                Candle.of5m("RADICO", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(1016), BigDecimal.valueOf(1030), BigDecimal.valueOf(1015), BigDecimal.valueOf(1028), 60000),
+                // C5: Red Candle inside C4 (H=1025 <= 1030, L=1018 >= 1015) AND Volume = 20000 (<= dayLowest 35000!)
+                Candle.of5m("RADICO", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(1024), BigDecimal.valueOf(1025), BigDecimal.valueOf(1018), BigDecimal.valueOf(1020), 20000)
+        );
+
+        LowestVolumeSetup setup = service.evaluateCandleSequence("RADICO", LowestVolumeDirection.LONG, candles);
+
+        // Setup 2 (LVR) should take precedence with trigger at Pullback High (1025.05), NOT Mother High (1030.05)
+        assertEquals("LVR_VOLUME_PULLBACK", setup.getSetupPattern());
+        assertEquals(0, BigDecimal.valueOf(1025.05).compareTo(setup.getTriggerPrice()));
+    }
+
+    @Test
+    @DisplayName("Should skip Setup 3 Vande Bharat when vandeBharatEnabled is false (Pure LVR default)")
+    void testVandeBharatDisabledByDefault() {
+        LowestVolumeReversalService service =
+                new LowestVolumeReversalService(null, null, null, null, null);
+        service.setVandeBharatEnabled(false);
+
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
+        List<Candle> candles =
+                List.of(
+                        Candle.of5m("RADICO", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1010), BigDecimal.valueOf(995), BigDecimal.valueOf(1008), 50000),
+                        Candle.of5m("RADICO", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(1008), BigDecimal.valueOf(1015), BigDecimal.valueOf(1005), BigDecimal.valueOf(1012), 40000),
+                        Candle.of5m("RADICO", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(1012), BigDecimal.valueOf(1018), BigDecimal.valueOf(1010), BigDecimal.valueOf(1016), 35000),
+                        // C4: Mother Green
+                        Candle.of5m("RADICO", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(1016), BigDecimal.valueOf(1030), BigDecimal.valueOf(1015), BigDecimal.valueOf(1028), 60000),
+                        // C5: Inside Red (High 1027 <= 1030, Low 1018 >= 1015) with Vol = 45000 (> day lowest 35000, so LVR does not match)
+                        Candle.of5m("RADICO", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(1026), BigDecimal.valueOf(1027), BigDecimal.valueOf(1018), BigDecimal.valueOf(1020), 45000)
+                );
+
+        LowestVolumeSetup setup =
+                service.evaluateCandleSequence("RADICO", LowestVolumeDirection.LONG, candles);
+
+        // When vandeBharatEnabled is false, inside-bar is skipped and setup remains SCANNING
+        assertEquals(LowestVolumeSetupState.SCANNING, setup.getState());
+        assertNull(setup.getTriggerPrice());
+    }
+
+    @Test
+    @DisplayName("Should compute Target 1 at 1:2.5 RR with targetRr = 2.5")
+    void testTargetCalculationWith2Point5RR() {
+        LowestVolumeReversalService service =
+                new LowestVolumeReversalService(null, null, null, null, null);
+        service.setTargetRr(2.5);
+
+        Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
+        List<Candle> candles =
+                List.of(
+                        Candle.of5m("SUNPHARMA", t0, BigDecimal.valueOf(500), BigDecimal.valueOf(510), BigDecimal.valueOf(498), BigDecimal.valueOf(508), 12000),
+                        Candle.of5m("SUNPHARMA", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(508), BigDecimal.valueOf(515), BigDecimal.valueOf(505), BigDecimal.valueOf(512), 9000),
+                        Candle.of5m("SUNPHARMA", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(512), BigDecimal.valueOf(518), BigDecimal.valueOf(510), BigDecimal.valueOf(515), 7000),
+                        // C4: Red pullback candle (O=515, H=516, L=508, C=510), Vol = 4000 (< 7000)
+                        Candle.of5m("SUNPHARMA", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(515), BigDecimal.valueOf(516), BigDecimal.valueOf(508), BigDecimal.valueOf(510), 4000)
+                );
+
+        LowestVolumeSetup setup =
+                service.evaluateCandleSequence("SUNPHARMA", LowestVolumeDirection.LONG, candles);
+
+        // Trigger = 516.05, SL = 507.95, Risk = 8.10. Target 1 (1:2.5 RR) = 516.05 + (2.5 * 8.10) = 536.30
+        assertEquals(0, BigDecimal.valueOf(516.05).compareTo(setup.getTriggerPrice()));
+        assertEquals(0, BigDecimal.valueOf(507.95).compareTo(setup.getStopLossPrice()));
+        assertEquals(0, BigDecimal.valueOf(536.30).compareTo(setup.getTarget1Price()));
     }
 }
