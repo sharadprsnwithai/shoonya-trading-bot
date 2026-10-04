@@ -47,6 +47,7 @@ public class StartupSyncRunner implements CommandLineRunner {
     private final KiteAuthService kiteAuthService;
     private final KiteProperties kiteProperties;
     private final TelegramService telegramService;
+    private final com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService;
     private final java.util.Set<String> reportedBrokers =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -60,7 +61,8 @@ public class StartupSyncRunner implements CommandLineRunner {
             @Autowired(required = false) ZerodhaBrokerGateway zerodhaGateway,
             @Autowired(required = false) KiteAuthService kiteAuthService,
             @Autowired(required = false) KiteProperties kiteProperties,
-            @Autowired(required = false) TelegramService telegramService) {
+            @Autowired(required = false) TelegramService telegramService,
+            @Autowired(required = false) com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService) {
         this.config = config;
         this.authenticator = authenticator;
         this.marketDataService = marketDataService;
@@ -70,6 +72,7 @@ public class StartupSyncRunner implements CommandLineRunner {
         this.kiteAuthService = kiteAuthService;
         this.kiteProperties = kiteProperties;
         this.telegramService = telegramService;
+        this.carWeeklyService = carWeeklyService;
     }
 
     @Override
@@ -153,12 +156,12 @@ public class StartupSyncRunner implements CommandLineRunner {
 
         try {
             // 4. Verify Historical OHLC Local SQLite / Memory Cache
-            log.info("[4/4] Checking Yahoo Finance Historical OHLC Database cache status...");
+            log.info("[4/5] Checking Yahoo Finance Historical OHLC Database cache status...");
             if (ohlcCacheService != null
                     && (ohlcCacheService.getCachedSymbolCount() == 0
                             || !ohlcCacheService.isCacheValidForToday())) {
                 log.info(
-                        "[4/4] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating background sync...",
+                        "[4/5] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating background sync...",
                         ohlcCacheService.getCachedSymbolCount(),
                         ohlcCacheService.isCacheValidForToday());
                 java.util.concurrent.CompletableFuture.runAsync(
@@ -178,6 +181,21 @@ public class StartupSyncRunner implements CommandLineRunner {
             }
         } catch (Exception e) {
             log.warn("Yahoo Historical OHLC Cache Startup Notice: {}", e.getMessage());
+        }
+
+        try {
+            // 5. CAR Weekly GTT Strategy Sunday Reconciliation Check
+            if (carWeeklyService != null) {
+                LocalDate today = LocalDate.now(IST);
+                if (today.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {
+                    log.info("[5/5] Startup on Sunday detected. Executing CAR Weekly GTT routine...");
+                    carWeeklyService.runSundayWeeklyRoutine();
+                } else {
+                    log.info("[5/5] CAR Weekly GTT Strategy ready (Next scheduled run: Sunday 10:00 AM IST).");
+                }
+            }
+        } catch (Exception e) {
+            log.warn("CAR Weekly GTT Startup Notice: {}", e.getMessage());
         }
 
         log.info("==================================================================");

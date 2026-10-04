@@ -108,4 +108,22 @@ class TelegramBotCommandListenerTest {
         String resp = commandListener.processCommand("/help");
         assertTrue(resp.contains("Lowest Volume Reversal Bot Commands"));
     }
+
+    @Test
+    void testHandleCarCommands() {
+        com.tradingbot.strategy.car.CarWeeklyGttService carService = mock(com.tradingbot.strategy.car.CarWeeklyGttService.class);
+        com.tradingbot.strategy.car.model.CarPortfolioState pState = new com.tradingbot.strategy.car.model.CarPortfolioState();
+        when(carService.getPortfolioState()).thenReturn(pState);
+
+        TelegramBotCommandListener listenerWithCar =
+                new TelegramBotCommandListener(
+                        lvrService, carService, telegramService, shoonyaConfig, objectMapper, httpClient);
+
+        String statusResp = listenerWithCar.processCommand("/car");
+        assertTrue(statusResp.contains("CAR Weekly GTT Strategy Status"));
+
+        String runResp = listenerWithCar.processCommand("/car_run");
+        assertTrue(runResp.contains("CAR Weekly GTT Routine executed"));
+        verify(carService, times(1)).runSundayWeeklyRoutine();
+    }
 }

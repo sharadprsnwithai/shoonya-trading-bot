@@ -35,6 +35,7 @@ public class TelegramBotCommandListener {
     private static final Logger log = LoggerFactory.getLogger(TelegramBotCommandListener.class);
 
     private final LowestVolumeReversalService lvrService;
+    private final com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -47,11 +48,13 @@ public class TelegramBotCommandListener {
     @Autowired
     public TelegramBotCommandListener(
             @Autowired(required = false) LowestVolumeReversalService lvrService,
+            @Autowired(required = false) com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
         this(
                 lvrService,
+                carWeeklyService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -64,7 +67,18 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
+        this(lvrService, null, telegramService, shoonyaConfig, objectMapper, httpClient);
+    }
+
+    public TelegramBotCommandListener(
+            LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            TelegramService telegramService,
+            ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
         this.lvrService = lvrService;
+        this.carWeeklyService = carWeeklyService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
@@ -229,6 +243,33 @@ public class TelegramBotCommandListener {
                 lvrService.runMorningUniverseScan();
                 return "🌅 LVR Morning Universe Scan executed!\n\n" + processCommand("/status");
 
+            case "/car":
+            case "/car_status":
+                if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
+                var pState = carWeeklyService.getPortfolioState();
+                int investedUnits = pState.getHoldings().values().stream().mapToInt(com.tradingbot.strategy.car.model.CarHolding::accumulatedUnits).sum();
+                return String.format(
+                        "📈 *CAR Weekly GTT Strategy Status*\n\n"
+                                + "• Total Capital: `₹%.2f`\n"
+                                + "• Unit Size (1/40th): `₹%.2f`\n"
+                                + "• Invested Units: `%d / %d`\n"
+                                + "• Available Units: `%d`\n"
+                                + "• Active Demat Holdings: `%d`\n"
+                                + "• Active GTT Orders: `%d`",
+                        pState.getTotalCapital().doubleValue(),
+                        pState.getUnitSize().doubleValue(),
+                        investedUnits,
+                        pState.getNumParts(),
+                        pState.getAvailableUnits(),
+                        pState.getHoldings().size(),
+                        pState.getGttOrders().size());
+
+            case "/car_run":
+            case "/car_weekly":
+                if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
+                carWeeklyService.runSundayWeeklyRoutine();
+                return "🚀 CAR Weekly GTT Routine executed! GTT orders placed on Kite.\n\n" + processCommand("/car");
+
             case "/exit":
             case "/squareoff":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
@@ -268,8 +309,9 @@ public class TelegramBotCommandListener {
                         + "• `/scan` - Execute immediate 5m strategy cycle\n"
                         + "• `/morning_scan` - Force 09:25 AM morning scan\n"
                         + "• `/exit` - Square off all open positions immediately\n"
-                        + "• `/reset [force]` - Reset daily session state (`force` required"
-                        + " intraday)\n"
+                        + "• `/reset [force]` - Reset daily session state (`force` required intraday)\n"
+                        + "• `/car` - Live CAR Weekly GTT Portfolio Status\n"
+                        + "• `/car_run` - Force execute CAR Weekly GTT Sunday routine & place orders\n"
                         + "• `/help` - Show this command menu";
         }
     }
