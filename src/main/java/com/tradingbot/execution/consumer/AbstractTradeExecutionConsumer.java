@@ -120,8 +120,7 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             if (ageSeconds > maxSignalAgeSeconds) {
                 // H11: EXIT signals must NEVER be dropped as stale — a delayed exit is exactly
                 // the signal that has to reach the broker to flatten an open position.
-                if (signal.action() != null
-                        && signal.action().name().startsWith("EXIT")) {
+                if (signal.action() != null && signal.action().name().startsWith("EXIT")) {
                     log.warn(
                             "[CONSUMER:{}] Stale EXIT signal {} (Age: {}s > Max: {}s) for {} —"
                                     + " executing anyway to flatten the broker position.",
@@ -211,7 +210,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
 
     protected static boolean isPartialExitAction(com.tradingbot.strategy.SignalAction action) {
         if (action == null) return false;
-        return action == SignalAction.PARTIAL_EXIT_LONG || action == SignalAction.PARTIAL_EXIT_SHORT;
+        return action == SignalAction.PARTIAL_EXIT_LONG
+                || action == SignalAction.PARTIAL_EXIT_SHORT;
     }
 
     protected String ledgerKey(TradeSignal signal) {
@@ -223,12 +223,12 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
      * C3: places an order with response validation and entry-ledger tracking.
      *
      * <ul>
-     *   <li>Rejected/failed ENTRY → symbol is marked {@code ENTRY_UNCONFIRMED}; later EXITs for
-     *       it are suppressed (no naked reverse order at the broker).
+     *   <li>Rejected/failed ENTRY → symbol is marked {@code ENTRY_UNCONFIRMED}; later EXITs for it
+     *       are suppressed (no naked reverse order at the broker).
      *   <li>Confirmed ENTRY → symbol moves to the confirmed ledger and a best-effort protective
      *       SL-M order is placed using the contract-scaled {@code brokerStopLossPrice} metadata.
-     *   <li>When the gateway supports order-status polling (Zerodha), the status is polled
-     *       briefly before the entry is considered confirmed.
+     *   <li>When the gateway supports order-status polling (Zerodha), the status is polled briefly
+     *       before the entry is considered confirmed.
      * </ul>
      */
     protected OrderResponse placeOrderConfirmed(
@@ -240,8 +240,7 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             resp = OrderResponse.failure(request, e.getMessage());
         }
 
-        boolean rejected =
-                resp == null || !resp.success() || resp.status() == OrderStatus.REJECTED;
+        boolean rejected = resp == null || !resp.success() || resp.status() == OrderStatus.REJECTED;
         String key = ledgerKey(signal);
 
         if (!rejected && isEntryAction(signal.action()) && orderIdOf(resp) != null) {
@@ -287,16 +286,15 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             unconfirmedEntries.remove(key);
             placeBestEffortProtectiveStop(signal, request, gateway);
         } else if (isPartialExitAction(signal.action())) {
-            // 1.2: On partial exit, cancel the 100% SL order and replace with a 50% runner SL order at Cost SL
+            // 1.2: On partial exit, cancel the 100% SL order and replace with a 50% runner SL order
+            // at Cost SL
             String slOrderId = protectiveSlOrders.remove(key);
             if (slOrderId != null && !slOrderId.isBlank()) {
                 try {
                     gateway.cancelOrder(slOrderId);
                     log.info(
                             "[CONSUMER:{}] Cancelled original 100% protective SL order {} for {} on partial exit.",
-                            consumerId,
-                            slOrderId,
-                            key);
+                            consumerId, slOrderId, key);
                 } catch (Exception e) {
                     log.warn(
                             "[CONSUMER:{}] Failed to cancel original SL order {} for {}: {}",
@@ -310,8 +308,11 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             int remainingQty = request.quantity();
             if (signal.metadata() != null && signal.metadata().get("remainingQuantity") != null) {
                 try {
-                    remainingQty = Integer.parseInt(String.valueOf(signal.metadata().get("remainingQuantity")));
-                } catch (Exception ignore) {}
+                    remainingQty =
+                            Integer.parseInt(
+                                    String.valueOf(signal.metadata().get("remainingQuantity")));
+                } catch (Exception ignore) {
+                }
             }
             if (remainingQty > 0) {
                 OrderRequest runnerEntryReq =
@@ -320,7 +321,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                                 request.exchange(),
                                 request.transactionType() == TransactionType.BUY
                                         ? TransactionType.SELL
-                                        : TransactionType.BUY, // entry side was opposite of exit side
+                                        : TransactionType
+                                                .BUY, // entry side was opposite of exit side
                                 OrderType.MKT,
                                 request.productType(),
                                 remainingQty,
@@ -468,14 +470,17 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         OrderType orderType;
         BigDecimal limitPrice;
         if (isOption) {
-            // 1.3: Options require SL_LMT with limit price buffer (SL-M is blocked on options by NSE/BSE)
+            // 1.3: Options require SL_LMT with limit price buffer (SL-M is blocked on options by
+            // NSE/BSE)
             orderType = OrderType.SL_LMT;
             if (side == TransactionType.SELL) {
-                // Long Option position SL exit: Sell when premium falls to slPrice. Limit buffer = 10% below slPrice
+                // Long Option position SL exit: Sell when premium falls to slPrice. Limit buffer =
+                // 10% below slPrice
                 BigDecimal buffered = slPrice.multiply(BigDecimal.valueOf(0.90));
                 limitPrice = roundToTick(buffered).max(BigDecimal.valueOf(0.05));
             } else {
-                // Short Option position SL exit: Buy when premium rises to slPrice. Limit buffer = 10% above slPrice
+                // Short Option position SL exit: Buy when premium rises to slPrice. Limit buffer =
+                // 10% above slPrice
                 BigDecimal buffered = slPrice.multiply(BigDecimal.valueOf(1.10));
                 limitPrice = roundToTick(buffered);
             }

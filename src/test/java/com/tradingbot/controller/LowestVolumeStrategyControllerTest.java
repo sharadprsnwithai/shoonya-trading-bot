@@ -99,7 +99,8 @@ class LowestVolumeStrategyControllerTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.jobId").exists())
-                .andExpect(jsonPath("$.statusUrl").value("/api/strategy/lowest-volume/scan/status"));
+                .andExpect(
+                        jsonPath("$.statusUrl").value("/api/strategy/lowest-volume/scan/status"));
 
         verify(strategyService, timeout(2000)).runCycle();
     }

@@ -248,14 +248,48 @@ class LowestVolumeCandleEngineTest {
         List<Candle> candles =
                 List.of(
                         // C1, C2, C3 baseline
-                        Candle.of5m("RADICO", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1010), BigDecimal.valueOf(995), BigDecimal.valueOf(1008), 50000),
-                        Candle.of5m("RADICO", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(1008), BigDecimal.valueOf(1015), BigDecimal.valueOf(1005), BigDecimal.valueOf(1012), 40000),
-                        Candle.of5m("RADICO", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(1012), BigDecimal.valueOf(1018), BigDecimal.valueOf(1010), BigDecimal.valueOf(1016), 35000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0,
+                                BigDecimal.valueOf(1000),
+                                BigDecimal.valueOf(1010),
+                                BigDecimal.valueOf(995),
+                                BigDecimal.valueOf(1008),
+                                50000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(5, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1008),
+                                BigDecimal.valueOf(1015),
+                                BigDecimal.valueOf(1005),
+                                BigDecimal.valueOf(1012),
+                                40000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(10, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1012),
+                                BigDecimal.valueOf(1018),
+                                BigDecimal.valueOf(1010),
+                                BigDecimal.valueOf(1016),
+                                35000),
                         // C4 (09:30): Strong Mother Green Candle
-                        Candle.of5m("RADICO", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(1016), BigDecimal.valueOf(1030), BigDecimal.valueOf(1015), BigDecimal.valueOf(1028), 60000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(15, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1016),
+                                BigDecimal.valueOf(1030),
+                                BigDecimal.valueOf(1015),
+                                BigDecimal.valueOf(1028),
+                                60000),
                         // C5 (09:35): Inside Red Candle (High 1027 <= 1030, Low 1018 >= 1015)
-                        Candle.of5m("RADICO", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(1026), BigDecimal.valueOf(1027), BigDecimal.valueOf(1018), BigDecimal.valueOf(1020), 45000)
-                );
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(20, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1026),
+                                BigDecimal.valueOf(1027),
+                                BigDecimal.valueOf(1018),
+                                BigDecimal.valueOf(1020),
+                                45000));
 
         LowestVolumeSetup setup =
                 service.evaluateCandleSequence("RADICO", LowestVolumeDirection.LONG, candles);
@@ -263,9 +297,17 @@ class LowestVolumeCandleEngineTest {
         assertNotNull(setup);
         assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
         assertEquals("VANDE_BHARAT_INSIDE_BAR", setup.getSetupPattern());
-        assertEquals(0, BigDecimal.valueOf(1030.05).compareTo(setup.getTriggerPrice())); // Mother High + 0.05
-        assertEquals(0, BigDecimal.valueOf(1017.95).compareTo(setup.getStopLossPrice())); // Inside Low - 0.05
-        assertEquals(0, BigDecimal.valueOf(1060.30).compareTo(setup.getTarget1Price())); // 1:2.5 RR Target
+        assertEquals(
+                0,
+                BigDecimal.valueOf(1030.05)
+                        .compareTo(setup.getTriggerPrice())); // Mother High + 0.05
+        assertEquals(
+                0,
+                BigDecimal.valueOf(1017.95)
+                        .compareTo(setup.getStopLossPrice())); // Inside Low - 0.05
+        assertEquals(
+                0,
+                BigDecimal.valueOf(1060.30).compareTo(setup.getTarget1Price())); // 1:2.5 RR Target
     }
 
     @Test
@@ -278,14 +320,48 @@ class LowestVolumeCandleEngineTest {
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles =
                 List.of(
-                        Candle.of5m("VOLTAS", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1005), BigDecimal.valueOf(990), BigDecimal.valueOf(992), 50000),
-                        Candle.of5m("VOLTAS", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(992), BigDecimal.valueOf(995), BigDecimal.valueOf(985), BigDecimal.valueOf(988), 40000),
-                        Candle.of5m("VOLTAS", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(988), BigDecimal.valueOf(990), BigDecimal.valueOf(980), BigDecimal.valueOf(982), 35000),
+                        Candle.of5m(
+                                "VOLTAS",
+                                t0,
+                                BigDecimal.valueOf(1000),
+                                BigDecimal.valueOf(1005),
+                                BigDecimal.valueOf(990),
+                                BigDecimal.valueOf(992),
+                                50000),
+                        Candle.of5m(
+                                "VOLTAS",
+                                t0.plus(5, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(992),
+                                BigDecimal.valueOf(995),
+                                BigDecimal.valueOf(985),
+                                BigDecimal.valueOf(988),
+                                40000),
+                        Candle.of5m(
+                                "VOLTAS",
+                                t0.plus(10, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(988),
+                                BigDecimal.valueOf(990),
+                                BigDecimal.valueOf(980),
+                                BigDecimal.valueOf(982),
+                                35000),
                         // C4 (09:30): Strong Mother Red Candle
-                        Candle.of5m("VOLTAS", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(982), BigDecimal.valueOf(984), BigDecimal.valueOf(965), BigDecimal.valueOf(968), 60000),
+                        Candle.of5m(
+                                "VOLTAS",
+                                t0.plus(15, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(982),
+                                BigDecimal.valueOf(984),
+                                BigDecimal.valueOf(965),
+                                BigDecimal.valueOf(968),
+                                60000),
                         // C5 (09:35): Inside Green Candle (High 980 <= 984, Low 970 >= 965)
-                        Candle.of5m("VOLTAS", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(970), BigDecimal.valueOf(980), BigDecimal.valueOf(970), BigDecimal.valueOf(978), 45000)
-                );
+                        Candle.of5m(
+                                "VOLTAS",
+                                t0.plus(20, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(970),
+                                BigDecimal.valueOf(980),
+                                BigDecimal.valueOf(970),
+                                BigDecimal.valueOf(978),
+                                45000));
 
         LowestVolumeSetup setup =
                 service.evaluateCandleSequence("VOLTAS", LowestVolumeDirection.SHORT, candles);
@@ -293,35 +369,83 @@ class LowestVolumeCandleEngineTest {
         assertNotNull(setup);
         assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
         assertEquals("VANDE_BHARAT_INSIDE_BAR", setup.getSetupPattern());
-        assertEquals(0, BigDecimal.valueOf(964.95).compareTo(setup.getTriggerPrice())); // Mother Low - 0.05
-        assertEquals(0, BigDecimal.valueOf(980.05).compareTo(setup.getStopLossPrice())); // Inside High + 0.05
-        assertEquals(0, BigDecimal.valueOf(927.20).compareTo(setup.getTarget1Price())); // 1:2.5 RR Target
+        assertEquals(
+                0,
+                BigDecimal.valueOf(964.95).compareTo(setup.getTriggerPrice())); // Mother Low - 0.05
+        assertEquals(
+                0,
+                BigDecimal.valueOf(980.05)
+                        .compareTo(setup.getStopLossPrice())); // Inside High + 0.05
+        assertEquals(
+                0,
+                BigDecimal.valueOf(927.20).compareTo(setup.getTarget1Price())); // 1:2.5 RR Target
     }
 
     @Test
-    @DisplayName("2.1 Fix: Setup 2 LVR low volume pullback takes precedence when candle also satisfies Setup 3 inside bar")
+    @DisplayName(
+            "2.1 Fix: Setup 2 LVR low volume pullback takes precedence when candle also satisfies Setup 3 inside bar")
     void testSetup2TakesPrecedenceOverSetup3OnSameBar() {
-        LowestVolumeReversalService service = new LowestVolumeReversalService(null, null, null, null, null);
+        LowestVolumeReversalService service =
+                new LowestVolumeReversalService(null, null, null, null, null);
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z"); // 09:15 IST
-        List<Candle> candles = List.of(
-                Candle.of5m("RADICO", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1010), BigDecimal.valueOf(995), BigDecimal.valueOf(1008), 50000),
-                Candle.of5m("RADICO", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(1008), BigDecimal.valueOf(1015), BigDecimal.valueOf(1005), BigDecimal.valueOf(1012), 40000),
-                Candle.of5m("RADICO", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(1012), BigDecimal.valueOf(1018), BigDecimal.valueOf(1010), BigDecimal.valueOf(1016), 35000), // Day lowest = 35000
-                // C4: Green Mother Candle (H=1030, L=1015)
-                Candle.of5m("RADICO", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(1016), BigDecimal.valueOf(1030), BigDecimal.valueOf(1015), BigDecimal.valueOf(1028), 60000),
-                // C5: Red Candle inside C4 (H=1025 <= 1030, L=1018 >= 1015) AND Volume = 20000 (<= dayLowest 35000!)
-                Candle.of5m("RADICO", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(1024), BigDecimal.valueOf(1025), BigDecimal.valueOf(1018), BigDecimal.valueOf(1020), 20000)
-        );
+        List<Candle> candles =
+                List.of(
+                        Candle.of5m(
+                                "RADICO",
+                                t0,
+                                BigDecimal.valueOf(1000),
+                                BigDecimal.valueOf(1010),
+                                BigDecimal.valueOf(995),
+                                BigDecimal.valueOf(1008),
+                                50000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(5, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1008),
+                                BigDecimal.valueOf(1015),
+                                BigDecimal.valueOf(1005),
+                                BigDecimal.valueOf(1012),
+                                40000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(10, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1012),
+                                BigDecimal.valueOf(1018),
+                                BigDecimal.valueOf(1010),
+                                BigDecimal.valueOf(1016),
+                                35000), // Day lowest = 35000
+                        // C4: Green Mother Candle (H=1030, L=1015)
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(15, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1016),
+                                BigDecimal.valueOf(1030),
+                                BigDecimal.valueOf(1015),
+                                BigDecimal.valueOf(1028),
+                                60000),
+                        // C5: Red Candle inside C4 (H=1025 <= 1030, L=1018 >= 1015) AND Volume =
+                        // 20000 (<= dayLowest 35000!)
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(20, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1024),
+                                BigDecimal.valueOf(1025),
+                                BigDecimal.valueOf(1018),
+                                BigDecimal.valueOf(1020),
+                                20000));
 
-        LowestVolumeSetup setup = service.evaluateCandleSequence("RADICO", LowestVolumeDirection.LONG, candles);
+        LowestVolumeSetup setup =
+                service.evaluateCandleSequence("RADICO", LowestVolumeDirection.LONG, candles);
 
-        // Setup 2 (LVR) should take precedence with trigger at Pullback High (1025.05), NOT Mother High (1030.05)
+        // Setup 2 (LVR) should take precedence with trigger at Pullback High (1025.05), NOT Mother
+        // High (1030.05)
         assertEquals("LVR_VOLUME_PULLBACK", setup.getSetupPattern());
         assertEquals(0, BigDecimal.valueOf(1025.05).compareTo(setup.getTriggerPrice()));
     }
 
     @Test
-    @DisplayName("Should skip Setup 3 Vande Bharat when vandeBharatEnabled is false (Pure LVR default)")
+    @DisplayName(
+            "Should skip Setup 3 Vande Bharat when vandeBharatEnabled is false (Pure LVR default)")
     void testVandeBharatDisabledByDefault() {
         LowestVolumeReversalService service =
                 new LowestVolumeReversalService(null, null, null, null, null);
@@ -330,14 +454,49 @@ class LowestVolumeCandleEngineTest {
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles =
                 List.of(
-                        Candle.of5m("RADICO", t0, BigDecimal.valueOf(1000), BigDecimal.valueOf(1010), BigDecimal.valueOf(995), BigDecimal.valueOf(1008), 50000),
-                        Candle.of5m("RADICO", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(1008), BigDecimal.valueOf(1015), BigDecimal.valueOf(1005), BigDecimal.valueOf(1012), 40000),
-                        Candle.of5m("RADICO", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(1012), BigDecimal.valueOf(1018), BigDecimal.valueOf(1010), BigDecimal.valueOf(1016), 35000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0,
+                                BigDecimal.valueOf(1000),
+                                BigDecimal.valueOf(1010),
+                                BigDecimal.valueOf(995),
+                                BigDecimal.valueOf(1008),
+                                50000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(5, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1008),
+                                BigDecimal.valueOf(1015),
+                                BigDecimal.valueOf(1005),
+                                BigDecimal.valueOf(1012),
+                                40000),
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(10, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1012),
+                                BigDecimal.valueOf(1018),
+                                BigDecimal.valueOf(1010),
+                                BigDecimal.valueOf(1016),
+                                35000),
                         // C4: Mother Green
-                        Candle.of5m("RADICO", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(1016), BigDecimal.valueOf(1030), BigDecimal.valueOf(1015), BigDecimal.valueOf(1028), 60000),
-                        // C5: Inside Red (High 1027 <= 1030, Low 1018 >= 1015) with Vol = 45000 (> day lowest 35000, so LVR does not match)
-                        Candle.of5m("RADICO", t0.plus(20, ChronoUnit.MINUTES), BigDecimal.valueOf(1026), BigDecimal.valueOf(1027), BigDecimal.valueOf(1018), BigDecimal.valueOf(1020), 45000)
-                );
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(15, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1016),
+                                BigDecimal.valueOf(1030),
+                                BigDecimal.valueOf(1015),
+                                BigDecimal.valueOf(1028),
+                                60000),
+                        // C5: Inside Red (High 1027 <= 1030, Low 1018 >= 1015) with Vol = 45000 (>
+                        // day lowest 35000, so LVR does not match)
+                        Candle.of5m(
+                                "RADICO",
+                                t0.plus(20, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(1026),
+                                BigDecimal.valueOf(1027),
+                                BigDecimal.valueOf(1018),
+                                BigDecimal.valueOf(1020),
+                                45000));
 
         LowestVolumeSetup setup =
                 service.evaluateCandleSequence("RADICO", LowestVolumeDirection.LONG, candles);
@@ -357,17 +516,45 @@ class LowestVolumeCandleEngineTest {
         Instant t0 = Instant.parse("2026-09-18T03:45:00Z");
         List<Candle> candles =
                 List.of(
-                        Candle.of5m("SUNPHARMA", t0, BigDecimal.valueOf(500), BigDecimal.valueOf(510), BigDecimal.valueOf(498), BigDecimal.valueOf(508), 12000),
-                        Candle.of5m("SUNPHARMA", t0.plus(5, ChronoUnit.MINUTES), BigDecimal.valueOf(508), BigDecimal.valueOf(515), BigDecimal.valueOf(505), BigDecimal.valueOf(512), 9000),
-                        Candle.of5m("SUNPHARMA", t0.plus(10, ChronoUnit.MINUTES), BigDecimal.valueOf(512), BigDecimal.valueOf(518), BigDecimal.valueOf(510), BigDecimal.valueOf(515), 7000),
+                        Candle.of5m(
+                                "SUNPHARMA",
+                                t0,
+                                BigDecimal.valueOf(500),
+                                BigDecimal.valueOf(510),
+                                BigDecimal.valueOf(498),
+                                BigDecimal.valueOf(508),
+                                12000),
+                        Candle.of5m(
+                                "SUNPHARMA",
+                                t0.plus(5, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(508),
+                                BigDecimal.valueOf(515),
+                                BigDecimal.valueOf(505),
+                                BigDecimal.valueOf(512),
+                                9000),
+                        Candle.of5m(
+                                "SUNPHARMA",
+                                t0.plus(10, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(512),
+                                BigDecimal.valueOf(518),
+                                BigDecimal.valueOf(510),
+                                BigDecimal.valueOf(515),
+                                7000),
                         // C4: Red pullback candle (O=515, H=516, L=508, C=510), Vol = 4000 (< 7000)
-                        Candle.of5m("SUNPHARMA", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(515), BigDecimal.valueOf(516), BigDecimal.valueOf(508), BigDecimal.valueOf(510), 4000)
-                );
+                        Candle.of5m(
+                                "SUNPHARMA",
+                                t0.plus(15, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(515),
+                                BigDecimal.valueOf(516),
+                                BigDecimal.valueOf(508),
+                                BigDecimal.valueOf(510),
+                                4000));
 
         LowestVolumeSetup setup =
                 service.evaluateCandleSequence("SUNPHARMA", LowestVolumeDirection.LONG, candles);
 
-        // Trigger = 516.05, SL = 507.95, Risk = 8.10. Target 1 (1:2.5 RR) = 516.05 + (2.5 * 8.10) = 536.30
+        // Trigger = 516.05, SL = 507.95, Risk = 8.10. Target 1 (1:2.5 RR) = 516.05 + (2.5 * 8.10) =
+        // 536.30
         assertEquals(0, BigDecimal.valueOf(516.05).compareTo(setup.getTriggerPrice()));
         assertEquals(0, BigDecimal.valueOf(507.95).compareTo(setup.getStopLossPrice()));
         assertEquals(0, BigDecimal.valueOf(536.30).compareTo(setup.getTarget1Price()));

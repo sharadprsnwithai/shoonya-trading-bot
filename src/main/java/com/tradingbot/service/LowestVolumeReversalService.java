@@ -207,7 +207,9 @@ public class LowestVolumeReversalService {
     /** H5: symbols already alerted about stalled quotes (one alert per symbol per day). */
     private final Set<String> quoteStallAlerted = ConcurrentHashMap.newKeySet();
 
-    /** M1: per-symbol cooldown before a data-dependent gate (slippage/sector/premium) is retried. */
+    /**
+     * M1: per-symbol cooldown before a data-dependent gate (slippage/sector/premium) is retried.
+     */
     private final Map<String, Instant> gateRetryNotBefore = new ConcurrentHashMap<>();
 
     /** M1/M9: per-symbol consecutive no-data retries for the sector gate before exhaustion. */
@@ -292,8 +294,7 @@ public class LowestVolumeReversalService {
     void persistState() {
         if (!statePersistenceEnabled) return;
         try {
-            com.tradingbot.persistence.LvrStateStore.save(
-                    Path.of(stateFilePath), buildState());
+            com.tradingbot.persistence.LvrStateStore.save(Path.of(stateFilePath), buildState());
         } catch (Exception e) {
             log.error("[LVR] Failed to persist state to {}: {}", stateFilePath, e.getMessage());
         }
@@ -358,7 +359,11 @@ public class LowestVolumeReversalService {
                     state.standDownToday,
                     stateFilePath);
         } catch (Exception e) {
-            log.error("[LVR] Failed to restore persisted state from {}: {}", stateFilePath, e.getMessage(), e);
+            log.error(
+                    "[LVR] Failed to restore persisted state from {}: {}",
+                    stateFilePath,
+                    e.getMessage(),
+                    e);
         }
     }
 
@@ -435,7 +440,7 @@ public class LowestVolumeReversalService {
                         standDownToday = true;
                         log.warn(
                                 "[LVR] Past {} fallback cutoff. No valid morning candidates found"
-                                    + " today. Standing down for the day.",
+                                        + " today. Standing down for the day.",
                                 scannerFallbackCutoff);
                         if (telegramAlerts && telegramService != null) {
                             telegramService.sendTextMessage(
@@ -521,8 +526,7 @@ public class LowestVolumeReversalService {
             // If OI_SPURTS mode is active, select top institutional F&O stocks directly
             if ("OI_SPURTS".equalsIgnoreCase(scannerMode) && scanner != null) {
                 boolean oiDataAvailable =
-                        universeQuotes.values().stream()
-                                .anyMatch(q -> q.openInterest() > 0);
+                        universeQuotes.values().stream().anyMatch(q -> q.openInterest() > 0);
                 if (!oiDataAvailable) {
                     // H8: OI data missing entirely — fail the scan loudly instead of silently
                     // running a different selection mode than the operator configured.
@@ -570,8 +574,7 @@ public class LowestVolumeReversalService {
                                         "📊 *LVR 09:25 AM OI Spurts Morning Scan*\n"
                                                 + "• Candidates (%d): `%s`\n"
                                                 + "• Setup Mode: *5m LVR & Vande Bharat*",
-                                        oiCandidates.size(),
-                                        String.join(", ", oiCandidates)));
+                                        oiCandidates.size(), String.join(", ", oiCandidates)));
                     }
                     return;
                 } else {
@@ -1175,7 +1178,8 @@ public class LowestVolumeReversalService {
             }
         }
 
-        // 2. Check Open Positions for Spot SL & 1:2 Target (Intra-candle check: isCandleClose = false)
+        // 2. Check Open Positions for Spot SL & 1:2 Target (Intra-candle check: isCandleClose =
+        // false)
         // Runs unconditionally even if enabled == false to protect open trades
         if (!openPositions.isEmpty()) {
             evaluateOpenPositions(nowTime, liveQuoteCache, false);
@@ -1215,7 +1219,8 @@ public class LowestVolumeReversalService {
 
             BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
 
-            // Invalidate setup if live spot breaches the proposed stop loss before hitting the entry trigger
+            // Invalidate setup if live spot breaches the proposed stop loss before hitting the
+            // entry trigger
             if (setup.getStopLossPrice() != null) {
                 boolean slBreached = false;
                 if (setup.getDirection() == LowestVolumeDirection.SHORT) {
@@ -1294,7 +1299,7 @@ public class LowestVolumeReversalService {
                         triggered = true;
                         log.info(
                                 "[LVR] Fresh session-low wick breach for {} (low {} advanced past"
-                                    + " arming baseline {} and reached trigger {}).",
+                                        + " arming baseline {} and reached trigger {}).",
                                 symbol,
                                 sessionLow,
                                 baselineLow,
@@ -1315,7 +1320,7 @@ public class LowestVolumeReversalService {
                         triggered = true;
                         log.info(
                                 "[LVR] Fresh session-high wick breach for {} (high {} advanced"
-                                    + " past arming baseline {} and reached trigger {}).",
+                                        + " past arming baseline {} and reached trigger {}).",
                                 symbol,
                                 sessionHigh,
                                 baselineHigh,
@@ -1387,10 +1392,11 @@ public class LowestVolumeReversalService {
                             // M1: slippage is price-data dependent → retry with cooldown.
                             gateRetryNotBefore.put(symbol, Instant.now(clock).plusSeconds(60));
                         }
-                        case RETRY -> log.warn(
-                                "[LVR] Entry for {} deferred (fail-closed): {}",
-                                symbol,
-                                gate.reason());
+                        case RETRY ->
+                                log.warn(
+                                        "[LVR] Entry for {} deferred (fail-closed): {}",
+                                        symbol,
+                                        gate.reason());
                         case EXHAUST -> {
                             log.info(
                                     "[LVR] Setup for {} REJECTED/EXHAUSTED: {}. Stock discarded"
@@ -1411,10 +1417,11 @@ public class LowestVolumeReversalService {
                                                 gate.reason()));
                             }
                         }
-                        default -> log.warn(
-                                "[LVR] Entry for {} not allowed: {}",
-                                symbol,
-                                gate.reason());
+                        default ->
+                                log.warn(
+                                        "[LVR] Entry for {} not allowed: {}",
+                                        symbol,
+                                        gate.reason());
                     }
                     return;
                 }
@@ -1426,8 +1433,7 @@ public class LowestVolumeReversalService {
                     if (sectorGate == SectorGate.NO_DATA) {
                         // M9: no usable constituent quotes — retry on cooldown, fail closed
                         // after bounded attempts instead of silently allowing.
-                        int noDataRetries =
-                                gateRetryCounts.merge(symbol, 1, Integer::sum);
+                        int noDataRetries = gateRetryCounts.merge(symbol, 1, Integer::sum);
                         if (noDataRetries >= MAX_SECTOR_NO_DATA_RETRIES) {
                             log.warn(
                                     "[LVR] Entry for {} BLOCKED: sector data unavailable after {}"
@@ -1518,8 +1524,7 @@ public class LowestVolumeReversalService {
                             + " step. REJECTED_EXHAUSTED.",
                     symbol);
             setup.transitionTo(
-                    LowestVolumeSetupState.REJECTED_EXHAUSTED,
-                    "F&O registry miss for " + symbol);
+                    LowestVolumeSetupState.REJECTED_EXHAUSTED, "F&O registry miss for " + symbol);
             exhaustedSymbols.add(symbol);
             return null;
         }
@@ -1556,8 +1561,7 @@ public class LowestVolumeReversalService {
         // M2 pre-trade budget: don't open a position whose planned risk alone would breach the
         // daily loss budget (in addition to the tripped-breaker latch which uses live P&L).
         if (maxDailyLoss > 0.0) {
-            double totalRiskPnl =
-                    calculateTodayRealizedPnl() + getCachedUnrealizedPnl();
+            double totalRiskPnl = calculateTodayRealizedPnl() + getCachedUnrealizedPnl();
             double remainingBudget = maxDailyLoss + totalRiskPnl;
             if (plannedRisk.doubleValue() > remainingBudget) {
                 log.warn(
@@ -1740,21 +1744,22 @@ public class LowestVolumeReversalService {
                             totalQty,
                             "LVR Option Entry Triggered",
                             Map.of(
-                                    "instrumentType", "OPTION",
-                                    "spotPrice", spotPrice,
-                                    "tradeId", tradeId,
+                                    "instrumentType",
+                                    "OPTION",
+                                    "spotPrice",
+                                    spotPrice,
+                                    "tradeId",
+                                    tradeId,
                                     // C3: premium-level reference + protective SL/target (ATM
                                     // delta ≈ 0.5 → premium moves ≈ 0.5x the spot move).
-                                    "referencePrice", entryPremium,
+                                    "referencePrice",
+                                    entryPremium,
                                     "brokerStopLossPrice",
                                     entryPremium
-                                            .subtract(
-                                                    unitRisk.multiply(BigDecimal.valueOf(0.50)))
+                                            .subtract(unitRisk.multiply(BigDecimal.valueOf(0.50)))
                                             .setScale(2, RoundingMode.HALF_UP),
                                     "brokerTargetPrice",
-                                    entryPremium
-                                            .add(unitRisk)
-                                            .setScale(2, RoundingMode.HALF_UP)));
+                                    entryPremium.add(unitRisk).setScale(2, RoundingMode.HALF_UP)));
             if (!published) {
                 rollbackEntryAfterPublishFailure(
                         symbol, setup, tradeId, "signal bus rejected OPTION ENTRY");
@@ -2472,11 +2477,11 @@ public class LowestVolumeReversalService {
     /**
      * H6: resets daily strategy state.
      *
-     * <p>A same-day reset (intraday {@code /reset}, {@code force=false}) is SOFT: scanning state
-     * is rebuilt but realized P&L ({@code tradeHistory}), the circuit-breaker latch and the
-     * archived carry are preserved — an intraday reset can never erase the day's losses. A
-     * new-day reset or {@code force=true} archives everything to disk first, then clears. Either
-     * way the full state is snapshotted to JSON (M10) before anything is cleared.
+     * <p>A same-day reset (intraday {@code /reset}, {@code force=false}) is SOFT: scanning state is
+     * rebuilt but realized P&L ({@code tradeHistory}), the circuit-breaker latch and the archived
+     * carry are preserved — an intraday reset can never erase the day's losses. A new-day reset or
+     * {@code force=true} archives everything to disk first, then clears. Either way the full state
+     * is snapshotted to JSON (M10) before anything is cleared.
      *
      * @param force {@code true} to perform a full hard reset even on the same day
      */
@@ -2634,7 +2639,8 @@ public class LowestVolumeReversalService {
      * exhausted before 13:00 IST cutoff.
      */
     public void runMidMorningUniverseRefresh(LocalTime nowTime) {
-        if (marketDataService == null || nowTime.isAfter(TIME_ENTRY_CUTOFF) || standDownToday) return;
+        if (marketDataService == null || nowTime.isAfter(TIME_ENTRY_CUTOFF) || standDownToday)
+            return;
         log.info("[LVR] Triggering Mid-Morning Universe Refresh at {} IST...", nowTime);
 
         try {
@@ -2799,12 +2805,15 @@ public class LowestVolumeReversalService {
     }
 
     /**
-     * L6: VWAP value resolution for the shared entry gate (quote "ap" → setup's last known VWAP
-     * → candle-based fallback). Data collection only — the confirmation decision belongs to
-     * {@link #evaluateEntryGate}.
+     * L6: VWAP value resolution for the shared entry gate (quote "ap" → setup's last known VWAP →
+     * candle-based fallback). Data collection only — the confirmation decision belongs to {@link
+     * #evaluateEntryGate}.
      */
     private double resolveLiveVwap(LowestVolumeSetup setup, JsonNode quoteNode) {
-        double vwap = (quoteNode != null && quoteNode.has("ap")) ? quoteNode.get("ap").asDouble(0.0) : 0.0;
+        double vwap =
+                (quoteNode != null && quoteNode.has("ap"))
+                        ? quoteNode.get("ap").asDouble(0.0)
+                        : 0.0;
         if (vwap <= 0.0 && setup.getLatestVwap() != null) {
             vwap = setup.getLatestVwap();
         }
@@ -2976,7 +2985,8 @@ public class LowestVolumeReversalService {
                     if (c > 0) {
                         double pct = (lp - c) / c * 100.0;
                         // 9-arg constructor computes oiPctChange from oi vs prevOi.
-                        quoteMap.put(sym, new StockQuoteSnapshot(sym, lp, c, o, pct, v, ap, oi, prevOi));
+                        quoteMap.put(
+                                sym, new StockQuoteSnapshot(sym, lp, c, o, pct, v, ap, oi, prevOi));
                     }
                 }
 
@@ -3108,24 +3118,31 @@ public class LowestVolumeReversalService {
 
     /**
      * L6: inputs for the shared entry gate. Fields left {@code null} (or {@code maxSlippagePct <
-     * 0}) are NOT evaluated — the live trigger path leaves session-level gates to the outer loop
-     * of {@code evaluateLivePriceActions} and to {@link #executePositionEntry}, while
-     * {@link #replaySession} fills everything.
+     * 0}) are NOT evaluated — the live trigger path leaves session-level gates to the outer loop of
+     * {@code evaluateLivePriceActions} and to {@link #executePositionEntry}, while {@link
+     * #replaySession} fills everything.
      */
     public static final class EntryGateInput {
         public String symbol;
         public LowestVolumeDirection direction;
+
         /** Armed trigger price — the reference for the slippage band. */
         public BigDecimal triggerPrice;
+
         /** Market price the decision gates (VWAP / 15m / PDH) are evaluated against. */
         public BigDecimal decisionPrice;
+
         /** Price used for the slippage band (live: LTP at touch; replay: entry candle open). */
         public BigDecimal entryPrice;
+
         /** {@code < 0} disables the slippage gate. */
         public double maxSlippagePct = -1;
+
         public Boolean vwapEnabled;
+
         /** {@code null} or {@code <= 0} = unavailable (fail-closed RETRY when enabled). */
         public Double vwap;
+
         public Boolean range15mEnabled;
         public BigDecimal first15mHigh;
         public BigDecimal first15mLow;
@@ -3151,9 +3168,9 @@ public class LowestVolumeReversalService {
     }
 
     /**
-     * L6: THE single pre-entry decision. Pure and stateless — the live trigger path and
-     * {@link #replaySession} both evaluate this exact function, so a gate can never pass live and
-     * fail replay (or vice versa) for identical inputs. Evaluation order mirrors the live chain:
+     * L6: THE single pre-entry decision. Pure and stateless — the live trigger path and {@link
+     * #replaySession} both evaluate this exact function, so a gate can never pass live and fail
+     * replay (or vice versa) for identical inputs. Evaluation order mirrors the live chain:
      * slippage → VWAP → 15m range → PDH/PDL → stand-down → breaker → cutoff → attempts →
      * concurrency → registry → budget.
      */
@@ -3167,14 +3184,14 @@ public class LowestVolumeReversalService {
             String band;
             if (in.direction == LowestVolumeDirection.LONG) {
                 BigDecimal maxAllowed =
-                        in.triggerPrice
-                                .multiply(BigDecimal.valueOf(1.0 + (in.maxSlippagePct / 100.0)));
+                        in.triggerPrice.multiply(
+                                BigDecimal.valueOf(1.0 + (in.maxSlippagePct / 100.0)));
                 excessive = in.entryPrice.compareTo(maxAllowed) > 0;
                 band = "max " + String.format(Locale.US, "%.2f", maxAllowed);
             } else {
                 BigDecimal minAllowed =
-                        in.triggerPrice
-                                .multiply(BigDecimal.valueOf(1.0 - (in.maxSlippagePct / 100.0)));
+                        in.triggerPrice.multiply(
+                                BigDecimal.valueOf(1.0 - (in.maxSlippagePct / 100.0)));
                 excessive = in.entryPrice.compareTo(minAllowed) < 0;
                 band = "min " + String.format(Locale.US, "%.2f", minAllowed);
             }
@@ -3204,11 +3221,9 @@ public class LowestVolumeReversalService {
             if (in.decisionPrice != null && in.direction != null) {
                 boolean confirmed;
                 if (in.direction == LowestVolumeDirection.LONG) {
-                    confirmed =
-                            in.decisionPrice.compareTo(BigDecimal.valueOf(in.vwap)) > 0;
+                    confirmed = in.decisionPrice.compareTo(BigDecimal.valueOf(in.vwap)) > 0;
                 } else {
-                    confirmed =
-                            in.decisionPrice.compareTo(BigDecimal.valueOf(in.vwap)) < 0;
+                    confirmed = in.decisionPrice.compareTo(BigDecimal.valueOf(in.vwap)) < 0;
                 }
                 if (!confirmed) {
                     return deny(
@@ -3282,10 +3297,7 @@ public class LowestVolumeReversalService {
 
         // 5. Stand-down (post-cutoff or sentiment collapse).
         if (Boolean.TRUE.equals(in.standDown)) {
-            return deny(
-                    EntryGateDisposition.RETRY,
-                    "STAND_DOWN",
-                    "stand-down active for the day");
+            return deny(EntryGateDisposition.RETRY, "STAND_DOWN", "stand-down active for the day");
         }
 
         // 6. Latched daily circuit breaker.
@@ -3297,9 +3309,7 @@ public class LowestVolumeReversalService {
         }
 
         // 7. Entry cutoff window.
-        if (in.nowTime != null
-                && in.entryCutoff != null
-                && !in.nowTime.isBefore(in.entryCutoff)) {
+        if (in.nowTime != null && in.entryCutoff != null && !in.nowTime.isBefore(in.entryCutoff)) {
             return deny(
                     EntryGateDisposition.RETRY,
                     "CUTOFF",
@@ -3307,7 +3317,9 @@ public class LowestVolumeReversalService {
         }
 
         // 8. Per-symbol attempt budget.
-        if (in.tradeAttempts != null && in.maxAttempts != null && in.tradeAttempts >= in.maxAttempts) {
+        if (in.tradeAttempts != null
+                && in.maxAttempts != null
+                && in.tradeAttempts >= in.maxAttempts) {
             return deny(
                     EntryGateDisposition.RETRY,
                     "ATTEMPTS",
@@ -3315,7 +3327,9 @@ public class LowestVolumeReversalService {
         }
 
         // 9. Max concurrent trades.
-        if (in.openConcurrent != null && in.maxConcurrent != null && in.openConcurrent >= in.maxConcurrent) {
+        if (in.openConcurrent != null
+                && in.maxConcurrent != null
+                && in.openConcurrent >= in.maxConcurrent) {
             return deny(
                     EntryGateDisposition.RETRY,
                     "CONCURRENCY",
@@ -3331,7 +3345,8 @@ public class LowestVolumeReversalService {
         }
 
         // 11. M2 pre-trade daily budget.
-        if (in.plannedRisk != null && in.remainingBudget != null
+        if (in.plannedRisk != null
+                && in.remainingBudget != null
                 && in.plannedRisk.doubleValue() > in.remainingBudget) {
             return deny(
                     EntryGateDisposition.RETRY,
@@ -3696,8 +3711,7 @@ public class LowestVolumeReversalService {
      */
     public double getCachedUnrealizedPnl() {
         java.time.Instant now = Instant.now(clock);
-        if (lastUnrealizedRefresh == null
-                || now.isAfter(lastUnrealizedRefresh.plusSeconds(30))) {
+        if (lastUnrealizedRefresh == null || now.isAfter(lastUnrealizedRefresh.plusSeconds(30))) {
             cachedUnrealizedPnl = calculateOpenPositionsUnrealizedPnl(null);
             lastUnrealizedRefresh = now;
         }
@@ -3705,9 +3719,9 @@ public class LowestVolumeReversalService {
     }
 
     /**
-     * H6: true while the market session is open (09:30–15:00 IST), evaluated on the injected
-     * clock so tests can pin it. Endpoint and Telegram guards refuse destructive intraday actions
-     * (e.g. {@code /reset}, which flattens open positions) unless explicitly forced.
+     * H6: true while the market session is open (09:30–15:00 IST), evaluated on the injected clock
+     * so tests can pin it. Endpoint and Telegram guards refuse destructive intraday actions (e.g.
+     * {@code /reset}, which flattens open positions) unless explicitly forced.
      */
     public boolean isWithinTradingHours() {
         LocalTime now = LocalTime.now(clock);
@@ -3715,9 +3729,9 @@ public class LowestVolumeReversalService {
     }
 
     /**
-     * H5: records a failed quote fetch for {@code symbol}; after
-     * {@link #QUOTE_STALL_ALERT_THRESHOLD} consecutive failures a single loud Telegram alert is
-     * emitted (further alerts suppressed until a success resets the counter).
+     * H5: records a failed quote fetch for {@code symbol}; after {@link
+     * #QUOTE_STALL_ALERT_THRESHOLD} consecutive failures a single loud Telegram alert is emitted
+     * (further alerts suppressed until a success resets the counter).
      */
     private void recordQuoteFailure(String symbol, String context) {
         int failures = quoteFailureCounts.merge(symbol, 1, Integer::sum);
@@ -3736,9 +3750,7 @@ public class LowestVolumeReversalService {
                                         + "• Consecutive failures: %d\n"
                                         + "• Impact: breach checks/exits for this symbol are"
                                         + " being skipped until quotes recover.",
-                                symbol,
-                                context,
-                                failures));
+                                symbol, context, failures));
             }
         }
     }
@@ -4296,9 +4308,7 @@ public class LowestVolumeReversalService {
                     String.format(
                             "🔴 *LVR Entry Rolled Back*\n• Symbol: `%s`\n• TradeId: `%s`\n"
                                     + "• Reason: %s\n• Setup re-armed; retries after cooldown.",
-                            symbol,
-                            tradeId,
-                            reason));
+                            symbol, tradeId, reason));
         }
     }
 

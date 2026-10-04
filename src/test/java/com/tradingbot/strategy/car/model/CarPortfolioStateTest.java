@@ -97,12 +97,103 @@ class CarPortfolioStateTest {
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile.toFile(), state);
 
         // Deserialize from file
-        CarPortfolioState restored = objectMapper.readValue(tempFile.toFile(), CarPortfolioState.class);
+        CarPortfolioState restored =
+                objectMapper.readValue(tempFile.toFile(), CarPortfolioState.class);
         assertNotNull(restored);
         assertEquals(1, restored.getHoldings().size());
         assertNotNull(restored.getHolding("RELIANCE"));
         assertNotNull(restored.getHolding("RELIANCE").firstEntryTime());
         assertEquals(1, restored.getGttOrders().size());
         assertNotNull(restored.getGttOrders().get("RELIANCE").createdAt());
+    }
+
+    @Test
+    void testAvailableUnitsChargesCapitalOccupiedRatherThanEntryCount() {
+        CarPortfolioState state =
+                new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
+
+        // One share of MRF at 132,000 ties up 132000 / 25000 = 5.28 -> 6 units of capital.
+        state.addFill("MRF", 1, new BigDecimal("132000.0"));
+
+        assertEquals(1, state.getHolding("MRF").accumulatedUnits());
+        assertEquals(34, state.getAvailableUnits());
+    }
+
+    @Test
+    void testPendingBuyGttReservesCapitalAndFreesItWhenRemoved() {
+        CarPortfolioState state =
+                new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
+
+        // 10 shares x 2500.10 = 25,001 -> 2 units reserved.
+        state.getGttOrders()
+                .put(
+                        "RELIANCE",
+                        new CarGttOrder(
+                                "GTT_1",
+                                "ZERODHA",
+                                "RELIANCE",
+                                GttOrderType.BUY,
+                                BigDecimal.valueOf(2500.00),
+                                BigDecimal.valueOf(2500.10),
+                                10,
+                                GttStatus.PENDING,
+                                java.time.LocalDate.now(),
+                                java.time.Instant.now()));
+        assertEquals(38, state.getAvailableUnits());
+
+        state.getGttOrders().remove("RELIANCE");
+        assertEquals(40, state.getAvailableUnits());
+    }
+
+    @Test
+    void testPlaceholderEntryWithoutQuantityReservesNothing() {
+        CarPortfolioState state =
+                new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
+
+        // Legacy placeholder entries (no trigger, no quantity) must never eat a capital unit.
+        state.getGttOrders()
+                .put(
+                        "TCS",
+                        new CarGttOrder(
+                                "GTT_2",
+                                "ZERODHA",
+                                "TCS",
+                                GttOrderType.BUY,
+                                BigDecimal.ZERO,
+                                BigDecimal.ZERO,
+                                0,
+                                GttStatus.PENDING,
+                                java.time.LocalDate.now(),
+                                java.time.Instant.now()));
+
+        assertEquals(40, state.getAvailableUnits());
+    }
+
+    @Test
+    void testCapitalIsReleasedAgainAfterExit() {
+        CarPortfolioState state =
+                new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
+
+        state.addFill("MRF", 1, new BigDecimal("132000.0"));
+        assertEquals(34, state.getAvailableUnits());
+
+        state.closeHoldingAtTarget("MRF", new BigDecimal("140000.0"));
+        assertEquals(40, state.getAvailableUnits());
+        // Realized profit compounds into the unit size.
+        assertTrue(state.getTotalCapital().compareTo(new BigDecimal("1000000.0")) > 0);
+    }
+
+    @Test
+    void testLastRunWeekRoundTripsThroughJson() throws Exception {
+        CarPortfolioState state =
+                new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
+        java.time.LocalDate week = java.time.LocalDate.of(2026, 10, 5);
+        state.setLastRunWeek(week);
+
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile.toFile(), state);
+        CarPortfolioState restored =
+                objectMapper.readValue(tempFile.toFile(), CarPortfolioState.class);
+
+        assertEquals(week, restored.getLastRunWeek());
     }
 }

@@ -144,15 +144,25 @@ class LowestVolumeReversalScannerTest {
     void testScanOiSpurtsRankingAndFiltering() {
         Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
 
-        // Add candidate quotes: symbol, ltp, prevClose, open, pctChange, volume, vwap, openInterest, prevDayOpenInterest
+        // Add candidate quotes: symbol, ltp, prevClose, open, pctChange, volume, vwap,
+        // openInterest, prevDayOpenInterest
         quotes.put(
                 "MCDOWELL-N",
                 new StockQuoteSnapshot(
-                        "MCDOWELL-N", 1200.0, 1170.0, 1175.0, 2.5, 50000, 1195.0, 110000, 100000)); // +10.0%
+                        "MCDOWELL-N",
+                        1200.0,
+                        1170.0,
+                        1175.0,
+                        2.5,
+                        50000,
+                        1195.0,
+                        110000,
+                        100000)); // +10.0%
         quotes.put(
                 "RADICO",
                 new StockQuoteSnapshot(
-                        "RADICO", 1800.0, 1745.0, 1750.0, 3.1, 40000, 1790.0, 105500, 100000)); // +5.5%
+                        "RADICO", 1800.0, 1745.0, 1750.0, 3.1, 40000, 1790.0, 105500,
+                        100000)); // +5.5%
         quotes.put(
                 "RVNL",
                 new StockQuoteSnapshot(
@@ -160,11 +170,20 @@ class LowestVolumeReversalScannerTest {
         quotes.put(
                 "NIFTY 50",
                 new StockQuoteSnapshot(
-                        "NIFTY 50", 25000.0, 24875.0, 24900.0, 0.5, 1000000, 24980.0, 5000000, 4000000)); // +25.0% (Index - must be excluded)
+                        "NIFTY 50",
+                        25000.0,
+                        24875.0,
+                        24900.0,
+                        0.5,
+                        1000000,
+                        24980.0,
+                        5000000,
+                        4000000)); // +25.0% (Index - must be excluded)
         quotes.put(
                 "TCS",
                 new StockQuoteSnapshot(
-                        "TCS", 4200.0, 4195.0, 4200.0, 0.1, 10000, 4205.0, 101000, 100000)); // +1.0%
+                        "TCS", 4200.0, 4195.0, 4200.0, 0.1, 10000, 4205.0, 101000,
+                        100000)); // +1.0%
 
         List<String> topStocks = scanner.scanOiSpurts(quotes, 3);
 

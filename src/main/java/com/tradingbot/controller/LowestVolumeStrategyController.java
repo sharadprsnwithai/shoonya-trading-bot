@@ -87,8 +87,8 @@ public class LowestVolumeStrategyController {
 
     /**
      * Triggers an immediate 5-minute strategy cycle. By default the cycle runs asynchronously and
-     * the call returns {@code 202 + jobId} (L1); poll {@code GET /scan/status} for the result.
-     * Pass {@code ?sync=true} to block until completion (legacy behaviour).
+     * the call returns {@code 202 + jobId} (L1); poll {@code GET /scan/status} for the result. Pass
+     * {@code ?sync=true} to block until completion (legacy behaviour).
      */
     @PostMapping("/scan")
     public ResponseEntity<Map<String, Object>> runCycle(
@@ -171,7 +171,8 @@ public class LowestVolumeStrategyController {
             view.put("startedAt", job.startedAt != null ? job.startedAt.toString() : null);
             view.put("finishedAt", job.finishedAt != null ? job.finishedAt.toString() : null);
             if (job.startedAt != null && job.finishedAt != null) {
-                view.put("durationMs", job.finishedAt.toEpochMilli() - job.startedAt.toEpochMilli());
+                view.put(
+                        "durationMs", job.finishedAt.toEpochMilli() - job.startedAt.toEpochMilli());
             }
             view.put("error", job.error);
             view.put("result", job.result);
@@ -235,8 +236,7 @@ public class LowestVolumeStrategyController {
         response.put("kind", kind);
         response.put("jobId", job.jobId);
         response.put("statusUrl", "/api/strategy/lowest-volume/scan/status");
-        response.put(
-                "message", kind + " scan submitted. Poll statusUrl for completion (L1).");
+        response.put("message", kind + " scan submitted. Poll statusUrl for completion (L1).");
         return ResponseEntity.accepted().body(response);
     }
 
@@ -375,9 +375,9 @@ public class LowestVolumeStrategyController {
     /**
      * Resets the daily session state manually.
      *
-     * <p>H6: refused during market hours (09:30–15:00 IST) unless {@code ?force=true} — an
-     * intraday reset hard-exits open (possibly live) positions. Realized P&amp;L is never erased
-     * (soft same-day reset / archive carry in the service). Every attempt writes an audit line.
+     * <p>H6: refused during market hours (09:30–15:00 IST) unless {@code ?force=true} — an intraday
+     * reset hard-exits open (possibly live) positions. Realized P&amp;L is never erased (soft
+     * same-day reset / archive carry in the service). Every attempt writes an audit line.
      */
     @PostMapping("/reset")
     public ResponseEntity<Map<String, Object>> resetDaily(

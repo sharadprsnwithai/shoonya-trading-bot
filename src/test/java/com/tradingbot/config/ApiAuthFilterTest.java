@@ -102,8 +102,7 @@ class ApiAuthFilterTest {
     @Test
     @DisplayName("Non-/api paths are never blocked")
     void testNonApiPathPasses() throws Exception {
-        MockHttpServletResponse response =
-                run(filterWith(TOKEN), "POST", "/actuator/health");
+        MockHttpServletResponse response = run(filterWith(TOKEN), "POST", "/actuator/health");
         assertEquals(200, response.getStatus());
     }
 }

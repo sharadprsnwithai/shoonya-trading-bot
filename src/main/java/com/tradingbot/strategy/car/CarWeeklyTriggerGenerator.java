@@ -7,8 +7,8 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
- * Computes weekly GTT trigger price (max high of completed week), limit price (+0.10 buffer), and
- * ceil lot sizing.
+ * Computes weekly GTT trigger price (max high of completed week), limit price (+buffer), and lot
+ * sizing capped at one capital unit.
  */
 @Component
 public class CarWeeklyTriggerGenerator {
@@ -24,6 +24,12 @@ public class CarWeeklyTriggerGenerator {
 
     public CarWeeklyTriggerGenerator(BigDecimal triggerBuffer) {
         this.triggerBuffer = triggerBuffer != null ? triggerBuffer : new BigDecimal("0.10");
+    }
+
+    /** Wires the previously dead {@code trigger-buffer} property into the calculation. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public CarWeeklyTriggerGenerator(com.tradingbot.strategy.car.config.CarWeeklyProperties props) {
+        this(props != null ? BigDecimal.valueOf(props.getTriggerBuffer()) : new BigDecimal("0.10"));
     }
 
     public TriggerCalculation calculateTrigger(
@@ -51,6 +57,18 @@ public class CarWeeklyTriggerGenerator {
             BigDecimal rawQty = unitSize.divide(triggerPrice, 4, RoundingMode.HALF_UP);
             quantity = (int) Math.ceil(rawQty.doubleValue());
             if (quantity <= 0) quantity = 1;
+
+            // No single buy order may exceed one unit of capital (design doc, "Capital
+            // Partitioning"). Ceil-sizing alone can overshoot: rounding ₹25,000 / ₹10,000 up to
+            // 3 shares costs ₹30,000. Cap by what the unit can actually pay for instead.
+            int affordable =
+                    (int)
+                            Math.min(
+                                    Integer.MAX_VALUE,
+                                    Math.floor(unitSize.doubleValue() / limitPrice.doubleValue()));
+            if (affordable < quantity) {
+                quantity = Math.max(1, affordable);
+            }
         }
 
         return new TriggerCalculation(symbol, triggerPrice, limitPrice, quantity);

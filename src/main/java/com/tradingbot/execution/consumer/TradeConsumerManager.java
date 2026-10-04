@@ -67,11 +67,12 @@ public class TradeConsumerManager {
                         .filter(
                                 c ->
                                         c.getExecutionMode()
-                                                        == com.tradingbot.model.execution.ExecutionMode
-                                                                .LIVE
-                                                || c.getStrategyModes().containsValue(
-                                                        com.tradingbot.model.execution.ExecutionMode
-                                                                .LIVE))
+                                                        == com.tradingbot.model.execution
+                                                                .ExecutionMode.LIVE
+                                                || c.getStrategyModes()
+                                                        .containsValue(
+                                                                com.tradingbot.model.execution
+                                                                        .ExecutionMode.LIVE))
                         .count();
         if (liveConsumers > 1) {
             log.warn(
@@ -132,8 +133,8 @@ public class TradeConsumerManager {
     }
 
     /**
-     * C3: broker drift reconciliation. Compares each LIVE consumer's confirmed-entry ledger
-     * against actual broker positions and alerts on divergence:
+     * C3: broker drift reconciliation. Compares each LIVE consumer's confirmed-entry ledger against
+     * actual broker positions and alerts on divergence:
      *
      * <ul>
      *   <li>Broker position with no confirmed ENTRY → manual/external position or failed fill
@@ -146,10 +147,8 @@ public class TradeConsumerManager {
      * warned).
      */
     @Scheduled(
-            initialDelayString =
-                    "${trading-bot.execution.drift-reconcile-initial-ms:60000}",
-            fixedDelayString =
-                    "${trading-bot.execution.drift-reconcile-interval-ms:300000}")
+            initialDelayString = "${trading-bot.execution.drift-reconcile-initial-ms:60000}",
+            fixedDelayString = "${trading-bot.execution.drift-reconcile-interval-ms:300000}")
     public void reconcileBrokerDrift() {
         List<TradeExecutionConsumer> live =
                 consumers.values().stream()
@@ -175,8 +174,7 @@ public class TradeConsumerManager {
                     continue;
                 }
                 String upper = brokerSymbol.toUpperCase();
-                boolean owned =
-                        confirmed.stream().anyMatch(k -> upper.startsWith(k.toUpperCase()));
+                boolean owned = confirmed.stream().anyMatch(k -> upper.startsWith(k.toUpperCase()));
                 if (!owned) {
                     if (confirmed.isEmpty()) {
                         log.info(

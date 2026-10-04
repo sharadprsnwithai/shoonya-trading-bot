@@ -62,7 +62,8 @@ public class StartupSyncRunner implements CommandLineRunner {
             @Autowired(required = false) KiteAuthService kiteAuthService,
             @Autowired(required = false) KiteProperties kiteProperties,
             @Autowired(required = false) TelegramService telegramService,
-            @Autowired(required = false) com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService) {
+            @Autowired(required = false)
+                    com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService) {
         this.config = config;
         this.authenticator = authenticator;
         this.marketDataService = marketDataService;
@@ -188,10 +189,12 @@ public class StartupSyncRunner implements CommandLineRunner {
             if (carWeeklyService != null) {
                 LocalDate today = LocalDate.now(IST);
                 if (today.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {
-                    log.info("[5/5] Startup on Sunday detected. Executing CAR Weekly GTT routine...");
+                    log.info(
+                            "[5/5] Startup on Sunday detected. Executing CAR Weekly GTT routine...");
                     carWeeklyService.runSundayWeeklyRoutine();
                 } else {
-                    log.info("[5/5] CAR Weekly GTT Strategy ready (Next scheduled run: Sunday 10:00 AM IST).");
+                    log.info(
+                            "[5/5] CAR Weekly GTT Strategy ready (Next scheduled run: Sunday 10:00 AM IST).");
                 }
             }
         } catch (Exception e) {

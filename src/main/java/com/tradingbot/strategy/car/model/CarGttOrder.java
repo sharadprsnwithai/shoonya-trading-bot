@@ -14,4 +14,20 @@ public record CarGttOrder(
         int quantity,
         GttStatus status,
         LocalDate weekStartDate,
-        Instant createdAt) {}
+        Instant createdAt) {
+
+    /** Returns a copy of this order carrying the broker-side id returned by the gateway. */
+    public CarGttOrder withId(String id) {
+        return new CarGttOrder(
+                id,
+                broker,
+                symbol,
+                type,
+                triggerPrice,
+                limitPrice,
+                quantity,
+                status,
+                weekStartDate,
+                createdAt);
+    }
+}

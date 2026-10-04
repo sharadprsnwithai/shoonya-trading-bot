@@ -17,11 +17,22 @@ public class CarWeeklyController {
         this.carService = carService;
     }
 
+    /**
+     * Triggers the weekly routine. The run is idempotent per trading week: a second call (cron,
+     * startup runner, Telegram command) is skipped unless {@code force=true} is passed explicitly.
+     */
     @PostMapping("/run-weekly")
-    public ResponseEntity<Map<String, Object>> runWeekly() {
-        carService.runSundayWeeklyRoutine();
+    public ResponseEntity<Map<String, Object>> runWeekly(
+            @RequestParam(name = "force", defaultValue = "false") boolean force) {
+        carService.runSundayWeeklyRoutine(force);
         return ResponseEntity.ok(
-                Map.of("status", "SUCCESS", "message", "CAR Sunday Routine completed"));
+                Map.of(
+                        "status",
+                        "SUCCESS",
+                        "force",
+                        force,
+                        "message",
+                        "CAR weekly routine completed"));
     }
 
     @GetMapping("/performance")

@@ -231,7 +231,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("C1 Fix: Setup must NOT invalidate prior to entry when session day low is below SL but current spot is healthy")
+    @DisplayName(
+            "C1 Fix: Setup must NOT invalidate prior to entry when session day low is below SL but current spot is healthy")
     void testSetupDoesNotInvalidateOnSessionDayLow() {
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
@@ -249,7 +250,8 @@ class LowestVolumeReversalServiceTest {
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
         service.getActiveSetups().put("SUNPHARMA", setup);
 
-        // Quote where session low 'l' is 1850.00 (from 09:15 AM open), but current spot 'lp' is 1872.00 (healthy)
+        // Quote where session low 'l' is 1850.00 (from 09:15 AM open), but current spot 'lp' is
+        // 1872.00 (healthy)
         ObjectMapper mapper = new ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
                 .thenReturn(
@@ -267,7 +269,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("C2 Fix: Trigger breach must NOT fire when current spot is below trigger, even if session day high was above trigger")
+    @DisplayName(
+            "C2 Fix: Trigger breach must NOT fire when current spot is below trigger, even if session day high was above trigger")
     void testTriggerDoesNotFireOnStaleDayHigh() {
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup.setPdh(BigDecimal.valueOf(1870.00));
@@ -288,7 +291,8 @@ class LowestVolumeReversalServiceTest {
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
         service.getActiveSetups().put("SUNPHARMA", setup);
 
-        // Quote where session high 'h' is 1880.00 (from 09:15 AM spike), but current spot 'lp' is 1872.00 (below trigger 1875.05)
+        // Quote where session high 'h' is 1880.00 (from 09:15 AM spike), but current spot 'lp' is
+        // 1872.00 (below trigger 1875.05)
         ObjectMapper mapper = new ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
                 .thenReturn(
@@ -371,7 +375,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("H4 Fix: Open positions must be managed for SL exit even when strategy enabled is false")
+    @DisplayName(
+            "H4 Fix: Open positions must be managed for SL exit even when strategy enabled is false")
     void testOpenPositionsManagedWhenStrategyDisabled() {
         service.setEnabled(false); // Operator toggled off strategy
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
@@ -975,7 +980,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("H12 Fix: hard exit with no quote keeps the position instead of fabricating a fill")
+    @DisplayName(
+            "H12 Fix: hard exit with no quote keeps the position instead of fabricating a fill")
     void testHardEodExitKeepsPositionWhenQuoteUnavailable() {
         LowestVolumePaperPosition pos =
                 new LowestVolumePaperPosition(
@@ -1331,19 +1337,22 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.isDailyCircuitBreakerTripped()).isTrue();
 
         List<LowestVolumePaperPosition> trades =
-                service.replaySession("SUNPHARMA", LowestVolumeDirection.LONG, replayFixtureCandles());
+                service.replaySession(
+                        "SUNPHARMA", LowestVolumeDirection.LONG, replayFixtureCandles());
 
         assertThat(trades).isEmpty();
     }
 
     @Test
-    @DisplayName("L6: replaySession honors the shared budget gate — no trades when planned risk exceeds budget")
+    @DisplayName(
+            "L6: replaySession honors the shared budget gate — no trades when planned risk exceeds budget")
     void testReplaySessionBlockedWhenPlannedRiskExceedsBudget() {
         // SUNPHARMA futures: unitRisk 10 × (2 lots × 350) = ₹7,000 planned risk vs ₹1 budget.
         service.setMaxDailyLoss(1.0);
 
         List<LowestVolumePaperPosition> trades =
-                service.replaySession("SUNPHARMA", LowestVolumeDirection.LONG, replayFixtureCandles());
+                service.replaySession(
+                        "SUNPHARMA", LowestVolumeDirection.LONG, replayFixtureCandles());
 
         assertThat(trades).isEmpty();
     }
@@ -2454,7 +2463,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Should reject LONG trade when spot price is below or equal to PDH (trapped in range)")
+    @DisplayName(
+            "Should reject LONG trade when spot price is below or equal to PDH (trapped in range)")
     void testRejectLongTradeWhenInsidePdhPdlRange() {
         service.setMaxSlippagePct(2.0);
         service.setPdhPdlFilterEnabled(true);
@@ -2533,7 +2543,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Should reject SHORT trade when spot price is above or equal to PDL (trapped in range)")
+    @DisplayName(
+            "Should reject SHORT trade when spot price is above or equal to PDL (trapped in range)")
     void testRejectShortTradeWhenInsidePdhPdlRange() {
         service.setMaxSlippagePct(2.0);
         service.setPdhPdlFilterEnabled(true);
@@ -2573,7 +2584,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("H7 Fix: PDH/PDL filter must fail closed and reject trade if PDH is null after fetch attempts")
+    @DisplayName(
+            "H7 Fix: PDH/PDL filter must fail closed and reject trade if PDH is null after fetch attempts")
     void testPdhPdlFailsClosedWhenPdhNull() {
         service.setMaxSlippagePct(2.0);
         service.setPdhPdlFilterEnabled(true);
@@ -2602,7 +2614,8 @@ class LowestVolumeReversalServiceTest {
         when(marketDataService.fetchQuote(any(), any()))
                 .thenReturn(mapper.createObjectNode().put("lp", "1876.00").put("ap", "1870.00"));
         when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
-        when(marketDataService.fetchDailyCandles("SUNPHARMA", 5)).thenReturn(java.util.Collections.emptyList());
+        when(marketDataService.fetchDailyCandles("SUNPHARMA", 5))
+                .thenReturn(java.util.Collections.emptyList());
 
         service.evaluateLivePriceActions();
         // N5: first failed lazy fetch only retries — the SECOND attempt exhausts (fail-closed).
@@ -2718,7 +2731,8 @@ class LowestVolumeReversalServiceTest {
                 .allSatisfy(
                         s -> {
                             assertThat(s.getOiChangePct()).isNotNull();
-                            assertThat(s.getOiChangePct()).isCloseTo(10.0, org.assertj.core.data.Offset.offset(0.01));
+                            assertThat(s.getOiChangePct())
+                                    .isCloseTo(10.0, org.assertj.core.data.Offset.offset(0.01));
                         });
     }
 
@@ -2799,8 +2813,7 @@ class LowestVolumeReversalServiceTest {
         Instant base = Instant.parse("2026-09-18T04:30:00Z");
         // Attempts 1..5: deferred on the 60s cooldown, never entering, never silently allowed.
         for (int i = 1; i <= 5; i++) {
-            service.setClock(
-                    Clock.fixed(base.plus(i * 70L, ChronoUnit.SECONDS), IST));
+            service.setClock(Clock.fixed(base.plus(i * 70L, ChronoUnit.SECONDS), IST));
             service.evaluateLivePriceActions();
             assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
             assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
@@ -2973,7 +2986,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("H7 Fix: replenished setups get PDH/PDL initialized instead of failing closed forever")
+    @DisplayName(
+            "H7 Fix: replenished setups get PDH/PDL initialized instead of failing closed forever")
     void testReplenishedSetupGetsPdhPdl() {
         service.setPdhPdlFilterEnabled(true);
         service.getActiveSetups().clear();

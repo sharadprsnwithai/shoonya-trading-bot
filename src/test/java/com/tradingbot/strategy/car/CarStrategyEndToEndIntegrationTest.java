@@ -37,6 +37,11 @@ class CarStrategyEndToEndIntegrationTest {
         props.setProfitTargetPct(6.28);
         props.setStateFilePath("data/test_car_state.json");
 
+        com.tradingbot.strategy.car.config.CarExecutionGate gate =
+                mock(com.tradingbot.strategy.car.config.CarExecutionGate.class);
+        when(gate.isLiveWithLogging()).thenReturn(true);
+        when(gttGateway.getBrokerName()).thenReturn("ZERODHA");
+
         service =
                 new CarWeeklyGttService(
                         props,
@@ -44,7 +49,8 @@ class CarStrategyEndToEndIntegrationTest {
                         triggerGenerator,
                         ohlcService,
                         List.of(gttGateway),
-                        telegramService);
+                        telegramService,
+                        gate);
     }
 
     @Test

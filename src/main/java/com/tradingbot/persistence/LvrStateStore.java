@@ -9,15 +9,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDate;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * M10: JSON persistence for LVR daily state — open positions, trade history, exhausted symbols,
- * carried P&L and the breaker latch. Written atomically (temp file + move) so a crash mid-write
- * can never corrupt the last good snapshot.
+ * carried P&L and the breaker latch. Written atomically (temp file + move) so a crash mid-write can
+ * never corrupt the last good snapshot.
  */
 public final class LvrStateStore {
 
@@ -53,18 +53,15 @@ public final class LvrStateStore {
         MAPPER.writeValue(tmp.toFile(), state);
         try {
             Files.move(
-                    tmp,
-                    path,
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
+                    tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (java.nio.file.AtomicMoveNotSupportedException e) {
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
     /**
-     * Loads state from {@code path}; returns {@code null} when the file does not exist or cannot
-     * be parsed (a corrupt snapshot must never block startup — it is logged by the caller).
+     * Loads state from {@code path}; returns {@code null} when the file does not exist or cannot be
+     * parsed (a corrupt snapshot must never block startup — it is logged by the caller).
      */
     public static DailyState load(Path path) {
         if (path == null || !Files.isRegularFile(path)) {

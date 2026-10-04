@@ -241,7 +241,11 @@ public class HistoricalOhlcCacheService {
                         clean);
                 daily =
                         shoonyaMarketDataService.fetchDailyCandles(
-                                clean, Math.min(365 * yearsBack, 365));
+                                clean,
+                                // 365 calendar days is only ~245 trading sessions, short of the
+                                // 252-session window the CAR anchor searches; fetch a full year
+                                // of calendar days so the fallback is not silently truncated.
+                                (int) Math.min(365L * Math.max(1, yearsBack), 1200L));
             }
             if (daily == null || daily.isEmpty()) {
                 log.debug(

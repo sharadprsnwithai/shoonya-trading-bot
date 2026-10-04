@@ -9,8 +9,8 @@ import java.time.Instant;
  * persisted to disk and restored after a restart without orphaning broker positions.
  *
  * <p>Public fields are intentional: Jackson detects them directly, keeping the DTO dumb and the
- * mapping logic in {@link LowestVolumePaperPosition#snapshotOf} /
- * {@link LowestVolumePaperPosition#restoreFrom} where private field access is legal.
+ * mapping logic in {@link LowestVolumePaperPosition#snapshotOf} / {@link
+ * LowestVolumePaperPosition#restoreFrom} where private field access is legal.
  */
 public class LvrPositionSnapshot {
 

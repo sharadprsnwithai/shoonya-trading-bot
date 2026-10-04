@@ -111,13 +111,20 @@ class TelegramBotCommandListenerTest {
 
     @Test
     void testHandleCarCommands() {
-        com.tradingbot.strategy.car.CarWeeklyGttService carService = mock(com.tradingbot.strategy.car.CarWeeklyGttService.class);
-        com.tradingbot.strategy.car.model.CarPortfolioState pState = new com.tradingbot.strategy.car.model.CarPortfolioState();
+        com.tradingbot.strategy.car.CarWeeklyGttService carService =
+                mock(com.tradingbot.strategy.car.CarWeeklyGttService.class);
+        com.tradingbot.strategy.car.model.CarPortfolioState pState =
+                new com.tradingbot.strategy.car.model.CarPortfolioState();
         when(carService.getPortfolioState()).thenReturn(pState);
 
         TelegramBotCommandListener listenerWithCar =
                 new TelegramBotCommandListener(
-                        lvrService, carService, telegramService, shoonyaConfig, objectMapper, httpClient);
+                        lvrService,
+                        carService,
+                        telegramService,
+                        shoonyaConfig,
+                        objectMapper,
+                        httpClient);
 
         String statusResp = listenerWithCar.processCommand("/car");
         assertTrue(statusResp.contains("CAR Weekly GTT Strategy Status"));

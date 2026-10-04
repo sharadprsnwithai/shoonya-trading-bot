@@ -21,8 +21,18 @@ class CarWeeklyControllerTest {
     void testTriggerWeeklyScanEndpoint() throws Exception {
         mockMvc.perform(post("/api/v1/car/run-weekly"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("SUCCESS"));
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.force").value(false));
 
-        verify(carService).runSundayWeeklyRoutine();
+        verify(carService).runSundayWeeklyRoutine(false);
+    }
+
+    @Test
+    void testForceFlagIsForwarded() throws Exception {
+        mockMvc.perform(post("/api/v1/car/run-weekly").param("force", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.force").value(true));
+
+        verify(carService).runSundayWeeklyRoutine(true);
     }
 }

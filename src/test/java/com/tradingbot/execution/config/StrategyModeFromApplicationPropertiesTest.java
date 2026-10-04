@@ -17,11 +17,11 @@ import org.springframework.core.env.PropertiesPropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
 /**
- * H1: the strategy id published by {@link LowestVolumeReversalService} must match the
- * {@code strategy-modes.*} keys in the real {@code application.properties}, and per-strategy
- * mode overrides (including {@code SHOONYA_LVR_MODE}) must survive binding all the way into
- * {@code resolveMode(signal)}. This is the integration test the bug report asked for: it binds
- * the shipped properties file itself, not hand-built maps.
+ * H1: the strategy id published by {@link LowestVolumeReversalService} must match the {@code
+ * strategy-modes.*} keys in the real {@code application.properties}, and per-strategy mode
+ * overrides (including {@code SHOONYA_LVR_MODE}) must survive binding all the way into {@code
+ * resolveMode(signal)}. This is the integration test the bug report asked for: it binds the shipped
+ * properties file itself, not hand-built maps.
  */
 class StrategyModeFromApplicationPropertiesTest {
 
@@ -57,9 +57,7 @@ class StrategyModeFromApplicationPropertiesTest {
             }
             env.getPropertySources().addFirst(new PropertiesPropertySource("overrides", over));
         }
-        return Binder.get(env)
-                .bind("trading-bot.execution", ExecutionProperties.class)
-                .get();
+        return Binder.get(env).bind("trading-bot.execution", ExecutionProperties.class).get();
     }
 
     @Test
@@ -79,8 +77,7 @@ class StrategyModeFromApplicationPropertiesTest {
 
         assertThat(shoonya.getId()).isEqualTo("shoonya-primary");
         assertThat(shoonya.getBroker()).isEqualTo("SHOONYA");
-        assertThat(shoonya.getStrategyModes())
-                .containsKey(LowestVolumeReversalService.STRATEGY_ID);
+        assertThat(shoonya.getStrategyModes()).containsKey(LowestVolumeReversalService.STRATEGY_ID);
         // No env override → the nested default chain resolves to PAPER.
         assertThat(shoonya.getStrategyModes().get(LowestVolumeReversalService.STRATEGY_ID))
                 .isEqualTo(ExecutionMode.PAPER);

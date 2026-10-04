@@ -225,9 +225,7 @@ public class LowestVolumeReversalScanner {
         }
 
         eligible.sort(
-                (a, b) ->
-                        Double.compare(
-                                Math.abs(b.oiPctChange()), Math.abs(a.oiPctChange())));
+                (a, b) -> Double.compare(Math.abs(b.oiPctChange()), Math.abs(a.oiPctChange())));
 
         log.info(
                 "[LVR-SCANNER] OI Spurts ranking evaluated on {} F&O stocks. Top {}: {}",

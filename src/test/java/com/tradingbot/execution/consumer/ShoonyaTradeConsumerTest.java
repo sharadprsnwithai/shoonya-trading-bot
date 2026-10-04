@@ -148,10 +148,12 @@ class ShoonyaTradeConsumerTest {
     }
 
     @Test
-    void testRejectedEntryMarksUnconfirmedAndSuppressesSubsequentExit() throws InterruptedException {
+    void testRejectedEntryMarksUnconfirmedAndSuppressesSubsequentExit()
+            throws InterruptedException {
         BrokerOrderGateway mockGateway = mock(BrokerOrderGateway.class);
         when(mockGateway.placeOrder(any(OrderRequest.class)))
-                .thenAnswer(inv -> OrderResponse.failure(inv.getArgument(0), "REJECTED_BY_EXCHANGE"));
+                .thenAnswer(
+                        inv -> OrderResponse.failure(inv.getArgument(0), "REJECTED_BY_EXCHANGE"));
 
         ShoonyaTradeConsumer consumer =
                 new ShoonyaTradeConsumer(
@@ -171,8 +173,10 @@ class ShoonyaTradeConsumerTest {
                         250,
                         "Entry",
                         java.util.Map.of(
-                                "instrumentType", "FUTURES",
-                                "brokerStopLossPrice", BigDecimal.valueOf(2480.50)));
+                                "instrumentType",
+                                "FUTURES",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(2480.50)));
         TradeSignal exit =
                 TradeSignal.of(
                         "LVR_FUTURES",
@@ -222,8 +226,10 @@ class ShoonyaTradeConsumerTest {
                         250,
                         "Entry",
                         java.util.Map.of(
-                                "instrumentType", "FUTURES",
-                                "brokerStopLossPrice", BigDecimal.valueOf(2480.50)));
+                                "instrumentType",
+                                "FUTURES",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(2480.50)));
 
         sink.tryEmitNext(entry);
         Thread.sleep(200);
@@ -338,7 +344,8 @@ class ShoonyaTradeConsumerTest {
 
         sink.tryEmitNext(exit);
         Thread.sleep(150);
-        // Exit succeeded → symbol leaves the confirmed ledger (drift reconciliation stays truthful).
+        // Exit succeeded → symbol leaves the confirmed ledger (drift reconciliation stays
+        // truthful).
         assertThat(consumer.getConfirmedEntrySymbols()).doesNotContain("TCS");
         verify(mockGateway, times(2)).placeOrder(any(OrderRequest.class));
         consumer.stop();
@@ -347,30 +354,78 @@ class ShoonyaTradeConsumerTest {
     @Test
     void testCancelsRestingProtectiveSlOnExit() {
         BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
-        when(gateway.placeOrder(any())).thenReturn(
-                new OrderResponse(true, "ENTRY-101", OrderStatus.COMPLETE, "Entry filled", null, Instant.now()),
-                new OrderResponse(true, "SL-201", OrderStatus.OPEN, "SL placed", null, Instant.now()),
-                new OrderResponse(true, "EXIT-301", OrderStatus.COMPLETE, "Exit filled", null, Instant.now())
-        );
-        when(gateway.cancelOrder("SL-201")).thenReturn(
-                new OrderResponse(true, "SL-201", OrderStatus.CANCELLED, "SL cancelled on broker", null, Instant.now())
-        );
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "ENTRY-101",
+                                OrderStatus.COMPLETE,
+                                "Entry filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true, "SL-201", OrderStatus.OPEN, "SL placed", null, Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "EXIT-301",
+                                OrderStatus.COMPLETE,
+                                "Exit filled",
+                                null,
+                                Instant.now()));
+        when(gateway.cancelOrder("SL-201"))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "SL-201",
+                                OrderStatus.CANCELLED,
+                                "SL cancelled on broker",
+                                null,
+                                Instant.now()));
 
-        ShoonyaTradeConsumer consumer = new ShoonyaTradeConsumer("shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
 
         // 1. Process ENTRY
-        TradeSignal entrySignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
-                SignalAction.ENTRY_LONG, BigDecimal.valueOf(2500), BigDecimal.valueOf(2490), BigDecimal.valueOf(2520), 100, "Entry",
-                java.util.Map.of("instrumentType", "FUTURES", "brokerStopLossPrice", BigDecimal.valueOf(2490)));
+        TradeSignal entrySignal =
+                TradeSignal.of(
+                        "LOWEST_VOLUME_REVERSAL",
+                        "RELIANCE",
+                        "RELIANCE26OCTFUT",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2490),
+                        BigDecimal.valueOf(2520),
+                        100,
+                        "Entry",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "FUTURES",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(2490)));
         consumer.handleLiveExecution(entrySignal, 100);
 
         // Verify protective SL was placed
-        verify(gateway, times(1)).placeOrder(argThat(req -> req.orderType() == OrderType.SL_MKT && "RELIANCE26OCTFUT".equals(req.tradingSymbol())));
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.SL_MKT
+                                                && "RELIANCE26OCTFUT".equals(req.tradingSymbol())));
 
         // 2. Process EXIT
-        TradeSignal exitSignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
-                SignalAction.EXIT_LONG, BigDecimal.valueOf(2520), BigDecimal.valueOf(2500), null, 100, "Target Hit",
-                java.util.Map.of("instrumentType", "FUTURES"));
+        TradeSignal exitSignal =
+                TradeSignal.of(
+                        "LOWEST_VOLUME_REVERSAL",
+                        "RELIANCE",
+                        "RELIANCE26OCTFUT",
+                        SignalAction.EXIT_LONG,
+                        BigDecimal.valueOf(2520),
+                        BigDecimal.valueOf(2500),
+                        null,
+                        100,
+                        "Target Hit",
+                        java.util.Map.of("instrumentType", "FUTURES"));
         consumer.handleLiveExecution(exitSignal, 100);
 
         // Verify resting protective SL order was cancelled
@@ -380,57 +435,162 @@ class ShoonyaTradeConsumerTest {
     @Test
     void testAdjustsProtectiveSlOnPartialExit() {
         BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
-        when(gateway.placeOrder(any())).thenReturn(
-                new OrderResponse(true, "ENTRY-101", OrderStatus.COMPLETE, "Entry filled", null, Instant.now()),
-                new OrderResponse(true, "SL-ORIGINAL", OrderStatus.OPEN, "Original 100% SL", null, Instant.now()),
-                new OrderResponse(true, "PARTIAL-EXIT-1", OrderStatus.COMPLETE, "50% Partial exit", null, Instant.now()),
-                new OrderResponse(true, "SL-RUNNER-NEW", OrderStatus.OPEN, "Runner 50% Cost SL", null, Instant.now())
-        );
-        when(gateway.cancelOrder("SL-ORIGINAL")).thenReturn(
-                new OrderResponse(true, "SL-ORIGINAL", OrderStatus.CANCELLED, "Cancelled original SL", null, Instant.now())
-        );
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "ENTRY-101",
+                                OrderStatus.COMPLETE,
+                                "Entry filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "SL-ORIGINAL",
+                                OrderStatus.OPEN,
+                                "Original 100% SL",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "PARTIAL-EXIT-1",
+                                OrderStatus.COMPLETE,
+                                "50% Partial exit",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "SL-RUNNER-NEW",
+                                OrderStatus.OPEN,
+                                "Runner 50% Cost SL",
+                                null,
+                                Instant.now()));
+        when(gateway.cancelOrder("SL-ORIGINAL"))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "SL-ORIGINAL",
+                                OrderStatus.CANCELLED,
+                                "Cancelled original SL",
+                                null,
+                                Instant.now()));
 
-        ShoonyaTradeConsumer consumer = new ShoonyaTradeConsumer("shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
 
         // 1. Process ENTRY (200 qty)
-        TradeSignal entrySignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
-                SignalAction.ENTRY_LONG, BigDecimal.valueOf(2500), BigDecimal.valueOf(2490), BigDecimal.valueOf(2520), 200, "Entry",
-                java.util.Map.of("instrumentType", "FUTURES", "brokerStopLossPrice", BigDecimal.valueOf(2490)));
+        TradeSignal entrySignal =
+                TradeSignal.of(
+                        "LOWEST_VOLUME_REVERSAL",
+                        "RELIANCE",
+                        "RELIANCE26OCTFUT",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2490),
+                        BigDecimal.valueOf(2520),
+                        200,
+                        "Entry",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "FUTURES",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(2490)));
         consumer.handleLiveExecution(entrySignal, 200);
 
         // 2. Process PARTIAL EXIT (100 qty booked, 100 qty runner remaining with Cost SL at 2500)
-        TradeSignal partialSignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "RELIANCE", "RELIANCE26OCTFUT",
-                SignalAction.PARTIAL_EXIT_LONG, BigDecimal.valueOf(2520), BigDecimal.valueOf(2500), BigDecimal.valueOf(2520), 100, "1:2 Target Partial Booked",
-                java.util.Map.of("instrumentType", "FUTURES", "brokerStopLossPrice", BigDecimal.valueOf(2500), "remainingQuantity", 100));
+        TradeSignal partialSignal =
+                TradeSignal.of(
+                        "LOWEST_VOLUME_REVERSAL",
+                        "RELIANCE",
+                        "RELIANCE26OCTFUT",
+                        SignalAction.PARTIAL_EXIT_LONG,
+                        BigDecimal.valueOf(2520),
+                        BigDecimal.valueOf(2500),
+                        BigDecimal.valueOf(2520),
+                        100,
+                        "1:2 Target Partial Booked",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "FUTURES",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(2500),
+                                "remainingQuantity",
+                                100));
         consumer.handleLiveExecution(partialSignal, 100);
 
         // Verify original 100% SL was cancelled
         verify(gateway, times(1)).cancelOrder("SL-ORIGINAL");
         // Verify new runner SL was placed for 100 qty at Cost SL 2500
-        verify(gateway, times(1)).placeOrder(argThat(req -> req.orderType() == OrderType.SL_MKT && req.quantity() == 100 && req.triggerPrice().compareTo(BigDecimal.valueOf(2500)) == 0));
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.SL_MKT
+                                                && req.quantity() == 100
+                                                && req.triggerPrice()
+                                                                .compareTo(BigDecimal.valueOf(2500))
+                                                        == 0));
     }
 
     @Test
     void testOptionProtectiveSlUsesOrderTypeSlWithLimitBuffer() {
         BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
-        when(gateway.placeOrder(any())).thenReturn(
-                new OrderResponse(true, "OPT-ENTRY-1", OrderStatus.COMPLETE, "Filled", null, Instant.now()),
-                new OrderResponse(true, "OPT-SL-1", OrderStatus.OPEN, "SL placed", null, Instant.now())
-        );
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "OPT-ENTRY-1",
+                                OrderStatus.COMPLETE,
+                                "Filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "OPT-SL-1",
+                                OrderStatus.OPEN,
+                                "SL placed",
+                                null,
+                                Instant.now()));
 
-        ShoonyaTradeConsumer consumer = new ShoonyaTradeConsumer("shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
 
-        TradeSignal optSignal = TradeSignal.of("LOWEST_VOLUME_REVERSAL", "SUNPHARMA", "SUNPHARMA26OCT1800CE",
-                SignalAction.ENTRY_LONG, BigDecimal.valueOf(50.00), BigDecimal.valueOf(1860.00), BigDecimal.valueOf(1890.00), 350, "Option Entry",
-                java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO", "brokerStopLossPrice", BigDecimal.valueOf(35.00)));
+        TradeSignal optSignal =
+                TradeSignal.of(
+                        "LOWEST_VOLUME_REVERSAL",
+                        "SUNPHARMA",
+                        "SUNPHARMA26OCT1800CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(50.00),
+                        BigDecimal.valueOf(1860.00),
+                        BigDecimal.valueOf(1890.00),
+                        350,
+                        "Option Entry",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "OPTION",
+                                "exchange",
+                                "NFO",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(35.00)));
 
         consumer.handleLiveExecution(optSignal, 350);
 
-        // Verify Option SL is placed with OrderType.SL_LMT (NOT SL_MKT), triggerPrice = 35.00, limitPrice = 31.50 (10% execution buffer)
-        verify(gateway, times(1)).placeOrder(argThat(req ->
-                req.orderType() == OrderType.SL_LMT
-                        && req.exchange().equals("NFO")
-                        && req.triggerPrice().compareTo(BigDecimal.valueOf(35.00)) == 0
-                        && req.price().compareTo(BigDecimal.valueOf(31.50)) == 0));
+        // Verify Option SL is placed with OrderType.SL_LMT (NOT SL_MKT), triggerPrice = 35.00,
+        // limitPrice = 31.50 (10% execution buffer)
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.SL_LMT
+                                                && req.exchange().equals("NFO")
+                                                && req.triggerPrice()
+                                                                .compareTo(
+                                                                        BigDecimal.valueOf(35.00))
+                                                        == 0
+                                                && req.price().compareTo(BigDecimal.valueOf(31.50))
+                                                        == 0));
     }
 }

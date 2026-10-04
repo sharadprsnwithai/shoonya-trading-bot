@@ -19,6 +19,7 @@ public class CarWeeklyProperties {
     private boolean telegramAlerts = true;
     private String stateFilePath = "data/car_portfolio_state.json";
     private boolean syncDematHoldings = false;
+    private String executionBroker = "ZERODHA";
     private List<String> accumulationOnlySymbols = new ArrayList<>();
 
     public boolean isAccumulationOnly(String symbol) {
@@ -121,6 +122,19 @@ public class CarWeeklyProperties {
 
     public void setSyncDematHoldings(boolean syncDematHoldings) {
         this.syncDematHoldings = syncDematHoldings;
+    }
+
+    /**
+     * Broker the weekly routine places triggers on when running in LIVE mode. Only one gateway is
+     * ever used - dispatching to every registered gateway would duplicate exposure on a fill and
+     * would let the last gateway overwrite the stored trigger id.
+     */
+    public String getExecutionBroker() {
+        return executionBroker;
+    }
+
+    public void setExecutionBroker(String executionBroker) {
+        this.executionBroker = executionBroker;
     }
 
     public List<String> getAccumulationOnlySymbols() {

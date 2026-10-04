@@ -39,7 +39,8 @@ public record StockQuoteSnapshot(
                 openInterest,
                 prevDayOpenInterest,
                 prevDayOpenInterest > 0
-                        ? ((openInterest - prevDayOpenInterest) / (double) prevDayOpenInterest) * 100.0
+                        ? ((openInterest - prevDayOpenInterest) / (double) prevDayOpenInterest)
+                                * 100.0
                         : 0.0);
     }
 }

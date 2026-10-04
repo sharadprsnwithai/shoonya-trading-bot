@@ -66,13 +66,44 @@ class CarWeeklyTriggerGeneratorTest {
                                 9500));
 
         BigDecimal unitSize =
-                new BigDecimal("5000.0"); // Video example: 5000 / 118.90 = 42.05 -> qty 43
+                new BigDecimal("5000.0"); // Video example: 5000 / 118.90 = 42.05 -> ceil 43
         CarWeeklyTriggerGenerator.TriggerCalculation result =
                 generator.calculateTrigger("TEST_STOCK", weekCandles, unitSize);
 
         assertEquals(new BigDecimal("118.90"), result.triggerPrice());
         assertEquals(new BigDecimal("119.00"), result.limitPrice()); // 118.90 + 0.10 = 119.00
-        assertEquals(43, result.quantity()); // ceil(5000 / 118.90) = 43
+        // Ceil sizing alone (43) would commit 43 x 119.00 = 5117 against a 5000 unit, so the
+        // quantity is capped to what one unit can actually pay for: floor(5000 / 119.00) = 42.
+        assertEquals(42, result.quantity());
+    }
+
+    @Test
+    void testQuantityIsCappedSoOneOrderNeverExceedsOneUnit() {
+        // trigger 900, limit 900.10, unit 25000 -> ceil(25000/900) = 28 shares = 25,202.80
+        // over budget; the cap must bring it to floor(25000/900.10) = 27 shares.
+        Instant monday = Instant.parse("2026-09-21T04:00:00Z");
+        List<Candle> weekCandles =
+                List.of(
+                        Candle.ofDaily(
+                                "TEST_STOCK",
+                                monday,
+                                new BigDecimal("880"),
+                                new BigDecimal("900"),
+                                new BigDecimal("870"),
+                                new BigDecimal("895"),
+                                10000));
+
+        CarWeeklyTriggerGenerator.TriggerCalculation result =
+                generator.calculateTrigger("TEST_STOCK", weekCandles, new BigDecimal("25000.0"));
+
+        assertEquals(new BigDecimal("900.00"), result.triggerPrice());
+        assertEquals(new BigDecimal("900.10"), result.limitPrice());
+        assertEquals(27, result.quantity());
+        assertTrue(
+                result.limitPrice()
+                                .multiply(BigDecimal.valueOf(result.quantity()))
+                                .compareTo(new BigDecimal("25000.0"))
+                        <= 0);
     }
 
     @Test

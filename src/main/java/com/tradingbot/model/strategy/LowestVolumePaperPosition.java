@@ -523,9 +523,9 @@ public class LowestVolumePaperPosition {
         }
         // Restore mutable trading state the constructors don't cover.
         // (entryPremium is final and correctly set by both constructors above.)
-        pos.currentStockSl =
-                s.currentStockSl != null ? s.currentStockSl : pos.currentStockSl;
-        pos.remainingQuantity = s.remainingQuantity > 0 ? s.remainingQuantity : pos.remainingQuantity;
+        pos.currentStockSl = s.currentStockSl != null ? s.currentStockSl : pos.currentStockSl;
+        pos.remainingQuantity =
+                s.remainingQuantity > 0 ? s.remainingQuantity : pos.remainingQuantity;
         pos.partialBooked = s.partialBooked;
         pos.partialExitPremium = s.partialExitPremium;
         pos.partialExitTime = s.partialExitTime;
@@ -533,7 +533,8 @@ public class LowestVolumePaperPosition {
         pos.runnerExitPremium = s.runnerExitPremium;
         pos.exitTime = s.exitTime;
         pos.runnerPnl = s.runnerPnl != null ? s.runnerPnl : pos.runnerPnl;
-        pos.totalRealizedPnl = s.totalRealizedPnl != null ? s.totalRealizedPnl : pos.totalRealizedPnl;
+        pos.totalRealizedPnl =
+                s.totalRealizedPnl != null ? s.totalRealizedPnl : pos.totalRealizedPnl;
         pos.exitReason = s.exitReason;
         pos.closed = s.closed;
         pos.trailingSuperTrendValue = s.trailingSuperTrendValue;

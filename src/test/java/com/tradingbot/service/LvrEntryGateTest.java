@@ -223,7 +223,8 @@ class LvrEntryGateTest {
     }
 
     @Test
-    @DisplayName("L6 parity: live-style and replay-style inputs with identical values decide identically")
+    @DisplayName(
+            "L6 parity: live-style and replay-style inputs with identical values decide identically")
     void testLiveReplayInputParity() {
         // Live constructs: decisionPrice = spot LTP at touch, entryPrice = same spot.
         EntryGateInput live = baseInput();

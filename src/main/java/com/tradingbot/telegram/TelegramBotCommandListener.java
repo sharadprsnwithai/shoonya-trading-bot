@@ -48,7 +48,8 @@ public class TelegramBotCommandListener {
     @Autowired
     public TelegramBotCommandListener(
             @Autowired(required = false) LowestVolumeReversalService lvrService,
-            @Autowired(required = false) com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
@@ -247,7 +248,12 @@ public class TelegramBotCommandListener {
             case "/car_status":
                 if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
                 var pState = carWeeklyService.getPortfolioState();
-                int investedUnits = pState.getHoldings().values().stream().mapToInt(com.tradingbot.strategy.car.model.CarHolding::accumulatedUnits).sum();
+                int investedUnits =
+                        pState.getHoldings().values().stream()
+                                .mapToInt(
+                                        com.tradingbot.strategy.car.model.CarHolding
+                                                ::accumulatedUnits)
+                                .sum();
                 return String.format(
                         "📈 *CAR Weekly GTT Strategy Status*\n\n"
                                 + "• Total Capital: `₹%.2f`\n"
@@ -268,7 +274,8 @@ public class TelegramBotCommandListener {
             case "/car_weekly":
                 if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
                 carWeeklyService.runSundayWeeklyRoutine();
-                return "🚀 CAR Weekly GTT Routine executed! GTT orders placed on Kite.\n\n" + processCommand("/car");
+                return "🚀 CAR Weekly GTT Routine executed! GTT orders placed on Kite.\n\n"
+                        + processCommand("/car");
 
             case "/exit":
             case "/squareoff":

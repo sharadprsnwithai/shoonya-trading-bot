@@ -27,7 +27,27 @@ public class CarCalculator {
         this.lookbackDays = lookbackDays > 0 ? lookbackDays : 252;
     }
 
+    /**
+     * Wires the two previously dead tuning knobs ({@code car-positive-days} and {@code
+     * high-lookback-days}) into the calculation, so operators no longer have to believe the
+     * configuration takes effect while the code silently hardcodes 10 / 252.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public CarCalculator(com.tradingbot.strategy.car.config.CarWeeklyProperties properties) {
+        this(
+                properties != null ? properties.getCarPositiveDays() : 10,
+                properties != null ? properties.getHighLookbackDays() : 252);
+    }
+
     public CarAnalysisResult analyze(String symbol, List<Candle> dailyCandles) {
+        return analyze(symbol, dailyCandles, CarWeekCalendar.activeWeekStart());
+    }
+
+    /**
+     * @param asOf date used to derive the completed-week window for {@code lastWeekHigh}; pass the
+     *     active week's Monday so a weekday run does not report candles from the week in progress
+     */
+    public CarAnalysisResult analyze(String symbol, List<Candle> dailyCandles, LocalDate asOf) {
         if (dailyCandles == null || dailyCandles.isEmpty()) {
             return new CarAnalysisResult(
                     symbol, false, 0, BigDecimal.ZERO, null, BigDecimal.ZERO, BigDecimal.ZERO, 0);
@@ -68,11 +88,15 @@ public class CarCalculator {
         BigDecimal latestClose = closes.get(closes.size() - 1);
         BigDecimal latestCumAvg = cumAverages.get(cumAverages.size() - 1);
 
-        // 3. Find Last Week's High (max high of last 5 completed daily trading sessions)
+        // 3. High of the last completed week (date-driven, so it stays correct on a 4-session
+        //    holiday week and on weekday runs where trailing candles belong to the running week)
         BigDecimal lastWeekHigh = BigDecimal.ZERO;
-        int last5Start = Math.max(0, dailyCandles.size() - 5);
-        for (int i = last5Start; i < dailyCandles.size(); i++) {
-            Candle c = dailyCandles.get(i);
+        List<Candle> lastWeekCandles = CarWeekCalendar.previousCompletedWeek(dailyCandles, asOf);
+        if (lastWeekCandles.isEmpty()) {
+            int last5Start = Math.max(0, dailyCandles.size() - 5);
+            lastWeekCandles = dailyCandles.subList(last5Start, dailyCandles.size());
+        }
+        for (Candle c : lastWeekCandles) {
             if (c != null && c.high() != null && c.high().compareTo(lastWeekHigh) > 0) {
                 lastWeekHigh = c.high();
             }

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 public class LocalGttWatcherGateway implements GttExecutionGateway {
 
     private static final Logger log = LoggerFactory.getLogger(LocalGttWatcherGateway.class);
+    static final String PREFIX = "LOCAL_GTT_";
     private final Map<String, CarGttOrder> activeWatchers = new ConcurrentHashMap<>();
 
     @Override
@@ -23,17 +24,19 @@ public class LocalGttWatcherGateway implements GttExecutionGateway {
 
     @Override
     public String placeGtt(CarGttOrder order) {
-        String id = "LOCAL_GTT_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        String id = PREFIX + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         activeWatchers.put(id, order);
         log.info("[LOCAL-GTT] Registered virtual GTT watcher for {} (ID: {})", order.symbol(), id);
         return id;
     }
 
     @Override
-    public boolean modifyGtt(String gttId, CarGttOrder newOrder) {
-        if (gttId == null) return false;
+    public String modifyGtt(String gttId, CarGttOrder newOrder) {
+        if (gttId == null || gttId.isBlank()) {
+            return placeGtt(newOrder);
+        }
         activeWatchers.put(gttId, newOrder);
-        return true;
+        return gttId;
     }
 
     @Override
@@ -45,7 +48,19 @@ public class LocalGttWatcherGateway implements GttExecutionGateway {
 
     @Override
     public GttStatus getGttStatus(String gttId) {
-        return activeWatchers.containsKey(gttId) ? GttStatus.PENDING : GttStatus.CANCELLED;
+        if (gttId == null || gttId.isBlank()) {
+            return null;
+        }
+        if (activeWatchers.containsKey(gttId)) {
+            return GttStatus.PENDING;
+        }
+        // The watcher is in-memory, but the persisted portfolio state is the source of truth for
+        // ids it minted itself - otherwise every restart would report all paper triggers as
+        // cancelled and silently drop them.
+        if (gttId.startsWith(PREFIX)) {
+            return GttStatus.PENDING;
+        }
+        return GttStatus.CANCELLED;
     }
 
     @Override

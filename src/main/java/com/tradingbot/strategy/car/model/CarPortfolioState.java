@@ -13,6 +13,7 @@ public class CarPortfolioState {
     private BigDecimal realizedPnL;
     private int numParts;
     private BigDecimal profitTargetPct;
+    private java.time.LocalDate lastRunWeek;
     private Map<String, CarHolding> holdings = new ConcurrentHashMap<>();
     private Map<String, CarGttOrder> gttOrders = new ConcurrentHashMap<>();
 
@@ -58,17 +59,59 @@ public class CarPortfolioState {
         return totalCapital.divide(BigDecimal.valueOf(numParts), 2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Capital units still free for new entries.
+     *
+     * <p>Both legs are measured in <em>capital</em> rather than by counting entries, because a
+     * single share of an expensive stock ties up several units while still registering as one
+     * holding: counting entries would let the strategy overspend, and releasing exactly one unit
+     * per entry would never give that capital back.
+     */
     @JsonIgnore
     public int getAvailableUnits() {
-        int investedUnits = holdings.values().stream().mapToInt(CarHolding::accumulatedUnits).sum();
-        long pendingBuyGtts =
-                gttOrders.values().stream()
-                        .filter(
-                                g ->
-                                        g.type() == GttOrderType.BUY
-                                                && g.status() == GttStatus.PENDING)
-                        .count();
-        return Math.max(0, numParts - investedUnits - (int) pendingBuyGtts);
+        BigDecimal unit = getUnitSize();
+        if (unit.signum() <= 0) {
+            return 0;
+        }
+
+        int investedUnits = 0;
+        for (CarHolding holding : holdings.values()) {
+            if (holding == null || holding.totalQuantity() <= 0) continue;
+            investedUnits +=
+                    unitsFor(
+                            BigDecimal.valueOf(holding.totalQuantity())
+                                    .multiply(holding.averageBuyPrice()),
+                            unit);
+        }
+
+        int reservedUnits = 0;
+        for (CarGttOrder order : gttOrders.values()) {
+            if (order == null
+                    || order.type() != GttOrderType.BUY
+                    || order.status() != GttStatus.PENDING
+                    || order.quantity() <= 0
+                    || order.limitPrice() == null) {
+                continue;
+            }
+            reservedUnits +=
+                    unitsFor(
+                            BigDecimal.valueOf(order.quantity()).multiply(order.limitPrice()),
+                            unit);
+        }
+
+        return Math.max(0, numParts - investedUnits - reservedUnits);
+    }
+
+    private static int unitsFor(BigDecimal amount, BigDecimal unitSize) {
+        if (amount == null || amount.signum() <= 0) {
+            return 0;
+        }
+        java.math.BigInteger units =
+                amount.divide(unitSize, 0, RoundingMode.CEILING).toBigInteger();
+        if (units.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+            return Integer.MAX_VALUE;
+        }
+        return Math.max(1, units.intValue());
     }
 
     public CarHolding getHolding(String symbol) {
@@ -129,5 +172,14 @@ public class CarPortfolioState {
 
     public void setGttOrders(Map<String, CarGttOrder> gttOrders) {
         this.gttOrders = gttOrders;
+    }
+
+    /** Monday of the last week the weekly routine completed, used to keep runs idempotent. */
+    public java.time.LocalDate getLastRunWeek() {
+        return lastRunWeek;
+    }
+
+    public void setLastRunWeek(java.time.LocalDate lastRunWeek) {
+        this.lastRunWeek = lastRunWeek;
     }
 }
