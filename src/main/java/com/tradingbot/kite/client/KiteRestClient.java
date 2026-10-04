@@ -272,4 +272,26 @@ public class KiteRestClient {
         }
         return "token " + kiteProperties.apiKey() + ":" + token;
     }
+
+    public double getLtp(String exchange, String tradingSymbol) {
+        if (tradingSymbol == null || tradingSymbol.isBlank()) {
+            return 0.0;
+        }
+        String exch = (exchange != null && !exchange.isBlank()) ? exchange : "NSE";
+        String instrument = exch + ":" + tradingSymbol;
+        try {
+            JsonNode body =
+                    get(
+                            "/quote/ltp?i="
+                                    + java.net.URLEncoder.encode(
+                                            instrument, StandardCharsets.UTF_8));
+            JsonNode data = body.path("data");
+            if (data.has(instrument)) {
+                return data.path(instrument).path("last_price").asDouble(0.0);
+            }
+        } catch (Exception e) {
+            log.debug("[KITE-REST] Failed to fetch LTP for {}: {}", instrument, e.getMessage());
+        }
+        return 0.0;
+    }
 }

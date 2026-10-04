@@ -48,6 +48,7 @@ public class HistoricalOhlcCacheService {
     private final YahooFinanceService yahooService;
     private final ObjectMapper objectMapper;
     private final SqliteHistoricalOhlcRepository sqliteRepository;
+    private final ShoonyaMarketDataService shoonyaMarketDataService;
     private final String stateFilePath;
     private final boolean jsonBackupEnabled;
 
@@ -60,19 +61,30 @@ public class HistoricalOhlcCacheService {
             YahooFinanceService yahooService,
             ObjectMapper objectMapper,
             @Autowired(required = false) SqliteHistoricalOhlcRepository sqliteRepository,
+            @Autowired(required = false) ShoonyaMarketDataService shoonyaMarketDataService,
             @Value("${trading-bot.ohlc.cache-file-path:data/historical_ohlc.json}")
                     String stateFilePath,
             @Value("${trading-bot.ohlc.json-backup-enabled:true}") boolean jsonBackupEnabled) {
         this.yahooService = yahooService;
         this.objectMapper = objectMapper.copy().findAndRegisterModules();
         this.sqliteRepository = sqliteRepository;
+        this.shoonyaMarketDataService = shoonyaMarketDataService;
         this.stateFilePath = stateFilePath;
         this.jsonBackupEnabled = jsonBackupEnabled;
     }
 
     public HistoricalOhlcCacheService(
+            YahooFinanceService yahooService,
+            ObjectMapper objectMapper,
+            SqliteHistoricalOhlcRepository sqliteRepository,
+            String stateFilePath,
+            boolean jsonBackupEnabled) {
+        this(yahooService, objectMapper, sqliteRepository, null, stateFilePath, jsonBackupEnabled);
+    }
+
+    public HistoricalOhlcCacheService(
             YahooFinanceService yahooService, ObjectMapper objectMapper, String stateFilePath) {
-        this(yahooService, objectMapper, null, stateFilePath, true);
+        this(yahooService, objectMapper, null, null, stateFilePath, true);
     }
 
     @PostConstruct
@@ -222,8 +234,19 @@ public class HistoricalOhlcCacheService {
         String clean = normalizeSymbol(symbol);
         try {
             List<Candle> daily = yahooService.fetchDailyCandles(clean, yearsBack);
+            if ((daily == null || daily.isEmpty()) && shoonyaMarketDataService != null) {
+                log.info(
+                        "[OHLC-CACHE] Yahoo returned no data for {}. Falling back to Shoonya"
+                                + " historical daily candles...",
+                        clean);
+                daily =
+                        shoonyaMarketDataService.fetchDailyCandles(
+                                clean, Math.min(365 * yearsBack, 365));
+            }
             if (daily == null || daily.isEmpty()) {
-                log.debug("[OHLC-CACHE] No daily candles returned from Yahoo for {}", clean);
+                log.debug(
+                        "[OHLC-CACHE] No daily candles returned from Yahoo or Shoonya for {}",
+                        clean);
                 return false;
             }
 

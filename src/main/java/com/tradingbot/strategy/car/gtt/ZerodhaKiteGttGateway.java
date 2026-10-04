@@ -22,6 +22,7 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
     private static final Logger log = LoggerFactory.getLogger(ZerodhaKiteGttGateway.class);
     private final KiteRestClient kiteRestClient;
     private final KiteAuthService kiteAuthService;
+    private final com.tradingbot.marketdata.ShoonyaMarketDataService marketDataService;
     private final ObjectMapper objectMapper =
             new ObjectMapper()
                     .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
@@ -29,13 +30,16 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
     @Autowired
     public ZerodhaKiteGttGateway(
             KiteRestClient kiteRestClient,
-            @Autowired(required = false) KiteAuthService kiteAuthService) {
+            @Autowired(required = false) KiteAuthService kiteAuthService,
+            @Autowired(required = false)
+                    com.tradingbot.marketdata.ShoonyaMarketDataService marketDataService) {
         this.kiteRestClient = kiteRestClient;
         this.kiteAuthService = kiteAuthService;
+        this.marketDataService = marketDataService;
     }
 
     public ZerodhaKiteGttGateway(KiteRestClient kiteRestClient) {
-        this(kiteRestClient, null);
+        this(kiteRestClient, null, null);
     }
 
     @Override
@@ -49,6 +53,48 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 String txnType = order.type() == GttOrderType.BUY ? "BUY" : "SELL";
+
+                // 1. Fetch live market price (LTP) from Kite Connect
+                double liveLtp = 0.0;
+                try {
+                    liveLtp = kiteRestClient.getLtp("NSE", order.symbol());
+                } catch (Exception ignored) {
+                }
+
+                // 2. Fallback to Shoonya Market Data API if Kite quote is unavailable
+                if (liveLtp <= 0.0 && marketDataService != null) {
+                    try {
+                        String tok = marketDataService.resolveToken(order.symbol());
+                        if (tok != null) {
+                            JsonNode q = marketDataService.fetchQuote("NSE", tok);
+                            if (q != null && q.has("lp")) {
+                                liveLtp = q.get("lp").asDouble(0.0);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                double trigPrice = order.triggerPrice().doubleValue();
+                double lastPrice;
+
+                if (order.type() == GttOrderType.BUY) {
+                    // For Buy GTT: Kite strictly enforces triggerPrice > last_price
+                    if (liveLtp > 0.0 && liveLtp < trigPrice) {
+                        lastPrice = Math.round(liveLtp * 20.0) / 20.0;
+                    } else {
+                        // If live price is at or above trigger, or unavailable, set last_price slightly below trigger (0.5% below)
+                        lastPrice = Math.round((trigPrice * 0.995) * 20.0) / 20.0;
+                    }
+                } else {
+                    // For Sell GTT: Kite strictly enforces triggerPrice < last_price
+                    if (liveLtp > 0.0 && liveLtp > trigPrice) {
+                        lastPrice = Math.round(liveLtp * 20.0) / 20.0;
+                    } else {
+                        lastPrice = Math.round((trigPrice * 1.005) * 20.0) / 20.0;
+                    }
+                }
+
                 Map<String, Object> condition =
                         Map.of(
                                 "exchange",
@@ -56,9 +102,9 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
                                 "tradingsymbol",
                                 order.symbol(),
                                 "trigger_values",
-                                List.of(order.triggerPrice().doubleValue()),
+                                List.of(trigPrice),
                                 "last_price",
-                                order.triggerPrice().doubleValue());
+                                lastPrice);
 
                 Map<String, Object> orderDetail =
                         Map.of(
