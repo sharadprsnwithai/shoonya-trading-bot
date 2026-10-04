@@ -51,6 +51,40 @@ class BollingerHaCalculatorTest {
     }
 
     @Test
+    void testDojiIsNotGreen() {
+        Instant t = Instant.parse("2026-10-04T04:00:00Z");
+        // O = H = L = C makes HA_Close == HA_Open, i.e. a doji.
+        List<Candle> flat =
+                List.of(
+                        new Candle(
+                                "NSE:NIFTY26OCT25950CE",
+                                "1",
+                                t,
+                                new BigDecimal("100"),
+                                new BigDecimal("100"),
+                                new BigDecimal("100"),
+                                new BigDecimal("100"),
+                                1000L),
+                        new Candle(
+                                "NSE:NIFTY26OCT25950CE",
+                                "1",
+                                t.plusSeconds(60),
+                                new BigDecimal("100"),
+                                new BigDecimal("100"),
+                                new BigDecimal("100"),
+                                new BigDecimal("100"),
+                                1200L));
+
+        List<HeikinAshiCandle> ha = BollingerHaCalculator.calculateHeikinAshi(flat);
+
+        assertEquals(2, ha.size());
+        assertEquals(0, ha.get(0).close().compareTo(ha.get(0).open()));
+        assertFalse(ha.get(0).isGreen(), "a doji must not read as a green reversal");
+        assertEquals(0, ha.get(1).close().compareTo(ha.get(1).open()));
+        assertFalse(ha.get(1).isGreen());
+    }
+
+    @Test
     void testBollingerBandsOnHeikinAshi() {
         List<HeikinAshiCandle> haSeries = new ArrayList<>();
         Instant now = Instant.now();

@@ -56,6 +56,11 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
         if (!guardExitAllowed(signal)) {
             return;
         }
+        // D3: stop maintenance only — cancels and re-places the protective stop, sends no
+        // position order.
+        if (handleStopMaintenance(signal, quantity, orderGateway)) {
+            return;
+        }
         TransactionType txnType = resolveTransactionType(signal);
 
         String exchange = "NFO";
@@ -77,21 +82,6 @@ public class ShoonyaTradeConsumer extends AbstractTradeExecutionConsumer {
 
         // C3: validated placement + failed-fill ledger + best-effort protective SL.
         placeOrderConfirmed(signal, request, orderGateway);
-    }
-
-    private boolean isOptionSignal(TradeSignal signal) {
-        if (signal.metadata() != null) {
-            String instType = String.valueOf(signal.metadata().get("instrumentType"));
-            if ("OPTION".equalsIgnoreCase(instType) || "OPTIONS".equalsIgnoreCase(instType)) {
-                return true;
-            }
-        }
-        String sym = signal.tradingSymbol();
-        return sym != null
-                && (sym.endsWith("CE")
-                        || sym.endsWith("PE")
-                        || sym.contains(" CE")
-                        || sym.contains(" PE"));
     }
 
     private TransactionType resolveTransactionType(TradeSignal signal) {

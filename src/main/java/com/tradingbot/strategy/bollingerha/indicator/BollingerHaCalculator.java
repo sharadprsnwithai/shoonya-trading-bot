@@ -58,7 +58,9 @@ public final class BollingerHaCalculator {
             // HA_Low = min(Low, HA_Open, HA_Close)
             BigDecimal haLow = c.low().min(haOpen).min(haClose).setScale(2, RoundingMode.HALF_UP);
 
-            boolean isGreen = haClose.compareTo(haOpen) >= 0;
+            // D11: a doji (close == open) is indecision, not a green reversal — the entry rule
+            // requires a strictly higher close.
+            boolean isGreen = haClose.compareTo(haOpen) > 0;
 
             result.add(
                     new HeikinAshiCandle(

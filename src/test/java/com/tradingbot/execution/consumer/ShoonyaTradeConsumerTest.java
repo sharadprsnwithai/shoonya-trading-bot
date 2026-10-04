@@ -593,4 +593,333 @@ class ShoonyaTradeConsumerTest {
                                                 && req.price().compareTo(BigDecimal.valueOf(31.50))
                                                         == 0));
     }
+
+    @Test
+    void testOptionProtectiveSlFallsBackToSignalStopLossWhenBrokerPriceMissing() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "OPT-ENTRY-2",
+                                OrderStatus.COMPLETE,
+                                "Filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "OPT-SL-2",
+                                OrderStatus.OPEN,
+                                "SL placed",
+                                null,
+                                Instant.now()));
+
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal entry =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Option entry",
+                        java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO"));
+
+        consumer.handleLiveExecution(entry, 65);
+
+        // No brokerStopLossPrice metadata → the option stop must still be placed, using the
+        // premium-denominated signal.stopLoss() (95.00) as the trigger.
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.SL_LMT
+                                                && req.transactionType() == TransactionType.SELL
+                                                && req.quantity() == 65
+                                                && req.triggerPrice()
+                                                                .compareTo(
+                                                                        BigDecimal.valueOf(95.00))
+                                                        == 0));
+    }
+
+    @Test
+    void testUpdateStopLossReplacesRestingStopWithoutPositionOrder() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "BOL-ENTRY-1",
+                                OrderStatus.COMPLETE,
+                                "Filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "BOL-SL-1",
+                                OrderStatus.OPEN,
+                                "SL placed",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "BOL-SL-2",
+                                OrderStatus.OPEN,
+                                "Replacement SL",
+                                null,
+                                Instant.now()));
+        when(gateway.cancelOrder("BOL-SL-1"))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "BOL-SL-1",
+                                OrderStatus.CANCELLED,
+                                "Cancelled",
+                                null,
+                                Instant.now()));
+
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal entry =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Option entry",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "OPTION",
+                                "exchange",
+                                "NFO",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(95.00)));
+        consumer.handleLiveExecution(entry, 65);
+
+        // Trail the stop up to cost (120.00) — position must be left untouched.
+        TradeSignal trail =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.UPDATE_STOP_LOSS,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Trail to cost",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "OPTION",
+                                "exchange",
+                                "NFO",
+                                "positionSide",
+                                "LONG"));
+        consumer.handleLiveExecution(trail, 65);
+
+        verify(gateway, times(1)).cancelOrder("BOL-SL-1");
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.SL_LMT
+                                                && req.transactionType() == TransactionType.SELL
+                                                && req.quantity() == 65
+                                                && req.triggerPrice()
+                                                                .compareTo(
+                                                                        BigDecimal.valueOf(120.00))
+                                                        == 0));
+        // Regression: a stop update must never be flattened as a market sell.
+        verify(gateway, never())
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.MKT
+                                                && req.transactionType() == TransactionType.SELL));
+    }
+
+    @Test
+    void testSquareOffCancelsRestingSlAndClearsLedger() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "BOL-ENTRY-1",
+                                OrderStatus.COMPLETE,
+                                "Filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "BOL-SL-1",
+                                OrderStatus.OPEN,
+                                "SL placed",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "BOL-EXIT-1",
+                                OrderStatus.COMPLETE,
+                                "Flattened",
+                                null,
+                                Instant.now()));
+        when(gateway.cancelOrder("BOL-SL-1"))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "BOL-SL-1",
+                                OrderStatus.CANCELLED,
+                                "Cancelled",
+                                null,
+                                Instant.now()));
+
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal entry =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Option entry",
+                        java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO"));
+        consumer.handleLiveExecution(entry, 65);
+        assertThat(consumer.getConfirmedEntrySymbols()).contains("NIFTY");
+
+        TradeSignal squareOff =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.SQUARE_OFF,
+                        BigDecimal.valueOf(110.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Auto square-off",
+                        java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO"));
+        consumer.handleLiveExecution(squareOff, 65);
+
+        verify(gateway, times(1)).cancelOrder("BOL-SL-1");
+        assertThat(consumer.getConfirmedEntrySymbols()).doesNotContain("NIFTY");
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.MKT
+                                                && req.transactionType() == TransactionType.SELL
+                                                && req.quantity() == 65));
+    }
+
+    @Test
+    void testSquareOffSuppressedWhenEntryNeverConfirmed() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                false,
+                                "BOL-ENTRY-REJ",
+                                OrderStatus.REJECTED,
+                                "Rejected by broker",
+                                null,
+                                Instant.now()));
+
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal entry =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Option entry",
+                        java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO"));
+        consumer.handleLiveExecution(entry, 65);
+        assertThat(consumer.getConfirmedEntrySymbols()).isEmpty();
+
+        TradeSignal squareOff =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.SQUARE_OFF,
+                        BigDecimal.valueOf(110.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Auto square-off",
+                        java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO"));
+        consumer.handleLiveExecution(squareOff, 65);
+
+        // Only the rejected entry ever reached the gateway — the flatten would have been a naked
+        // reverse order.
+        verify(gateway, times(1)).placeOrder(any());
+        verify(gateway, never()).cancelOrder(any());
+    }
+
+    @Test
+    void testStaleSquareOffIsNotDroppedWhileStaleEntryIs() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        ShoonyaTradeConsumer consumer =
+                new ShoonyaTradeConsumer(
+                        "shoonya-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        Instant stale = Instant.now().minusSeconds(120);
+        TradeSignal staleSquareOff =
+                new TradeSignal(
+                        "SIG-SQ",
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.SQUARE_OFF,
+                        BigDecimal.valueOf(110.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Delayed flatten",
+                        stale,
+                        java.util.Map.of());
+        TradeSignal staleEntry =
+                new TradeSignal(
+                        "SIG-EN",
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Delayed entry",
+                        stale,
+                        java.util.Map.of());
+
+        assertThat(consumer.isSignalFreshAndActionable(staleSquareOff)).isTrue();
+        assertThat(consumer.isSignalFreshAndActionable(staleEntry)).isFalse();
+    }
 }

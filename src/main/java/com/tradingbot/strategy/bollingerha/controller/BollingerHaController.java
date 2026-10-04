@@ -3,12 +3,12 @@ package com.tradingbot.strategy.bollingerha.controller;
 import com.tradingbot.strategy.bollingerha.config.BollingerHaProperties;
 import com.tradingbot.strategy.bollingerha.scheduler.BollingerHaScheduler;
 import com.tradingbot.strategy.bollingerha.service.BollingerHaIntradayEngine;
+import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -71,9 +71,64 @@ public class BollingerHaController {
 
     @PostMapping("/reset")
     public ResponseEntity<Map<String, Object>> resetDailyState() {
-        engine.getDailyState().reset(LocalDate.now(ZoneId.of("Asia/Kolkata")));
+        if (!engine.resetDailyState()) {
+            Map<String, Object> conflict = new HashMap<>();
+            conflict.put("message", "Daily state not reset — square off the open position first");
+            conflict.put("activePosition", engine.getActivePosition());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(conflict);
+        }
         Map<String, Object> resp = new HashMap<>();
         resp.put("message", "Daily state reset successfully");
+        return ResponseEntity.ok(resp);
+    }
+
+    /** Re-enables the strategy so the next live event can open a trade again. */
+    @PostMapping("/start")
+    public ResponseEntity<Map<String, Object>> startStrategy() {
+        properties.setEnabled(true);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("message", "Bollinger HA strategy enabled");
+        resp.put("enabled", true);
+        resp.put("activePosition", engine.getActivePosition());
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Flattens any open position and then disables the strategy — stop first, so disabling never
+     * leaves a live trade unmanaged.
+     */
+    @PostMapping("/stop")
+    public ResponseEntity<Map<String, Object>> stopStrategy() {
+        boolean squaredOff = false;
+        if (engine.getActivePosition() != null) {
+            engine.squareOffAll("Manual REST API Stop — strategy disabled");
+            squaredOff = true;
+        }
+        properties.setEnabled(false);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("message", "Bollinger HA strategy stopped");
+        resp.put("enabled", false);
+        resp.put("squaredOff", squaredOff);
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Injects a synthetic tick into the engine so the target/stop management path can be exercised
+     * without waiting for live prices.
+     *
+     * @param token the contract token the tick belongs to
+     * @param ltp the simulated last traded price
+     */
+    @PostMapping("/simulate")
+    public ResponseEntity<Map<String, Object>> simulateTick(
+            @RequestParam String token, @RequestParam BigDecimal ltp) {
+        engine.onTick(token, ltp, Instant.now());
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("message", "Simulated tick applied");
+        resp.put("token", token);
+        resp.put("ltp", ltp);
+        resp.put("activePosition", engine.getActivePosition());
+        resp.put("dailyState", engine.getDailyState());
         return ResponseEntity.ok(resp);
     }
 }

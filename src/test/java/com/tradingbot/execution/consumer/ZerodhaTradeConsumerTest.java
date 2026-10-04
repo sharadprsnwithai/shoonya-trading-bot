@@ -7,10 +7,13 @@ import com.tradingbot.execution.gateway.BrokerOrderGateway;
 import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.OrderResponse;
+import com.tradingbot.model.order.OrderStatus;
+import com.tradingbot.model.order.OrderType;
 import com.tradingbot.model.order.TransactionType;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
 import java.math.BigDecimal;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Sinks;
 
@@ -176,5 +179,152 @@ class ZerodhaTradeConsumerTest {
                                                 && req.transactionType() == TransactionType.BUY
                                                 && req.quantity() == 130));
         consumer.stop();
+    }
+
+    @Test
+    void testZerodhaUsesMarketOrdersOnEntryAndExit() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "KITE-ENTRY",
+                                OrderStatus.COMPLETE,
+                                "Filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "KITE-SL",
+                                OrderStatus.OPEN,
+                                "SL placed",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "KITE-EXIT",
+                                OrderStatus.COMPLETE,
+                                "Exited",
+                                null,
+                                Instant.now()));
+
+        ZerodhaTradeConsumer consumer =
+                new ZerodhaTradeConsumer(
+                        "zerodha-live", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal entry =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Entry",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "OPTION",
+                                "exchange",
+                                "NFO",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(95.00)));
+        consumer.handleLiveExecution(entry, 65);
+
+        TradeSignal exit =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.EXIT_LONG,
+                        BigDecimal.valueOf(150.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Target",
+                        java.util.Map.of("instrumentType", "OPTION", "exchange", "NFO"));
+        consumer.handleLiveExecution(exit, 65);
+
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.MKT
+                                                && req.transactionType() == TransactionType.BUY
+                                                && req.price().compareTo(BigDecimal.ZERO) == 0));
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.MKT
+                                                && req.transactionType() == TransactionType.SELL));
+        verify(gateway, never()).placeOrder(argThat(req -> req.orderType() == OrderType.LMT));
+    }
+
+    @Test
+    void testZerodhaProtectiveStopRemainsStopLossLimitWhilePositionIsMarket() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "KITE-ENTRY-2",
+                                OrderStatus.COMPLETE,
+                                "Filled",
+                                null,
+                                Instant.now()),
+                        new OrderResponse(
+                                true,
+                                "KITE-SL-2",
+                                OrderStatus.OPEN,
+                                "SL placed",
+                                null,
+                                Instant.now()));
+
+        ZerodhaTradeConsumer consumer =
+                new ZerodhaTradeConsumer(
+                        "zerodha-live", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal entry =
+                TradeSignal.of(
+                        "BOLLINGER_HA_1M",
+                        "NIFTY",
+                        "NIFTY26OCT24000CE",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(95.00),
+                        BigDecimal.valueOf(170.00),
+                        65,
+                        "Entry",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "OPTION",
+                                "exchange",
+                                "NFO",
+                                "brokerStopLossPrice",
+                                BigDecimal.valueOf(95.00)));
+        consumer.handleLiveExecution(entry, 65);
+
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.MKT
+                                                && req.transactionType() == TransactionType.BUY
+                                                && req.quantity() == 65));
+        // The protective stop keeps its price — only position orders were converted to market.
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.SL_LMT
+                                                && req.transactionType() == TransactionType.SELL
+                                                && req.triggerPrice()
+                                                                .compareTo(
+                                                                        BigDecimal.valueOf(95.00))
+                                                        == 0
+                                                && req.price().compareTo(BigDecimal.valueOf(85.50))
+                                                        == 0));
     }
 }

@@ -16,6 +16,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -27,11 +28,20 @@ class BollingerHaIntegrationTest {
     @Autowired private BollingerHaProperties properties;
 
     @Test
-    void testEndToEndSignalPipeline() {
+    void testEndToEndSignalPipeline(@TempDir java.nio.file.Path tempDir) {
         List<TradeSignal> signalsReceived = new ArrayList<>();
         signalBus.getSignalStream().subscribe(signalsReceived::add);
 
-        BollingerHaIntradayEngine engine = new BollingerHaIntradayEngine(properties, signalBus);
+        String originalStateFile = properties.getStateFilePath();
+        // Isolate persistence: the shared Spring bean would otherwise write into data/ and pick
+        // up leftovers from earlier runs on the next context boot.
+        properties.setStateFilePath(tempDir.resolve("integration-state.json").toString());
+        BollingerHaIntradayEngine engine;
+        try {
+            engine = new BollingerHaIntradayEngine(properties, signalBus);
+        } finally {
+            properties.setStateFilePath(originalStateFile);
+        }
         String token = "99001";
         String symbol = "NIFTY26OCT25950CE";
         engine.initStrike("CE", token, symbol, new BigDecimal("25950"));

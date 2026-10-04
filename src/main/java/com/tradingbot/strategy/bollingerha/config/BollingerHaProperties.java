@@ -24,9 +24,10 @@ public class BollingerHaProperties {
     private BigDecimal fixedRiskAmount = new BigDecimal("2000.0");
     private String entryWindowStart = "09:15";
     private String entryWindowCutoff = "10:30";
-    private String autoSquareOffTime = "15:15";
+    private String autoSquareOffTime = "15:00";
     private boolean trendFilterEnabled = true;
     private int trendEmaPeriod = 20;
+    private String stateFilePath = "data/bollinger_ha_state.json";
 
     public boolean isTrendFilterEnabled() {
         return trendFilterEnabled;
@@ -170,5 +171,13 @@ public class BollingerHaProperties {
 
     public void setAutoSquareOffTime(String autoSquareOffTime) {
         this.autoSquareOffTime = autoSquareOffTime;
+    }
+
+    public String getStateFilePath() {
+        return stateFilePath;
+    }
+
+    public void setStateFilePath(String stateFilePath) {
+        this.stateFilePath = stateFilePath;
     }
 }

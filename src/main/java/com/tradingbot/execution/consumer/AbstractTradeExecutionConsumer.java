@@ -6,6 +6,7 @@ import com.tradingbot.model.order.OrderRequest;
 import com.tradingbot.model.order.OrderResponse;
 import com.tradingbot.model.order.OrderStatus;
 import com.tradingbot.model.order.OrderType;
+import com.tradingbot.model.order.ProductType;
 import com.tradingbot.model.order.TransactionType;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
@@ -118,9 +119,9 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             long ageSeconds =
                     Math.abs(Duration.between(signal.timestamp(), Instant.now()).getSeconds());
             if (ageSeconds > maxSignalAgeSeconds) {
-                // H11: EXIT signals must NEVER be dropped as stale — a delayed exit is exactly
-                // the signal that has to reach the broker to flatten an open position.
-                if (signal.action() != null && signal.action().name().startsWith("EXIT")) {
+                // H11: exit-family signals must NEVER be dropped as stale — a delayed exit is
+                // exactly the signal that has to reach the broker to flatten an open position.
+                if (isExitAction(signal.action())) {
                     log.warn(
                             "[CONSUMER:{}] Stale EXIT signal {} (Age: {}s > Max: {}s) for {} —"
                                     + " executing anyway to flatten the broker position.",
@@ -205,7 +206,11 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     }
 
     protected static boolean isExitAction(com.tradingbot.strategy.SignalAction action) {
-        return action != null && action.name().startsWith("EXIT");
+        if (action == null) return false;
+        String n = action.name();
+        // SQUARE_OFF is a full flatten: like EXIT_* it must cancel the resting protective stop,
+        // clear the entry ledger and pass the unconfirmed-entry guard.
+        return n.startsWith("EXIT") || action == SignalAction.SQUARE_OFF;
     }
 
     protected static boolean isPartialExitAction(com.tradingbot.strategy.SignalAction action) {
@@ -288,22 +293,7 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         } else if (isPartialExitAction(signal.action())) {
             // 1.2: On partial exit, cancel the 100% SL order and replace with a 50% runner SL order
             // at Cost SL
-            String slOrderId = protectiveSlOrders.remove(key);
-            if (slOrderId != null && !slOrderId.isBlank()) {
-                try {
-                    gateway.cancelOrder(slOrderId);
-                    log.info(
-                            "[CONSUMER:{}] Cancelled original 100% protective SL order {} for {} on partial exit.",
-                            consumerId, slOrderId, key);
-                } catch (Exception e) {
-                    log.warn(
-                            "[CONSUMER:{}] Failed to cancel original SL order {} for {}: {}",
-                            consumerId,
-                            slOrderId,
-                            key,
-                            e.getMessage());
-                }
-            }
+            cancelRestingProtectiveStop(gateway, key, "partial exit");
 
             int remainingQty = request.quantity();
             if (signal.metadata() != null && signal.metadata().get("remainingQuantity") != null) {
@@ -333,24 +323,7 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             }
         } else if (isExitAction(signal.action())) {
             confirmedEntries.remove(key);
-            String slOrderId = protectiveSlOrders.remove(key);
-            if (slOrderId != null && !slOrderId.isBlank()) {
-                try {
-                    gateway.cancelOrder(slOrderId);
-                    log.info(
-                            "[CONSUMER:{}] Cancelled resting protective SL order {} for {} on exit.",
-                            consumerId,
-                            slOrderId,
-                            key);
-                } catch (Exception e) {
-                    log.warn(
-                            "[CONSUMER:{}] Failed to cancel protective SL order {} for {}: {}",
-                            consumerId,
-                            slOrderId,
-                            key,
-                            e.getMessage());
-                }
-            }
+            cancelRestingProtectiveStop(gateway, key, "exit");
         }
 
         log.info(
@@ -365,8 +338,97 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     }
 
     /**
-     * C3: EXIT gate — an EXIT for a symbol whose ENTRY was never confirmed at the broker is
-     * suppressed (it would be a naked reverse order).
+     * Cancels and forgets the resting protective stop for {@code key}. Returns the cancelled order
+     * id, or {@code null} when there was nothing to cancel or the cancel failed (the broker keeps
+     * the stop in that case — callers log and continue).
+     */
+    private String cancelRestingProtectiveStop(
+            BrokerOrderGateway gateway, String key, String reason) {
+        String slOrderId = protectiveSlOrders.remove(key);
+        if (slOrderId == null || slOrderId.isBlank()) {
+            return null;
+        }
+        try {
+            gateway.cancelOrder(slOrderId);
+            log.info(
+                    "[CONSUMER:{}] Cancelled resting protective SL order {} for {} on {}.",
+                    consumerId,
+                    slOrderId,
+                    key,
+                    reason);
+            return slOrderId;
+        } catch (Exception e) {
+            log.warn(
+                    "[CONSUMER:{}] Failed to cancel protective SL order {} for {}: {}",
+                    consumerId,
+                    slOrderId,
+                    key,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * D3: handles signals that must never produce a position order — stop maintenance only.
+     *
+     * <p>{@code UPDATE_STOP_LOSS} re-places the resting protective stop at {@link
+     * TradeSignal#stopLoss()} for {@code quantity} after cancelling the previous one. The position
+     * itself is untouched, so callers must skip normal order placement when this returns {@code
+     * true}.
+     *
+     * <p>The stop side is derived from the {@code positionSide} metadata (LONG/SHORT, defaulting to
+     * LONG because {@code UPDATE_STOP_LOSS} carries no direction of its own).
+     *
+     * @return {@code true} when the signal was fully handled
+     */
+    protected boolean handleStopMaintenance(
+            TradeSignal signal, int quantity, BrokerOrderGateway gateway) {
+        if (signal.action() != SignalAction.UPDATE_STOP_LOSS) {
+            return false;
+        }
+        String key = ledgerKey(signal);
+        cancelRestingProtectiveStop(gateway, key, "stop-loss update");
+
+        int qty = quantity > 0 ? quantity : signal.baseQuantity();
+        if (qty <= 0) {
+            log.warn(
+                    "[CONSUMER:{}] UPDATE_STOP_LOSS for {} has non-positive quantity {} — the"
+                            + " stop was cancelled but not re-placed.",
+                    consumerId,
+                    key,
+                    qty);
+            return true;
+        }
+
+        String exchange = "NFO";
+        if (signal.metadata() != null && signal.metadata().get("exchange") != null) {
+            exchange = String.valueOf(signal.metadata().get("exchange"));
+        }
+        boolean shortPosition =
+                signal.metadata() != null
+                        && "SHORT"
+                                .equalsIgnoreCase(
+                                        String.valueOf(signal.metadata().get("positionSide")));
+        // placeBestEffortProtectiveStop() flips the anchor side to get the stop side, so the
+        // anchor carries the ENTRY side: BUY for a long position, SELL for a short one.
+        OrderRequest anchor =
+                new OrderRequest(
+                        signal.tradingSymbol(),
+                        exchange,
+                        shortPosition ? TransactionType.SELL : TransactionType.BUY,
+                        OrderType.MKT,
+                        ProductType.MIS,
+                        qty,
+                        BigDecimal.ZERO,
+                        null,
+                        signal.signalId() + "-SL-UPDATE");
+        placeBestEffortProtectiveStop(signal, anchor, gateway);
+        return true;
+    }
+
+    /**
+     * C3: EXIT gate — an exit-family signal (EXIT_xxx or SQUARE_OFF) for a symbol whose ENTRY was
+     * never confirmed at the broker is suppressed (it would be a naked reverse order).
      */
     protected boolean guardExitAllowed(TradeSignal signal) {
         if (!isExitAction(signal.action())) {
@@ -422,26 +484,29 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     }
 
     /**
-     * C3: best-effort broker-side protective stop after a confirmed ENTRY, using the
-     * contract-scaled {@code brokerStopLossPrice} from the signal metadata (falls back to the
-     * spot-based stop only for futures). Failure here degrades to the strategy's 30s exit loop.
+     * C3: best-effort broker-side protective stop, using the contract-scaled {@code
+     * brokerStopLossPrice} from the signal metadata. When that metadata is absent the stop falls
+     * back to {@link TradeSignal#stopLoss()} for futures and for options (an option's stop is
+     * already denominated in premium, so it needs no contract scaling). Failure here leaves the
+     * position protected only by the strategy's own tick/candle exit management.
      */
     private void placeBestEffortProtectiveStop(
             TradeSignal signal, OrderRequest entryRequest, BrokerOrderGateway gateway) {
         if (signal.metadata() == null) {
             return;
         }
+        boolean isOption = isOptionSignal(signal, entryRequest.symbol());
         BigDecimal slPrice = parseBigDecimal(signal.metadata().get("brokerStopLossPrice"));
         if (slPrice == null || slPrice.compareTo(BigDecimal.ZERO) <= 0) {
             String instType = String.valueOf(signal.metadata().get("instrumentType"));
-            if ("FUTURES".equalsIgnoreCase(instType)) {
+            if ("FUTURES".equalsIgnoreCase(instType) || isOption) {
                 slPrice = signal.stopLoss();
             }
         }
         if (slPrice == null || slPrice.compareTo(BigDecimal.ZERO) <= 0) {
             log.debug(
-                    "[CONSUMER:{}] No contract-scaled SL available for {} — skipping protective"
-                            + " order (30s exit loop remains the safety net).",
+                    "[CONSUMER:{}] No stop price available for {} — skipping protective order"
+                            + " (strategy-side exit management remains the safety net).",
                     consumerId,
                     entryRequest.symbol());
             return;
@@ -451,21 +516,6 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                 entryRequest.transactionType() == TransactionType.BUY
                         ? TransactionType.SELL
                         : TransactionType.BUY;
-        boolean isOption = false;
-        if (signal.metadata() != null) {
-            String instType = String.valueOf(signal.metadata().get("instrumentType"));
-            if ("OPTION".equalsIgnoreCase(instType) || "OPTIONS".equalsIgnoreCase(instType)) {
-                isOption = true;
-            }
-        }
-        String sym = entryRequest.symbol();
-        if (sym != null
-                && (sym.endsWith("CE")
-                        || sym.endsWith("PE")
-                        || sym.contains(" CE")
-                        || sym.contains(" PE"))) {
-            isOption = true;
-        }
 
         OrderType orderType;
         BigDecimal limitPrice;
@@ -517,7 +567,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             } else {
                 log.warn(
                         "[CONSUMER:{}] Best-effort protective SL FAILED for {} @ trigger {}"
-                                + " ({}). Position protected only by the 30s exit loop.",
+                                + " ({}). Stop remains unmanaged at the broker — strategy-side"
+                                + " exit management is now the only protection.",
                         consumerId,
                         entryRequest.symbol(),
                         slPrice,
@@ -530,6 +581,32 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                     entryRequest.symbol(),
                     e.getMessage());
         }
+    }
+
+    /**
+     * Returns {@code true} when the signal targets a listed option: either the {@code
+     * instrumentType} metadata says OPTION/OPTIONS, or the trading symbol carries a CE/PE suffix.
+     *
+     * @param symbol the contract to classify; falls back to {@link TradeSignal#tradingSymbol()}
+     */
+    protected static boolean isOptionSignal(TradeSignal signal, String symbol) {
+        if (signal != null && signal.metadata() != null) {
+            String instType = String.valueOf(signal.metadata().get("instrumentType"));
+            if ("OPTION".equalsIgnoreCase(instType) || "OPTIONS".equalsIgnoreCase(instType)) {
+                return true;
+            }
+        }
+        String sym = symbol != null ? symbol : (signal != null ? signal.tradingSymbol() : null);
+        return sym != null
+                && (sym.endsWith("CE")
+                        || sym.endsWith("PE")
+                        || sym.contains(" CE")
+                        || sym.contains(" PE"));
+    }
+
+    /** Convenience overload classifying {@link TradeSignal#tradingSymbol()}. */
+    protected static boolean isOptionSignal(TradeSignal signal) {
+        return isOptionSignal(signal, null);
     }
 
     protected static BigDecimal parseBigDecimal(Object value) {

@@ -54,19 +54,23 @@ This subsystem automates Kushal Varshney's **1-Minute Bollinger Bands (20, 2) & 
    * Trade is only accepted if $2.0 \le \text{Risk Points} \le 20.0$.
 
 ### 2.4 Position Sizing & Trade Management
-* **Default Sizing**: 2 Lots ($2 \times 65 = 130$ quantity for Nifty) or dynamic sizing if `risk-mode=FIXED_AMOUNT`.
+* **Default Sizing**: 2 Lots ($2 \times 65 = 130$ quantity for Nifty) or dynamic sizing if `risk-mode=FIXED_AMOUNT`. Lot size is resolved at runtime from `StockFnoRegistry` (never a hard-coded constant).
 * **Target 1 (50% Quantity Exit at 1:2 R:R)**:
   $$\text{Target 1 Price} = \text{Entry Price} + (2 \times \text{Risk Points})$$
   * As soon as LTP $\ge \text{Target 1 Price}$, book $50\%$ quantity (1 lot) via `PARTIAL_EXIT_LONG`.
+  * The exit quantity is **floored to whole lots** ($\lfloor Q/2 \rfloor$ aligned to the lot size). A position below two lots cannot be split — it emits `UPDATE_STOP_LOSS` (trail the whole position to cost) instead of a partial exit.
+  * The partial quantity's PnL is booked to the daily state at the moment of the exit.
 * **Runner Position (Remaining 50% Quantity)**:
-  * Move Stop Loss of the remaining $50\%$ to **Cost (Entry Price)** (`UPDATE_STOP_LOSS`).
+  * Move Stop Loss of the remaining $50\%$ to **Cost (Entry Price)**. For a multi-lot position this rides on the `PARTIAL_EXIT_LONG` signal's stop price (one publish per state change); a single-lot position emits `UPDATE_STOP_LOSS`.
   * Runner is held until:
     1. Trailing Stop Loss is breached.
-    2. Intraday auto-square-off at 03:15 PM IST (`SQUARE_OFF`).
+    2. Intraday auto-square-off at **03:00 PM IST** (`SQUARE_OFF`).
 * **SL Hit & Trade #2 Logic**:
-  * If Trade #1 hits Initial SL, record trade as completed with loss.
+  * If Trade #1 hits Initial SL, record trade as completed with loss. When the print closed beyond the stop, book the **worse** of the stop and the observed price — never the trigger.
   * Check opposite strike (if CE was stopped out, evaluate PE; if PE was stopped out, evaluate CE) for the next valid lower-band bounce setup.
   * If a second trade is triggered and closes (either profit or loss), **trading stops for the entire day** (Daily trade count = 2).
+* **Event Bus Contract**: every exit is **published before** engine state mutates. If `ReactiveSignalEventBus.publish(...)` returns `false`, the caller rolls back and the position stays open, so a full buffer can never lose track of a live trade.
+* **State Persistence**: trade count, realized PnL, lock flag and the open position are written to `state-file-path` (atomic temp-file + move) on every transition. On restart, a snapshot from *today* is restored; a snapshot from a previous day queues its open position for a forced `SQUARE_OFF` on the first live event instead of being silently forgotten.
 
 ---
 
@@ -75,35 +79,46 @@ This subsystem automates Kushal Varshney's **1-Minute Bollinger Bands (20, 2) & 
 ```
 com.tradingbot.strategy.bollingerha
 ├── BollingerHaStrikeSelector.java       // Pre-market ATM strike & weekly option resolution
-├── ShoonyaHybridDataFeeder.java         // Shoonya WebSocket ticks + REST TPSeries fallback
-├── BollingerHaCandleBuilder.java        // Real-time 1m OHLC & Heikin-Ashi aggregator
-├── BollingerHaIntradayEngine.java       // Core state machine, signal generator, and position tracker
-├── BollingerHaProperties.java           // Configuration & parameter management
+├── config/
+│   └── BollingerHaProperties.java       // Configuration & parameter management
+├── controller/
+│   └── BollingerHaController.java       // REST endpoints (/status, /start, /stop, /reset, /simulate, /square-off)
+├── feeder/
+│   ├── ShoonyaHybridDataFeeder.java     // Shoonya WebSocket ticks + REST TPSeries fallback + NIFTY spot feed
+│   └── BollingerHaCandleBuilder.java    // Real-time 1m OHLC aggregator (multi-minute bucket aware)
+├── indicator/
+│   └── BollingerHaCalculator.java       // Heikin-Ashi transform, Bollinger Bands, spot EMA
 ├── model/
 │   ├── BollingerHaPosition.java         // Active position state (lots, entry, SL, T1, runner)
 │   ├── BollingerHaSetupState.java       // Strike tracking state (CE/PE band touch status)
-│   └── BollingerHaDailyState.java       // Daily trade counter, PnL, lock flags
-└── controller/
-    └── BollingerHaController.java       // REST endpoints (/status, /start, /stop, /reset, /simulate)
+│   ├── BollingerHaDailyState.java       // Daily trade counter, PnL, lock flags
+│   └── HeikinAshiCandle.java            // Immutable HA candle
+├── scheduler/
+│   └── BollingerHaScheduler.java        // Crons: strike selection, feeder arm, cutoff, square-off poll, summary
+└── service/
+    └── BollingerHaIntradayEngine.java   // Core state machine, signal generator, position tracker, persistence
+
+com.tradingbot.persistence
+└── BollingerHaStateStore.java           // Atomic JSON snapshot of daily state + open position
 ```
 
 ### 3.1 Data Flow Sequence
 
 ```
 Shoonya WSS (wss://api.shoonya.com/NorenWSTP/)
-     │ (Live Ticks for ATM CE & PE)
+     │ (Live Ticks for ATM CE & PE, plus NSE|26000 for the NIFTY spot EMA filter)
      ▼
-ShoonyaHybridDataFeeder ──[fallback]──► ShoonyaMarketDataService (REST TPSeries)
+ShoonyaHybridDataFeeder ──[fallback]──► ShoonyaMarketDataService (REST TPSeries / GetQuotes)
      │
-     ▼ (1-Minute Completed Candles)
+     ▼ (1-Minute Completed Candles)      └─► spot ticks ─► engine.updateSpotPrice()
 BollingerHaCandleBuilder
      │
      ▼ (Heikin-Ashi + BB 20,2)
 BollingerHaIntradayEngine
      │
-     ├── Checks Entry / SL / T1 / CSL conditions
+     ├── Checks Entry / SL / T1 / CSL conditions, auto square-off, daily rollover
      │
-     ▼ (Emits TradeSignal via Sinks)
+     ▼ (Emits TradeSignal via Sinks — publish first, mutate only on success)
 ReactiveSignalEventBus
      ├──► ShoonyaTradeConsumer / ZerodhaTradeConsumer (Order Execution)
      └──► TelegramService (Push Notifications)
@@ -115,12 +130,14 @@ ReactiveSignalEventBus
 
 | Time (IST) | Action / Lifecycle State |
 | :--- | :--- |
-| **09:07 AM** | `BollingerHaStrikeSelector` queries Nifty 50 pre-market close, calculates ATM strike, resolves weekly CE & PE tokens, and initializes the data feeder. |
-| **09:15 AM** | Market opens. `ShoonyaHybridDataFeeder` starts receiving ticks, `BollingerHaCandleBuilder` begins accumulating 1m candles. Strategy state changes to `SCANNING`. |
-| **09:16 – 10:30 AM** | Strategy evaluates completed 1m candles. Enters trades on valid setup. Manages targets and trailing stops. |
-| **10:30 AM** | **Entry Cutoff**: No new trade entries allowed. Active positions remain actively managed. Strategy state transitions to `MANAGING_ONLY`. |
-| **03:15 PM** | **Intraday Square-Off**: Any active open runner positions are exited at market. Daily state is locked. |
-| **03:30 PM** | Daily performance report sent to Telegram. WebSocket connection cleanly closed. |
+| **09:07 AM** | `BollingerHaStrikeSelector` resolves Nifty spot (hourly candles → live quote API → **fail loudly**, never a hard-coded level), calculates the ATM strike, resolves weekly CE & PE tokens. Skipped on non-trading days. |
+| **09:14 AM** | Feeder armed for the open. If strike selection never ran, an error alert is pushed and the feeder stays **disarmed** instead of streaming against unknown contracts. |
+| **09:15 AM** | Market opens. `ShoonyaHybridDataFeeder` receives ticks (contracts + NIFTY spot for the trend filter), `BollingerHaCandleBuilder` accumulates candles, engine state `SCANNING`. |
+| **09:16 – 10:30 AM** | Engine evaluates completed candles. Enters on a valid setup, manages target/stop with gap-aware ordering (open beyond stop → stop; else target; else intrabar stop). |
+| **10:30 AM** | **Entry Cutoff**: no new entries. Active positions remain managed. State `MANAGING_ONLY`. |
+| **Every minute ≥ 03:00 PM** | **Auto square-off poller**: reads `auto-square-off-time` each minute so a restart or a paused scheduler can never miss the hard exit. Position is flattened at market. |
+| **03:30 PM** | Daily performance report sent to Telegram; `ShoonyaHybridDataFeeder.disconnect()` closes the socket and its polls. |
+| **Next session, first event** | Daily rollover: state resets for the new date (after forcing out any position left open), spot history and setup touches clear. |
 
 ---
 
@@ -131,7 +148,7 @@ trading-bot.strategy.bollinger-ha.enabled=true
 trading-bot.strategy.bollinger-ha.underlying=NIFTY
 trading-bot.strategy.bollinger-ha.timeframe-minutes=1
 trading-bot.strategy.bollinger-ha.bb-period=20
-trading-bot.strategy.bollinger-ha.bb-stddev=2.0
+trading-bot.strategy.bollinger-ha.bb-std-dev=2.0
 trading-bot.strategy.bollinger-ha.max-sl-points=20.0
 trading-bot.strategy.bollinger-ha.min-sl-points=2.0
 trading-bot.strategy.bollinger-ha.buffer-points=1.0
@@ -142,25 +159,46 @@ trading-bot.strategy.bollinger-ha.default-lots=2
 trading-bot.strategy.bollinger-ha.fixed-risk-amount=2000.0
 trading-bot.strategy.bollinger-ha.entry-window-start=09:15
 trading-bot.strategy.bollinger-ha.entry-window-cutoff=10:30
-trading-bot.strategy.bollinger-ha.auto-square-off-time=15:15
+trading-bot.strategy.bollinger-ha.auto-square-off-time=15:00
+trading-bot.strategy.bollinger-ha.trend-filter-enabled=true
+trading-bot.strategy.bollinger-ha.trend-ema-period=20
+trading-bot.strategy.bollinger-ha.state-file-path=data/bollinger_ha_state.json
 ```
+
+Every key is overridable through the environment (`BOLLINGER_HA_*`, see `.env.example`).
+The trend filter requires the NIFTY spot EMA(20): CE entries are rejected while spot trades below
+it, PE entries while spot trades above it. `state-file-path` is where the restart snapshot lives —
+unit tests point it at a temp directory so no test can read or write the repository's `data/`.
 
 ---
 
 ## 6. Testing & Validation Strategy
 
-1. **Unit Tests (`BollingerHaIndicatorTest`)**:
-   * Verify Heikin-Ashi formulas against known historical tick series.
-   * Verify Bollinger Bands calculations against TA4j / TA-Lib baseline.
+1. **Indicator Tests (`BollingerHaCalculatorTest`)**:
+   * Verify Heikin-Ashi formulas against known OHLC series.
+   * Verify Bollinger Bands ordering on the HA series.
+   * Verify a doji (HA close == HA open) is **not** read as a green reversal.
 2. **State Machine Tests (`BollingerHaIntradayEngineTest`)**:
-   * Verify lower band touch detection followed by green candle trigger.
-   * Verify $>20$ point risk filter rejects oversized candles.
-   * Verify partial exit at 1:2 R:R (50% quantity square-off).
-   * Verify Cost SL (CSL) movement on remaining runner.
-   * Verify 2-trade daily cap prevents any 3rd trade.
-   * Verify morning entry cutoff (no trades after 10:30 AM).
-3. **Integration Tests (`BollingerHaIntegrationTest`)**:
-   * Test full cycle: simulated 1m ticks $\rightarrow$ Candle Builder $\rightarrow$ Engine $\rightarrow$ `ReactiveSignalEventBus` $\rightarrow$ `ShoonyaTradeConsumer` (PAPER mode).
+   * Lower-band touch followed by a green candle triggers exactly one `ENTRY_LONG`.
+   * $>20$ point risk filter rejects oversized candles (nothing is published).
+   * Trend filter rejects CE below / PE above the spot EMA(20) before anything reaches the bus.
+   * Partial exit at 1:2 R:R books the lot-aligned half and trails the runner to cost; a
+     single-lot position emits `UPDATE_STOP_LOSS` instead.
+   * Publish-before-mutate: when the bus rejects a signal the position and PnL are unchanged.
+   * PnL booked on partial exit, stop hit, and square-off; tick-driven target/stop paths.
+   * Auto square-off at the configured cutoff, forced exit on daily rollover.
+   * Restart: same-day snapshot restores the open position; a stale snapshot forces an exit of the
+     orphan on the first live event.
+3. **Consumer Tests (`ShoonyaTradeConsumerTest`, `ZerodhaTradeConsumerTest`)**:
+   * `UPDATE_STOP_LOSS` cancels the resting stop and re-places it without a position order.
+   * Option protective SL falls back to the signal stop when the broker returns no price.
+   * Zerodha uses market orders for entry/exit while the protective stop stays `SL_LMT`.
+4. **Scheduler / Controller Tests**:
+   * Spot resolution falls back to the quote API and fails loudly instead of guessing.
+   * Feeder arm alerts when strikes are missing; crons skip non-trading days and disabled runs.
+   * `/reset` returns `409` while a position is open; `/stop` squares off before disabling.
+5. **Integration Test (`BollingerHaIntegrationTest`)**:
+   * Full cycle: candles $\rightarrow$ engine $\rightarrow$ `ReactiveSignalEventBus` $\rightarrow$ `ShoonyaTradeConsumer` (PAPER mode).
 
 ---
 

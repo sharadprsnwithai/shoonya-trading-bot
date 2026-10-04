@@ -1,5 +1,6 @@
 package com.tradingbot.strategy.bollingerha.scheduler;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.strategy.bollingerha.config.BollingerHaProperties;
@@ -8,7 +9,10 @@ import com.tradingbot.strategy.bollingerha.model.SelectedStrikes;
 import com.tradingbot.strategy.bollingerha.service.BollingerHaIntradayEngine;
 import com.tradingbot.strategy.bollingerha.service.BollingerHaStrikeSelector;
 import com.tradingbot.telegram.TelegramService;
+import com.tradingbot.util.NseTradingCalendarUtil;
+import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -34,7 +38,8 @@ public class BollingerHaScheduler {
     private final ShoonyaMarketDataService marketDataService;
     private final TelegramService telegramService;
 
-    private SelectedStrikes currentStrikes;
+    /** Written by the 09:07 cron, read by the 09:14 cron and the controller. */
+    private volatile SelectedStrikes currentStrikes;
 
     @Autowired
     public BollingerHaScheduler(
@@ -57,7 +62,7 @@ public class BollingerHaScheduler {
      */
     @Scheduled(cron = "0 7 9 * * MON-FRI", zone = "Asia/Kolkata")
     public void runPreMarketStrikeSelection() {
-        if (!properties.isEnabled()) {
+        if (!properties.isEnabled() || !isTradingDay()) {
             return;
         }
 
@@ -105,13 +110,24 @@ public class BollingerHaScheduler {
     /** 09:14 AM IST: Connects WebSocket tick feeder to begin streaming at 09:15 open. */
     @Scheduled(cron = "0 14 9 * * MON-FRI", zone = "Asia/Kolkata")
     public void runMarketOpenStreaming() {
-        if (!properties.isEnabled() || currentStrikes == null) {
+        if (!properties.isEnabled() || !isTradingDay()) {
+            return;
+        }
+        if (currentStrikes == null) {
+            // Silently staying flat is the worst outcome here — say so, loudly.
+            log.error(
+                    "[BOLLINGER-HA-SCHEDULER] ⚠️ No strikes selected — feeder NOT armed for the"
+                            + " 09:15 open.");
+            telegramService.sendAlert(
+                    "⚠️ *[09:14 AM] BOLLINGER HA ERROR* Strike selection never ran today — the"
+                            + " feeder was NOT armed for the 09:15 open. Call"
+                            + " /select-strikes to recover.");
             return;
         }
 
         log.info(
                 "[BOLLINGER-HA-SCHEDULER] 🚀 Initializing real-time data stream for 09:15 open...");
-        dataFeeder.initialize(currentStrikes, engine::onCandleCompleted);
+        dataFeeder.initialize(currentStrikes, engine::onCandleCompleted, engine::updateSpotPrice);
         telegramService.sendAlert(
                 "🚀 *[09:14 AM]* Bollinger HA Feeder armed for 09:15 market open.");
     }
@@ -119,7 +135,7 @@ public class BollingerHaScheduler {
     /** 10:30 AM IST: Morning entry cutoff. */
     @Scheduled(cron = "0 30 10 * * MON-FRI", zone = "Asia/Kolkata")
     public void runMorningCutoff() {
-        if (!properties.isEnabled()) {
+        if (!properties.isEnabled() || !isTradingDay()) {
             return;
         }
         log.info("[BOLLINGER-HA-SCHEDULER] ⏰ Morning entry cutoff reached (10:30 AM IST).");
@@ -127,20 +143,28 @@ public class BollingerHaScheduler {
                 "⏰ *[10:30 AM]* Bollinger HA Morning entry cutoff reached. No new entries; managing active trades.");
     }
 
-    /** 03:15 PM IST: Intraday Auto Square-Off. */
-    @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void runAutoSquareOff() {
-        if (!properties.isEnabled()) {
+    /**
+     * Every minute: applies the hard intraday cutoff from {@code autoSquareOffTime}. A cron pinned
+     * to a single minute can be missed after a restart or a paused scheduler, so polling once a
+     * minute guarantees the position is flattened on the first tick after the cutoff.
+     */
+    @Scheduled(cron = "0 * * * * *", zone = "Asia/Kolkata")
+    public void pollAutoSquareOff() {
+        if (!properties.isEnabled() || !isTradingDay()) {
             return;
         }
-        log.info("[BOLLINGER-HA-SCHEDULER] 🔔 03:15 PM Intraday Auto Square-off executing...");
-        engine.squareOffAll("Intraday Auto Square-Off at 15:15 IST");
+        if (engine.enforceAutoSquareOff(Instant.now())) {
+            telegramService.sendAlert(
+                    "🛑 *[BOLLINGER HA]* Auto square-off executed (cutoff "
+                            + properties.getAutoSquareOffTime()
+                            + " IST).");
+        }
     }
 
-    /** 03:30 PM IST: Sends daily performance summary. */
+    /** 03:30 PM IST: Sends daily performance summary and tears down the feed. */
     @Scheduled(cron = "0 30 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void runDailySummary() {
-        if (!properties.isEnabled()) {
+        if (!properties.isEnabled() || !isTradingDay()) {
             return;
         }
 
@@ -158,8 +182,32 @@ public class BollingerHaScheduler {
                         daily.getRealizedPnl(),
                         daily.isLocked() ? "YES" : "NO");
         telegramService.sendAlert(summary);
+
+        // Session over — stop the socket and its polls rather than streaming into the evening.
+        try {
+            dataFeeder.disconnect();
+        } catch (Exception e) {
+            log.warn("[BOLLINGER-HA-SCHEDULER] Feeder disconnect failed: {}", e.getMessage());
+        }
     }
 
+    /** Weekday crons still fire on exchange holidays — never arm the strategy on a closed day. */
+    private boolean isTradingDay() {
+        return isTradingDay(LocalDate.now(IST));
+    }
+
+    /** Guard applied by every cron; package-private so tests can pin the calendar. */
+    boolean isTradingDay(LocalDate date) {
+        return NseTradingCalendarUtil.isTradingDay(date);
+    }
+
+    /**
+     * Resolves NIFTY spot for strike selection. Never falls back to a hardcoded level: a guessed
+     * spot selects the wrong ATM strike and the strategy trades the wrong contract all day.
+     *
+     * @return the latest spot price
+     * @throws IllegalStateException when no source can produce a real quote
+     */
     private BigDecimal fetchNiftySpot() {
         try {
             List<Candle> candles = marketDataService.fetchHourlyCandles("NIFTY50", 1);
@@ -169,7 +217,23 @@ public class BollingerHaScheduler {
         } catch (Exception e) {
             log.warn("[BOLLINGER-HA-SCHEDULER] Hourly candle fetch failed: {}", e.getMessage());
         }
-        return new BigDecimal("25000.00"); // Safe fallback if offline
+
+        try {
+            String token = StockFnoRegistry.getToken(properties.getUnderlying());
+            JsonNode quote = marketDataService.fetchQuote("NSE", token);
+            if (quote != null && quote.hasNonNull("lp")) {
+                BigDecimal lastPrice = new BigDecimal(quote.get("lp").asText().trim());
+                if (lastPrice.signum() > 0) {
+                    return lastPrice;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[BOLLINGER-HA-SCHEDULER] Spot quote fetch failed: {}", e.getMessage());
+        }
+
+        throw new IllegalStateException(
+                "Unable to resolve NIFTY spot from hourly candles or quote API — refusing to"
+                        + " select strikes on a guessed level");
     }
 
     public SelectedStrikes getCurrentStrikes() {

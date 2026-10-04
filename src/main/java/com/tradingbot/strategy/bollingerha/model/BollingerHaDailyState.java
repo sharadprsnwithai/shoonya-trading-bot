@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /** Tracks daily trade count, realized PnL, and circuit locks for the Bollinger HA strategy. */
 public class BollingerHaDailyState {
@@ -39,6 +40,29 @@ public class BollingerHaDailyState {
         this.realizedPnl = BigDecimal.ZERO;
         this.locked = false;
         this.dailyPositions.clear();
+    }
+
+    /**
+     * D4: restores persisted counters and history without re-running the incrementing bookkeeping
+     * in {@link #recordNewTrade}.
+     *
+     * @param tradeCount trades already taken today
+     * @param realizedPnl PnL already booked today
+     * @param locked whether the daily circuit breaker is latched
+     * @param positions today's position history
+     */
+    public synchronized void restore(
+            int tradeCount,
+            BigDecimal realizedPnl,
+            boolean locked,
+            List<BollingerHaPosition> positions) {
+        this.tradeCount = Math.max(0, tradeCount);
+        this.realizedPnl = realizedPnl != null ? realizedPnl : BigDecimal.ZERO;
+        this.locked = locked;
+        this.dailyPositions.clear();
+        if (positions != null) {
+            positions.stream().filter(Objects::nonNull).forEach(this.dailyPositions::add);
+        }
     }
 
     public LocalDate getTradeDate() {

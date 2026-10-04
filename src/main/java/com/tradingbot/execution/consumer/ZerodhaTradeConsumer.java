@@ -56,6 +56,11 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
         if (!guardExitAllowed(signal)) {
             return;
         }
+        // D3: stop maintenance only — cancels and re-places the protective stop, sends no
+        // position order.
+        if (handleStopMaintenance(signal, quantity, orderGateway)) {
+            return;
+        }
         TransactionType txnType = resolveTransactionType(signal);
 
         String exchange = "NFO";
@@ -63,46 +68,23 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
             exchange = String.valueOf(signal.metadata().get("exchange"));
         }
 
-        // C3-4: anchor the limit to the CONTRACT's own reference price (option premium /
-        // futures reference) from signal metadata rather than the spot price, so fill doesn't
-        // depend on basis.
-        BigDecimal refPrice = signal.price();
-        if (signal.metadata() != null) {
-            BigDecimal metaRef = parseBigDecimal(signal.metadata().get("referencePrice"));
-            if (metaRef != null && metaRef.compareTo(BigDecimal.ZERO) > 0) {
-                refPrice = metaRef;
-            }
-        }
-
+        // D1: market orders on both entry and exit, matching the Shoonya routing. A resting
+        // limit was racing the touchline (unfilled entries, partial exits) while the strategy
+        // already assumes a fill; the protective stop is the only order that needs a price.
         OrderRequest request =
                 new OrderRequest(
                         signal.tradingSymbol(),
                         exchange,
                         txnType,
-                        OrderType.LMT,
+                        OrderType.MKT,
                         ProductType.MIS,
                         quantity,
-                        refPrice,
+                        BigDecimal.ZERO,
                         null,
                         signal.signalId());
 
         // C3: validated placement + failed-fill ledger + best-effort protective SL.
         placeOrderConfirmed(signal, request, orderGateway);
-    }
-
-    private boolean isOptionSignal(TradeSignal signal) {
-        if (signal.metadata() != null) {
-            String instType = String.valueOf(signal.metadata().get("instrumentType"));
-            if ("OPTION".equalsIgnoreCase(instType) || "OPTIONS".equalsIgnoreCase(instType)) {
-                return true;
-            }
-        }
-        String sym = signal.tradingSymbol();
-        return sym != null
-                && (sym.endsWith("CE")
-                        || sym.endsWith("PE")
-                        || sym.contains(" CE")
-                        || sym.contains(" PE"));
     }
 
     private TransactionType resolveTransactionType(TradeSignal signal) {

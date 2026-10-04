@@ -43,4 +43,69 @@ class BollingerHaCandleBuilderTest {
         assertEquals(new BigDecimal("152.00"), c.close());
         assertEquals(200L, c.volume());
     }
+
+    @Test
+    void testThreeMinuteBucketAggregation() {
+        List<CompletedCandleEvent> completedEvents = new ArrayList<>();
+        BollingerHaCandleBuilder builder =
+                new BollingerHaCandleBuilder(
+                        "12345", "NIFTY26OCT25950CE", "CE", 3, completedEvents::add);
+
+        // All three of these belong to the 09:15 IST (03:45Z) three-minute bucket
+        builder.onTick(new BigDecimal("100.00"), 10L, Instant.parse("2026-10-02T03:45:05Z"));
+        builder.onTick(new BigDecimal("110.00"), 10L, Instant.parse("2026-10-02T03:46:50Z"));
+        builder.onTick(new BigDecimal("95.00"), 10L, Instant.parse("2026-10-02T03:47:59Z"));
+
+        // 09:18 bucket starts → previous bucket completes
+        builder.onTick(new BigDecimal("105.00"), 10L, Instant.parse("2026-10-02T03:48:00Z"));
+
+        assertEquals(1, completedEvents.size());
+        Candle c = completedEvents.get(0).candle();
+        assertEquals(Instant.parse("2026-10-02T03:45:00Z"), c.timestamp());
+        assertEquals("3", c.timeframe());
+        assertEquals(new BigDecimal("100.00"), c.open());
+        assertEquals(new BigDecimal("110.00"), c.high());
+        assertEquals(new BigDecimal("95.00"), c.low());
+        assertEquals(new BigDecimal("95.00"), c.close());
+        assertEquals(30L, c.volume());
+    }
+
+    @Test
+    void testOutOfOrderTickDoesNotMutateCurrentCandle() {
+        List<CompletedCandleEvent> completedEvents = new ArrayList<>();
+        BollingerHaCandleBuilder builder =
+                new BollingerHaCandleBuilder(
+                        "12345", "NIFTY26OCT25950CE", "CE", completedEvents::add);
+
+        builder.onTick(new BigDecimal("150.00"), 1L, Instant.parse("2026-10-02T03:46:05Z"));
+        // A late frame from the previous minute must be dropped, not merged into this candle
+        builder.onTick(new BigDecimal("10.00"), 1L, Instant.parse("2026-10-02T03:45:30Z"));
+        builder.onTick(new BigDecimal("160.00"), 1L, Instant.parse("2026-10-02T03:46:40Z"));
+        builder.flush(Instant.parse("2026-10-02T03:47:00Z"));
+
+        assertEquals(1, completedEvents.size());
+        Candle c = completedEvents.get(0).candle();
+        assertEquals(new BigDecimal("150.00"), c.open());
+        assertEquals(new BigDecimal("160.00"), c.high());
+        assertEquals(new BigDecimal("150.00"), c.low());
+        assertEquals(new BigDecimal("160.00"), c.close());
+        assertEquals(2L, c.volume());
+    }
+
+    @Test
+    void testFlushEmitsInProgressCandleOnce() {
+        List<CompletedCandleEvent> completedEvents = new ArrayList<>();
+        BollingerHaCandleBuilder builder =
+                new BollingerHaCandleBuilder(
+                        "12345", "NIFTY26OCT25950CE", "CE", completedEvents::add);
+
+        builder.onTick(new BigDecimal("150.00"), 5L, Instant.parse("2026-10-02T03:45:10Z"));
+        builder.flush(Instant.parse("2026-10-02T03:46:00Z"));
+        builder.flush(Instant.parse("2026-10-02T03:46:00Z"));
+
+        assertEquals(1, completedEvents.size());
+        Candle c = completedEvents.get(0).candle();
+        assertEquals(Instant.parse("2026-10-02T03:45:00Z"), c.timestamp());
+        assertEquals(5L, c.volume());
+    }
 }

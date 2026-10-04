@@ -22,6 +22,7 @@ class BollingerHaPropertiesTest {
         assertEquals(2, props.getDefaultLots());
         assertEquals("09:15", props.getEntryWindowStart());
         assertEquals("10:30", props.getEntryWindowCutoff());
-        assertEquals("15:15", props.getAutoSquareOffTime());
+        assertEquals("15:00", props.getAutoSquareOffTime());
+        assertEquals("data/bollinger_ha_state.json", props.getStateFilePath());
     }
 }
