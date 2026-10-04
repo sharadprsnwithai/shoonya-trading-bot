@@ -22,7 +22,9 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
     private static final Logger log = LoggerFactory.getLogger(ZerodhaKiteGttGateway.class);
     private final KiteRestClient kiteRestClient;
     private final KiteAuthService kiteAuthService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper =
+            new ObjectMapper()
+                    .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
 
     @Autowired
     public ZerodhaKiteGttGateway(

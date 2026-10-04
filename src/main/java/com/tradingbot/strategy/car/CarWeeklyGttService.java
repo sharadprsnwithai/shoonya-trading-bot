@@ -33,7 +33,12 @@ public class CarWeeklyGttService {
     private final HistoricalOhlcCacheService ohlcService;
     private final List<GttExecutionGateway> gttGateways;
     private final TelegramService telegramService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper =
+            new ObjectMapper()
+                    .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+                    .disable(
+                            com.fasterxml.jackson.databind.SerializationFeature
+                                    .WRITE_DATES_AS_TIMESTAMPS);
 
     private CarPortfolioState portfolioState;
 
@@ -305,14 +310,17 @@ public class CarWeeklyGttService {
     private void loadState() {
         try {
             File f = new File(properties.getStateFilePath());
-            if (f.exists()) {
+            if (f.exists() && f.length() > 0) {
                 this.portfolioState = objectMapper.readValue(f, CarPortfolioState.class);
                 log.info(
                         "[CAR-WEEKLY] Loaded portfolio state: {} holdings",
                         portfolioState.getHoldings().size());
             }
         } catch (Exception e) {
-            log.warn("[CAR-WEEKLY] Could not load state: {}", e.getMessage());
+            log.warn(
+                    "[CAR-WEEKLY] Could not load state from {} (will start with fresh state): {}",
+                    properties.getStateFilePath(),
+                    e.getMessage());
         }
     }
 

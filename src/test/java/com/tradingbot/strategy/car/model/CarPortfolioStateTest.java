@@ -18,7 +18,12 @@ class CarPortfolioStateTest {
     @BeforeEach
     void setUp() throws Exception {
         tempFile = Files.createTempFile("car-portfolio-test", ".json");
-        objectMapper = new ObjectMapper();
+        objectMapper =
+                new ObjectMapper()
+                        .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+                        .disable(
+                                com.fasterxml.jackson.databind.SerializationFeature
+                                        .WRITE_DATES_AS_TIMESTAMPS);
     }
 
     @AfterEach
@@ -66,5 +71,38 @@ class CarPortfolioStateTest {
         // Capital compounded: 1,000,000 + 1570 = 1,001,570 -> UNIT = 1,001,570 / 40 = 25,039.25
         assertEquals(new BigDecimal("1001570.00"), state.getTotalCapital());
         assertEquals(new BigDecimal("25039.25"), state.getUnitSize());
+    }
+
+    @Test
+    void testJsonSerializationWithInstantFields() throws Exception {
+        CarPortfolioState state =
+                new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
+        state.addFill("RELIANCE", 50, new BigDecimal("500.0"));
+        state.getGttOrders()
+                .put(
+                        "RELIANCE",
+                        new CarGttOrder(
+                                "GTT_123",
+                                "ZERODHA",
+                                "RELIANCE",
+                                GttOrderType.BUY,
+                                BigDecimal.valueOf(500.0),
+                                BigDecimal.valueOf(500.10),
+                                50,
+                                GttStatus.PENDING,
+                                java.time.LocalDate.now(),
+                                java.time.Instant.now()));
+
+        // Serialize to file
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile.toFile(), state);
+
+        // Deserialize from file
+        CarPortfolioState restored = objectMapper.readValue(tempFile.toFile(), CarPortfolioState.class);
+        assertNotNull(restored);
+        assertEquals(1, restored.getHoldings().size());
+        assertNotNull(restored.getHolding("RELIANCE"));
+        assertNotNull(restored.getHolding("RELIANCE").firstEntryTime());
+        assertEquals(1, restored.getGttOrders().size());
+        assertNotNull(restored.getGttOrders().get("RELIANCE").createdAt());
     }
 }
