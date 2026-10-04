@@ -18,6 +18,7 @@ public class CarWeeklyProperties {
     private int highLookbackDays = 252;
     private boolean telegramAlerts = true;
     private String stateFilePath = "data/car_portfolio_state.json";
+    private boolean syncDematHoldings = false;
     private List<String> accumulationOnlySymbols = new ArrayList<>();
 
     public boolean isAccumulationOnly(String symbol) {
@@ -112,6 +113,14 @@ public class CarWeeklyProperties {
 
     public void setStateFilePath(String stateFilePath) {
         this.stateFilePath = stateFilePath;
+    }
+
+    public boolean isSyncDematHoldings() {
+        return syncDematHoldings;
+    }
+
+    public void setSyncDematHoldings(boolean syncDematHoldings) {
+        this.syncDematHoldings = syncDematHoldings;
     }
 
     public List<String> getAccumulationOnlySymbols() {

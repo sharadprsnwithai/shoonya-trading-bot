@@ -68,6 +68,19 @@ public class CarCalculator {
         BigDecimal latestClose = closes.get(closes.size() - 1);
         BigDecimal latestCumAvg = cumAverages.get(cumAverages.size() - 1);
 
+        // 3. Find Last Week's High (max high of last 5 completed daily trading sessions)
+        BigDecimal lastWeekHigh = BigDecimal.ZERO;
+        int last5Start = Math.max(0, dailyCandles.size() - 5);
+        for (int i = last5Start; i < dailyCandles.size(); i++) {
+            Candle c = dailyCandles.get(i);
+            if (c != null && c.high() != null && c.high().compareTo(lastWeekHigh) > 0) {
+                lastWeekHigh = c.high();
+            }
+        }
+        if (lastWeekHigh.compareTo(BigDecimal.ZERO) <= 0) {
+            lastWeekHigh = latestClose;
+        }
+
         return new CarAnalysisResult(
                 symbol,
                 isCarPositive,
@@ -76,7 +89,8 @@ public class CarCalculator {
                 anchorDate,
                 latestClose,
                 latestCumAvg,
-                postAnchorCandles.size());
+                postAnchorCandles.size(),
+                lastWeekHigh);
     }
 
     public List<BigDecimal> calculateCumulativeAverages(List<BigDecimal> closes) {

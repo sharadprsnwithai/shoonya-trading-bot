@@ -12,4 +12,27 @@ public record CarAnalysisResult(
         LocalDate fiftyTwoWeekHighDate,
         BigDecimal latestClose,
         BigDecimal latestCumulativeAverage,
-        int daysSinceAnchor) {}
+        int daysSinceAnchor,
+        BigDecimal lastWeekHigh) {
+
+    public CarAnalysisResult(
+            String symbol,
+            boolean isCarPositive,
+            int consecutivePositiveDays,
+            BigDecimal fiftyTwoWeekHighClose,
+            LocalDate fiftyTwoWeekHighDate,
+            BigDecimal latestClose,
+            BigDecimal latestCumulativeAverage,
+            int daysSinceAnchor) {
+        this(
+                symbol,
+                isCarPositive,
+                consecutivePositiveDays,
+                fiftyTwoWeekHighClose,
+                fiftyTwoWeekHighDate,
+                latestClose,
+                latestCumulativeAverage,
+                daysSinceAnchor,
+                latestClose);
+    }
+}
