@@ -164,12 +164,60 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
     public boolean cancelGtt(String gttId) {
         if (gttId == null || gttId.isBlank()) return false;
         try {
-            log.info("[ZERODHA-GTT] Cancelling GTT {}", gttId);
-            return true;
+            log.info("[ZERODHA-GTT] Cancelling GTT trigger {}", gttId);
+            return kiteRestClient.cancelGtt(gttId);
         } catch (Exception e) {
             log.warn("[ZERODHA-GTT] Error cancelling GTT {}: {}", gttId, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Cleans up duplicate active triggers on Kite for the same symbol (retaining only the latest trigger)
+     * and returns a mapping of symbol -> active trigger ID.
+     */
+    public Map<String, String> deduplicateLiveKiteTriggers() {
+        Map<String, String> activeSymbols = new LinkedHashMap<>();
+        try {
+            JsonNode data = kiteRestClient.getGttTriggers();
+            if (data != null && data.isArray()) {
+                // Group triggers by symbol
+                Map<String, List<String>> symbolTriggers = new LinkedHashMap<>();
+                for (JsonNode trigger : data) {
+                    String status = trigger.path("status").asText("");
+                    if ("active".equalsIgnoreCase(status)) {
+                        String id = String.valueOf(trigger.path("id").asLong(0L));
+                        String sym = trigger.path("condition").path("tradingsymbol").asText("");
+                        if (!sym.isBlank() && !id.equals("0")) {
+                            symbolTriggers.computeIfAbsent(sym, k -> new ArrayList<>()).add(id);
+                        }
+                    }
+                }
+
+                for (Map.Entry<String, List<String>> entry : symbolTriggers.entrySet()) {
+                    String sym = entry.getKey();
+                    List<String> ids = entry.getValue();
+                    if (ids.size() > 1) {
+                        log.warn(
+                                "[ZERODHA-GTT] Detected {} duplicate active GTT triggers for {} on Kite: {}. Cleaning up older triggers...",
+                                ids.size(),
+                                sym,
+                                ids);
+                        // Keep the last/latest trigger, cancel older duplicates
+                        for (int i = 0; i < ids.size() - 1; i++) {
+                            String oldId = ids.get(i);
+                            log.info("[ZERODHA-GTT] Cancelling duplicate Kite trigger {} for {}", oldId, sym);
+                            kiteRestClient.cancelGtt(oldId);
+                        }
+                    }
+                    String latestId = ids.get(ids.size() - 1);
+                    activeSymbols.put(sym, latestId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[ZERODHA-GTT] Notice during Kite GTT deduplication: {}", e.getMessage());
+        }
+        return activeSymbols;
     }
 
     @Override

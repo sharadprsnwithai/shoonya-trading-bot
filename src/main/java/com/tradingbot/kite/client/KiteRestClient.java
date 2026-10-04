@@ -294,4 +294,32 @@ public class KiteRestClient {
         }
         return 0.0;
     }
+
+    public boolean cancelGtt(String triggerId) {
+        if (triggerId == null || triggerId.isBlank()) {
+            return false;
+        }
+        try {
+            restClient
+                    .delete()
+                    .uri("/gtt/triggers/" + triggerId)
+                    .header("Authorization", authorizationHeader())
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("[KITE-REST] Cancelled Kite GTT trigger: {}", triggerId);
+            return true;
+        } catch (Exception e) {
+            log.warn("[KITE-REST] Failed to cancel Kite GTT trigger {}: {}", triggerId, e.getMessage());
+            return false;
+        }
+    }
+
+    public JsonNode getGttTriggers() {
+        try {
+            return get("/gtt/triggers").path("data");
+        } catch (Exception e) {
+            log.warn("[KITE-REST] Failed to fetch Kite GTT triggers: {}", e.getMessage());
+            return null;
+        }
+    }
 }

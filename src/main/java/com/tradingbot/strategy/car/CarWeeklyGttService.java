@@ -120,6 +120,35 @@ public class CarWeeklyGttService {
             }
         }
 
+        // 1b. Clean up duplicate GTT triggers on Kite and sync existing active trigger IDs
+        for (GttExecutionGateway gw : gttGateways) {
+            if (gw instanceof com.tradingbot.strategy.car.gtt.ZerodhaKiteGttGateway zGw) {
+                Map<String, String> liveTriggers = zGw.deduplicateLiveKiteTriggers();
+                for (Map.Entry<String, String> entry : liveTriggers.entrySet()) {
+                    String sym = entry.getKey();
+                    String gttId = entry.getValue();
+                    CarGttOrder existing = portfolioState.getGttOrders().get(sym);
+                    if (existing == null) {
+                        portfolioState
+                                .getGttOrders()
+                                .put(
+                                        sym,
+                                        new CarGttOrder(
+                                                gttId,
+                                                "ZERODHA",
+                                                sym,
+                                                GttOrderType.BUY,
+                                                BigDecimal.ZERO,
+                                                BigDecimal.ZERO,
+                                                0,
+                                                GttStatus.PENDING,
+                                                LocalDate.now(IST),
+                                                Instant.now()));
+                    }
+                }
+            }
+        }
+
         // 2. Build full universe: Nifty 100 + CAR local holdings + live Broker Demat holdings!
         Set<String> universe = Nifty100Registry.getUniverseWithHoldings(allHeldSymbols);
         List<CarAnalysisResult> carPositiveStocks = new ArrayList<>();
@@ -194,6 +223,41 @@ public class CarWeeklyGttService {
                                     sym, lastWeekCandles, portfolioState.getUnitSize());
 
                     if (trig.quantity() > 0 && trig.triggerPrice().compareTo(BigDecimal.ZERO) > 0) {
+                        CarGttOrder existingGtt = portfolioState.getGttOrders().get(sym);
+                        if (existingGtt != null
+                                && existingGtt.status() == GttStatus.PENDING
+                                && existingGtt.triggerPrice() != null
+                                && existingGtt.triggerPrice().compareTo(BigDecimal.ZERO) > 0) {
+                            if (existingGtt.triggerPrice().compareTo(trig.triggerPrice()) == 0
+                                    && existingGtt.quantity() == trig.quantity()) {
+                                log.info(
+                                        "[CAR-WEEKLY] Active GTT trigger already exists for {} on {}"
+                                                + " (ID: {}, Trigger: ₹{}, Qty: {}). Skipping"
+                                                + " duplicate placement.",
+                                        sym,
+                                        existingGtt.broker(),
+                                        existingGtt.gttId(),
+                                        existingGtt.triggerPrice(),
+                                        existingGtt.quantity());
+                                continue;
+                            } else {
+                                log.info(
+                                        "[CAR-WEEKLY] Modifying GTT for {}: old trigger ₹{} -> new"
+                                                + " trigger ₹{}, old qty {} -> new qty {}",
+                                        sym,
+                                        existingGtt.triggerPrice(),
+                                        trig.triggerPrice(),
+                                        existingGtt.quantity(),
+                                        trig.quantity());
+                                for (GttExecutionGateway gw : gttGateways) {
+                                    if (gw.getBrokerName()
+                                            .equalsIgnoreCase(existingGtt.broker())) {
+                                        gw.cancelGtt(existingGtt.gttId());
+                                    }
+                                }
+                            }
+                        }
+
                         CarGttOrder gtt =
                                 new CarGttOrder(
                                         null,
