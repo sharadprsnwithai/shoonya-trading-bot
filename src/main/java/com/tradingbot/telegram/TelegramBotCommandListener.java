@@ -12,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalTime;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,6 +37,7 @@ public class TelegramBotCommandListener {
 
     private final LowestVolumeReversalService lvrService;
     private final com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService;
+    private final com.tradingbot.strategy.driftvwap.DriftVwapOptionSellingService driftVwapService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -50,12 +52,15 @@ public class TelegramBotCommandListener {
             @Autowired(required = false) LowestVolumeReversalService lvrService,
             @Autowired(required = false)
                     com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.driftvwap.DriftVwapOptionSellingService driftVwapService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
         this(
                 lvrService,
                 carWeeklyService,
+                driftVwapService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -68,7 +73,7 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
-        this(lvrService, null, telegramService, shoonyaConfig, objectMapper, httpClient);
+        this(lvrService, null, null, telegramService, shoonyaConfig, objectMapper, httpClient);
     }
 
     public TelegramBotCommandListener(
@@ -78,8 +83,20 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
+        this(lvrService, carWeeklyService, null, telegramService, shoonyaConfig, objectMapper, httpClient);
+    }
+
+    public TelegramBotCommandListener(
+            LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            com.tradingbot.strategy.driftvwap.DriftVwapOptionSellingService driftVwapService,
+            TelegramService telegramService,
+            ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
         this.lvrService = lvrService;
         this.carWeeklyService = carWeeklyService;
+        this.driftVwapService = driftVwapService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
@@ -276,6 +293,41 @@ public class TelegramBotCommandListener {
                 carWeeklyService.runSundayWeeklyRoutine();
                 return "🚀 CAR Weekly GTT Routine executed! GTT orders placed on Kite.\n\n"
                         + processCommand("/car");
+
+            case "/drift":
+            case "/drift_status":
+            case "/drift_vwap":
+                if (driftVwapService == null) return "⚠️ Drift VWAP Service not active.";
+                var dTrend = driftVwapService.getLatestTrendState();
+                var dPos = driftVwapService.getOpenPosition();
+                return String.format(
+                        "⚡ *Drift VWAP Option Selling Status*\n\n"
+                                + "• Trend Direction: *%s*\n"
+                                + "• 15m Close: `₹%.2f` | 15m VWAP: `₹%.2f`\n"
+                                + "• 1-Hour Momentum: `%+.2f%%`\n"
+                                + "• Open Position: *%s*\n"
+                                + "• Today's Trades: `%d / 4` | Losses: `%d / 2`",
+                        dTrend.direction(),
+                        dTrend.close15m().doubleValue(),
+                        dTrend.vwap15m().doubleValue(),
+                        dTrend.momentum1hrPct(),
+                        dPos != null && !dPos.isClosed()
+                                ? String.format(
+                                        Locale.US,
+                                        "SOLD %s ATM %d @ ₹%.2f (Target: ₹%.2f, SL: ₹%.2f)",
+                                        dPos.getOptionType(),
+                                        dPos.getStrikePrice().intValue(),
+                                        dPos.getEntryPremium().doubleValue(),
+                                        dPos.getTargetPremium().doubleValue(),
+                                        dPos.getSlPremium().doubleValue())
+                                : "None (Standing By)",
+                        driftVwapService.getTodayTradesCount().get(),
+                        driftVwapService.getTodayLossCount().get());
+
+            case "/drift_run":
+                if (driftVwapService == null) return "⚠️ Drift VWAP Service not active.";
+                driftVwapService.runCycle();
+                return "🔍 Drift VWAP 5-Minute Cycle executed!\n\n" + processCommand("/drift");
 
             case "/exit":
             case "/squareoff":
