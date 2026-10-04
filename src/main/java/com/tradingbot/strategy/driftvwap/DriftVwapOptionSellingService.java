@@ -251,26 +251,32 @@ public class DriftVwapOptionSellingService {
                 tradeId, optType, strike, entryPremium, targetPrem, slPrem, totalQty);
 
         if (properties.isTelegramAlerts() && telegramService != null) {
+            BigDecimal maxProfit =
+                    entryPremium.subtract(targetPrem)
+                            .multiply(BigDecimal.valueOf(totalQty))
+                            .setScale(2, RoundingMode.HALF_UP);
             telegramService.sendTextMessage(
                     String.format(
                             Locale.US,
-                            "🚀 *Drift VWAP Option Selling Entry*\n"
+                            "🚀 *Drift VWAP Option Selling Entry [PAPER]*\n"
                                     + "• Underlying: *%s* (Spot: `₹%.2f`)\n"
-                                    + "• Drift Direction: *%s*\n"
-                                    + "• Action: *SELL %s ATM %d*\n"
+                                    + "• Drift Bias: *%s*\n"
+                                    + "• Action: *SELL %s* (ATM %d)\n"
                                     + "• Entry Premium: `₹%.2f` (%d lots / %d qty)\n"
-                                    + "• Target Premium: `₹%.2f` (70%% Decay)\n"
-                                    + "• Stop Loss Premium: `₹%.2f` (+60%% Expansion)",
+                                    + "• Target Premium: `₹%.2f` (70%% Decay | Potential: `+₹%.2f`)\n"
+                                    + "• Stop Loss Premium: `₹%.2f` (+60%% Expansion | Max Risk: `-₹%.2f`)",
                             symbol,
                             spotPrice.doubleValue(),
                             direction,
-                            optType,
+                            contractSymbol,
                             strike.intValue(),
                             entryPremium.doubleValue(),
                             lots,
                             totalQty,
                             targetPrem.doubleValue(),
-                            slPrem.doubleValue()));
+                            maxProfit.doubleValue(),
+                            slPrem.doubleValue(),
+                            plannedRisk.doubleValue()));
         }
 
         return pos;
@@ -317,17 +323,22 @@ public class DriftVwapOptionSellingService {
                     pos.getContractSymbol(), pos.getSlPremium(), pos.getRealizedPnl());
 
             if (properties.isTelegramAlerts() && telegramService != null) {
+                BigDecimal lossPts = pos.getSlPremium().subtract(pos.getEntryPremium());
                 telegramService.sendTextMessage(
                         String.format(
                                 Locale.US,
-                                "🛑 *Drift VWAP Stop Loss Hit*\n"
+                                "🛑 *Drift VWAP Stop Loss Hit [PAPER]*\n"
                                         + "• Contract: `%s`\n"
-                                        + "• Exit Premium: `₹%.2f`\n"
-                                        + "• Realized P&L: `₹%.2f`\n"
+                                        + "• Entry Premium: `₹%.2f`\n"
+                                        + "• Exit Premium: `₹%.2f` (+60%% Expansion)\n"
+                                        + "• Loss Points: `-%.2f pts`\n"
+                                        + "• Realized P&L: `-₹%.2f`\n"
                                         + "• Reason: Option SL Expansion",
                                 pos.getContractSymbol(),
+                                pos.getEntryPremium().doubleValue(),
                                 pos.getSlPremium().doubleValue(),
-                                pos.getRealizedPnl().doubleValue()));
+                                lossPts.doubleValue(),
+                                pos.getRealizedPnl().abs().doubleValue()));
             }
             return;
         }
@@ -352,16 +363,21 @@ public class DriftVwapOptionSellingService {
                     pos.getContractSymbol(), pos.getTargetPremium(), pos.getRealizedPnl());
 
             if (properties.isTelegramAlerts() && telegramService != null) {
+                BigDecimal gainPts = pos.getEntryPremium().subtract(pos.getTargetPremium());
                 telegramService.sendTextMessage(
                         String.format(
                                 Locale.US,
-                                "🎯 *Drift VWAP Target Reached*\n"
+                                "🎯 *Drift VWAP Target Reached [PAPER]*\n"
                                         + "• Contract: `%s`\n"
+                                        + "• Entry Premium: `₹%.2f`\n"
                                         + "• Exit Premium: `₹%.2f` (70%% Decay)\n"
+                                        + "• Captured Points: `+%.2f pts`\n"
                                         + "• Realized P&L: `+₹%.2f`\n"
                                         + "• Reason: Option Target Decay",
                                 pos.getContractSymbol(),
+                                pos.getEntryPremium().doubleValue(),
                                 pos.getTargetPremium().doubleValue(),
+                                gainPts.doubleValue(),
                                 pos.getRealizedPnl().doubleValue()));
             }
         }
@@ -398,16 +414,21 @@ public class DriftVwapOptionSellingService {
                 pos.getContractSymbol(), exitPrem, pos.getRealizedPnl());
 
         if (properties.isTelegramAlerts() && telegramService != null) {
+            BigDecimal points = pos.getEntryPremium().subtract(exitPrem);
             telegramService.sendTextMessage(
                     String.format(
                             Locale.US,
-                            "🏁 *Drift VWAP 15:10 EOD Exit*\n"
+                            "🏁 *Drift VWAP 15:10 EOD Exit [PAPER]*\n"
                                     + "• Contract: `%s`\n"
+                                    + "• Entry Premium: `₹%.2f`\n"
                                     + "• Exit Premium: `₹%.2f`\n"
-                                    + "• Realized P&L: `₹%.2f`\n"
-                                    + "• Reason: Daily Market Close",
+                                    + "• Points: `%+.2f pts`\n"
+                                    + "• Realized P&L: `%+₹%.2f`\n"
+                                    + "• Reason: Daily Market Close (Theta Captured)",
                             pos.getContractSymbol(),
+                            pos.getEntryPremium().doubleValue(),
                             exitPrem.doubleValue(),
+                            points.doubleValue(),
                             pos.getRealizedPnl().doubleValue()));
         }
     }
