@@ -48,4 +48,22 @@ class CarWeeklyGttServiceTest {
         assertEquals(new BigDecimal("25000.00"), service.getPortfolioState().getUnitSize());
         assertEquals(40, service.getPortfolioState().getAvailableUnits());
     }
+
+    @Test
+    void testManageSellTargetGttsPlacesSellGttOnGateways() {
+        when(gttGateway.getBrokerName()).thenReturn("ZERODHA");
+        when(gttGateway.placeGtt(any())).thenReturn("GTT_SELL_999");
+
+        // Add an active holding for RELIANCE (50 shares @ avg 2500, target 2657.00)
+        service.getPortfolioState().addFill("RELIANCE", 50, BigDecimal.valueOf(2500.0));
+
+        service.runSundayWeeklyRoutine();
+
+        // Verify SELL GTT was placed at +6.28% target
+        verify(gttGateway, atLeastOnce()).placeGtt(argThat(req ->
+                req.type() == com.tradingbot.strategy.car.model.GttOrderType.SELL_TARGET
+                        && "RELIANCE".equals(req.symbol())
+                        && req.quantity() == 50
+                        && req.triggerPrice().compareTo(BigDecimal.valueOf(2657.00)) == 0));
+    }
 }

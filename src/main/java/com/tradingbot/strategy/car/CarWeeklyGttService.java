@@ -181,6 +181,11 @@ public class CarWeeklyGttService {
     }
 
     private void manageSellTargetGtts() {
+        LocalDate monday = LocalDate.now(IST);
+        while (monday.getDayOfWeek().getValue() != 1) {
+            monday = monday.minusDays(1);
+        }
+
         for (CarHolding holding : portfolioState.getHoldings().values()) {
             String sym = holding.symbol();
             if (properties.isAccumulationOnly(sym)) {
@@ -191,10 +196,95 @@ public class CarWeeklyGttService {
                 continue;
             }
 
-            // For standard stocks, ensure target GTT is active at holding.targetPrice()
-            log.info(
-                    "[CAR-WEEKLY] Tracking +6.28% profit target for {}: {} shares @ Target ₹{}",
-                    sym, holding.totalQuantity(), holding.targetPrice());
+            if (holding.totalQuantity() <= 0
+                    || holding.targetPrice() == null
+                    || holding.targetPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+
+            String sellKey = sym + ":SELL_TARGET";
+            CarGttOrder existingSellGtt = portfolioState.getGttOrders().get(sellKey);
+            if (existingSellGtt != null
+                    && existingSellGtt.status() == GttStatus.PENDING
+                    && existingSellGtt.triggerPrice() != null
+                    && existingSellGtt.triggerPrice().compareTo(holding.targetPrice()) == 0
+                    && existingSellGtt.quantity() == holding.totalQuantity()) {
+                log.info(
+                        "[CAR-WEEKLY] Active Sell Target GTT already exists for {} on {}"
+                                + " (ID: {}, Target: ₹{}, Qty: {}). Skipping duplicate.",
+                        sym,
+                        existingSellGtt.broker(),
+                        existingSellGtt.gttId(),
+                        existingSellGtt.triggerPrice(),
+                        existingSellGtt.quantity());
+                continue;
+            } else if (existingSellGtt != null
+                    && existingSellGtt.gttId() != null
+                    && !existingSellGtt.gttId().isBlank()) {
+                log.info(
+                        "[CAR-WEEKLY] Modifying Sell Target GTT for {}: old target ₹{} -> new"
+                                + " target ₹{}, old qty {} -> new qty {}",
+                        sym,
+                        existingSellGtt.triggerPrice(),
+                        holding.targetPrice(),
+                        existingSellGtt.quantity(),
+                        holding.totalQuantity());
+                for (GttExecutionGateway gw : gttGateways) {
+                    if (gw.getBrokerName().equalsIgnoreCase(existingSellGtt.broker())) {
+                        gw.cancelGtt(existingSellGtt.gttId());
+                    }
+                }
+            }
+
+            CarGttOrder sellGtt =
+                    new CarGttOrder(
+                            null,
+                            "PRIMARY",
+                            sym,
+                            GttOrderType.SELL_TARGET,
+                            holding.targetPrice(),
+                            holding.targetPrice(),
+                            (int) holding.totalQuantity(),
+                            GttStatus.PENDING,
+                            monday,
+                            Instant.now());
+
+            for (GttExecutionGateway gw : gttGateways) {
+                try {
+                    String gttId = gw.placeGtt(sellGtt);
+                    if (gttId != null) {
+                        portfolioState
+                                .getGttOrders()
+                                .put(
+                                        sellKey,
+                                        new CarGttOrder(
+                                                gttId,
+                                                gw.getBrokerName(),
+                                                sym,
+                                                sellGtt.type(),
+                                                sellGtt.triggerPrice(),
+                                                sellGtt.limitPrice(),
+                                                sellGtt.quantity(),
+                                                GttStatus.PENDING,
+                                                monday,
+                                                Instant.now()));
+                        log.info(
+                                "[CAR-WEEKLY] Placed +6.28% Sell Target GTT for {} on {}: {} shares"
+                                        + " @ Target ₹{} (ID: {})",
+                                sym,
+                                gw.getBrokerName(),
+                                holding.totalQuantity(),
+                                holding.targetPrice(),
+                                gttId);
+                    }
+                } catch (Exception e) {
+                    log.warn(
+                            "[CAR-WEEKLY] Could not place Sell Target GTT for {} on {}: {}",
+                            sym,
+                            gw.getBrokerName(),
+                            e.getMessage());
+                }
+            }
         }
     }
 

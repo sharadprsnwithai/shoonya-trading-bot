@@ -54,4 +54,29 @@ class ZerodhaKiteGttGatewayTest {
         assertEquals("GTT_98765", gttId);
         verify(mockRestClient, times(1)).postForm(eq("/gtt/triggers"), anyMap(), eq(true));
     }
+
+    @Test
+    void testPlaceSellGttCallsKiteGttApi() {
+        ObjectNode mockResp = objectMapper.createObjectNode();
+        mockResp.putObject("data").put("trigger_id", "GTT_SELL_123");
+
+        when(mockRestClient.postForm(eq("/gtt/triggers"), anyMap(), eq(true))).thenReturn(mockResp);
+
+        CarGttOrder sellOrder =
+                new CarGttOrder(
+                        null,
+                        "ZERODHA",
+                        "RELIANCE",
+                        GttOrderType.SELL_TARGET,
+                        new BigDecimal("2657.00"), // +6.28% target
+                        new BigDecimal("2657.00"),
+                        10,
+                        GttStatus.PENDING,
+                        LocalDate.now(),
+                        Instant.now());
+
+        String gttId = gateway.placeGtt(sellOrder);
+        assertEquals("GTT_SELL_123", gttId);
+        verify(mockRestClient, times(1)).postForm(eq("/gtt/triggers"), anyMap(), eq(true));
+    }
 }
