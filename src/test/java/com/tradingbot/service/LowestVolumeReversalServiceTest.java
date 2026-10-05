@@ -51,6 +51,7 @@ class LowestVolumeReversalServiceTest {
         service.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST)); // 10:00 IST
         service.setMorningScanDelayMs(0); // No delay in unit tests
         service.setPdhPdlFilterEnabled(false);
+        service.setOpening15mRangeFilterEnabled(false);
         // M9: the sector gate now fails closed on NO_DATA (unit-test quote mocks carry no
         // breadth data); gate-specific tests re-enable it or call the check directly.
         service.setSectorMomentumFilterEnabled(false);

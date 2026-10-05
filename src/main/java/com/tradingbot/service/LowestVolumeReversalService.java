@@ -124,8 +124,8 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.vwap-confirmation-enabled:true}")
     private volatile boolean vwapConfirmationEnabled = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.opening-15m-range-filter-enabled:false}")
-    private volatile boolean opening15mRangeFilterEnabled = false;
+    @Value("${trading-bot.strategy.lowest-volume.opening-15m-range-filter-enabled:true}")
+    private volatile boolean opening15mRangeFilterEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.pdh-pdl-filter-enabled:true}")
     private volatile boolean pdhPdlFilterEnabled = true;
