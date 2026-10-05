@@ -201,7 +201,7 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
                     winningSector.pctChange(),
                     topCandidates);
 
-            // 4. Configure Service for Session Date
+            // 4. Configure Service for Session Date with all institutional rules
             lvrService.setClock(
                     Clock.fixed(sessionDate.atTime(10, 0).atZone(IST).toInstant(), IST));
             lvrService.setInstrumentType(LvrInstrumentType.FUTURES);
@@ -214,6 +214,9 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
             lvrService.setVwapConfirmationEnabled(true);
             lvrService.setOpening15mRangeFilterEnabled(true);
             lvrService.setPdhPdlFilterEnabled(true);
+            lvrService.setPcrFilterEnabled(true);
+            lvrService.setOptionSrFilterEnabled(true);
+            lvrService.setEntryCutoffTime(java.time.LocalTime.of(11, 30));
             lvrService.setSectorMomentumFilterEnabled(false);
 
             int sessionTrades = 0;

@@ -4310,6 +4310,11 @@ public class LowestVolumeReversalService {
                     if (activeSetup.getPdh() == null && pdhPdlFilterEnabled) {
                         initPdhPdlForSetup(activeSetup);
                     }
+                    if ((pcrFilterEnabled || optionSrFilterEnabled)
+                            && (activeSetup.getPcr() == null
+                                    || activeSetup.getOptionResistanceStrike() == null)) {
+                        resolveLiveOptionChainLevels(activeSetup, activeSetup.getTriggerPrice());
+                    }
                 }
             }
 
