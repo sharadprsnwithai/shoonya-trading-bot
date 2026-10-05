@@ -3,6 +3,7 @@ package com.tradingbot.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
+import com.tradingbot.marketdata.HistoricalOhlcCacheService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
@@ -74,6 +75,7 @@ public class LowestVolumeReversalService {
     private final com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService;
     private final LowestVolumeReversalScanner scanner;
     private final com.tradingbot.bus.SignalPublisher signalPublisher;
+    private volatile HistoricalOhlcCacheService ohlcCacheService;
 
     private java.time.Clock clock = java.time.Clock.system(IST);
 
@@ -258,7 +260,8 @@ public class LowestVolumeReversalService {
             @Autowired(required = false)
                     com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService,
             @Autowired(required = false) LowestVolumeReversalScanner scanner,
-            @Autowired(required = false) com.tradingbot.bus.SignalPublisher signalPublisher) {
+            @Autowired(required = false) com.tradingbot.bus.SignalPublisher signalPublisher,
+            @Autowired(required = false) HistoricalOhlcCacheService ohlcCacheService) {
         this.marketDataService = marketDataService;
         this.taService = taService;
         this.telegramService = telegramService;
@@ -266,6 +269,7 @@ public class LowestVolumeReversalService {
         this.optionChainService = optionChainService;
         this.scanner = (scanner != null) ? scanner : new LowestVolumeReversalScanner();
         this.signalPublisher = signalPublisher;
+        this.ohlcCacheService = ohlcCacheService;
     }
 
     // --- M10: disk persistence ---
@@ -380,8 +384,27 @@ public class LowestVolumeReversalService {
             TechnicalAnalysisService taService,
             TelegramService telegramService,
             ShoonyaConfig config,
+            com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService,
+            LowestVolumeReversalScanner scanner,
+            com.tradingbot.bus.SignalPublisher signalPublisher) {
+        this(
+                marketDataService,
+                taService,
+                telegramService,
+                config,
+                optionChainService,
+                scanner,
+                signalPublisher,
+                null);
+    }
+
+    public LowestVolumeReversalService(
+            ShoonyaMarketDataService marketDataService,
+            TechnicalAnalysisService taService,
+            TelegramService telegramService,
+            ShoonyaConfig config,
             LowestVolumeReversalScanner scanner) {
-        this(marketDataService, taService, telegramService, config, null, scanner, null);
+        this(marketDataService, taService, telegramService, config, null, scanner, null, null);
     }
 
     /**
@@ -3560,36 +3583,80 @@ public class LowestVolumeReversalService {
     }
 
     public void initPdhPdlForSetup(LowestVolumeSetup setup) {
-        if (setup == null || marketDataService == null) return;
+        if (setup == null) return;
         try {
             LocalDate today = LocalDate.now(clock);
-            List<Candle> dailyCandles = marketDataService.fetchDailyCandles(setup.getSymbol(), 5);
-            if (dailyCandles != null && !dailyCandles.isEmpty()) {
-                List<Candle> pastDaily =
-                        dailyCandles.stream()
-                                .filter(
-                                        c ->
-                                                c.timestamp() != null
-                                                        && LocalDate.ofInstant(c.timestamp(), IST)
-                                                                .isBefore(today))
-                                .toList();
-                if (!pastDaily.isEmpty()) {
-                    Candle prevDay = pastDaily.get(pastDaily.size() - 1);
-                    setup.setPdh(prevDay.high());
-                    setup.setPdl(prevDay.low());
-                    log.info(
-                            "[LVR] Initialized PDH/PDL for {}: PDH={}, PDL={}",
+            List<Candle> dailyCandles = null;
+
+            // 1. Primary source: in-memory / SQLite cached daily candles from
+            // HistoricalOhlcCacheService
+            if (ohlcCacheService != null) {
+                try {
+                    dailyCandles = ohlcCacheService.getDailyCandles(setup.getSymbol());
+                } catch (Exception e) {
+                    log.warn(
+                            "[LVR] Failed to fetch daily candles from OHLC cache for {}: {}",
                             setup.getSymbol(),
-                            prevDay.high(),
-                            prevDay.low());
+                            e.getMessage());
                 }
+            }
+
+            List<Candle> pastDaily = filterPastDailyCandles(dailyCandles, today);
+
+            // 2. Fallback: ShoonyaMarketDataService if OHLC cache is unavailable or has no valid
+            // past daily candles
+            if (pastDaily.isEmpty() && marketDataService != null) {
+                try {
+                    dailyCandles = marketDataService.fetchDailyCandles(setup.getSymbol(), 5);
+                    pastDaily = filterPastDailyCandles(dailyCandles, today);
+                } catch (Exception e) {
+                    log.warn(
+                            "[LVR] Failed to fetch daily candles from Shoonya for {}: {}",
+                            setup.getSymbol(),
+                            e.getMessage());
+                }
+            }
+
+            if (!pastDaily.isEmpty()) {
+                Candle prevDay = pastDaily.get(pastDaily.size() - 1);
+                setup.setPdh(prevDay.high());
+                setup.setPdl(prevDay.low());
+                log.info(
+                        "[LVR] Initialized PDH/PDL for {}: PDH={}, PDL={}",
+                        setup.getSymbol(),
+                        prevDay.high(),
+                        prevDay.low());
+            } else {
+                log.warn(
+                        "[LVR] No historical daily candles found to set PDH/PDL for {}",
+                        setup.getSymbol());
             }
         } catch (Exception e) {
             log.warn(
-                    "[LVR] Could not fetch daily candles for {} to set PDH/PDL: {}",
+                    "[LVR] Could not initialize PDH/PDL for {}: {}",
                     setup.getSymbol(),
                     e.getMessage());
         }
+    }
+
+    private List<Candle> filterPastDailyCandles(List<Candle> dailyCandles, LocalDate today) {
+        if (dailyCandles == null || dailyCandles.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return dailyCandles.stream()
+                .filter(
+                        c ->
+                                c.timestamp() != null
+                                        && LocalDate.ofInstant(c.timestamp(), IST).isBefore(today))
+                .toList();
+    }
+
+    public HistoricalOhlcCacheService getOhlcCacheService() {
+        return ohlcCacheService;
+    }
+
+    public void setOhlcCacheService(HistoricalOhlcCacheService ohlcCacheService) {
+        this.ohlcCacheService = ohlcCacheService;
     }
 
     public int getDefaultLots() {

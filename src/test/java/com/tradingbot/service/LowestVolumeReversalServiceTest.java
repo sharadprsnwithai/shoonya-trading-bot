@@ -3,11 +3,15 @@ package com.tradingbot.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
+import com.tradingbot.marketdata.HistoricalOhlcCacheService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
@@ -3057,5 +3061,88 @@ class LowestVolumeReversalServiceTest {
         service.getTodayLossCount().set(2);
         service.resetDaily();
         assertThat(service.getTodayLossCount().get()).isZero();
+    }
+
+    @Test
+    @DisplayName(
+            "initPdhPdlForSetup uses HistoricalOhlcCacheService when available without hitting network")
+    void testInitPdhPdlUsesHistoricalOhlcCacheService() {
+        HistoricalOhlcCacheService ohlcCache = mock(HistoricalOhlcCacheService.class);
+        service.setOhlcCacheService(ohlcCache);
+
+        Candle prevDay =
+                Candle.of5m(
+                        "PNB",
+                        Instant.parse("2026-09-17T00:00:00Z"),
+                        BigDecimal.valueOf(112),
+                        BigDecimal.valueOf(115.50),
+                        BigDecimal.valueOf(110.25),
+                        BigDecimal.valueOf(114),
+                        10000);
+        when(ohlcCache.getDailyCandles("PNB")).thenReturn(List.of(prevDay));
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PNB", LowestVolumeDirection.LONG);
+        service.initPdhPdlForSetup(setup);
+
+        assertThat(setup.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(115.50));
+        assertThat(setup.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(110.25));
+        verify(marketDataService, never())
+                .fetchDailyCandles(any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    @DisplayName(
+            "initPdhPdlForSetup falls back to ShoonyaMarketDataService when HistoricalOhlcCacheService is empty")
+    void testInitPdhPdlFallsBackToShoonyaWhenCacheEmpty() {
+        HistoricalOhlcCacheService ohlcCache = mock(HistoricalOhlcCacheService.class);
+        service.setOhlcCacheService(ohlcCache);
+
+        when(ohlcCache.getDailyCandles("PNB")).thenReturn(List.of());
+
+        Candle prevDay =
+                Candle.of5m(
+                        "PNB",
+                        Instant.parse("2026-09-17T00:00:00Z"),
+                        BigDecimal.valueOf(112),
+                        BigDecimal.valueOf(114.80),
+                        BigDecimal.valueOf(109.50),
+                        BigDecimal.valueOf(113),
+                        10000);
+        when(marketDataService.fetchDailyCandles("PNB", 5)).thenReturn(List.of(prevDay));
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PNB", LowestVolumeDirection.LONG);
+        service.initPdhPdlForSetup(setup);
+
+        assertThat(setup.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(114.80));
+        assertThat(setup.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(109.50));
+        verify(marketDataService, times(1)).fetchDailyCandles("PNB", 5);
+    }
+
+    @Test
+    @DisplayName(
+            "initPdhPdlForSetup falls back to ShoonyaMarketDataService when HistoricalOhlcCacheService throws exception")
+    void testInitPdhPdlFallsBackToShoonyaWhenCacheThrows() {
+        HistoricalOhlcCacheService ohlcCache = mock(HistoricalOhlcCacheService.class);
+        service.setOhlcCacheService(ohlcCache);
+
+        when(ohlcCache.getDailyCandles("PNB")).thenThrow(new RuntimeException("SQLite locked"));
+
+        Candle prevDay =
+                Candle.of5m(
+                        "PNB",
+                        Instant.parse("2026-09-17T00:00:00Z"),
+                        BigDecimal.valueOf(112),
+                        BigDecimal.valueOf(114.80),
+                        BigDecimal.valueOf(109.50),
+                        BigDecimal.valueOf(113),
+                        10000);
+        when(marketDataService.fetchDailyCandles("PNB", 5)).thenReturn(List.of(prevDay));
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PNB", LowestVolumeDirection.LONG);
+        service.initPdhPdlForSetup(setup);
+
+        assertThat(setup.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(114.80));
+        assertThat(setup.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(109.50));
+        verify(marketDataService, times(1)).fetchDailyCandles("PNB", 5);
     }
 }

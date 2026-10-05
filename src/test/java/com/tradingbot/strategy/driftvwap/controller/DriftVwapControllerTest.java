@@ -20,8 +20,10 @@ class DriftVwapControllerTest {
 
         when(mockService.getOpenPosition()).thenReturn(null);
         when(mockService.getLatestTrendState()).thenReturn(DriftVwapTrendState.neutral());
-        when(mockService.getTodayTradesCount()).thenReturn(new java.util.concurrent.atomic.AtomicInteger(0));
-        when(mockService.getTodayLossCount()).thenReturn(new java.util.concurrent.atomic.AtomicInteger(0));
+        when(mockService.getTodayTradesCount())
+                .thenReturn(new java.util.concurrent.atomic.AtomicInteger(0));
+        when(mockService.getTodayLossCount())
+                .thenReturn(new java.util.concurrent.atomic.AtomicInteger(0));
         when(mockService.getTradeHistory()).thenReturn(java.util.List.of());
 
         ResponseEntity<Map<String, Object>> resp = controller.getStatus();

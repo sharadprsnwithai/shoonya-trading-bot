@@ -53,7 +53,8 @@ public class TelegramBotCommandListener {
             @Autowired(required = false)
                     com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
             @Autowired(required = false)
-                    com.tradingbot.strategy.driftvwap.DriftVwapOptionSellingService driftVwapService,
+                    com.tradingbot.strategy.driftvwap.DriftVwapOptionSellingService
+                            driftVwapService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
@@ -83,7 +84,14 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
-        this(lvrService, carWeeklyService, null, telegramService, shoonyaConfig, objectMapper, httpClient);
+        this(
+                lvrService,
+                carWeeklyService,
+                null,
+                telegramService,
+                shoonyaConfig,
+                objectMapper,
+                httpClient);
     }
 
     public TelegramBotCommandListener(

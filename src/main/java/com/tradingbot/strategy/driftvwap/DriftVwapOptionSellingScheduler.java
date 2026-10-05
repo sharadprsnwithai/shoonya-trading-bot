@@ -12,7 +12,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class DriftVwapOptionSellingScheduler {
 
-    private static final Logger log = LoggerFactory.getLogger(DriftVwapOptionSellingScheduler.class);
+    private static final Logger log =
+            LoggerFactory.getLogger(DriftVwapOptionSellingScheduler.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final DriftVwapOptionSellingService service;
@@ -25,7 +26,10 @@ public class DriftVwapOptionSellingScheduler {
         this.properties = properties;
     }
 
-    /** 5-minute strategy cycle: Runs every 5 minutes on candle close during market hours (09:25 - 15:00 IST). */
+    /**
+     * 5-minute strategy cycle: Runs every 5 minutes on candle close during market hours (09:25 -
+     * 15:00 IST).
+     */
     @Scheduled(
             cron = "${trading-bot.strategy.drift-vwap.cron:20 */5 9-15 ? * MON-FRI}",
             zone = "Asia/Kolkata")
@@ -60,7 +64,8 @@ public class DriftVwapOptionSellingScheduler {
     @Scheduled(cron = "0 10 15 ? * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledHardExit() {
         if (!properties.isEnabled()) return;
-        log.info("[DRIFT-VWAP-SCHEDULER] 15:10 IST Market Close reached. Executing position square-off.");
+        log.info(
+                "[DRIFT-VWAP-SCHEDULER] 15:10 IST Market Close reached. Executing position square-off.");
         try {
             service.executeHardExit();
         } catch (Exception e) {

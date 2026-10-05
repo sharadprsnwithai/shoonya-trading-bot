@@ -7,7 +7,6 @@ import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.marketdata.ShoonyaOptionChainService;
 import com.tradingbot.model.Candle;
-import com.tradingbot.model.order.OrderType;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
 import com.tradingbot.strategy.driftvwap.config.DriftVwapProperties;
@@ -18,7 +17,6 @@ import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.CandleResamplingUtil;
 import com.tradingbot.util.StockFnoRegistry;
 import jakarta.annotation.PostConstruct;
-import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -39,8 +37,10 @@ import org.springframework.stereotype.Service;
  * Core Strategy Engine for Matio Kanti's Drift VWAP ATM Option Selling Framework on NIFTY 50.
  *
  * <p>1. 09:15 - 10:15 IST: Settlement window (VWAP anchor initialized, no trades).
- * <p>2. 10:15 - 14:55 IST: 15m Drift filter (Close vs VWAP + Rising/Falling VWAP + 1-hr momentum)
- *      + 5m Pullback trigger (1st opposite candle close -> Market Sell ATM option at next bar open).
+ *
+ * <p>2. 10:15 - 14:55 IST: 15m Drift filter (Close vs VWAP + Rising/Falling VWAP + 1-hr momentum) +
+ * 5m Pullback trigger (1st opposite candle close -> Market Sell ATM option at next bar open).
+ *
  * <p>3. Exits: +70% Premium Decay Target, -60% Premium Expansion SL, 15:10 IST EOD Hard Exit.
  */
 @Service
@@ -105,8 +105,10 @@ public class DriftVwapOptionSellingService {
         int lastIdx = candles15m.size() - 1;
         Candle latestCandle = candles15m.get(lastIdx);
         BigDecimal close15m = latestCandle.close();
-        BigDecimal vwap15m = BigDecimal.valueOf(vwapSeries[lastIdx]).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal prevVwap15m = BigDecimal.valueOf(vwapSeries[lastIdx - 1]).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal vwap15m =
+                BigDecimal.valueOf(vwapSeries[lastIdx]).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal prevVwap15m =
+                BigDecimal.valueOf(vwapSeries[lastIdx - 1]).setScale(2, RoundingMode.HALF_UP);
 
         // 1-Hour Momentum: 4 fifteen-minute bars back
         double momentum1hrPct = 0.0;
@@ -124,20 +126,19 @@ public class DriftVwapOptionSellingService {
         double minMom = properties.getMinMomentumPct();
         DriftDirection dir = DriftDirection.NEUTRAL;
 
-        if (close15m.compareTo(vwap15m) > 0 && vwap15m.compareTo(prevVwap15m) > 0 && momentum1hrPct >= minMom) {
+        if (close15m.compareTo(vwap15m) > 0
+                && vwap15m.compareTo(prevVwap15m) > 0
+                && momentum1hrPct >= minMom) {
             dir = DriftDirection.BULLISH_DRIFT;
-        } else if (close15m.compareTo(vwap15m) < 0 && vwap15m.compareTo(prevVwap15m) < 0 && momentum1hrPct <= -minMom) {
+        } else if (close15m.compareTo(vwap15m) < 0
+                && vwap15m.compareTo(prevVwap15m) < 0
+                && momentum1hrPct <= -minMom) {
             dir = DriftDirection.BEARISH_DRIFT;
         }
 
         this.latestTrendState =
                 new DriftVwapTrendState(
-                        close15m,
-                        vwap15m,
-                        prevVwap15m,
-                        momentum1hrPct,
-                        dir,
-                        Instant.now(clock));
+                        close15m, vwap15m, prevVwap15m, momentum1hrPct, dir, Instant.now(clock));
 
         return this.latestTrendState;
     }
@@ -155,8 +156,12 @@ public class DriftVwapOptionSellingService {
         return false;
     }
 
-    /** Executes Option Selling entry (Sell ATM Put on Bullish Drift, Sell ATM Call on Bearish Drift). */
-    public synchronized DriftVwapPosition executeOptionSellingEntry(BigDecimal spotPrice, DriftDirection direction) {
+    /**
+     * Executes Option Selling entry (Sell ATM Put on Bullish Drift, Sell ATM Call on Bearish
+     * Drift).
+     */
+    public synchronized DriftVwapPosition executeOptionSellingEntry(
+            BigDecimal spotPrice, DriftDirection direction) {
         if (!properties.isEnabled() || spotPrice == null || direction == DriftDirection.NEUTRAL) {
             return null;
         }
@@ -165,12 +170,16 @@ public class DriftVwapOptionSellingService {
             return null;
         }
         if (todayTradesCount.get() >= properties.getMaxDailyTrades()) {
-            log.info("[DRIFT-VWAP] Max daily trades ({}) reached. Standing down.", properties.getMaxDailyTrades());
+            log.info(
+                    "[DRIFT-VWAP] Max daily trades ({}) reached. Standing down.",
+                    properties.getMaxDailyTrades());
             return null;
         }
         if (todayLossCount.get() >= properties.getMaxDailyLosses()) {
-            log.warn("[DRIFT-VWAP] Daily 2-loss circuit breaker active ({}/{} losses). Halting new entries.",
-                    todayLossCount.get(), properties.getMaxDailyLosses());
+            log.warn(
+                    "[DRIFT-VWAP] Daily 2-loss circuit breaker active ({}/{} losses). Halting new entries.",
+                    todayLossCount.get(),
+                    properties.getMaxDailyLosses());
             return null;
         }
 
@@ -181,22 +190,34 @@ public class DriftVwapOptionSellingService {
         int lots = properties.getLots() > 0 ? properties.getLots() : 2;
         int totalQty = lots * lotSize;
 
-        LocalDate expiry = StockFnoRegistry.calculateTargetExpiry(symbol, LocalDate.now(clock), true, 1);
-        String contractSymbol = StockFnoRegistry.formatTradingSymbol(symbol, expiry, strike, optType, true);
+        LocalDate expiry =
+                StockFnoRegistry.calculateTargetExpiry(symbol, LocalDate.now(clock), true, 1);
+        String contractSymbol =
+                StockFnoRegistry.formatTradingSymbol(symbol, expiry, strike, optType, true);
 
         double livePrem = fetchOptionLtp(symbol, optType, strike);
         if (livePrem <= 0.0) {
-            log.warn("[DRIFT-VWAP] Live option LTP unavailable for {} {} {}. Skipping entry.", symbol, optType, strike);
+            log.warn(
+                    "[DRIFT-VWAP] Live option LTP unavailable for {} {} {}. Skipping entry.",
+                    symbol,
+                    optType,
+                    strike);
             return null;
         }
 
         BigDecimal entryPremium = BigDecimal.valueOf(livePrem).setScale(2, RoundingMode.HALF_UP);
         // Target: 70% decay -> targetPrem = entryPrem * (1 - 0.70) = entryPrem * 0.30
         BigDecimal targetPrem =
-                roundToTick(entryPremium.multiply(BigDecimal.valueOf(1.0 - (properties.getTargetDecayPct() / 100.0))));
+                roundToTick(
+                        entryPremium.multiply(
+                                BigDecimal.valueOf(
+                                        1.0 - (properties.getTargetDecayPct() / 100.0))));
         // Stop Loss: 60% expansion -> slPrem = entryPrem * (1 + 0.60) = entryPrem * 1.60
         BigDecimal slPrem =
-                roundToTick(entryPremium.multiply(BigDecimal.valueOf(1.0 + (properties.getSlExpansionPct() / 100.0))));
+                roundToTick(
+                        entryPremium.multiply(
+                                BigDecimal.valueOf(
+                                        1.0 + (properties.getSlExpansionPct() / 100.0))));
 
         BigDecimal plannedRisk =
                 slPrem.subtract(entryPremium)
@@ -230,7 +251,9 @@ public class DriftVwapOptionSellingService {
         publishSignal(
                 symbol,
                 contractSymbol,
-                direction == DriftDirection.BULLISH_DRIFT ? SignalAction.ENTRY_LONG : SignalAction.ENTRY_SHORT,
+                direction == DriftDirection.BULLISH_DRIFT
+                        ? SignalAction.ENTRY_LONG
+                        : SignalAction.ENTRY_SHORT,
                 entryPremium,
                 slPrem,
                 targetPrem,
@@ -248,11 +271,18 @@ public class DriftVwapOptionSellingService {
 
         log.info(
                 "[DRIFT-VWAP] OPTION SELLING ENTRY: TradeId={} | Sold {} ATM {} | EntryPrem=₹{} | TargetPrem=₹{} | SLPrem=₹{} | Qty={}",
-                tradeId, optType, strike, entryPremium, targetPrem, slPrem, totalQty);
+                tradeId,
+                optType,
+                strike,
+                entryPremium,
+                targetPrem,
+                slPrem,
+                totalQty);
 
         if (properties.isTelegramAlerts() && telegramService != null) {
             BigDecimal maxProfit =
-                    entryPremium.subtract(targetPrem)
+                    entryPremium
+                            .subtract(targetPrem)
                             .multiply(BigDecimal.valueOf(totalQty))
                             .setScale(2, RoundingMode.HALF_UP);
             telegramService.sendTextMessage(
@@ -294,7 +324,9 @@ public class DriftVwapOptionSellingService {
 
         double livePrem = fetchOptionLtp(symbol, pos.getOptionType(), pos.getStrikePrice());
         BigDecimal currentPremium =
-                (livePrem > 0.0) ? BigDecimal.valueOf(livePrem).setScale(2, RoundingMode.HALF_UP) : pos.getEntryPremium();
+                (livePrem > 0.0)
+                        ? BigDecimal.valueOf(livePrem).setScale(2, RoundingMode.HALF_UP)
+                        : pos.getEntryPremium();
 
         // 1. Hard EOD Square-Off at 15:10 IST
         if (!nowTime.isBefore(properties.getHardExitTime())) {
@@ -311,7 +343,9 @@ public class DriftVwapOptionSellingService {
             publishSignal(
                     symbol,
                     pos.getBrokerTradingSymbol(),
-                    pos.getDirection() == DriftDirection.BULLISH_DRIFT ? SignalAction.EXIT_LONG : SignalAction.EXIT_SHORT,
+                    pos.getDirection() == DriftDirection.BULLISH_DRIFT
+                            ? SignalAction.EXIT_LONG
+                            : SignalAction.EXIT_SHORT,
                     pos.getSlPremium(),
                     null,
                     null,
@@ -319,8 +353,11 @@ public class DriftVwapOptionSellingService {
                     "OPTION_SL_EXPANSION",
                     Map.of("instrumentType", "OPTION", "exchange", "NFO"));
 
-            log.warn("[DRIFT-VWAP] SL Hit for {}: Closed at SLPrem=₹{} | Loss=₹{}",
-                    pos.getContractSymbol(), pos.getSlPremium(), pos.getRealizedPnl());
+            log.warn(
+                    "[DRIFT-VWAP] SL Hit for {}: Closed at SLPrem=₹{} | Loss=₹{}",
+                    pos.getContractSymbol(),
+                    pos.getSlPremium(),
+                    pos.getRealizedPnl());
 
             if (properties.isTelegramAlerts() && telegramService != null) {
                 BigDecimal lossPts = pos.getSlPremium().subtract(pos.getEntryPremium());
@@ -351,7 +388,9 @@ public class DriftVwapOptionSellingService {
             publishSignal(
                     symbol,
                     pos.getBrokerTradingSymbol(),
-                    pos.getDirection() == DriftDirection.BULLISH_DRIFT ? SignalAction.EXIT_LONG : SignalAction.EXIT_SHORT,
+                    pos.getDirection() == DriftDirection.BULLISH_DRIFT
+                            ? SignalAction.EXIT_LONG
+                            : SignalAction.EXIT_SHORT,
                     pos.getTargetPremium(),
                     null,
                     null,
@@ -359,8 +398,11 @@ public class DriftVwapOptionSellingService {
                     "OPTION_TARGET_DECAY",
                     Map.of("instrumentType", "OPTION", "exchange", "NFO"));
 
-            log.info("[DRIFT-VWAP] Target Reached for {}: Closed at TargetPrem=₹{} | Profit=₹{}",
-                    pos.getContractSymbol(), pos.getTargetPremium(), pos.getRealizedPnl());
+            log.info(
+                    "[DRIFT-VWAP] Target Reached for {}: Closed at TargetPrem=₹{} | Profit=₹{}",
+                    pos.getContractSymbol(),
+                    pos.getTargetPremium(),
+                    pos.getRealizedPnl());
 
             if (properties.isTelegramAlerts() && telegramService != null) {
                 BigDecimal gainPts = pos.getEntryPremium().subtract(pos.getTargetPremium());
@@ -389,9 +431,13 @@ public class DriftVwapOptionSellingService {
             return;
         }
         DriftVwapPosition pos = openPosition;
-        double livePrem = fetchOptionLtp(pos.getUnderlyingSymbol(), pos.getOptionType(), pos.getStrikePrice());
+        double livePrem =
+                fetchOptionLtp(
+                        pos.getUnderlyingSymbol(), pos.getOptionType(), pos.getStrikePrice());
         BigDecimal exitPrem =
-                (livePrem > 0.0) ? BigDecimal.valueOf(livePrem).setScale(2, RoundingMode.HALF_UP) : pos.getEntryPremium();
+                (livePrem > 0.0)
+                        ? BigDecimal.valueOf(livePrem).setScale(2, RoundingMode.HALF_UP)
+                        : pos.getEntryPremium();
 
         pos.close(exitPrem, "15:10_THETA_EOD_EXIT", Instant.now(clock));
         tradeHistory.add(pos);
@@ -402,7 +448,9 @@ public class DriftVwapOptionSellingService {
         publishSignal(
                 pos.getUnderlyingSymbol(),
                 pos.getBrokerTradingSymbol(),
-                pos.getDirection() == DriftDirection.BULLISH_DRIFT ? SignalAction.EXIT_LONG : SignalAction.EXIT_SHORT,
+                pos.getDirection() == DriftDirection.BULLISH_DRIFT
+                        ? SignalAction.EXIT_LONG
+                        : SignalAction.EXIT_SHORT,
                 exitPrem,
                 null,
                 null,
@@ -410,8 +458,11 @@ public class DriftVwapOptionSellingService {
                 "15:10_THETA_EOD_EXIT",
                 Map.of("instrumentType", "OPTION", "exchange", "NFO"));
 
-        log.info("[DRIFT-VWAP] 15:10 EOD Exit executed for {}: ExitPrem=₹{} | Realized PnL=₹{}",
-                pos.getContractSymbol(), exitPrem, pos.getRealizedPnl());
+        log.info(
+                "[DRIFT-VWAP] 15:10 EOD Exit executed for {}: ExitPrem=₹{} | Realized PnL=₹{}",
+                pos.getContractSymbol(),
+                exitPrem,
+                pos.getRealizedPnl());
 
         if (properties.isTelegramAlerts() && telegramService != null) {
             BigDecimal points = pos.getEntryPremium().subtract(exitPrem);
@@ -473,7 +524,11 @@ public class DriftVwapOptionSellingService {
             Instant nowInst = Instant.now(clock);
             List<Candle> today5m =
                     raw5m.stream()
-                            .filter(c -> c.timestamp() != null && LocalDate.ofInstant(c.timestamp(), IST).equals(today))
+                            .filter(
+                                    c ->
+                                            c.timestamp() != null
+                                                    && LocalDate.ofInstant(c.timestamp(), IST)
+                                                            .equals(today))
                             .filter(c -> c.timestamp().plusSeconds(300).compareTo(nowInst) <= 0)
                             .toList();
             if (today5m.size() < 12) return; // At least 12 closed 5m bars (= 1 hour of data)
@@ -517,18 +572,25 @@ public class DriftVwapOptionSellingService {
                     for (var s : chain.strikes()) {
                         if (s.strikePrice() != null && s.strikePrice().compareTo(strike) == 0) {
                             var contract = "PE".equalsIgnoreCase(optionType) ? s.put() : s.call();
-                            if (contract != null && contract.ltp() != null && contract.ltp().doubleValue() > 0) {
+                            if (contract != null
+                                    && contract.ltp() != null
+                                    && contract.ltp().doubleValue() > 0) {
                                 return contract.ltp().doubleValue();
                             }
                         }
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
         try {
             if (marketDataService != null) {
-                LocalDate expiry = StockFnoRegistry.calculateTargetExpiry(symbol, LocalDate.now(clock), true, 1);
-                String tsym = StockFnoRegistry.formatTradingSymbol(symbol, expiry, strike, optionType, true);
+                LocalDate expiry =
+                        StockFnoRegistry.calculateTargetExpiry(
+                                symbol, LocalDate.now(clock), true, 1);
+                String tsym =
+                        StockFnoRegistry.formatTradingSymbol(
+                                symbol, expiry, strike, optionType, true);
                 String tok = marketDataService.resolveToken(tsym);
                 if (tok != null && !tok.isBlank()) {
                     JsonNode q = marketDataService.fetchQuote("NFO", tok);
@@ -537,7 +599,8 @@ public class DriftVwapOptionSellingService {
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return 0.0;
     }
 

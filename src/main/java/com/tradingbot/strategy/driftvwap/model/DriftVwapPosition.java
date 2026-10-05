@@ -4,7 +4,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 
-/** Represents an active or closed Directional Option Selling position under the Drift VWAP strategy. */
+/**
+ * Represents an active or closed Directional Option Selling position under the Drift VWAP strategy.
+ */
 public class DriftVwapPosition {
 
     private final String tradeId;
@@ -80,8 +82,7 @@ public class DriftVwapPosition {
     public BigDecimal calculateUnrealizedPnl(BigDecimal currentPremium) {
         if (this.closed || currentPremium == null) return this.realizedPnl;
         BigDecimal points = this.entryPremium.subtract(currentPremium);
-        return points.multiply(BigDecimal.valueOf(this.quantity))
-                .setScale(2, RoundingMode.HALF_UP);
+        return points.multiply(BigDecimal.valueOf(this.quantity)).setScale(2, RoundingMode.HALF_UP);
     }
 
     // Getters and Setters

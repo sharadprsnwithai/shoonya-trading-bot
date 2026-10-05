@@ -19,7 +19,6 @@ import com.tradingbot.strategy.driftvwap.model.DriftVwapTrendState;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.CandleResamplingUtil;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -58,7 +57,8 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
                 "==========================================================================================================\n");
 
         YahooFinanceService yfService = new YahooFinanceService(new ObjectMapper());
-        System.out.println("[FETCH] Downloading 30-day 5-minute historical candles for NIFTY 50 Index from Yahoo Finance...");
+        System.out.println(
+                "[FETCH] Downloading 30-day 5-minute historical candles for NIFTY 50 Index from Yahoo Finance...");
 
         List<Candle> allCandles = yfService.fetch5MinCandles("NIFTY 50", 35);
         if (allCandles == null || allCandles.isEmpty()) {
@@ -77,8 +77,11 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
         }
 
         List<LocalDate> tradingDates = new ArrayList<>(dayMap.keySet());
-        System.out.printf("[SETUP] Evaluated %d trading sessions from %s to %s\n\n",
-                tradingDates.size(), tradingDates.get(0), tradingDates.get(tradingDates.size() - 1));
+        System.out.printf(
+                "[SETUP] Evaluated %d trading sessions from %s to %s\n\n",
+                tradingDates.size(),
+                tradingDates.get(0),
+                tradingDates.get(tradingDates.size() - 1));
 
         // Initialize Strategy Engine
         ShoonyaMarketDataService mockMarketData = mock(ShoonyaMarketDataService.class);
@@ -118,7 +121,8 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
             double sessionPnl = 0.0;
 
             // Determine Days to Expiry (Weekly expiry on Thursday = Day 4)
-            int dayOfWeek = tradeDate.getDayOfWeek().getValue(); // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri
+            int dayOfWeek =
+                    tradeDate.getDayOfWeek().getValue(); // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri
             double dte = (dayOfWeek <= 4) ? (4 - dayOfWeek + 0.5) : (11 - dayOfWeek + 0.5);
 
             for (int i = 12; i < session5m.size(); i++) {
@@ -136,27 +140,52 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
                     double bLow = curr5m.low().doubleValue();
                     double bClose = curr5m.close().doubleValue();
 
-                    double barsHeld = Math.max(1.0, java.time.Duration.between(pos.getEntryTime(), currTime).toMinutes() / 5.0);
+                    double barsHeld =
+                            Math.max(
+                                    1.0,
+                                    java.time.Duration.between(pos.getEntryTime(), currTime)
+                                                    .toMinutes()
+                                            / 5.0);
                     double currDte = Math.max(0.2, dte - (barsHeld / 75.0));
 
                     double targetPrem = pos.getTargetPremium().doubleValue();
                     double slPrem = pos.getSlPremium().doubleValue();
 
                     // Estimate premium using Black-Scholes Greeks with time decay
-                    double premAtHigh = estimateOptionPremium(bHigh, pos.getStrikePrice().doubleValue(), pos.getOptionType(), 0.13, currDte);
-                    double premAtLow = estimateOptionPremium(bLow, pos.getStrikePrice().doubleValue(), pos.getOptionType(), 0.13, currDte);
-                    double premAtClose = estimateOptionPremium(bClose, pos.getStrikePrice().doubleValue(), pos.getOptionType(), 0.13, currDte);
+                    double premAtHigh =
+                            estimateOptionPremium(
+                                    bHigh,
+                                    pos.getStrikePrice().doubleValue(),
+                                    pos.getOptionType(),
+                                    0.13,
+                                    currDte);
+                    double premAtLow =
+                            estimateOptionPremium(
+                                    bLow,
+                                    pos.getStrikePrice().doubleValue(),
+                                    pos.getOptionType(),
+                                    0.13,
+                                    currDte);
+                    double premAtClose =
+                            estimateOptionPremium(
+                                    bClose,
+                                    pos.getStrikePrice().doubleValue(),
+                                    pos.getOptionType(),
+                                    0.13,
+                                    currDte);
 
                     double minPrem = Math.min(premAtHigh, Math.min(premAtLow, premAtClose));
                     double maxPrem = Math.max(premAtHigh, Math.max(premAtLow, premAtClose));
 
                     // Mock live quote fetch for 30s evaluation
                     when(mockMarketData.fetchQuote(any(), any()))
-                            .thenReturn(new ObjectMapper().createObjectNode().put("lp", premAtClose));
+                            .thenReturn(
+                                    new ObjectMapper().createObjectNode().put("lp", premAtClose));
 
                     // Check Hard Exit at 15:10 IST
                     if (!cTime.isBefore(LocalTime.of(15, 10))) {
-                        pos.close(BigDecimal.valueOf(premAtClose), "15:10_THETA_EOD_EXIT", currTime);
+                        pos.close(
+                                BigDecimal.valueOf(premAtClose), "15:10_THETA_EOD_EXIT", currTime);
                         executedTrades.add(pos);
                         sessionPnl += pos.getRealizedPnl().doubleValue();
                         break;
@@ -174,7 +203,8 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
 
                 // 2. Evaluate 15m Drift and 5m Pullback Entry Trigger
                 if (service.getOpenPosition() == null || service.getOpenPosition().isClosed()) {
-                    if (service.getTodayTradesCount().get() >= 4 || service.getTodayLossCount().get() >= 2) {
+                    if (service.getTodayTradesCount().get() >= 4
+                            || service.getTodayLossCount().get() >= 2) {
                         continue;
                     }
                     if (!cTime.isBefore(LocalTime.of(14, 55))) {
@@ -191,15 +221,24 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
                     if (triggered && (i + 1 < session5m.size())) {
                         Candle nextBar = session5m.get(i + 1);
                         double nextOpen = nextBar.open().doubleValue();
-                        BigDecimal strike = DriftVwapOptionSellingService.roundStrike(BigDecimal.valueOf(nextOpen), 50);
-                        String optType = (trend.direction() == DriftDirection.BULLISH_DRIFT) ? "PE" : "CE";
+                        BigDecimal strike =
+                                DriftVwapOptionSellingService.roundStrike(
+                                        BigDecimal.valueOf(nextOpen), 50);
+                        String optType =
+                                (trend.direction() == DriftDirection.BULLISH_DRIFT) ? "PE" : "CE";
 
-                        double initialPrem = estimateOptionPremium(nextOpen, strike.doubleValue(), optType, 0.13, dte);
+                        double initialPrem =
+                                estimateOptionPremium(
+                                        nextOpen, strike.doubleValue(), optType, 0.13, dte);
                         when(mockMarketData.fetchQuote(any(), any()))
-                                .thenReturn(new ObjectMapper().createObjectNode().put("lp", initialPrem));
+                                .thenReturn(
+                                        new ObjectMapper()
+                                                .createObjectNode()
+                                                .put("lp", initialPrem));
 
                         service.setClock(Clock.fixed(nextBar.timestamp(), IST));
-                        service.executeOptionSellingEntry(BigDecimal.valueOf(nextOpen), trend.direction());
+                        service.executeOptionSellingEntry(
+                                BigDecimal.valueOf(nextOpen), trend.direction());
                     }
                 }
             }
@@ -211,7 +250,8 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
         printReplaySummary(executedTrades, dailyPnlMap, tradingDates.size());
     }
 
-    private static double estimateOptionPremium(double spot, double strike, String optType, double iv, double dteDays) {
+    private static double estimateOptionPremium(
+            double spot, double strike, String optType, double iv, double dteDays) {
         double dteYears = Math.max(0.5, dteDays) / 365.0;
         double sigmaSqrtT = iv * Math.sqrt(dteYears);
         double d1 = (Math.log(spot / strike) + (0.5 * iv * iv) * dteYears) / sigmaSqrtT;
@@ -232,24 +272,59 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
 
     private static double erf(double z) {
         double t = 1.0 / (1.0 + 0.5 * Math.abs(z));
-        double ans = 1.0 - t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+        double ans =
+                1.0
+                        - t
+                                * Math.exp(
+                                        -z * z
+                                                - 1.26551223
+                                                + t
+                                                        * (1.00002368
+                                                                + t
+                                                                        * (0.37409196
+                                                                                + t
+                                                                                        * (0.09678418
+                                                                                                + t
+                                                                                                        * (-0.18628806
+                                                                                                                + t
+                                                                                                                        * (0.27886807
+                                                                                                                                + t
+                                                                                                                                        * (-1.13520398
+                                                                                                                                                + t
+                                                                                                                                                        * (1.48851587
+                                                                                                                                                                + t
+                                                                                                                                                                        * (-0.82215223
+                                                                                                                                                                                + t
+                                                                                                                                                                                        * 0.17087277)))))))));
         return (z >= 0) ? ans : -ans;
     }
 
-    private void printReplaySummary(List<DriftVwapPosition> trades, Map<LocalDate, Double> dailyPnls, int totalSessions) {
-        System.out.println("==========================================================================================================");
-        System.out.println(" 📊 JAVA REPLAY PERFORMANCE RESULTS - DRIFT VWAP OPTION SELLING (2 LOTS / 150 QTY)");
-        System.out.println("==========================================================================================================");
+    private void printReplaySummary(
+            List<DriftVwapPosition> trades, Map<LocalDate, Double> dailyPnls, int totalSessions) {
+        System.out.println(
+                "==========================================================================================================");
+        System.out.println(
+                " 📊 JAVA REPLAY PERFORMANCE RESULTS - DRIFT VWAP OPTION SELLING (2 LOTS / 150 QTY)");
+        System.out.println(
+                "==========================================================================================================");
 
         int totalTrades = trades.size();
-        List<DriftVwapPosition> wins = trades.stream().filter(t -> t.getRealizedPnl().compareTo(BigDecimal.ZERO) > 0).toList();
-        List<DriftVwapPosition> losses = trades.stream().filter(t -> t.getRealizedPnl().compareTo(BigDecimal.ZERO) < 0).toList();
+        List<DriftVwapPosition> wins =
+                trades.stream()
+                        .filter(t -> t.getRealizedPnl().compareTo(BigDecimal.ZERO) > 0)
+                        .toList();
+        List<DriftVwapPosition> losses =
+                trades.stream()
+                        .filter(t -> t.getRealizedPnl().compareTo(BigDecimal.ZERO) < 0)
+                        .toList();
         double winRate = totalTrades > 0 ? (wins.size() * 100.0 / totalTrades) : 0.0;
 
         double grossProfit = wins.stream().mapToDouble(w -> w.getRealizedPnl().doubleValue()).sum();
-        double grossLoss = Math.abs(losses.stream().mapToDouble(l -> l.getRealizedPnl().doubleValue()).sum());
+        double grossLoss =
+                Math.abs(losses.stream().mapToDouble(l -> l.getRealizedPnl().doubleValue()).sum());
         double netPnl = trades.stream().mapToDouble(t -> t.getRealizedPnl().doubleValue()).sum();
-        double profitFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? 99.9 : 0.0);
+        double profitFactor =
+                grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? 99.9 : 0.0);
 
         // Compute Drawdown
         double peak = 0.0;
@@ -267,58 +342,112 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
         double netAfterFriction = netPnl - totalFriction;
 
         System.out.printf(" Total Replay Sessions:       %d trading days\n", totalSessions);
-        System.out.printf(" Total Trades Executed:       %d trades (Avg %.1f trades/day)\n", totalTrades, (double) totalTrades / totalSessions);
-        System.out.printf(" Winning Trades:              %d (%.1f%% Win Rate) ⭐\n", wins.size(), winRate);
-        System.out.printf(" Losing Trades:               %d (%.1f%%)\n", losses.size(), (double) losses.size() * 100.0 / totalTrades);
-        System.out.println("----------------------------------------------------------------------------------------------------------");
+        System.out.printf(
+                " Total Trades Executed:       %d trades (Avg %.1f trades/day)\n",
+                totalTrades, (double) totalTrades / totalSessions);
+        System.out.printf(
+                " Winning Trades:              %d (%.1f%% Win Rate) ⭐\n", wins.size(), winRate);
+        System.out.printf(
+                " Losing Trades:               %d (%.1f%%)\n",
+                losses.size(), (double) losses.size() * 100.0 / totalTrades);
+        System.out.println(
+                "----------------------------------------------------------------------------------------------------------");
         System.out.printf(" Gross Realized Profit:       +₹%,.2f\n", grossProfit);
         System.out.printf(" Gross Realized Loss:         -₹%,.2f\n", grossLoss);
-        System.out.printf(" Total Taxes & Brokerage:     ₹%,.2f (₹75/trade on 2 lots)\n", totalFriction);
+        System.out.printf(
+                " Total Taxes & Brokerage:     ₹%,.2f (₹75/trade on 2 lots)\n", totalFriction);
         System.out.printf(" Net Realized P&L (Pre-Tax):  +₹%,.2f\n", netPnl);
         System.out.printf(" Net Realized P&L (Post-Tax): +₹%,.2f ⭐\n", netAfterFriction);
         System.out.printf(" Profit Factor:               %.2f\n", profitFactor);
-        System.out.printf(" Average Trade Return:        ₹%,.2f / trade\n", totalTrades > 0 ? netPnl / totalTrades : 0.0);
+        System.out.printf(
+                " Average Trade Return:        ₹%,.2f / trade\n",
+                totalTrades > 0 ? netPnl / totalTrades : 0.0);
         System.out.printf(" Maximum Strategy Drawdown:   ₹%,.2f\n", maxDd);
-        System.out.printf(" Return on ₹10 Lakhs Capital: +%.2f%% (in 1 month)\n", (netAfterFriction / 1000000.0) * 100.0);
-        System.out.println("----------------------------------------------------------------------------------------------------------");
+        System.out.printf(
+                " Return on ₹10 Lakhs Capital: +%.2f%% (in 1 month)\n",
+                (netAfterFriction / 1000000.0) * 100.0);
+        System.out.println(
+                "----------------------------------------------------------------------------------------------------------");
 
         System.out.println(" Contract Type Breakdown:");
         long peTrades = trades.stream().filter(t -> "PE".equals(t.getOptionType())).count();
-        long peWins = trades.stream().filter(t -> "PE".equals(t.getOptionType()) && t.getRealizedPnl().compareTo(BigDecimal.ZERO) > 0).count();
-        double pePnl = trades.stream().filter(t -> "PE".equals(t.getOptionType())).mapToDouble(t -> t.getRealizedPnl().doubleValue()).sum();
-        System.out.printf("  • SELL ATM PUT (PE) [Bullish Drift] : %2d trades | Win Rate: %5.1f%% | Net P&L: +₹%,.2f\n",
+        long peWins =
+                trades.stream()
+                        .filter(
+                                t ->
+                                        "PE".equals(t.getOptionType())
+                                                && t.getRealizedPnl().compareTo(BigDecimal.ZERO)
+                                                        > 0)
+                        .count();
+        double pePnl =
+                trades.stream()
+                        .filter(t -> "PE".equals(t.getOptionType()))
+                        .mapToDouble(t -> t.getRealizedPnl().doubleValue())
+                        .sum();
+        System.out.printf(
+                "  • SELL ATM PUT (PE) [Bullish Drift] : %2d trades | Win Rate: %5.1f%% | Net P&L: +₹%,.2f\n",
                 peTrades, peTrades > 0 ? (peWins * 100.0 / peTrades) : 0.0, pePnl);
 
         long ceTrades = trades.stream().filter(t -> "CE".equals(t.getOptionType())).count();
-        long ceWins = trades.stream().filter(t -> "CE".equals(t.getOptionType()) && t.getRealizedPnl().compareTo(BigDecimal.ZERO) > 0).count();
-        double cePnl = trades.stream().filter(t -> "CE".equals(t.getOptionType())).mapToDouble(t -> t.getRealizedPnl().doubleValue()).sum();
-        System.out.printf("  • SELL ATM CALL (CE) [Bearish Drift]: %2d trades | Win Rate: %5.1f%% | Net P&L: +₹%,.2f\n",
+        long ceWins =
+                trades.stream()
+                        .filter(
+                                t ->
+                                        "CE".equals(t.getOptionType())
+                                                && t.getRealizedPnl().compareTo(BigDecimal.ZERO)
+                                                        > 0)
+                        .count();
+        double cePnl =
+                trades.stream()
+                        .filter(t -> "CE".equals(t.getOptionType()))
+                        .mapToDouble(t -> t.getRealizedPnl().doubleValue())
+                        .sum();
+        System.out.printf(
+                "  • SELL ATM CALL (CE) [Bearish Drift]: %2d trades | Win Rate: %5.1f%% | Net P&L: +₹%,.2f\n",
                 ceTrades, ceTrades > 0 ? (ceWins * 100.0 / ceTrades) : 0.0, cePnl);
 
-        System.out.println("----------------------------------------------------------------------------------------------------------");
+        System.out.println(
+                "----------------------------------------------------------------------------------------------------------");
         System.out.println(" Exit Breakdown:");
         Map<String, List<DriftVwapPosition>> byReason = new HashMap<>();
         for (DriftVwapPosition t : trades) {
             byReason.computeIfAbsent(t.getExitReason(), k -> new ArrayList<>()).add(t);
         }
         for (Map.Entry<String, List<DriftVwapPosition>> entry : byReason.entrySet()) {
-            double rPnl = entry.getValue().stream().mapToDouble(t -> t.getRealizedPnl().doubleValue()).sum();
-            System.out.printf("  • %-24s: %2d trades | Net Realized P&L: %s₹%,.2f\n",
+            double rPnl =
+                    entry.getValue().stream()
+                            .mapToDouble(t -> t.getRealizedPnl().doubleValue())
+                            .sum();
+            System.out.printf(
+                    "  • %-24s: %2d trades | Net Realized P&L: %s₹%,.2f\n",
                     entry.getKey(), entry.getValue().size(), rPnl >= 0 ? "+" : "-", Math.abs(rPnl));
         }
 
-        System.out.println("==========================================================================================================\n");
+        System.out.println(
+                "==========================================================================================================\n");
         System.out.println(" Sample Executed Trades (Last 12 Trades):");
-        System.out.printf("%-12s %-6s %-18s %-12s %-12s %-12s %-15s %s\n",
-                "Date", "Type", "Contract", "Entry Prem", "Exit Prem", "Points", "Realized P&L", "Exit Reason");
-        System.out.println("----------------------------------------------------------------------------------------------------------");
+        System.out.printf(
+                "%-12s %-6s %-18s %-12s %-12s %-12s %-15s %s\n",
+                "Date",
+                "Type",
+                "Contract",
+                "Entry Prem",
+                "Exit Prem",
+                "Points",
+                "Realized P&L",
+                "Exit Reason");
+        System.out.println(
+                "----------------------------------------------------------------------------------------------------------");
 
         int start = Math.max(0, trades.size() - 12);
         for (int i = start; i < trades.size(); i++) {
             DriftVwapPosition t = trades.get(i);
             BigDecimal pts = t.getEntryPremium().subtract(t.getExitPremium());
-            System.out.printf("%-12s %-6s %-18s ₹%-11.2f ₹%-11.2f %+8.2f pts   %+11.2f   %s\n",
-                    t.getEntryTime() != null ? LocalDate.ofInstant(t.getEntryTime(), IST).toString() : "N/A",
+            System.out.printf(
+                    "%-12s %-6s %-18s ₹%-11.2f ₹%-11.2f %+8.2f pts   %+11.2f   %s\n",
+                    t.getEntryTime() != null
+                            ? LocalDate.ofInstant(t.getEntryTime(), IST).toString()
+                            : "N/A",
                     t.getOptionType(),
                     t.getContractSymbol(),
                     t.getEntryPremium().doubleValue(),
@@ -327,6 +456,7 @@ class ShoonyaLast30DaysDriftVwapReplayRunnerTest {
                     t.getRealizedPnl().doubleValue(),
                     t.getExitReason());
         }
-        System.out.println("==========================================================================================================\n");
+        System.out.println(
+                "==========================================================================================================\n");
     }
 }

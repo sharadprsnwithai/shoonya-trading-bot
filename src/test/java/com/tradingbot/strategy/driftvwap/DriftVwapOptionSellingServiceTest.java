@@ -56,18 +56,58 @@ class DriftVwapOptionSellingServiceTest {
     }
 
     @Test
-    @DisplayName("Should detect BULLISH_DRIFT on 15m when Close > VWAP, VWAP rising, and 1-Hr momentum >= +0.12%")
+    @DisplayName(
+            "Should detect BULLISH_DRIFT on 15m when Close > VWAP, VWAP rising, and 1-Hr momentum >= +0.12%")
     void testEvaluateBullishDrift() {
         Instant t0 = Instant.parse("2026-10-01T03:45:00Z"); // 09:15 IST
 
         List<Candle> candles15m =
                 List.of(
-                        new Candle("NIFTY", "15", t0, BigDecimal.valueOf(25000), BigDecimal.valueOf(25020), BigDecimal.valueOf(24990), BigDecimal.valueOf(25010), 10000),
-                        new Candle("NIFTY", "15", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(25010), BigDecimal.valueOf(25040), BigDecimal.valueOf(25005), BigDecimal.valueOf(25035), 12000),
-                        new Candle("NIFTY", "15", t0.plus(30, ChronoUnit.MINUTES), BigDecimal.valueOf(25035), BigDecimal.valueOf(25060), BigDecimal.valueOf(25030), BigDecimal.valueOf(25055), 15000),
-                        new Candle("NIFTY", "15", t0.plus(45, ChronoUnit.MINUTES), BigDecimal.valueOf(25055), BigDecimal.valueOf(25080), BigDecimal.valueOf(25050), BigDecimal.valueOf(25075), 14000),
-                        new Candle("NIFTY", "15", t0.plus(60, ChronoUnit.MINUTES), BigDecimal.valueOf(25075), BigDecimal.valueOf(25100), BigDecimal.valueOf(25070), BigDecimal.valueOf(25095), 16000)
-                );
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0,
+                                BigDecimal.valueOf(25000),
+                                BigDecimal.valueOf(25020),
+                                BigDecimal.valueOf(24990),
+                                BigDecimal.valueOf(25010),
+                                10000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(15, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25010),
+                                BigDecimal.valueOf(25040),
+                                BigDecimal.valueOf(25005),
+                                BigDecimal.valueOf(25035),
+                                12000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(30, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25035),
+                                BigDecimal.valueOf(25060),
+                                BigDecimal.valueOf(25030),
+                                BigDecimal.valueOf(25055),
+                                15000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(45, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25055),
+                                BigDecimal.valueOf(25080),
+                                BigDecimal.valueOf(25050),
+                                BigDecimal.valueOf(25075),
+                                14000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(60, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25075),
+                                BigDecimal.valueOf(25100),
+                                BigDecimal.valueOf(25070),
+                                BigDecimal.valueOf(25095),
+                                16000));
 
         DriftVwapTrendState state = service.evaluate15mDrift(candles15m);
         assertNotNull(state);
@@ -76,18 +116,58 @@ class DriftVwapOptionSellingServiceTest {
     }
 
     @Test
-    @DisplayName("Should detect BEARISH_DRIFT on 15m when Close < VWAP, VWAP falling, and 1-Hr momentum <= -0.12%")
+    @DisplayName(
+            "Should detect BEARISH_DRIFT on 15m when Close < VWAP, VWAP falling, and 1-Hr momentum <= -0.12%")
     void testEvaluateBearishDrift() {
         Instant t0 = Instant.parse("2026-10-01T03:45:00Z"); // 09:15 IST
 
         List<Candle> candles15m =
                 List.of(
-                        new Candle("NIFTY", "15", t0, BigDecimal.valueOf(25100), BigDecimal.valueOf(25110), BigDecimal.valueOf(25080), BigDecimal.valueOf(25090), 10000),
-                        new Candle("NIFTY", "15", t0.plus(15, ChronoUnit.MINUTES), BigDecimal.valueOf(25090), BigDecimal.valueOf(25095), BigDecimal.valueOf(25060), BigDecimal.valueOf(25065), 12000),
-                        new Candle("NIFTY", "15", t0.plus(30, ChronoUnit.MINUTES), BigDecimal.valueOf(25065), BigDecimal.valueOf(25070), BigDecimal.valueOf(25040), BigDecimal.valueOf(25045), 15000),
-                        new Candle("NIFTY", "15", t0.plus(45, ChronoUnit.MINUTES), BigDecimal.valueOf(25045), BigDecimal.valueOf(25050), BigDecimal.valueOf(25020), BigDecimal.valueOf(25025), 14000),
-                        new Candle("NIFTY", "15", t0.plus(60, ChronoUnit.MINUTES), BigDecimal.valueOf(25025), BigDecimal.valueOf(25030), BigDecimal.valueOf(24995), BigDecimal.valueOf(25000), 16000)
-                );
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0,
+                                BigDecimal.valueOf(25100),
+                                BigDecimal.valueOf(25110),
+                                BigDecimal.valueOf(25080),
+                                BigDecimal.valueOf(25090),
+                                10000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(15, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25090),
+                                BigDecimal.valueOf(25095),
+                                BigDecimal.valueOf(25060),
+                                BigDecimal.valueOf(25065),
+                                12000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(30, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25065),
+                                BigDecimal.valueOf(25070),
+                                BigDecimal.valueOf(25040),
+                                BigDecimal.valueOf(25045),
+                                15000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(45, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25045),
+                                BigDecimal.valueOf(25050),
+                                BigDecimal.valueOf(25020),
+                                BigDecimal.valueOf(25025),
+                                14000),
+                        new Candle(
+                                "NIFTY",
+                                "15",
+                                t0.plus(60, ChronoUnit.MINUTES),
+                                BigDecimal.valueOf(25025),
+                                BigDecimal.valueOf(25030),
+                                BigDecimal.valueOf(24995),
+                                BigDecimal.valueOf(25000),
+                                16000));
 
         DriftVwapTrendState state = service.evaluate15mDrift(candles15m);
         assertNotNull(state);
@@ -99,9 +179,17 @@ class DriftVwapOptionSellingServiceTest {
     @DisplayName("Should trigger LONG entry on 1st RED 5m pullback bar during BULLISH_DRIFT")
     void testTriggerLongOnRedPullbackBar() {
         Candle redCandle5m =
-                Candle.of5m("NIFTY", Instant.now(), BigDecimal.valueOf(25080), BigDecimal.valueOf(25085), BigDecimal.valueOf(25060), BigDecimal.valueOf(25065), 5000);
+                Candle.of5m(
+                        "NIFTY",
+                        Instant.now(),
+                        BigDecimal.valueOf(25080),
+                        BigDecimal.valueOf(25085),
+                        BigDecimal.valueOf(25060),
+                        BigDecimal.valueOf(25065),
+                        5000);
 
-        boolean triggered = service.check5mPullbackTrigger(DriftDirection.BULLISH_DRIFT, redCandle5m);
+        boolean triggered =
+                service.check5mPullbackTrigger(DriftDirection.BULLISH_DRIFT, redCandle5m);
         assertTrue(triggered);
     }
 
@@ -109,9 +197,17 @@ class DriftVwapOptionSellingServiceTest {
     @DisplayName("Should trigger SHORT entry on 1st GREEN 5m pullback bar during BEARISH_DRIFT")
     void testTriggerShortOnGreenPullbackBar() {
         Candle greenCandle5m =
-                Candle.of5m("NIFTY", Instant.now(), BigDecimal.valueOf(25020), BigDecimal.valueOf(25040), BigDecimal.valueOf(25015), BigDecimal.valueOf(25035), 5000);
+                Candle.of5m(
+                        "NIFTY",
+                        Instant.now(),
+                        BigDecimal.valueOf(25020),
+                        BigDecimal.valueOf(25040),
+                        BigDecimal.valueOf(25015),
+                        BigDecimal.valueOf(25035),
+                        5000);
 
-        boolean triggered = service.check5mPullbackTrigger(DriftDirection.BEARISH_DRIFT, greenCandle5m);
+        boolean triggered =
+                service.check5mPullbackTrigger(DriftDirection.BEARISH_DRIFT, greenCandle5m);
         assertTrue(triggered);
     }
 
@@ -125,13 +221,15 @@ class DriftVwapOptionSellingServiceTest {
                                 .createObjectNode()
                                 .put("lp", "100.00"));
 
-        DriftVwapPosition pos = service.executeOptionSellingEntry(BigDecimal.valueOf(25010), DriftDirection.BULLISH_DRIFT);
+        DriftVwapPosition pos =
+                service.executeOptionSellingEntry(
+                        BigDecimal.valueOf(25010), DriftDirection.BULLISH_DRIFT);
         assertNotNull(pos);
         assertEquals("PE", pos.getOptionType());
         assertEquals(0, BigDecimal.valueOf(25000).compareTo(pos.getStrikePrice()));
         assertEquals(0, BigDecimal.valueOf(100.00).compareTo(pos.getEntryPremium()));
         assertEquals(0, BigDecimal.valueOf(30.00).compareTo(pos.getTargetPremium())); // 70% decay
-        assertEquals(0, BigDecimal.valueOf(160.00).compareTo(pos.getSlPremium()));    // 60% expansion
+        assertEquals(0, BigDecimal.valueOf(160.00).compareTo(pos.getSlPremium())); // 60% expansion
 
         // 30s live check when option decays to 28.00 (below target 30.00)
         when(marketDataService.fetchQuote(any(), any()))

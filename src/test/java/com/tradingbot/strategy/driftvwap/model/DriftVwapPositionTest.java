@@ -14,7 +14,7 @@ class DriftVwapPositionTest {
     void testSoldOptionTargetHitComputesPositivePnl() {
         BigDecimal entryPrem = BigDecimal.valueOf(100.00);
         BigDecimal targetPrem = BigDecimal.valueOf(30.00); // 70% decay
-        BigDecimal slPrem = BigDecimal.valueOf(160.00);    // 60% expansion
+        BigDecimal slPrem = BigDecimal.valueOf(160.00); // 60% expansion
         int qty = 150; // 2 lots
 
         DriftVwapPosition pos =

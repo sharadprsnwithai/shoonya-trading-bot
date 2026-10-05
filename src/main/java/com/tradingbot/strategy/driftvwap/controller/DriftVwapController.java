@@ -38,18 +38,21 @@ public class DriftVwapController {
     @PostMapping("/run-cycle")
     public ResponseEntity<Map<String, Object>> runCycle() {
         service.runCycle();
-        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "5-minute Drift VWAP cycle triggered"));
+        return ResponseEntity.ok(
+                Map.of("status", "SUCCESS", "message", "5-minute Drift VWAP cycle triggered"));
     }
 
     @PostMapping("/exit")
     public ResponseEntity<Map<String, Object>> hardExit() {
         service.executeHardExit();
-        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Hard exit executed for Drift VWAP"));
+        return ResponseEntity.ok(
+                Map.of("status", "SUCCESS", "message", "Hard exit executed for Drift VWAP"));
     }
 
     @PostMapping("/reset")
     public ResponseEntity<Map<String, Object>> resetDaily() {
         service.resetDaily();
-        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Daily session state reset"));
+        return ResponseEntity.ok(
+                Map.of("status", "SUCCESS", "message", "Daily session state reset"));
     }
 }
