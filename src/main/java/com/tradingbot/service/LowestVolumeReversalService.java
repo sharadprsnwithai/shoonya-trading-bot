@@ -151,8 +151,8 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.pdh-pdl-filter-enabled:true}")
     private volatile boolean pdhPdlFilterEnabled = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.scanner-mode:SECTOR_ROTATION}")
-    private volatile String scannerMode = "SECTOR_ROTATION";
+    @Value("${trading-bot.strategy.lowest-volume.scanner-mode:HYBRID}")
+    private volatile String scannerMode = "HYBRID";
 
     @Value("${trading-bot.strategy.lowest-volume.oi-spurts-top-n:5}")
     private volatile int oiSpurtsTopN = 5;
@@ -739,6 +739,39 @@ public class LowestVolumeReversalService {
                 return;
             }
 
+            List<String> finalActiveList = new ArrayList<>();
+            List<String> oiCandidates = Collections.emptyList();
+
+            if ("HYBRID".equalsIgnoreCase(scannerMode) && scanner != null) {
+                try {
+                    oiCandidates = scanner.scanOiSpurts(universeQuotes, sentiment, 2);
+                } catch (Exception e) {
+                    log.warn("[LVR] OI Spurts scan failed during Hybrid scan: {}", e.getMessage());
+                }
+
+                // 1. Add top 2 sector candidates
+                int sectorTake = Math.min(2, candidateStocks.size());
+                for (int k = 0; k < sectorTake; k++) {
+                    finalActiveList.add(candidateStocks.get(k));
+                }
+
+                // 2. Add top 2 OI spurt candidates (if not already included)
+                for (String oiSym : oiCandidates) {
+                    if (!finalActiveList.contains(oiSym) && finalActiveList.size() < 4) {
+                        finalActiveList.add(oiSym);
+                    }
+                }
+
+                // 3. If OI spurts yielded < 2 stocks, fill remaining slots from sector candidates
+                for (String secSym : candidateStocks) {
+                    if (!finalActiveList.contains(secSym) && finalActiveList.size() < 3) {
+                        finalActiveList.add(secSym);
+                    }
+                }
+            } else {
+                finalActiveList.addAll(candidateStocks);
+            }
+
             this.sectorState =
                     new LowestVolumeSectorState(
                             (int) niftyQuotes.stream().filter(q -> q.pctChange() > 0).count(),
@@ -746,24 +779,31 @@ public class LowestVolumeReversalService {
                             sentiment,
                             winningSector.sectorName(),
                             winningSector.pctChange(),
-                            candidateStocks);
+                            finalActiveList);
 
             log.info(
-                    "[LVR] Morning Scan Result: Sentiment={}, Winning Sector={} ({}%), Candidates={}",
+                    "[LVR] Morning Scan Result (Mode={}): Sentiment={}, Winning Sector={} ({}%), Sector Candidates={}, OI Candidates={}, Final Active={}",
+                    scannerMode,
                     sentiment,
                     winningSector.sectorName(),
                     winningSector.pctChange(),
-                    candidateStocks);
+                    candidateStocks,
+                    oiCandidates,
+                    finalActiveList);
 
             // Populate active setups
             activeSetups.clear();
-            for (String symbol : candidateStocks) {
+            for (String symbol : finalActiveList) {
                 LowestVolumeSetup setup = new LowestVolumeSetup(symbol, sentiment);
+                StockQuoteSnapshot snap = universeQuotes.get(symbol);
+                if (snap != null) {
+                    setup.setOiChangePct(snap.oiPctChange());
+                }
                 initPdhPdlForSetup(setup);
                 activeSetups.put(symbol, setup);
             }
 
-            Set<String> candidateSet = new java.util.HashSet<>(candidateStocks);
+            Set<String> candidateSet = new java.util.HashSet<>(finalActiveList);
 
             currentTopGainers.clear();
             currentTopLosers.clear();
@@ -771,21 +811,28 @@ public class LowestVolumeReversalService {
             currentTopLoserSnapshots.clear();
 
             if (sentiment == LowestVolumeDirection.LONG) {
-                currentTopGainers.addAll(candidateStocks);
+                currentTopGainers.addAll(finalActiveList);
                 currentTopGainerSnapshots.addAll(
                         winningSectorStockQuotes.stream()
                                 .filter(q -> candidateSet.contains(q.symbol()))
                                 .toList());
             } else {
-                currentTopLosers.addAll(candidateStocks);
+                currentTopLosers.addAll(finalActiveList);
                 currentTopLoserSnapshots.addAll(
                         winningSectorStockQuotes.stream()
                                 .filter(q -> candidateSet.contains(q.symbol()))
                                 .toList());
             }
 
-            // Populate Candidate Reservoir from reserve leading sectors
+            // Populate Candidate Reservoir from remaining OI spurts and reserve leading sectors
             candidateReservoir.clear();
+            for (String oiSym : oiCandidates) {
+                if (!activeSetups.containsKey(oiSym)
+                        && !exhaustedSymbols.contains(oiSym)
+                        && !candidateReservoir.contains(oiSym)) {
+                    candidateReservoir.add(oiSym);
+                }
+            }
             for (LowestVolumeReversalScanner.SectorRankResult sector : rankedSectors) {
                 if (winningSector != null
                         && sector.sectorName().equals(winningSector.sectorName())) {
@@ -811,18 +858,39 @@ public class LowestVolumeReversalService {
             this.lastScanDate = LocalDate.now(clock);
 
             if (telegramAlerts && telegramService != null) {
-                telegramService.sendTextMessage(
-                        String.format(
-                                "📊 *LVR 09:25 AM Morning Scan*\n"
-                                        + "• Sentiment: *%s*\n"
-                                        + "• Winning Sector: *%s* (%.2f%%)\n"
-                                        + "• Candidates (%d): `%s`\n"
-                                        + "• Setup Mode: *5m Lowest Volume Pullback*",
-                                sentiment,
-                                winningSector.sectorName(),
-                                winningSector.pctChange(),
-                                candidateStocks.size(),
-                                String.join(", ", candidateStocks)));
+                if ("HYBRID".equalsIgnoreCase(scannerMode) && !oiCandidates.isEmpty()) {
+                    List<String> sectorLeaders = candidateStocks.stream().limit(2).toList();
+                    telegramService.sendTextMessage(
+                            String.format(
+                                    "📊 *LVR 09:25 AM Morning Scan (Hybrid Mode)*\n"
+                                            + "• Sentiment: *%s*\n"
+                                            + "• Winning Sector: *%s* (%+.2f%%)\n"
+                                            + "• Sector Leaders (2): `%s`\n"
+                                            + "• OI Spurt Leaders (2): `%s`\n"
+                                            + "• Active Watchlist (%d): `%s`\n"
+                                            + "• Standby Reservoir: %d stocks",
+                                    sentiment,
+                                    winningSector.sectorName(),
+                                    winningSector.pctChange(),
+                                    String.join(", ", sectorLeaders),
+                                    String.join(", ", oiCandidates),
+                                    finalActiveList.size(),
+                                    String.join(", ", finalActiveList),
+                                    candidateReservoir.size()));
+                } else {
+                    telegramService.sendTextMessage(
+                            String.format(
+                                    "📊 *LVR 09:25 AM Morning Scan*\n"
+                                            + "• Sentiment: *%s*\n"
+                                            + "• Winning Sector: *%s* (%.2f%%)\n"
+                                            + "• Candidates (%d): `%s`\n"
+                                            + "• Setup Mode: *5m Lowest Volume Pullback*",
+                                    sentiment,
+                                    winningSector.sectorName(),
+                                    winningSector.pctChange(),
+                                    candidateStocks.size(),
+                                    String.join(", ", candidateStocks)));
+                }
             }
         } catch (Exception e) {
             log.error("[LVR] Error during morning universe scan: {}", e.getMessage(), e);

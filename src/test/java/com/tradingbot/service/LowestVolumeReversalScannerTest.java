@@ -195,6 +195,39 @@ class LowestVolumeReversalScannerTest {
     }
 
     @Test
+    @DisplayName("Should rank stocks by directional OI buildup for LONG and SHORT sentiment")
+    void testScanOiSpurtsDirectionalBuildup() {
+        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
+
+        // Long Buildup: Price UP, OI UP
+        quotes.put(
+                "DIXON",
+                new StockQuoteSnapshot(
+                        "DIXON", 12000.0, 11800.0, 11850.0, 1.7, 50000, 11950.0, 115000,
+                        100000)); // +15% OI, +1.7% Prc
+        // Short Covering: Price UP, OI DOWN
+        quotes.put(
+                "POLYCAB",
+                new StockQuoteSnapshot(
+                        "POLYCAB", 6500.0, 6400.0, 6420.0, 1.5, 30000, 6450.0, 85000,
+                        100000)); // -15% OI, +1.5% Prc
+        // Short Buildup: Price DOWN, OI UP
+        quotes.put(
+                "BHEL",
+                new StockQuoteSnapshot(
+                        "BHEL", 280.0, 290.0, 288.0, -3.4, 80000, 285.0, 120000,
+                        100000)); // +20% OI, -3.4% Prc
+
+        List<String> longStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.LONG, 2);
+        assertEquals(1, longStocks.size());
+        assertEquals("DIXON", longStocks.get(0));
+
+        List<String> shortStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.SHORT, 2);
+        assertEquals(1, shortStocks.size());
+        assertEquals("BHEL", shortStocks.get(0));
+    }
+
+    @Test
     @DisplayName("Should handle null, empty and invalid OI inputs safely")
     void testScanOiSpurtsEdgeCases() {
         assertTrue(scanner.scanOiSpurts(null, 5).isEmpty());

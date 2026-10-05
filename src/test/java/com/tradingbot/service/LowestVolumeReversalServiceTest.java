@@ -3296,4 +3296,26 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getOptionResistanceStrike()).isEqualByComparingTo(BigDecimal.valueOf(120));
         assertThat(setup.getOptionSupportStrike()).isEqualByComparingTo(BigDecimal.valueOf(110));
     }
+
+    @Test
+    @DisplayName("Hybrid Morning Scan combines top sector candidates and top OI spurt candidates")
+    void testHybridMorningScanCombinesSectorAndOiSpurts() {
+        service.setScannerMode("HYBRID");
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        // Advances >= 56% across Nifty 50
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new ObjectMapper()
+                                .createObjectNode()
+                                .put("lp", "102.0")
+                                .put("c", "100.0")
+                                .put("oi", 115000)
+                                .put("poi", 100000));
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.isStandDownToday()).isFalse();
+        assertThat(service.getActiveSetups().size()).isGreaterThanOrEqualTo(2);
+    }
 }

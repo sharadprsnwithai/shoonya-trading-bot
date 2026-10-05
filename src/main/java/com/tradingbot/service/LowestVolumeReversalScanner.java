@@ -182,6 +182,97 @@ public class LowestVolumeReversalScanner {
     }
 
     /**
+     * Ranks all active F&O candidate stocks by Directional Open Interest Buildup at 09:25 IST: -
+     * LONG: Positive price change (0 < pctChange <= 5.0%) + positive OI change (Long Buildup) -
+     * SHORT: Negative price change (-5.0% <= pctChange < 0) + positive OI change (Short Buildup) -
+     * Falls back to absolute |ΔOI%| ranking if no directional buildup stocks qualify.
+     */
+    public List<String> scanOiSpurts(
+            Map<String, StockQuoteSnapshot> fnoQuotes, LowestVolumeDirection sentiment, int topN) {
+        if (fnoQuotes == null || fnoQuotes.isEmpty() || topN <= 0) {
+            return Collections.emptyList();
+        }
+
+        List<StockQuoteSnapshot> directional = new ArrayList<>();
+        for (StockQuoteSnapshot q : fnoQuotes.values()) {
+            if (q == null || q.symbol() == null) {
+                continue;
+            }
+            String upperSym = q.symbol().trim().toUpperCase(java.util.Locale.US);
+            if (EXCLUDED_INDICES.contains(upperSym) || upperSym.startsWith("NIFTY ")) {
+                continue;
+            }
+
+            double oiChange = q.oiPctChange();
+            if (oiChange == 0.0 && q.prevDayOpenInterest() > 0) {
+                oiChange =
+                        ((q.openInterest() - q.prevDayOpenInterest())
+                                        / (double) q.prevDayOpenInterest())
+                                * 100.0;
+            }
+
+            if (oiChange > 0.0001) {
+                if (sentiment == LowestVolumeDirection.LONG) {
+                    // Long Buildup: Price UP + OI UP
+                    if (q.pctChange() > 0.0 && q.pctChange() <= 5.0) {
+                        directional.add(
+                                new StockQuoteSnapshot(
+                                        q.symbol(),
+                                        q.ltp(),
+                                        q.prevClose(),
+                                        q.open(),
+                                        q.pctChange(),
+                                        q.volume(),
+                                        q.vwap(),
+                                        q.openInterest(),
+                                        q.prevDayOpenInterest(),
+                                        oiChange));
+                    }
+                } else if (sentiment == LowestVolumeDirection.SHORT) {
+                    // Short Buildup: Price DOWN + OI UP
+                    if (q.pctChange() < 0.0 && q.pctChange() >= -5.0) {
+                        directional.add(
+                                new StockQuoteSnapshot(
+                                        q.symbol(),
+                                        q.ltp(),
+                                        q.prevClose(),
+                                        q.open(),
+                                        q.pctChange(),
+                                        q.volume(),
+                                        q.vwap(),
+                                        q.openInterest(),
+                                        q.prevDayOpenInterest(),
+                                        oiChange));
+                    }
+                }
+            }
+        }
+
+        if (!directional.isEmpty()) {
+            directional.sort((a, b) -> Double.compare(b.oiPctChange(), a.oiPctChange()));
+            log.info(
+                    "[LVR-SCANNER] Directional OI Buildup ({}) found {} stocks. Top {}: {}",
+                    sentiment,
+                    directional.size(),
+                    topN,
+                    directional.stream()
+                            .limit(topN)
+                            .map(
+                                    s ->
+                                            String.format(
+                                                    java.util.Locale.US,
+                                                    "%s (+%.2f%% OI, %+.2f%% Prc)",
+                                                    s.symbol(),
+                                                    s.oiPctChange(),
+                                                    s.pctChange()))
+                            .toList());
+            return directional.stream().limit(topN).map(StockQuoteSnapshot::symbol).toList();
+        }
+
+        return scanOiSpurts(fnoQuotes, topN);
+    }
+
+    /**
      * Ranks all active F&O candidate stocks by absolute % Change in Open Interest (|ΔOI%|) at 09:25
      * IST, excluding broad market indices.
      */

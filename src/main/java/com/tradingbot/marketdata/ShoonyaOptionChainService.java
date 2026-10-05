@@ -520,8 +520,12 @@ public class ShoonyaOptionChainService {
                     StockFnoRegistry.estimateTheoreticalPremium(
                             underlying, atmStrike, sp, "PE", dteDays);
 
-            long callOi = (i >= 0) ? (50000L + (i * 20000L)) : Math.max(5000L, 50000L + (i * 10000L));
-            long putOi = (i <= 0) ? (50000L + (Math.abs(i) * 20000L)) : Math.max(5000L, 50000L - (i * 10000L));
+            long callOi =
+                    (i >= 0) ? (50000L + (i * 20000L)) : Math.max(5000L, 50000L + (i * 10000L));
+            long putOi =
+                    (i <= 0)
+                            ? (50000L + (Math.abs(i) * 20000L))
+                            : Math.max(5000L, 50000L - (i * 10000L));
 
             totalCallOi += callOi;
             totalPutOi += putOi;
