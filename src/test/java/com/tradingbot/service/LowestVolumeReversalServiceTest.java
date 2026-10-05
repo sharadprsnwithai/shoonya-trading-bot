@@ -52,6 +52,8 @@ class LowestVolumeReversalServiceTest {
         service.setMorningScanDelayMs(0); // No delay in unit tests
         service.setPdhPdlFilterEnabled(false);
         service.setOpening15mRangeFilterEnabled(false);
+        service.setPcrFilterEnabled(false);
+        service.setOptionSrFilterEnabled(false);
         // M9: the sector gate now fails closed on NO_DATA (unit-test quote mocks carry no
         // breadth data); gate-specific tests re-enable it or call the check directly.
         service.setSectorMomentumFilterEnabled(false);
@@ -1741,10 +1743,10 @@ class LowestVolumeReversalServiceTest {
 
     @Test
     @DisplayName(
-            "evaluateLivePriceActions skips trigger entry checks when time is past 13:00 IST cutoff")
-    void testEvaluateLivePriceActionsBlocksTriggerEntryPast1300Cutoff() {
-        // Clock at 13:15 IST (past 13:00 cutoff)
-        Clock postCutoffClock = Clock.fixed(Instant.parse("2026-09-18T07:45:00Z"), IST);
+            "evaluateLivePriceActions skips trigger entry checks when time is past 11:30 IST cutoff")
+    void testEvaluateLivePriceActionsBlocksTriggerEntryPast1130Cutoff() {
+        // Clock at 11:35 IST (past 11:30 cutoff)
+        Clock postCutoffClock = Clock.fixed(Instant.parse("2026-09-18T06:05:00Z"), IST);
         service.setClock(postCutoffClock);
 
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
@@ -1772,7 +1774,7 @@ class LowestVolumeReversalServiceTest {
 
         service.evaluateLivePriceActions();
 
-        // No trade entry should be taken past 13:00 cutoff
+        // No trade entry should be taken past 11:30 cutoff
         assertThat(service.getOpenPositions()).isEmpty();
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
     }
@@ -3145,5 +3147,153 @@ class LowestVolumeReversalServiceTest {
         assertThat(setup.getPdh()).isEqualByComparingTo(BigDecimal.valueOf(114.80));
         assertThat(setup.getPdl()).isEqualByComparingTo(BigDecimal.valueOf(109.50));
         verify(marketDataService, times(1)).fetchDailyCandles("PNB", 5);
+    }
+
+    @Test
+    @DisplayName("resolveLivePcr queries ShoonyaOptionChainService across ATM ± 4 strikes")
+    void testResolveLivePcr() {
+        com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService =
+                mock(com.tradingbot.marketdata.ShoonyaOptionChainService.class);
+        ShoonyaConfig mockConfig = mock(ShoonyaConfig.class);
+        LowestVolumeReversalService lvr =
+                new LowestVolumeReversalService(
+                        marketDataService,
+                        taService,
+                        null,
+                        mockConfig,
+                        optionChainService,
+                        null,
+                        null,
+                        null);
+        lvr.setPcrFilterEnabled(true);
+
+        com.tradingbot.model.OptionChainResponse mockChain =
+                new com.tradingbot.model.OptionChainResponse(
+                        "PNB",
+                        BigDecimal.valueOf(113.20),
+                        BigDecimal.valueOf(115.00),
+                        "PNB26OCT115CE",
+                        9,
+                        1000000L,
+                        1200000L,
+                        1.20,
+                        List.of());
+        when(optionChainService.getOptionChain(
+                        org.mockito.ArgumentMatchers.eq("PNB"),
+                        org.mockito.ArgumentMatchers.eq("PNB"),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(BigDecimal.class),
+                        org.mockito.ArgumentMatchers.eq(4),
+                        org.mockito.ArgumentMatchers.eq(true)))
+                .thenReturn(mockChain);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PNB", LowestVolumeDirection.LONG);
+        Double pcr = lvr.resolveLivePcr(setup, BigDecimal.valueOf(113.20));
+
+        assertThat(pcr).isEqualTo(1.20);
+        assertThat(setup.getPcr()).isEqualTo(1.20);
+    }
+
+    @Test
+    @DisplayName(
+            "resolveLiveOptionChainLevels extracts Max Call OI Resistance and Max Put OI Support")
+    void testResolveLiveOptionChainLevelsExtractsSupportAndResistance() {
+        com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService =
+                mock(com.tradingbot.marketdata.ShoonyaOptionChainService.class);
+        ShoonyaConfig mockConfig = mock(ShoonyaConfig.class);
+        LowestVolumeReversalService lvr =
+                new LowestVolumeReversalService(
+                        marketDataService,
+                        taService,
+                        null,
+                        mockConfig,
+                        optionChainService,
+                        null,
+                        null,
+                        null);
+        lvr.setOptionSrFilterEnabled(true);
+
+        com.tradingbot.model.OptionContract call1 =
+                new com.tradingbot.model.OptionContract(
+                        "PNB115CE",
+                        "1",
+                        "CE",
+                        BigDecimal.valueOf(115),
+                        BigDecimal.valueOf(2.5),
+                        500000L,
+                        1000L,
+                        null,
+                        null,
+                        null);
+        com.tradingbot.model.OptionContract call2 =
+                new com.tradingbot.model.OptionContract(
+                        "PNB120CE",
+                        "2",
+                        "CE",
+                        BigDecimal.valueOf(120),
+                        BigDecimal.valueOf(1.2),
+                        1500000L,
+                        2000L,
+                        null,
+                        null,
+                        null); // Max Call OI = 120 (Resistance)
+        com.tradingbot.model.OptionContract put1 =
+                new com.tradingbot.model.OptionContract(
+                        "PNB110PE",
+                        "3",
+                        "PE",
+                        BigDecimal.valueOf(110),
+                        BigDecimal.valueOf(1.0),
+                        2000000L,
+                        3000L,
+                        null,
+                        null,
+                        null); // Max Put OI = 110 (Support)
+        com.tradingbot.model.OptionContract put2 =
+                new com.tradingbot.model.OptionContract(
+                        "PNB115PE",
+                        "4",
+                        "PE",
+                        BigDecimal.valueOf(115),
+                        BigDecimal.valueOf(3.0),
+                        800000L,
+                        1500L,
+                        null,
+                        null,
+                        null);
+
+        com.tradingbot.model.OptionStrike strike110 =
+                new com.tradingbot.model.OptionStrike(BigDecimal.valueOf(110), false, null, put1);
+        com.tradingbot.model.OptionStrike strike115 =
+                new com.tradingbot.model.OptionStrike(BigDecimal.valueOf(115), true, call1, put2);
+        com.tradingbot.model.OptionStrike strike120 =
+                new com.tradingbot.model.OptionStrike(BigDecimal.valueOf(120), false, call2, null);
+
+        com.tradingbot.model.OptionChainResponse mockChain =
+                new com.tradingbot.model.OptionChainResponse(
+                        "PNB",
+                        BigDecimal.valueOf(113.20),
+                        BigDecimal.valueOf(115.00),
+                        "PNB26OCT115CE",
+                        3,
+                        2000000L,
+                        2800000L,
+                        1.40,
+                        List.of(strike110, strike115, strike120));
+
+        when(optionChainService.getOptionChain(
+                        org.mockito.ArgumentMatchers.eq("PNB"),
+                        org.mockito.ArgumentMatchers.eq("PNB"),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(BigDecimal.class),
+                        org.mockito.ArgumentMatchers.eq(4),
+                        org.mockito.ArgumentMatchers.eq(true)))
+                .thenReturn(mockChain);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PNB", LowestVolumeDirection.LONG);
+        lvr.resolveLiveOptionChainLevels(setup, BigDecimal.valueOf(113.20));
+
+        assertThat(setup.getOptionResistanceStrike()).isEqualByComparingTo(BigDecimal.valueOf(120));
+        assertThat(setup.getOptionSupportStrike()).isEqualByComparingTo(BigDecimal.valueOf(110));
     }
 }

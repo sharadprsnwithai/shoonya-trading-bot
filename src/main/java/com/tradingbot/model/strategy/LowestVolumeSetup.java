@@ -33,6 +33,9 @@ public class LowestVolumeSetup {
     private volatile BigDecimal first15MinLow;
     private volatile BigDecimal pdh;
     private volatile BigDecimal pdl;
+    private volatile Double pcr;
+    private volatile BigDecimal optionResistanceStrike;
+    private volatile BigDecimal optionSupportStrike;
     private volatile String setupPattern;
     private volatile Double oiChangePct;
     private volatile Instant updatedAt;
@@ -239,6 +242,30 @@ public class LowestVolumeSetup {
 
     public void setPdl(BigDecimal pdl) {
         this.pdl = pdl;
+    }
+
+    public Double getPcr() {
+        return pcr;
+    }
+
+    public void setPcr(Double pcr) {
+        this.pcr = pcr;
+    }
+
+    public BigDecimal getOptionResistanceStrike() {
+        return optionResistanceStrike;
+    }
+
+    public void setOptionResistanceStrike(BigDecimal optionResistanceStrike) {
+        this.optionResistanceStrike = optionResistanceStrike;
+    }
+
+    public BigDecimal getOptionSupportStrike() {
+        return optionSupportStrike;
+    }
+
+    public void setOptionSupportStrike(BigDecimal optionSupportStrike) {
+        this.optionSupportStrike = optionSupportStrike;
     }
 
     public String getSetupPattern() {

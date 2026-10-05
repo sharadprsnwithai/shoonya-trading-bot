@@ -33,10 +33,12 @@ class LvrEntryGateTest {
         in.vwapEnabled = false;
         in.range15mEnabled = false;
         in.pdhPdlEnabled = false;
+        in.pcrEnabled = false;
+        in.optionSrFilterEnabled = false;
         in.standDown = false;
         in.breakerTripped = false;
         in.nowTime = LocalTime.of(10, 30);
-        in.entryCutoff = LocalTime.of(13, 0);
+        in.entryCutoff = LocalTime.of(11, 30);
         in.tradeAttempts = 0;
         in.maxAttempts = 2;
         in.openConcurrent = 0;
@@ -143,6 +145,87 @@ class LvrEntryGateTest {
     }
 
     @Test
+    @DisplayName("PCR unavailable while enabled → RETRY fail-closed (gate PCR)")
+    void testPcrUnavailableRetries() {
+        EntryGateInput in = baseInput();
+        in.pcrEnabled = true;
+        in.pcr = null;
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
+        assertThat(d.gate()).isEqualTo("PCR");
+    }
+
+    @Test
+    @DisplayName("PCR gate for LONG: PCR below min threshold exhausts, above allows")
+    void testPcrLongGate() {
+        EntryGateInput wrong = baseInput();
+        wrong.pcrEnabled = true;
+        wrong.pcrMinLong = 0.85;
+        wrong.pcr = 0.70; // Below 0.85 -> EXHAUST
+        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(wrong);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.gate()).isEqualTo("PCR");
+
+        EntryGateInput right = baseInput();
+        right.pcrEnabled = true;
+        right.pcrMinLong = 0.85;
+        right.pcr = 1.10;
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(right).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("PCR gate for SHORT: PCR above max threshold exhausts, below allows")
+    void testPcrShortGate() {
+        EntryGateInput wrong = baseInput();
+        wrong.direction = LowestVolumeDirection.SHORT;
+        wrong.pcrEnabled = true;
+        wrong.pcrMaxShort = 1.15;
+        wrong.pcr = 1.40; // Above 1.15 -> EXHAUST
+        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(wrong);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.gate()).isEqualTo("PCR");
+
+        EntryGateInput right = baseInput();
+        right.direction = LowestVolumeDirection.SHORT;
+        right.pcrEnabled = true;
+        right.pcrMaxShort = 1.15;
+        right.pcr = 0.90;
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(right).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Option S&R: LONG entry blocked at or above Max Call OI resistance")
+    void testOptionSrBlocksLongNearResistance() {
+        EntryGateInput in = baseInput();
+        in.direction = LowestVolumeDirection.LONG;
+        in.optionSrFilterEnabled = true;
+        in.optionResistanceStrike = bd(1000);
+        in.decisionPrice = bd(1000); // at resistance -> EXHAUST
+        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(in);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.gate()).isEqualTo("OPTION_SR");
+
+        in.decisionPrice = bd(990); // safely below resistance -> ALLOWED
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Option S&R: SHORT entry blocked at or below Max Put OI support")
+    void testOptionSrBlocksShortNearSupport() {
+        EntryGateInput in = baseInput();
+        in.direction = LowestVolumeDirection.SHORT;
+        in.optionSrFilterEnabled = true;
+        in.optionSupportStrike = bd(1000);
+        in.decisionPrice = bd(1000); // at support -> EXHAUST
+        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(in);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.gate()).isEqualTo("OPTION_SR");
+
+        in.decisionPrice = bd(1010); // safely above support -> ALLOWED
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+    }
+
+    @Test
     @DisplayName("Stand-down → RETRY (gate STAND_DOWN); breaker → RETRY (gate BREAKER)")
     void testStandDownAndBreaker() {
         EntryGateInput sd = baseInput();
@@ -162,7 +245,7 @@ class LvrEntryGateTest {
     @DisplayName("Entry cutoff reached → RETRY (gate CUTOFF)")
     void testEntryCutoff() {
         EntryGateInput in = baseInput();
-        in.nowTime = LocalTime.of(13, 0);
+        in.nowTime = LocalTime.of(11, 30);
         EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("CUTOFF");

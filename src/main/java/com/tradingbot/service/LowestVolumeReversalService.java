@@ -57,7 +57,7 @@ public class LowestVolumeReversalService {
     public static final LocalTime TIME_SCANNER_START = LocalTime.of(9, 25);
     public static final LocalTime TIME_SCANNER_CUTOFF = LocalTime.of(10, 0);
     public static final LocalTime TIME_EVALUATION_START = LocalTime.of(9, 30);
-    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(13, 0);
+    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(11, 30);
     public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
 
     public static final String STRATEGY_ID = "LOWEST_VOLUME_REVERSAL";
@@ -126,6 +126,24 @@ public class LowestVolumeReversalService {
 
     @Value("${trading-bot.strategy.lowest-volume.opening-15m-range-filter-enabled:true}")
     private volatile boolean opening15mRangeFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.lowest-volume.pcr-filter-enabled:true}")
+    private volatile boolean pcrFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.lowest-volume.pcr-min-long:0.85}")
+    private volatile double pcrMinLong = 0.85;
+
+    @Value("${trading-bot.strategy.lowest-volume.pcr-max-short:1.15}")
+    private volatile double pcrMaxShort = 1.15;
+
+    @Value("${trading-bot.strategy.lowest-volume.option-sr-filter-enabled:true}")
+    private volatile boolean optionSrFilterEnabled = true;
+
+    @Value("${trading-bot.strategy.lowest-volume.option-sr-buffer-pct:0.0}")
+    private volatile double optionSrBufferPct = 0.0;
+
+    @Value("${trading-bot.strategy.lowest-volume.entry-cutoff:11:30}")
+    private volatile LocalTime entryCutoffTime = TIME_ENTRY_CUTOFF;
 
     @Value("${trading-bot.strategy.lowest-volume.pdh-pdl-filter-enabled:true}")
     private volatile boolean pdhPdlFilterEnabled = true;
@@ -483,9 +501,10 @@ public class LowestVolumeReversalService {
                 }
             }
 
-            if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) {
+            if (nowTime.isAfter(entryCutoffTime)) {
                 log.info(
-                        "[LVR] Past 13:00 cutoff. Skipping new setups; managing open positions only.");
+                        "[LVR] Past {} cutoff. Skipping new setups; managing open positions only.",
+                        entryCutoffTime);
                 return;
             }
 
@@ -1181,10 +1200,10 @@ public class LowestVolumeReversalService {
 
         Map<String, JsonNode> liveQuoteCache = new HashMap<>();
 
-        // 1. Check Armed Triggers (Only allowed strictly before 13:00 IST Entry Cutoff, if strategy
+        // 1. Check Armed Triggers (Only allowed strictly before entry cutoff, if strategy
         // enabled, circuit breaker not tripped, and max daily losses not reached)
         if (enabled
-                && nowTime.isBefore(TIME_ENTRY_CUTOFF)
+                && nowTime.isBefore(entryCutoffTime)
                 && !isDailyCircuitBreakerTripped(liveQuoteCache)
                 && (maxDailyLosses <= 0 || todayLossCount.get() < maxDailyLosses)) {
             for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
@@ -1385,6 +1404,8 @@ public class LowestVolumeReversalService {
                     }
                 }
 
+                resolveLiveOptionChainLevels(setup, spotPrice);
+
                 EntryGateInput gateInput = new EntryGateInput();
                 gateInput.symbol = symbol;
                 gateInput.direction = setup.getDirection();
@@ -1400,6 +1421,14 @@ public class LowestVolumeReversalService {
                 gateInput.pdhPdlEnabled = pdhPdlFilterEnabled;
                 gateInput.pdh = setup.getPdh();
                 gateInput.pdl = setup.getPdl();
+                gateInput.pcrEnabled = pcrFilterEnabled;
+                gateInput.pcr = setup.getPcr();
+                gateInput.pcrMinLong = pcrMinLong;
+                gateInput.pcrMaxShort = pcrMaxShort;
+                gateInput.optionSrFilterEnabled = optionSrFilterEnabled;
+                gateInput.optionResistanceStrike = setup.getOptionResistanceStrike();
+                gateInput.optionSupportStrike = setup.getOptionSupportStrike();
+                gateInput.optionSrBufferPct = optionSrBufferPct;
                 // Session-level gates (breaker/cutoff/attempts/concurrency/budget) are enforced
                 // by evaluateLivePriceActions' outer loop and inside executePositionEntry.
 
@@ -2592,7 +2621,7 @@ public class LowestVolumeReversalService {
      * drops below minActiveCandidates (due to SL hits, exhaustion, or invalidation).
      */
     public synchronized void replenishActiveCandidatesIfNeeded(LocalTime nowTime) {
-        if (nowTime.isAfter(TIME_ENTRY_CUTOFF)) return;
+        if (nowTime.isAfter(entryCutoffTime)) return;
         if (standDownToday) {
             // H10: the stand-down decision is sticky — never refill the watchlist after it.
             log.debug("[LVR] Stand-down active; skipping candidate replenishment.");
@@ -2662,8 +2691,7 @@ public class LowestVolumeReversalService {
      * exhausted before 13:00 IST cutoff.
      */
     public void runMidMorningUniverseRefresh(LocalTime nowTime) {
-        if (marketDataService == null || nowTime.isAfter(TIME_ENTRY_CUTOFF) || standDownToday)
-            return;
+        if (marketDataService == null || nowTime.isAfter(entryCutoffTime) || standDownToday) return;
         log.info("[LVR] Triggering Mid-Morning Universe Refresh at {} IST...", nowTime);
 
         try {
@@ -2844,6 +2872,59 @@ public class LowestVolumeReversalService {
             vwap = fetchLiveVwap(setup.getSymbol(), quoteNode);
         }
         return vwap;
+    }
+
+    /**
+     * Resolves Option Chain data (PCR across ATM ± 4 strikes, Max Call OI Resistance strike, Max
+     * Put OI Support strike) using ShoonyaOptionChainService.
+     */
+    public void resolveLiveOptionChainLevels(LowestVolumeSetup setup, BigDecimal spotPrice) {
+        if (setup == null || spotPrice == null) return;
+        if (!pcrFilterEnabled && !optionSrFilterEnabled) return;
+        if (optionChainService == null) return;
+        try {
+            String sym = setup.getSymbol();
+            StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(sym);
+            BigDecimal step =
+                    (fno != null && fno.strikeStep() != null)
+                            ? fno.strikeStep()
+                            : BigDecimal.valueOf(10);
+            BigDecimal atm = resolveAtmStrike(spotPrice, step);
+            com.tradingbot.model.OptionChainResponse chain =
+                    optionChainService.getOptionChain(sym, sym, "", atm, 4, true);
+            if (chain != null) {
+                if (chain.totalCallOi() > 0) {
+                    double pcrVal = chain.pcr();
+                    setup.setPcr(pcrVal);
+                }
+                BigDecimal resStrike = chain.maxCallOiStrike();
+                BigDecimal supStrike = chain.maxPutOiStrike();
+                if (resStrike != null) {
+                    setup.setOptionResistanceStrike(resStrike);
+                }
+                if (supStrike != null) {
+                    setup.setOptionSupportStrike(supStrike);
+                }
+                log.info(
+                        "[LVR] Option Chain levels for {} (ATM={}): PCR={:.2f}, MaxCallOI Resistance={}, MaxPutOI Support={}",
+                        sym,
+                        atm,
+                        setup.getPcr() != null ? setup.getPcr() : 0.0,
+                        setup.getOptionResistanceStrike(),
+                        setup.getOptionSupportStrike());
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[LVR] Could not resolve Option Chain levels for {}: {}",
+                    setup.getSymbol(),
+                    e.getMessage());
+        }
+    }
+
+    /** Backwards-compatible resolveLivePcr helper. */
+    public Double resolveLivePcr(LowestVolumeSetup setup, BigDecimal spotPrice) {
+        resolveLiveOptionChainLevels(setup, spotPrice);
+        return setup != null ? setup.getPcr() : null;
     }
 
     public BigDecimal estimateOptionPremium(LowestVolumePaperPosition pos, BigDecimal currentSpot) {
@@ -3172,6 +3253,14 @@ public class LowestVolumeReversalService {
         public Boolean pdhPdlEnabled;
         public BigDecimal pdh;
         public BigDecimal pdl;
+        public Boolean pcrEnabled;
+        public Double pcr;
+        public Double pcrMinLong;
+        public Double pcrMaxShort;
+        public Boolean optionSrFilterEnabled;
+        public BigDecimal optionResistanceStrike;
+        public BigDecimal optionSupportStrike;
+        public Double optionSrBufferPct;
         public Boolean standDown;
         public Boolean breakerTripped;
         public LocalTime nowTime;
@@ -3314,6 +3403,79 @@ public class LowestVolumeReversalService {
                                     in.pdl,
                                     in.pdh,
                                     in.direction));
+                }
+            }
+        }
+
+        // 5. PCR (Put-Call Ratio ATM ± 4 strikes) Confirmation Gate
+        if (Boolean.TRUE.equals(in.pcrEnabled)) {
+            if (in.pcr == null || in.pcr <= 0.0) {
+                return deny(
+                        EntryGateDisposition.RETRY,
+                        "PCR",
+                        "PCR filter enabled but no valid PCR (ATM ± 4) available (fail-closed)");
+            }
+            if (in.direction == LowestVolumeDirection.LONG) {
+                double minLong = in.pcrMinLong != null ? in.pcrMinLong : 0.85;
+                if (in.pcr < minLong) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "PCR",
+                            String.format(
+                                    Locale.US,
+                                    "PCR %.2f (ATM ± 4) below minimum threshold %.2f for LONG",
+                                    in.pcr,
+                                    minLong));
+                }
+            } else if (in.direction == LowestVolumeDirection.SHORT) {
+                double maxShort = in.pcrMaxShort != null ? in.pcrMaxShort : 1.15;
+                if (in.pcr > maxShort) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "PCR",
+                            String.format(
+                                    Locale.US,
+                                    "PCR %.2f (ATM ± 4) above maximum threshold %.2f for SHORT",
+                                    in.pcr,
+                                    maxShort));
+                }
+            }
+        }
+
+        // 6. Option Chain Support & Resistance Filter (Block LONG near/above Resistance, Block
+        // SHORT near/below Support)
+        if (Boolean.TRUE.equals(in.optionSrFilterEnabled)
+                && in.decisionPrice != null
+                && in.direction != null) {
+            if (in.direction == LowestVolumeDirection.LONG && in.optionResistanceStrike != null) {
+                double buffer = in.optionSrBufferPct != null ? in.optionSrBufferPct : 0.0;
+                BigDecimal effectiveResistance =
+                        in.optionResistanceStrike.multiply(
+                                BigDecimal.valueOf(1.0 - (buffer / 100.0)));
+                if (in.decisionPrice.compareTo(effectiveResistance) >= 0) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "OPTION_SR",
+                            String.format(
+                                    Locale.US,
+                                    "Spot %s is at or above Option Resistance (Max Call OI Strike %s)",
+                                    in.decisionPrice,
+                                    in.optionResistanceStrike));
+                }
+            } else if (in.direction == LowestVolumeDirection.SHORT
+                    && in.optionSupportStrike != null) {
+                double buffer = in.optionSrBufferPct != null ? in.optionSrBufferPct : 0.0;
+                BigDecimal effectiveSupport =
+                        in.optionSupportStrike.multiply(BigDecimal.valueOf(1.0 + (buffer / 100.0)));
+                if (in.decisionPrice.compareTo(effectiveSupport) <= 0) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "OPTION_SR",
+                            String.format(
+                                    Locale.US,
+                                    "Spot %s is at or below Option Support (Max Put OI Strike %s)",
+                                    in.decisionPrice,
+                                    in.optionSupportStrike));
                 }
             }
         }
@@ -3548,6 +3710,54 @@ public class LowestVolumeReversalService {
 
     public AtomicInteger getTodayLossCount() {
         return todayLossCount;
+    }
+
+    public LocalTime getEntryCutoffTime() {
+        return entryCutoffTime;
+    }
+
+    public void setEntryCutoffTime(LocalTime entryCutoffTime) {
+        this.entryCutoffTime = (entryCutoffTime != null) ? entryCutoffTime : TIME_ENTRY_CUTOFF;
+    }
+
+    public boolean isOptionSrFilterEnabled() {
+        return optionSrFilterEnabled;
+    }
+
+    public void setOptionSrFilterEnabled(boolean optionSrFilterEnabled) {
+        this.optionSrFilterEnabled = optionSrFilterEnabled;
+    }
+
+    public double getOptionSrBufferPct() {
+        return optionSrBufferPct;
+    }
+
+    public void setOptionSrBufferPct(double optionSrBufferPct) {
+        this.optionSrBufferPct = optionSrBufferPct;
+    }
+
+    public boolean isPcrFilterEnabled() {
+        return pcrFilterEnabled;
+    }
+
+    public void setPcrFilterEnabled(boolean pcrFilterEnabled) {
+        this.pcrFilterEnabled = pcrFilterEnabled;
+    }
+
+    public double getPcrMinLong() {
+        return pcrMinLong;
+    }
+
+    public void setPcrMinLong(double pcrMinLong) {
+        this.pcrMinLong = pcrMinLong;
+    }
+
+    public double getPcrMaxShort() {
+        return pcrMaxShort;
+    }
+
+    public void setPcrMaxShort(double pcrMaxShort) {
+        this.pcrMaxShort = pcrMaxShort;
     }
 
     public boolean isOpening15mRangeFilterEnabled() {
@@ -4067,7 +4277,7 @@ public class LowestVolumeReversalService {
 
             // 2. Setup Evaluation & Trigger Arming / Trailing
             if (!discardedForDay
-                    && candleTime.isBefore(TIME_ENTRY_CUTOFF)
+                    && candleTime.isBefore(entryCutoffTime)
                     && attempt < maxAttemptsPerSymbol) {
                 LowestVolumeSetup evaluated =
                         evaluateCandleSequence(symbol, direction, historicalSubList, lastExitTime);
@@ -4171,10 +4381,18 @@ public class LowestVolumeReversalService {
                     gateInput.pdhPdlEnabled = pdhPdlFilterEnabled;
                     gateInput.pdh = activeSetup.getPdh();
                     gateInput.pdl = activeSetup.getPdl();
+                    gateInput.pcrEnabled = pcrFilterEnabled;
+                    gateInput.pcr = activeSetup.getPcr();
+                    gateInput.pcrMinLong = pcrMinLong;
+                    gateInput.pcrMaxShort = pcrMaxShort;
+                    gateInput.optionSrFilterEnabled = optionSrFilterEnabled;
+                    gateInput.optionResistanceStrike = activeSetup.getOptionResistanceStrike();
+                    gateInput.optionSupportStrike = activeSetup.getOptionSupportStrike();
+                    gateInput.optionSrBufferPct = optionSrBufferPct;
                     gateInput.standDown = standDownToday;
                     gateInput.breakerTripped = dailyCircuitBreakerTripped.get();
                     gateInput.nowTime = candleTime;
-                    gateInput.entryCutoff = TIME_ENTRY_CUTOFF;
+                    gateInput.entryCutoff = entryCutoffTime;
                     gateInput.tradeAttempts = attempt;
                     gateInput.maxAttempts = maxAttemptsPerSymbol;
                     gateInput.openConcurrent = openPos != null ? 1 : 0;
