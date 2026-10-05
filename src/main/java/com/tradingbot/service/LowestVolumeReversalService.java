@@ -4073,6 +4073,9 @@ public class LowestVolumeReversalService {
                         evaluateCandleSequence(symbol, direction, historicalSubList, lastExitTime);
                 if (evaluated.getState() == LowestVolumeSetupState.TRIGGER_ARMED) {
                     activeSetup = evaluated;
+                    if (activeSetup.getPdh() == null && pdhPdlFilterEnabled) {
+                        initPdhPdlForSetup(activeSetup);
+                    }
                 }
             }
 

@@ -56,9 +56,22 @@ class ShoonyaTodayLvrReplayRunnerTest {
         System.out.println(
                 "==========================================================================");
 
-        List<String> candidateStocks =
-                List.of("SUNPHARMA", "LAURUSLABS", "TORNTPHARM", "AUROPHARMA");
+        List<String> candidateStocks = List.of("PNB", "INDIANB", "BANKBARODA");
         Map<String, List<Candle>> candlesMap = fetchSessionCandlesForStocks(candidateStocks);
+
+        System.out.println(
+                "\n--------------------------------------------------------------------------");
+        System.out.println(" 5-MIN CANDLE BREAKDOWN & PDH/PDL INITIALIZATION");
+        System.out.println(
+                "--------------------------------------------------------------------------");
+        for (String sym : candidateStocks) {
+            LowestVolumeSetup setup = new LowestVolumeSetup(sym, LowestVolumeDirection.LONG);
+            lvrService.initPdhPdlForSetup(setup);
+            System.out.printf(
+                    "\n>>> %s: Initialized PDH = %s, PDL = %s <<<\n",
+                    sym, setup.getPdh(), setup.getPdl());
+            printCandleSequenceDetails(sym, candlesMap.get(sym), LowestVolumeDirection.LONG);
+        }
 
         // Run Production Stock Futures Mode (100% Full Exit at 1:2 Target)
         System.out.println(
