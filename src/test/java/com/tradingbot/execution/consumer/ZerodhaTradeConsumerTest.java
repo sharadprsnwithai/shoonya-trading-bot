@@ -327,4 +327,51 @@ class ZerodhaTradeConsumerTest {
                                                 && req.price().compareTo(BigDecimal.valueOf(85.50))
                                                         == 0));
     }
+
+    @Test
+    void testZerodhaPlacesLimitOrderWhenSpecifiedInMetadata() {
+        BrokerOrderGateway gateway = mock(BrokerOrderGateway.class);
+        when(gateway.placeOrder(any()))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "KITE-LMT-1",
+                                OrderStatus.COMPLETE,
+                                "Filled",
+                                null,
+                                Instant.now()));
+
+        ZerodhaTradeConsumer consumer =
+                new ZerodhaTradeConsumer(
+                        "zerodha-test", ExecutionMode.LIVE, 1.0, true, 30L, gateway);
+
+        TradeSignal limitSignal =
+                TradeSignal.of(
+                        "LOWEST_VOLUME_REVERSAL",
+                        "PNB",
+                        "PNB FUT",
+                        SignalAction.ENTRY_LONG,
+                        BigDecimal.valueOf(113.40),
+                        BigDecimal.valueOf(112.95),
+                        BigDecimal.valueOf(114.50),
+                        8000,
+                        "Futures Limit Entry",
+                        java.util.Map.of(
+                                "instrumentType",
+                                "FUTURES",
+                                "orderType",
+                                "LMT",
+                                "exchange",
+                                "NSE"));
+        consumer.handleLiveExecution(limitSignal, 8000);
+
+        verify(gateway, times(1))
+                .placeOrder(
+                        argThat(
+                                req ->
+                                        req.orderType() == OrderType.LMT
+                                                && req.price().compareTo(BigDecimal.valueOf(113.40))
+                                                        == 0
+                                                && req.symbol().equals("PNB FUT")));
+    }
 }

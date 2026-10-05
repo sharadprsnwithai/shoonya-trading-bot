@@ -68,18 +68,34 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
             exchange = String.valueOf(signal.metadata().get("exchange"));
         }
 
-        // D1: market orders on both entry and exit, matching the Shoonya routing. A resting
-        // limit was racing the touchline (unfilled entries, partial exits) while the strategy
-        // already assumes a fill; the protective stop is the only order that needs a price.
+        OrderType orderType = OrderType.MKT;
+        BigDecimal price = BigDecimal.ZERO;
+        if (signal.metadata() != null && signal.metadata().containsKey("orderType")) {
+            Object ot = signal.metadata().get("orderType");
+            if (ot instanceof OrderType) {
+                orderType = (OrderType) ot;
+            } else if (ot != null) {
+                try {
+                    orderType = OrderType.valueOf(String.valueOf(ot).trim().toUpperCase());
+                } catch (Exception ignored) {
+                }
+            }
+            if (orderType == OrderType.LMT
+                    && signal.price() != null
+                    && signal.price().compareTo(BigDecimal.ZERO) > 0) {
+                price = signal.price();
+            }
+        }
+
         OrderRequest request =
                 new OrderRequest(
                         signal.tradingSymbol(),
                         exchange,
                         txnType,
-                        OrderType.MKT,
+                        orderType,
                         ProductType.MIS,
                         quantity,
-                        BigDecimal.ZERO,
+                        price,
                         null,
                         signal.signalId());
 

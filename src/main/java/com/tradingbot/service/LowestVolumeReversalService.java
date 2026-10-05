@@ -85,6 +85,9 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.instrument-type:FUTURES}")
     private volatile LvrInstrumentType instrumentType = LvrInstrumentType.FUTURES;
 
+    @Value("${trading-bot.strategy.lowest-volume.order-type:LMT}")
+    private volatile String orderType = "LMT";
+
     @Value("${trading-bot.strategy.lowest-volume.exit-mode:PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500}")
     private volatile LvrExitMode exitMode = LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500;
 
@@ -2123,7 +2126,11 @@ public class LowestVolumeReversalService {
                                     pos.getTarget1StockPrice(),
                                     exitQty,
                                     "TARGET_1_2_FULL_EXIT",
-                                    Map.of("instrumentType", pos.getInstrumentType().name()));
+                                    Map.of(
+                                            "instrumentType",
+                                            pos.getInstrumentType().name(),
+                                            "orderType",
+                                            orderType));
 
                             if (telegramAlerts && telegramService != null) {
                                 BigDecimal pts =
@@ -2181,7 +2188,11 @@ public class LowestVolumeReversalService {
                                         pos.getTarget1StockPrice(),
                                         closedQty,
                                         "TARGET_1_2_FULL_EXIT",
-                                        Map.of("instrumentType", pos.getInstrumentType().name()));
+                                        Map.of(
+                                                "instrumentType",
+                                                pos.getInstrumentType().name(),
+                                                "orderType",
+                                                orderType));
 
                                 if (telegramAlerts && telegramService != null) {
                                     BigDecimal pts =
@@ -2233,6 +2244,8 @@ public class LowestVolumeReversalService {
                                     Map.of(
                                             "instrumentType",
                                             pos.getInstrumentType().name(),
+                                            "orderType",
+                                            orderType,
                                             "partialExitRatio",
                                             0.5));
 
@@ -3867,6 +3880,17 @@ public class LowestVolumeReversalService {
 
     public void setOhlcCacheService(HistoricalOhlcCacheService ohlcCacheService) {
         this.ohlcCacheService = ohlcCacheService;
+    }
+
+    public String getOrderType() {
+        return orderType;
+    }
+
+    public void setOrderType(String orderType) {
+        this.orderType =
+                (orderType != null && !orderType.isBlank())
+                        ? orderType.trim().toUpperCase()
+                        : "LMT";
     }
 
     public int getDefaultLots() {
