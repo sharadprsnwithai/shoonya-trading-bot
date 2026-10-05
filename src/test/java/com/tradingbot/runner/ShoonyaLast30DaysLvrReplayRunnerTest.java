@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.indicator.TechnicalAnalysisService;
+import com.tradingbot.marketdata.HistoricalOhlcCacheService;
 import com.tradingbot.marketdata.YahooFinanceService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
@@ -15,6 +16,7 @@ import com.tradingbot.service.LowestVolumeReversalScanner;
 import com.tradingbot.service.LowestVolumeReversalService;
 import com.tradingbot.util.Nifty200Registry;
 import com.tradingbot.util.NiftySectorRegistry;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -26,7 +28,11 @@ import java.util.Set;
 import java.util.TreeSet;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
+@SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 class ShoonyaLast30DaysLvrReplayRunnerTest {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -34,6 +40,11 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
             DateTimeFormatter.ofPattern("HH:mm").withZone(IST);
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("dd-MMM-yyyy").withZone(IST);
+
+    @Autowired private LowestVolumeReversalService lvrService;
+    @Autowired private HistoricalOhlcCacheService ohlcCacheService;
+    @Autowired private LowestVolumeReversalScanner scanner;
+    @Autowired private TechnicalAnalysisService taService;
 
     @Test
     @DisplayName(
@@ -107,9 +118,6 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
         int totalLosses = 0;
         double totalRealizedPnlRs = 0.0;
         List<LowestVolumePaperPosition> allExecutedTrades = new ArrayList<>();
-
-        LowestVolumeReversalScanner scanner = new LowestVolumeReversalScanner();
-        TechnicalAnalysisService taService = new TechnicalAnalysisService();
 
         for (LocalDate sessionDate : testTradingDays) {
             System.out.println(
@@ -193,10 +201,9 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
                     winningSector.pctChange(),
                     topCandidates);
 
-            // 4. Instantiate Service for Day
-            LowestVolumeReversalService lvrService =
-                    new LowestVolumeReversalService(
-                            null, taService, null, null, null, scanner, null);
+            // 4. Configure Service for Session Date
+            lvrService.setClock(
+                    Clock.fixed(sessionDate.atTime(10, 0).atZone(IST).toInstant(), IST));
             lvrService.setInstrumentType(LvrInstrumentType.FUTURES);
             lvrService.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
             lvrService.setDefaultLots(2);
@@ -205,6 +212,8 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
             lvrService.setMaxSlippagePct(0.12);
             lvrService.setMinStopLossPct(0.35);
             lvrService.setVwapConfirmationEnabled(true);
+            lvrService.setOpening15mRangeFilterEnabled(true);
+            lvrService.setPdhPdlFilterEnabled(true);
             lvrService.setSectorMomentumFilterEnabled(false);
 
             int sessionTrades = 0;
