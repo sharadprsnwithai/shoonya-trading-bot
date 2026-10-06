@@ -20,6 +20,7 @@ import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.LowestVolumeSetupState;
 import com.tradingbot.model.strategy.LvrExitMode;
 import com.tradingbot.model.strategy.LvrInstrumentType;
+import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -2714,6 +2715,129 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.isUniverseScanCompletedToday()).isFalse();
         assertThat(service.getActiveSetups()).isEmpty();
         assertThat(service.getCandidateReservoir()).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "OI Spurts Fix: fetchMorningQuotesUnified enriches F&O stocks with near-month futures OI when NSE cash quote has no OI")
+    void testFetchMorningQuotesUnifiedEnrichesFuturesOi() {
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        ObjectMapper mapper = new ObjectMapper();
+
+        // NSE cash quote has no OI (typical of real live cash market quotes)
+        when(marketDataService.fetchQuote(org.mockito.ArgumentMatchers.eq("NSE"), any()))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "102.0")
+                                .put("c", "100.0")
+                                .put("o", "100.5")
+                                .put("v", 50000L)
+                                .put("ap", "101.5"));
+
+        // Near-month futures contract on NFO returns real OI and POI
+        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
+        when(marketDataService.fetchQuote(
+                        org.mockito.ArgumentMatchers.eq("NFO"),
+                        org.mockito.ArgumentMatchers.eq("556677")))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "102.5")
+                                .put("oi", 120000L)
+                                .put("poi", 100000L));
+
+        Map<String, StockQuoteSnapshot> quotes = service.fetchMorningQuotesUnified();
+
+        assertThat(quotes).isNotEmpty();
+        StockQuoteSnapshot rel = quotes.get("RELIANCE");
+        assertThat(rel).isNotNull();
+        assertThat(rel.ltp()).isEqualTo(102.0); // spot LTP preserved
+        assertThat(rel.openInterest()).isEqualTo(120000L);
+        assertThat(rel.prevDayOpenInterest()).isEqualTo(100000L);
+        assertThat(rel.oiPctChange()).isCloseTo(20.0, org.assertj.core.data.Offset.offset(0.01));
+    }
+
+    @Test
+    @DisplayName(
+            "OI Spurts Fix: runMorningUniverseScan in HYBRID mode includes candidates selected via futures OI enrichment")
+    void testHybridMorningScanSelectsCandidatesEnrichedFromFuturesOi() {
+        service.setScannerMode("HYBRID");
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        ObjectMapper mapper = new ObjectMapper();
+
+        // Spot quotes on NSE: all stocks up +2% (Bullish sentiment)
+        when(marketDataService.fetchQuote(org.mockito.ArgumentMatchers.eq("NSE"), any()))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "102.0")
+                                .put("c", "100.0")
+                                .put("o", "100.5")
+                                .put("v", 50000L)
+                                .put("ap", "101.5"));
+
+        // Futures quote on NFO: +15% OI change for F&O stocks
+        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
+        when(marketDataService.fetchQuote(
+                        org.mockito.ArgumentMatchers.eq("NFO"),
+                        org.mockito.ArgumentMatchers.eq("556677")))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "102.5")
+                                .put("oi", 115000L)
+                                .put("poi", 100000L));
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).isNotEmpty();
+        // Active setups must have oiChangePct populated
+        assertThat(service.getActiveSetups().values())
+                .anySatisfy(
+                        s -> {
+                            assertThat(s.getOiChangePct()).isNotNull();
+                            assertThat(s.getOiChangePct()).isGreaterThan(0.0);
+                        });
+    }
+
+    @Test
+    @DisplayName(
+            "OI Spurts Fix: runMorningUniverseScan in OI_SPURTS mode completes and selects candidates via futures OI enrichment")
+    void testOiSpurtsMorningScanSelectsCandidatesEnrichedFromFuturesOi() {
+        service.setScannerMode("OI_SPURTS");
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        ObjectMapper mapper = new ObjectMapper();
+
+        // Spot quotes on NSE: all stocks up +2%
+        when(marketDataService.fetchQuote(org.mockito.ArgumentMatchers.eq("NSE"), any()))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "102.0")
+                                .put("c", "100.0")
+                                .put("o", "100.5")
+                                .put("v", 50000L)
+                                .put("ap", "101.5"));
+
+        // Futures quote on NFO: +25% OI change
+        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
+        when(marketDataService.fetchQuote(
+                        org.mockito.ArgumentMatchers.eq("NFO"),
+                        org.mockito.ArgumentMatchers.eq("556677")))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "102.5")
+                                .put("oi", 125000L)
+                                .put("poi", 100000L));
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).hasSize(5);
+        assertThat(service.getActiveSetups().values())
+                .allSatisfy(
+                        s -> {
+                            assertThat(s.getOiChangePct()).isNotNull();
+                            assertThat(s.getOiChangePct())
+                                    .isCloseTo(25.0, org.assertj.core.data.Offset.offset(0.01));
+                        });
     }
 
     @Test

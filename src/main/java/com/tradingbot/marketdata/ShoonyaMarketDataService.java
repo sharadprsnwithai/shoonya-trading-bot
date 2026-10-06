@@ -192,6 +192,11 @@ public class ShoonyaMarketDataService {
         }
         String clean = symbol.toUpperCase().trim();
         if (clean.startsWith("NSE:")) clean = clean.substring(4);
+        else if (clean.startsWith("NFO:")) clean = clean.substring(4);
+        else if (clean.startsWith("BSE:")) clean = clean.substring(4);
+        else if (clean.startsWith("BFO:")) clean = clean.substring(4);
+        else if (clean.startsWith("MCX:")) clean = clean.substring(4);
+
         if ("NIFTY".equalsIgnoreCase(clean)
                 || "NIFTY 50".equalsIgnoreCase(clean)
                 || "NIFTY_50".equalsIgnoreCase(clean)) {
@@ -223,13 +228,16 @@ public class ShoonyaMarketDataService {
             return n500Meta.token();
         }
 
-        // Fallback: Query SearchScrip API from Shoonya
+        // Fallback: Query SearchScrip API from Shoonya using appropriate exchange
+        String exch = resolveExchange(symbol);
         try {
-            JsonNode searchRes = searchScrip("NSE", clean);
+            JsonNode searchRes = searchScrip(exch, clean);
             if (searchRes != null && searchRes.isArray() && !searchRes.isEmpty()) {
                 for (JsonNode item : searchRes) {
                     String tsym = item.path("tsym").asText("");
-                    if (tsym.equalsIgnoreCase(clean + "-EQ") || tsym.equalsIgnoreCase(clean)) {
+                    if (tsym.equalsIgnoreCase(clean + "-EQ")
+                            || tsym.equalsIgnoreCase(clean)
+                            || tsym.equalsIgnoreCase(clean + "-FUT")) {
                         String tok = item.path("token").asText("");
                         if (isValidNumericToken(tok)) {
                             tokenCache.put(clean, tok);
@@ -259,6 +267,64 @@ public class ShoonyaMarketDataService {
         return null;
     }
 
+    /**
+     * Resolves the NFO/BFO derivative instrument token for the near-month futures contract of a
+     * given underlying symbol (e.g. "RELIANCE" -> "RELIANCE26OCTFUT").
+     */
+    public String resolveFuturesToken(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return null;
+        }
+        String clean = symbol.toUpperCase().trim();
+        if (clean.startsWith("NSE:")) clean = clean.substring(4);
+        if (clean.startsWith("NFO:")) clean = clean.substring(4);
+
+        String futTsym = StockFnoRegistry.formatFuturesTradingSymbol(clean, null);
+        if (tokenCache.containsKey(futTsym)) {
+            String cached = tokenCache.get(futTsym);
+            if (isValidNumericToken(cached)) {
+                return cached;
+            }
+        }
+
+        String segment = StockFnoRegistry.getSegment(clean);
+        String exch = (segment != null && !segment.isBlank()) ? segment : "NFO";
+        try {
+            JsonNode searchRes = searchScrip(exch, futTsym);
+            if (searchRes != null && searchRes.isArray() && !searchRes.isEmpty()) {
+                for (JsonNode item : searchRes) {
+                    String tsym = item.path("tsym").asText("");
+                    if (tsym.equalsIgnoreCase(futTsym)) {
+                        String tok = item.path("token").asText("");
+                        if (isValidNumericToken(tok)) {
+                            tokenCache.put(futTsym, tok);
+                            return tok;
+                        }
+                    }
+                }
+                for (JsonNode item : searchRes) {
+                    String inst = item.path("instname").asText("");
+                    if ("FUTSTK".equalsIgnoreCase(inst)
+                            || "FUTIDX".equalsIgnoreCase(inst)
+                            || item.path("tsym").asText("").endsWith("FUT")) {
+                        String tok = item.path("token").asText("");
+                        if (isValidNumericToken(tok)) {
+                            tokenCache.put(futTsym, tok);
+                            return tok;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[MARKET-DATA] Failed to resolve futures token for {} ({}): {}",
+                    clean,
+                    futTsym,
+                    e.getMessage());
+        }
+        return null;
+    }
+
     /** Resolves the exchange for a given symbol (e.g. "NSE", "BSE", "MCX", "NFO"). */
     public String resolveExchange(String symbol) {
         if (symbol == null || symbol.isBlank()) {
@@ -269,10 +335,26 @@ public class ShoonyaMarketDataService {
         if (clean.startsWith("BSE:")) return "BSE";
         if (clean.startsWith("MCX:")) return "MCX";
         if (clean.startsWith("NFO:")) return "NFO";
+        if (clean.startsWith("BFO:")) return "BFO";
 
         if (com.tradingbot.util.CommodityRegistry.isCommodity(clean)) {
             var meta = com.tradingbot.util.CommodityRegistry.getMetadata(clean);
             return (meta != null && meta.exchange() != null) ? meta.exchange() : "MCX";
+        }
+
+        // Derivative contract patterns (e.g. RELIANCE26OCTFUT, NIFTY26OCT25000CE,
+        // SENSEX26OCT80000CE)
+        boolean isDerivative =
+                clean.endsWith(" FUT")
+                        || clean.matches(".*\\d{2}[A-Z]{3}FUT$")
+                        || clean.matches(".*\\d+(CE|PE)$");
+        if (isDerivative) {
+            if (clean.startsWith("SENSEX")
+                    || clean.startsWith("BSESN")
+                    || clean.startsWith("BANKEX")) {
+                return "BFO";
+            }
+            return "NFO";
         }
 
         var fnoInfo = StockFnoRegistry.get(clean);

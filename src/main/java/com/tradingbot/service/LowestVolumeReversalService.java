@@ -3167,6 +3167,33 @@ public class LowestVolumeReversalService {
                     // (previous-day closing OI). The earlier `oio`/`oipct` names do not exist in
                     // GetQuotes, which silently zeroed the OI_SPURTS mode.
                     long prevOi = quote.path("poi").asLong(0L);
+
+                    // If quote is from cash equities segment (oi == 0) and symbol is an F&O
+                    // underlying,
+                    // enrich with open interest from its near-month futures contract on NFO.
+                    if (oi == 0L
+                            && prevOi == 0L
+                            && (info != null
+                                    || StockFnoRegistry.getAllInstruments().containsKey(sym))) {
+                        try {
+                            String futToken = marketDataService.resolveFuturesToken(sym);
+                            if (futToken != null && !futToken.isBlank()) {
+                                String futExch = StockFnoRegistry.getSegment(sym);
+                                if (futExch == null || futExch.isBlank()) futExch = "NFO";
+                                JsonNode futQuote = marketDataService.fetchQuote(futExch, futToken);
+                                if (futQuote != null) {
+                                    oi = futQuote.path("oi").asLong(0L);
+                                    prevOi = futQuote.path("poi").asLong(0L);
+                                }
+                            }
+                        } catch (Exception fex) {
+                            log.debug(
+                                    "[LVR] Unable to fetch futures OI for {}: {}",
+                                    sym,
+                                    fex.getMessage());
+                        }
+                    }
+
                     if (c > 0) {
                         double pct = (lp - c) / c * 100.0;
                         // 9-arg constructor computes oiPctChange from oi vs prevOi.

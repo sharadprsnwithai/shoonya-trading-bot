@@ -218,5 +218,43 @@ class ShoonyaMarketDataServiceTest {
         assertThat(service.resolveExchange("NSE:SBIN")).isEqualTo("NSE");
         assertThat(service.resolveExchange("BSE:TCS")).isEqualTo("BSE");
         assertThat(service.resolveExchange("MCX:CRUDEOIL")).isEqualTo("MCX");
+        assertThat(service.resolveExchange("RELIANCE26OCTFUT")).isEqualTo("NFO");
+        assertThat(service.resolveExchange("NFO:RELIANCE26OCTFUT")).isEqualTo("NFO");
+        assertThat(service.resolveExchange("NIFTY26OCT25000CE")).isEqualTo("NFO");
+        assertThat(service.resolveExchange("SENSEX26OCT80000CE")).isEqualTo("BFO");
+    }
+
+    @Test
+    void testResolveFuturesToken_ResolvesAndCachesFuturesToken() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        config.setEnabled(true);
+        config.setUserId("USER123");
+
+        ShoonyaAuthenticator mockAuth = mock(ShoonyaAuthenticator.class);
+        when(mockAuth.getOrAuthenticateToken()).thenReturn("valid_session_token");
+
+        ShoonyaMarketDataService service =
+                new ShoonyaMarketDataService(config, mockAuth) {
+                    @Override
+                    public com.fasterxml.jackson.databind.JsonNode searchScrip(
+                            String exchange, String searchText) {
+                        if ("NFO".equalsIgnoreCase(exchange) && searchText.startsWith("RELIANCE")) {
+                            ObjectMapper mapper = new ObjectMapper();
+                            return mapper.createArrayNode()
+                                    .add(
+                                            mapper.createObjectNode()
+                                                    .put("tsym", searchText)
+                                                    .put("token", "998877")
+                                                    .put("instname", "FUTSTK"));
+                        }
+                        return null;
+                    }
+                };
+
+        String futToken = service.resolveFuturesToken("RELIANCE");
+        assertThat(futToken).isEqualTo("998877");
+
+        // Verify caching - calling second time should return cached token without searchScrip
+        assertThat(service.resolveFuturesToken("RELIANCE")).isEqualTo("998877");
     }
 }
