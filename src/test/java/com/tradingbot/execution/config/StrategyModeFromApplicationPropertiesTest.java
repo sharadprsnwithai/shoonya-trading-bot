@@ -134,8 +134,7 @@ class StrategyModeFromApplicationPropertiesTest {
         // Consumer-wide mode is untouched by the per-strategy override.
         assertThat(shoonya.getMode()).isEqualTo(ExecutionMode.PAPER);
         // Other strategies keep the default chain.
-        assertThat(shoonya.getStrategyModes().get("BOLLINGER_HA_1M"))
-                .isEqualTo(ExecutionMode.PAPER);
+        assertThat(shoonya.getStrategyModes().get("CAR_WEEKLY_GTT")).isEqualTo(ExecutionMode.PAPER);
 
         // Zerodha consumer is bound from its own env chain and defaults to disabled/PAPER.
         ExecutionProperties.ConsumerConfig zerodha = bound.getConsumers().get(1);
