@@ -474,7 +474,7 @@ public class DriftVwapOptionSellingService {
                                     + "• Entry Premium: `₹%.2f`\n"
                                     + "• Exit Premium: `₹%.2f`\n"
                                     + "• Points: `%+.2f pts`\n"
-                                    + "• Realized P&L: `%+₹%.2f`\n"
+                                    + "• Realized P&L: `₹%+.2f`\n"
                                     + "• Reason: Daily Market Close (Theta Captured)",
                             pos.getContractSymbol(),
                             pos.getEntryPremium().doubleValue(),
