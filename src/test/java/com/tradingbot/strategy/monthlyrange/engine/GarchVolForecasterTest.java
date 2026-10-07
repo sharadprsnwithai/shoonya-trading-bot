@@ -16,8 +16,7 @@ class GarchVolForecasterTest {
     void testForecastMonthlyVol() {
         // Daily variance ~ 0.0001 (daily vol 1% => annual ~16%)
         GarchModelParams params =
-                new GarchModelParams(
-                        0.000005, 0.08, 0.87, 0.0001, -500.0, true, "CONVERGED");
+                new GarchModelParams(0.000005, 0.08, 0.87, 0.0001, -500.0, true, "CONVERGED");
 
         double[] returns = new double[250];
         for (int i = 0; i < returns.length; i++) {

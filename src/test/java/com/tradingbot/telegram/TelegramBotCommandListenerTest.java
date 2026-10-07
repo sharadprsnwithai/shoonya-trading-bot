@@ -133,4 +133,30 @@ class TelegramBotCommandListenerTest {
         assertTrue(runResp.contains("CAR Weekly GTT Routine executed"));
         verify(carService, times(1)).runSundayWeeklyRoutine();
     }
+
+    @Test
+    void testHandleMonthlyRangeCommand() {
+        com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyService =
+                mock(com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService.class);
+        var mockReport =
+                new com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport(
+                        java.time.Instant.now(), "2026-10", java.util.List.of(), "Success");
+        when(monthlyService.generateMonthlyReport()).thenReturn(mockReport);
+        when(monthlyService.formatTelegramMessage(mockReport))
+                .thenReturn("📊 MONTHLY OPTION RANGE FORECAST");
+
+        TelegramBotCommandListener listenerWithMonthly =
+                new TelegramBotCommandListener(
+                        lvrService,
+                        null,
+                        monthlyService,
+                        telegramService,
+                        shoonyaConfig,
+                        objectMapper,
+                        httpClient);
+
+        String response = listenerWithMonthly.processCommand("/monthlyrange");
+        assertNotNull(response);
+        assertTrue(response.contains("MONTHLY OPTION RANGE"));
+    }
 }

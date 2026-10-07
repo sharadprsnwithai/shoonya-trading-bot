@@ -267,8 +267,7 @@ public class LowestVolumeReversalScanner {
                         if (aBuildup && !bBuildup) return -1;
                         if (!aBuildup && bBuildup) return 1;
                         if (aBuildup) return Double.compare(b.oiPctChange(), a.oiPctChange());
-                        return Double.compare(
-                                Math.abs(b.oiPctChange()), Math.abs(a.oiPctChange()));
+                        return Double.compare(Math.abs(b.oiPctChange()), Math.abs(a.oiPctChange()));
                     });
 
             log.info(

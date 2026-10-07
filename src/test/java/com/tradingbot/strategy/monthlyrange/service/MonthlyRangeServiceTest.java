@@ -2,7 +2,6 @@ package com.tradingbot.strategy.monthlyrange.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 import com.tradingbot.marketdata.YahooFinanceService;

@@ -2832,7 +2832,8 @@ public class LowestVolumeReversalService {
             List<LowestVolumeReversalScanner.SectorRankResult> rankedSectors =
                     scanner.rankSectors(sectorQuotes, sentiment);
 
-            if ("HYBRID".equalsIgnoreCase(scannerMode) || "OI_SPURTS".equalsIgnoreCase(scannerMode)) {
+            if ("HYBRID".equalsIgnoreCase(scannerMode)
+                    || "OI_SPURTS".equalsIgnoreCase(scannerMode)) {
                 try {
                     List<String> midOi = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
                     for (String oiSym : midOi) {

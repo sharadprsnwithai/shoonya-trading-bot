@@ -3,9 +3,7 @@ package com.tradingbot.strategy.monthlyrange.model;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/**
- * Monthly Range Forecast and option strike boundaries for a single symbol.
- */
+/** Monthly Range Forecast and option strike boundaries for a single symbol. */
 public record MonthlyRangeForecast(
         String symbol,
         BigDecimal spotPrice,

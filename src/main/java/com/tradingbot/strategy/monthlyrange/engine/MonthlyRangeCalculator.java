@@ -140,7 +140,9 @@ public class MonthlyRangeCalculator {
 
     public BigDecimal resolveStrikeStep(String cleanSymbol) {
         StockFnoRegistry.InstrumentInfo info = StockFnoRegistry.get(cleanSymbol);
-        if (info != null && info.strikeStep() != null && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
+        if (info != null
+                && info.strikeStep() != null
+                && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
             return info.strikeStep();
         }
 
@@ -152,8 +154,8 @@ public class MonthlyRangeCalculator {
     }
 
     /**
-     * Floors a boundary price down to the nearest integer multiple of step:
-     * floor(price / step) * step
+     * Floors a boundary price down to the nearest integer multiple of step: floor(price / step) *
+     * step
      */
     public BigDecimal snapStrikeDown(BigDecimal price, BigDecimal step) {
         if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
@@ -164,8 +166,7 @@ public class MonthlyRangeCalculator {
     }
 
     /**
-     * Ceils a boundary price up to the nearest integer multiple of step:
-     * ceil(price / step) * step
+     * Ceils a boundary price up to the nearest integer multiple of step: ceil(price / step) * step
      */
     public BigDecimal snapStrikeUp(BigDecimal price, BigDecimal step) {
         if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
@@ -214,7 +215,10 @@ public class MonthlyRangeCalculator {
             double low = cur.low().doubleValue();
             double prevClose = prev.close().doubleValue();
 
-            double tr = Math.max(high - low, Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
+            double tr =
+                    Math.max(
+                            high - low,
+                            Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
             trSum += tr;
         }
 

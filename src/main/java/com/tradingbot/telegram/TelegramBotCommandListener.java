@@ -36,6 +36,8 @@ public class TelegramBotCommandListener {
 
     private final LowestVolumeReversalService lvrService;
     private final com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService;
+    private final com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService
+            monthlyRangeService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -50,12 +52,16 @@ public class TelegramBotCommandListener {
             @Autowired(required = false) LowestVolumeReversalService lvrService,
             @Autowired(required = false)
                     com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService
+                            monthlyRangeService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
         this(
                 lvrService,
                 carWeeklyService,
+                monthlyRangeService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -68,7 +74,7 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
-        this(lvrService, null, telegramService, shoonyaConfig, objectMapper, httpClient);
+        this(lvrService, null, null, telegramService, shoonyaConfig, objectMapper, httpClient);
     }
 
     public TelegramBotCommandListener(
@@ -78,8 +84,27 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
+        this(
+                lvrService,
+                carWeeklyService,
+                null,
+                telegramService,
+                shoonyaConfig,
+                objectMapper,
+                httpClient);
+    }
+
+    public TelegramBotCommandListener(
+            LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyRangeService,
+            TelegramService telegramService,
+            ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
         this.lvrService = lvrService;
         this.carWeeklyService = carWeeklyService;
+        this.monthlyRangeService = monthlyRangeService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
@@ -277,6 +302,13 @@ public class TelegramBotCommandListener {
                 return "🚀 CAR Weekly GTT Routine executed! GTT orders placed on Kite.\n\n"
                         + processCommand("/car");
 
+            case "/monthlyrange":
+            case "/monthly_range":
+            case "/garch":
+                if (monthlyRangeService == null) return "⚠️ Monthly Range Service not active.";
+                var monthlyReport = monthlyRangeService.generateMonthlyReport();
+                return monthlyRangeService.formatTelegramMessage(monthlyReport);
+
             case "/exit":
             case "/squareoff":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
@@ -319,6 +351,7 @@ public class TelegramBotCommandListener {
                         + "• `/reset [force]` - Reset daily session state (`force` required intraday)\n"
                         + "• `/car` - Live CAR Weekly GTT Portfolio Status\n"
                         + "• `/car_run` - Force execute CAR Weekly GTT Sunday routine & place orders\n"
+                        + "• `/monthlyrange` - Calculate GARCH Monthly Option Range & Safe Strikes\n"
                         + "• `/help` - Show this command menu";
         }
     }

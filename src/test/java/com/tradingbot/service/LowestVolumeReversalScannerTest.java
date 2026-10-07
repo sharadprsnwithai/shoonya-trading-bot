@@ -222,29 +222,32 @@ class LowestVolumeReversalScannerTest {
         assertEquals(2, longStocks.size());
         assertEquals("DIXON", longStocks.get(0)); // Long buildup (+15% OI, +1.7% Prc)
         assertEquals("POLYCAB", longStocks.get(1)); // Short covering (-15% OI, +1.5% Prc)
-        assertFalse(longStocks.contains("BHEL")); // BHEL is negative (-3.4%), must never be chosen for LONG
+        assertFalse(
+                longStocks.contains(
+                        "BHEL")); // BHEL is negative (-3.4%), must never be chosen for LONG
 
         List<String> shortStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.SHORT, 2);
         assertEquals(1, shortStocks.size());
         assertEquals("BHEL", shortStocks.get(0)); // Short buildup (+20% OI, -3.4% Prc)
-        assertFalse(shortStocks.contains("DIXON")); // DIXON is positive (+1.7%), must never be chosen for SHORT
+        assertFalse(
+                shortStocks.contains(
+                        "DIXON")); // DIXON is positive (+1.7%), must never be chosen for SHORT
     }
 
     @Test
-    @DisplayName("Should return empty list when no stocks align with sentiment direction in scanOiSpurts")
+    @DisplayName(
+            "Should return empty list when no stocks align with sentiment direction in scanOiSpurts")
     void testScanOiSpurtsNoAlignmentWithSentiment() {
         Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
         // All stocks are green (positive)
         quotes.put(
                 "DIXON",
                 new StockQuoteSnapshot(
-                        "DIXON", 12000.0, 11800.0, 11850.0, 1.7, 50000, 11950.0, 115000,
-                        100000));
+                        "DIXON", 12000.0, 11800.0, 11850.0, 1.7, 50000, 11950.0, 115000, 100000));
         quotes.put(
                 "POLYCAB",
                 new StockQuoteSnapshot(
-                        "POLYCAB", 6500.0, 6400.0, 6420.0, 1.5, 30000, 6450.0, 85000,
-                        100000));
+                        "POLYCAB", 6500.0, 6400.0, 6420.0, 1.5, 30000, 6450.0, 85000, 100000));
 
         // When sentiment is SHORT, no positive stocks should be selected
         List<String> shortStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.SHORT, 2);

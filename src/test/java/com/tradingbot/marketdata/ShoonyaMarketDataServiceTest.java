@@ -321,11 +321,10 @@ class ShoonyaMarketDataServiceTest {
         List<String> searches = new ArrayList<>();
         setClock(java.time.LocalDate.of(2026, 10, 7));
         ShoonyaMarketDataService service =
-                serviceWithSearches(
-                        arr(fut("NIFTY27OCT26F", "12345", "FUTIDX")),
-                        searches);
+                serviceWithSearches(arr(fut("NIFTY27OCT26F", "12345", "FUTIDX")), searches);
 
-        ShoonyaMarketDataService.FuturesContract contract = service.resolveFuturesContract("NIFTY 50");
+        ShoonyaMarketDataService.FuturesContract contract =
+                service.resolveFuturesContract("NIFTY 50");
         assertThat(contract).isNotNull();
         assertThat(contract.tsym()).isEqualTo("NIFTY27OCT26F");
         assertThat(contract.token()).isEqualTo("12345");

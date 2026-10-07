@@ -4,8 +4,8 @@ import com.tradingbot.strategy.monthlyrange.model.GarchModelParams;
 import org.springframework.stereotype.Component;
 
 /**
- * Multi-period variance projector for GARCH(1,1) volatility models.
- * Calculates cumulative forward monthly conditional volatility and annualized volatility.
+ * Multi-period variance projector for GARCH(1,1) volatility models. Calculates cumulative forward
+ * monthly conditional volatility and annualized volatility.
  */
 @Component
 public class GarchVolForecaster {
@@ -18,7 +18,8 @@ public class GarchVolForecaster {
             double terminalDailyVolPct) {}
 
     /**
-     * Forecasts forward conditional variance for {@code horizonDays} ahead and computes cumulative volatility.
+     * Forecasts forward conditional variance for {@code horizonDays} ahead and computes cumulative
+     * volatility.
      */
     public VolForecastResult forecastMonthlyVol(
             GarchModelParams params, double[] returns, int horizonDays) {
@@ -65,7 +66,8 @@ public class GarchVolForecaster {
         double sigmaTPlus1_2 = omega + alpha * (lastEps * lastEps) + beta * currentSigma2;
         dailyVars[0] = Math.max(sigmaTPlus1_2, 1e-10);
 
-        // 3. Multi-step recursive forecast: sigma_{T+k}^2 = V_L + (alpha + beta)^(k-1) * (sigma_{T+1}^2 - V_L)
+        // 3. Multi-step recursive forecast: sigma_{T+k}^2 = V_L + (alpha + beta)^(k-1) *
+        // (sigma_{T+1}^2 - V_L)
         double sumVariance = dailyVars[0];
         for (int k = 1; k < h; k++) {
             double factor = Math.pow(persistence, k);

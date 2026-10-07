@@ -463,7 +463,9 @@ class LowestVolumeReversalServiceTest {
     void testFuturesEntryUsesResolvedBrokerTradingSymbol() {
         service.setInstrumentType(LvrInstrumentType.FUTURES);
         when(marketDataService.resolveFuturesContract("NATIONALUM"))
-                .thenReturn(new ShoonyaMarketDataService.FuturesContract("NATIONALUM27OCT26F", "12345"));
+                .thenReturn(
+                        new ShoonyaMarketDataService.FuturesContract(
+                                "NATIONALUM27OCT26F", "12345"));
 
         LowestVolumeSetup setup = new LowestVolumeSetup("NATIONALUM", LowestVolumeDirection.SHORT);
         setup.setTriggerCandle(

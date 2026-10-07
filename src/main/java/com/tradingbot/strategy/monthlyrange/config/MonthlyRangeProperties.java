@@ -5,9 +5,7 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-/**
- * Configuration properties for the Monthly Option Range GARCH(1,1) strategy.
- */
+/** Configuration properties for the Monthly Option Range GARCH(1,1) strategy. */
 @Component
 @ConfigurationProperties(prefix = "trading-bot.strategy.monthly-range")
 public class MonthlyRangeProperties {
