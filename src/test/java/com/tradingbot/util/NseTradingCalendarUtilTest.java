@@ -59,4 +59,20 @@ class NseTradingCalendarUtilTest {
         LocalDate monthlyExpiryOct = NseTradingCalendarUtil.getMonthlyExpiryThursday(2026, 10);
         assertEquals(LocalDate.of(2026, 10, 29), monthlyExpiryOct);
     }
+
+    @Test
+    @DisplayName("Monthly expiry Tuesday calculation for October 2026 (Last Tuesday is Oct 27)")
+    void testMonthlyExpiryTuesdayOct2026() {
+        LocalDate monthlyExpiryTue = NseTradingCalendarUtil.getMonthlyExpiryTuesday(2026, 10);
+        assertEquals(LocalDate.of(2026, 10, 27), monthlyExpiryTue);
+    }
+
+    @Test
+    @DisplayName("Last Wednesday of month calculation for October 2026 (Oct 28)")
+    void testLastWednesdayOfMonthOct2026() {
+        LocalDate lastWed = NseTradingCalendarUtil.getLastWednesdayOfMonth(2026, 10);
+        assertEquals(LocalDate.of(2026, 10, 28), lastWed);
+        assertTrue(NseTradingCalendarUtil.isLastWednesdayOfMonth(LocalDate.of(2026, 10, 28)));
+        assertFalse(NseTradingCalendarUtil.isLastWednesdayOfMonth(LocalDate.of(2026, 10, 21)));
+    }
 }

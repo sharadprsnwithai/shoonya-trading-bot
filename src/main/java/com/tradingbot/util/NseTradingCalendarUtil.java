@@ -136,4 +136,68 @@ public final class NseTradingCalendarUtil {
         }
         return current;
     }
+
+    /**
+     * Calculates the monthly stock options expiry date (Last Tuesday of the month). If the last
+     * Tuesday is an exchange holiday, rolls backward to the preceding trading day.
+     *
+     * @param year the calendar year
+     * @param month the calendar month (1-12)
+     * @return the monthly Tuesday expiry date
+     */
+    public static LocalDate getMonthlyExpiryTuesday(int year, int month) {
+        LocalDate lastDayOfMonth = LocalDate.of(year, month, 1).plusMonths(1).minusDays(1);
+        LocalDate current = lastDayOfMonth;
+
+        // Find last Tuesday of the month
+        while (current.getDayOfWeek() != DayOfWeek.TUESDAY) {
+            current = current.minusDays(1);
+        }
+
+        // If that Tuesday is a trading holiday, roll backward to the preceding trading day
+        while (!isTradingDay(current)) {
+            current = current.minusDays(1);
+        }
+        return current;
+    }
+
+    /**
+     * Calculates the last Wednesday of the month.
+     *
+     * @param year the calendar year
+     * @param month the calendar month (1-12)
+     * @return the last Wednesday date
+     */
+    public static LocalDate getLastWednesdayOfMonth(int year, int month) {
+        LocalDate lastDayOfMonth = LocalDate.of(year, month, 1).plusMonths(1).minusDays(1);
+        LocalDate current = lastDayOfMonth;
+
+        while (current.getDayOfWeek() != DayOfWeek.WEDNESDAY) {
+            current = current.minusDays(1);
+        }
+        return current;
+    }
+
+    /**
+     * Checks if today in IST timezone is the last Wednesday of the current calendar month.
+     *
+     * @return true if today is the last Wednesday of this month
+     */
+    public static boolean isTodayLastWednesdayOfMonth() {
+        return isLastWednesdayOfMonth(LocalDate.now(IST_ZONE));
+    }
+
+    /**
+     * Checks if the specified date is the last Wednesday of its calendar month.
+     *
+     * @param date the date to check
+     * @return true if date is the last Wednesday of the month
+     */
+    public static boolean isLastWednesdayOfMonth(LocalDate date) {
+        if (date == null || date.getDayOfWeek() != DayOfWeek.WEDNESDAY) {
+            return false;
+        }
+        LocalDate lastWed = getLastWednesdayOfMonth(date.getYear(), date.getMonthValue());
+        return date.equals(lastWed);
+    }
 }
