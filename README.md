@@ -1,7 +1,7 @@
 # Shoonya Algorithmic Trading Bot
 
 > **Multi-Strategy Intraday & Positional Options Bot (NIFTY 50 + F&O Stocks)**  
-> Built with Java 21, Spring Boot 3.3.5, and Finvasia Shoonya (NorenAPI). Optimized for low-footprint VPS deployments.
+> Built with Java 21, Spring Boot 3.3.5, and Finvasia Shoonya (NorenAPI) / Zerodha Kite Connect. Optimized for low-footprint VPS deployments.
 
 ---
 
@@ -10,26 +10,30 @@
 1. [Project Overview](#project-overview)
 2. [Active Strategies](#active-strategies)
    - [Lowest Volume Reversal (LVR)](#lowest-volume-reversal-lvr)
-3. [Execution Modes](#execution-modes)
-4. [Environment Configuration (.env)](#environment-configuration-env)
-5. [Docker & Deployment Commands](#docker--deployment-commands)
+   - [Cumulative Average Reversal (CAR) Weekly GTT](#cumulative-average-reversal-car-weekly-gtt)
+   - [Monthly Option Range GARCH(1,1)](#monthly-option-range-garch11)
+3. [Telegram Bot Commands](#telegram-bot-commands)
+4. [Execution Modes](#execution-modes)
+5. [Environment Configuration (.env)](#environment-configuration-env)
+6. [Docker & Deployment Commands](#docker--deployment-commands)
    - [Quick Start with Docker Compose](#quick-start-with-docker-compose)
    - [Docker Build & Push Commands](#docker-build--push-commands)
    - [Container Operations & Maintenance](#container-operations--maintenance)
    - [Viewing Logs](#viewing-logs)
    - [Health & Monitoring](#health--monitoring)
-6. [Local Development & Code Quality](#local-development--code-quality)
+7. [Local Development & Code Quality](#local-development--code-quality)
    - [Gradle Commands](#gradle-commands)
-7. [REST API Endpoints](#rest-api-endpoints)
+8. [REST API Endpoints](#rest-api-endpoints)
 
 ---
 
 ## Project Overview
 
-The **Shoonya Trading Bot** is an automated and advisory trading engine designed for the Indian derivatives market (NSE/NFO).
+The **Shoonya Trading Bot** is an automated and advisory trading engine designed for the Indian derivatives and equity markets (NSE/NFO/BSE).
 
-- **Broker API:** Headless OAuth session manager for Finvasia Shoonya (`NorenAPI`) with disk caching.
-- **Telegram Integration:** Instant rich notifications for trade entries, hedge purchases, stop-loss triggers, target profit hits, and end-of-day square-offs.
+- **Broker APIs:** Headless OAuth session manager for Finvasia Shoonya (`NorenAPI`) and Zerodha Kite Connect (`KiteRestClient`) with disk caching.
+- **Telegram Integration:** Bidirectional command listener and rich notifications for trade entries, hedge purchases, trailing exits, weekly GTT triggers, and monthly GARCH range advisory reports.
+- **Quantitative Engine:** Pure Java mathematical optimization (GARCH(1,1) Nelder-Mead MLE, multi-period variance forecasting, TA-Lib, TA4J).
 - **Low Footprint:** Containerized runtime configured with serial GC (`-XX:+UseSerialGC -Xms256m -Xmx384m`) and resource caps (300 MB reservation, 600 MB max) for 1 GB RAM cloud VPS nodes.
 - **Quality Assured:** Rigorous unit and integration testing, Spotless (AOSP standard), and SpotBugs static code analysis.
 
@@ -37,17 +41,60 @@ The **Shoonya Trading Bot** is an automated and advisory trading engine designed
 
 ## Active Strategies
 
-The bot runs automated strategies on the NIFTY 50 index and high-liquidity F&O stocks:
+The bot runs automated strategies on the NIFTY 50 index and high-liquidity F&O equities:
 
 ### Lowest Volume Reversal (LVR)
 
-Intraday cash‑stock momentum reversal on 5‑minute candles (`NSE` equities):
+Intraday stock futures and options momentum reversal on 5‑minute candles (`NSE` equities):
 
-1. **Morning Universe Scan (09:25:10 IST):** Fixes the daily watchlist from the F&O universe (Top Gainers and Top Losers).
+1. **Morning Universe Scan (09:25:10 IST):** Fixes the daily watchlist from the F&O universe (Top Gainers and Top Losers) based on sectoral breadth.
 2. **Direction & Lowest Volume Candle (≥ 09:30 IST):** Strategy direction is determined by the 1st 5-minute candle (Green → LONG, Red → SHORT). Evaluates completed 5m candles after 09:30 AM to find the lowest volume opposite-color candle as the trigger.
-3. **Entry Cutoff:** Hard cutoff at **11:00 AM IST** — no new setups or armed triggers after 11:00 AM; open trades continue to target / stop-loss / SuperTrend trailing.
-4. **Execution:** ATM options bought (CE for longs, PE for shorts) via `ExecutionManager`; SL, Target 1, and 5m SuperTrend(10, 3) trailing exit.
-5. **Actionable Alerts:** Telegram `[TRADE SIGNAL: BUY CALL/PUT]` messages fire on actual trigger breach and fill (armed‑setup alerts disabled by default).
+3. **Entry Cutoff:** Hard cutoff at **11:00 AM / 11:30 AM IST** — no new setups or armed triggers after cutoff; open trades continue to target / stop-loss / trailing exit.
+4. **Execution:** Futures or ATM options bought via decoupled execution consumers with 1:2 risk-reward, cost floor, and 10 EMA trailing.
+
+---
+
+### Cumulative Average Reversal (CAR) Weekly GTT
+
+Positional swing accumulation and profit extraction on NIFTY 100 universe:
+
+1. **Schedule:** Evaluates weekly candles every Sunday at **10:00 AM IST**.
+2. **Setup Detection:** Identifies 52-week high anchor points and calculates post-anchor cumulative average slope (requiring $\ge 10$ positive days).
+3. **Trigger Placement:** Automatically arms GTT Buy orders at `Last Week High + Buffer` and GTT Sell targets (+6.28% target) using 1/40th portfolio unit sizing.
+
+---
+
+### Monthly Option Range GARCH(1,1)
+
+Quantitative volatility forecasting and safe strike selection for monthly stock option sellers (`RELIANCE`, `TCS`, `HDFCBANK`, `INFY`, `ICICIBANK`, `SBIN`, `TATAMOTORS`, `NIFTY50`):
+
+1. **Schedule:** Runs every Wednesday at **10:00 AM IST**, automatically triggering post-expiry on the **last Wednesday of each month** (immediately following last-Tuesday monthly stock option expiry).
+2. **Quantitative Engine:** Pure Java Nelder-Mead MLE optimizer fitting GARCH(1,1) conditional volatility ($\omega, \alpha, \beta$) over 2 years of daily returns.
+3. **Multi-Step Projection:** Computes 22-trading-day forward cumulative monthly volatility $\sigma_{\text{month}}$ and annualized volatility $\sigma_{\text{ann}}$.
+4. **Safe Strike Boundaries:**
+   - **1-SD (68.3% Confidence Band):** $[S_0 \cdot e^{-\sigma_m}, \; S_0 \cdot e^{+\sigma_m}]$
+   - **2-SD (95.4% Confidence Band):** $[S_0 \cdot e^{-2\sigma_m}, \; S_0 \cdot e^{+2\sigma_m}]$
+   - **Safe PE Strike:** 2-SD lower price snapped down (floor) to official NSE strike step.
+   - **Safe CE Strike:** 2-SD upper price snapped up (ceiling) to official NSE strike step.
+5. **Advisory Alerts:** Dispatches formatted Telegram summary table with safe strikes, percentage safety buffers, ATR-22, and HV-30.
+
+---
+
+## Telegram Bot Commands
+
+The bot provides a bidirectional polling listener supporting the following commands:
+
+| Command | Description |
+| :--- | :--- |
+| `/monthlyrange`, `/monthly_range`, `/garch` | **Calculate GARCH(1,1) Monthly Option Range & Safe CE/PE Strikes** for `RELIANCE`, `TCS`, `HDFCBANK`, `INFY`, `ICICIBANK`, `SBIN`, `TATAMOTORS`, `NIFTY50`. |
+| `/status`, `/lvr`, `/lvr_status` | View live LVR strategy state, market sentiment breadth, winning sector, candidates, and open positions. |
+| `/scan`, `/lvr_scan` | Force execute an immediate 5-minute LVR strategy cycle. |
+| `/morning_scan` | Force execute 09:25 AM LVR morning universe scan and sectoral ranking. |
+| `/car`, `/car_status` | View live CAR Weekly GTT portfolio state, capital, invested units, demat holdings, and active GTT orders. |
+| `/car_run`, `/car_weekly` | Force execute the CAR Weekly Sunday routine and place GTT orders on Zerodha Kite. |
+| `/exit`, `/squareoff` | Square off all open intraday positions immediately. |
+| `/reset` | Reset daily session state (requires `/reset force` during active market hours). |
+| `/help` | Display the interactive Telegram command help menu. |
 
 ---
 
@@ -58,8 +105,8 @@ The bot provides flexible operational modes configured via environment variables
 | Mode | `EXECUTION_MODE` | Description |
 | :--- | :--- | :--- |
 | **Advisory Mode (Recommended for dry runs)** | `PAPER` or `LIVE` | Scans live market data, calculates exact strikes, and sends immediate Telegram entry/exit alerts without executing broker orders. |
-| **Paper Trading** | `PAPER` | Simulates orders locally with live market feeds. |
-| **Full Live Execution** | `LIVE` | Executes real multi-leg option orders directly through Finvasia Shoonya API (per-strategy auto-execute flags). |
+| **Paper Trading** | `PAPER` | Simulates orders locally with live market feeds and tracks MTM. |
+| **Full Live Execution** | `LIVE` | Executes real multi-leg option orders directly through Finvasia Shoonya or Zerodha Kite Connect APIs. |
 
 ---
 
@@ -82,14 +129,19 @@ cp .env.example .env
 | `SHOONYA_TOTP_SECRET` | — | Base32 TOTP secret key for automatic 2FA. |
 | `SHOONYA_CLIENT_ID` | — | Shoonya API Client ID. |
 | `SHOONYA_SECRET_KEY` | — | Shoonya API Secret Key. |
-| `SHOONYA_VENDOR_CODE`| `NOREN_API`| Shoonya Vendor Code. |
-| `TELEGRAM_ENABLED` | `true` | Enable/disable Telegram alerts. |
+| `KITE_ENABLED` | `true` | Enable Zerodha Kite Connect API integration. |
+| `KITE_API_KEY` | — | Kite Connect API key. |
+| `KITE_API_SECRET` | — | Kite Connect API secret. |
+| `TELEGRAM_ENABLED` | `true` | Enable/disable Telegram alerts and polling bot. |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram Bot API token from BotFather. |
 | `TELEGRAM_CHAT_ID` | — | Target Telegram Chat / Channel ID. |
+| `MONTHLY_RANGE_ENABLED` | `true` | Enable/disable GARCH Monthly Option Range strategy. |
+| `MONTHLY_RANGE_CRON` | `0 0 10 ? * WED` | Schedule for monthly post-expiry range calculation. |
+| `MONTHLY_RANGE_SYMBOLS` | `RELIANCE,TCS,HDFCBANK,INFY,ICICIBANK,SBIN,TATAMOTORS,NIFTY50` | Comma-separated symbols for GARCH range forecast. |
+| `CAR_ENABLED` | `true` | Enable/disable Cumulative Average Reversal weekly GTT strategy. |
+| `CAR_WEEKLY_SUNDAY_CRON` | `0 0 10 ? * SUN` | CAR Weekly GTT evaluation schedule. |
 | `LVR_ENABLED` | `true` | Enable/disable Lowest Volume Reversal strategy. |
-| `LVR_CRON` | `10 */5 9-11 ? * MON-FRI` | LVR 5m candle evaluation (11:00 AM entry cutoff). |
-| `LVR_PAPER_CAPITAL` | `1000000.0` | LVR paper-trading capital. |
-| `LVR_MAX_CONCURRENT_TRADES` | `5` | Max simultaneous LVR positions. |
+| `LVR_CRON` | `20 */5 9-15 ? * MON-FRI` | LVR 5m candle evaluation schedule. |
 
 ---
 
@@ -201,8 +253,8 @@ SpotBugs inspects compiled bytecode for common bugs and security vulnerabilities
 ./gradlew spotbugsMain
 
 # Open HTML report
-start build/reports/spotbugs/main.html  # Windows
-open build/reports/spotbugs/main.html   # macOS
+start build/reports/spotbugs/main.html    # Windows
+open build/reports/spotbugs/main.html     # macOS
 xdg-open build/reports/spotbugs/main.html # Linux
 ```
 
@@ -213,6 +265,12 @@ xdg-open build/reports/spotbugs/main.html # Linux
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/actuator/health` | Container and application health probe. |
+| `POST` | `/api/v1/monthly-range/run` | Triggers GARCH(1,1) monthly range calculation, sends Telegram alert, and returns full report. |
+| `GET` | `/api/v1/monthly-range/forecast` | Returns latest GARCH monthly range forecast report for all configured symbols. |
+| `GET` | `/api/v1/monthly-range/forecast/{symbol}?horizonDays=22` | Calculates GARCH monthly range forecast for a single stock or index. |
+| `POST` | `/api/v1/car/run-weekly?force=false` | Triggers CAR weekly GTT routine and orders. |
+| `GET` | `/api/v1/car/performance` | Returns CAR portfolio state and metrics. |
+| `GET` | `/api/v1/car/holdings` | Returns active CAR demat holdings. |
 | `GET` | `/api/v1/ohlc/nifty50?interval=5&count=2` | Fetches NIFTY 50 candles from Shoonya. |
 | `GET` | `/api/v1/ohlc/hourly?symbol=ABB&days=30` | Fetches 1-hour candles directly from Shoonya for any symbol. |
 | `GET` | `/api/v1/indicators/nifty50` | Computes technical indicators (SuperTrend, RSI, VWAP) for NIFTY 50. |
