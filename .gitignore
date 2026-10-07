@@ -5,6 +5,7 @@
 .env.*
 !.env.example
 *.env
+.superpowers
 
 # ==============================================================================
 # Runtime Logs & Persistent Session Data

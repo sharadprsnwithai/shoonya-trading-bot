@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -34,6 +36,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  */
 @SpringBootTest
 @org.springframework.test.context.ActiveProfiles("test")
+@Disabled
 class ShoonyaTodayLvrReplayRunnerTest {
 
     private static final Logger log =

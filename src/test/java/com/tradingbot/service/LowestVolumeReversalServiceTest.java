@@ -459,6 +459,35 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("Futures entry sets brokerTradingSymbol from resolved near-month contract")
+    void testFuturesEntryUsesResolvedBrokerTradingSymbol() {
+        service.setInstrumentType(LvrInstrumentType.FUTURES);
+        when(marketDataService.resolveFuturesContract("NATIONALUM"))
+                .thenReturn(new ShoonyaMarketDataService.FuturesContract("NATIONALUM27OCT26F", "12345"));
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("NATIONALUM", LowestVolumeDirection.SHORT);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "NATIONALUM",
+                        Instant.now(),
+                        BigDecimal.valueOf(330),
+                        BigDecimal.valueOf(331),
+                        BigDecimal.valueOf(327),
+                        BigDecimal.valueOf(327.10),
+                        5000),
+                BigDecimal.valueOf(327.10),
+                BigDecimal.valueOf(328.95),
+                BigDecimal.valueOf(323.50));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("NATIONALUM", setup, BigDecimal.valueOf(327.15));
+
+        assertThat(pos).isNotNull();
+        assertThat(pos.getBrokerTradingSymbol()).isEqualTo("NATIONALUM27OCT26F");
+    }
+
+    @Test
     @DisplayName("Target 1:2 dynamically recalculates from actual entry spot price under slippage")
     void testDynamicTargetCalculationOnSlippage() {
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
@@ -2796,6 +2825,47 @@ class LowestVolumeReversalServiceTest {
                             assertThat(s.getOiChangePct()).isNotNull();
                             assertThat(s.getOiChangePct()).isGreaterThan(0.0);
                         });
+    }
+
+    @Test
+    @DisplayName("Hybrid scan in BEARISH/SHORT market selects both sector and short OI candidates")
+    void testHybridMorningScanSelectsShortCandidatesWhenMarketBearish() {
+        service.setScannerMode("HYBRID");
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        ObjectMapper mapper = new ObjectMapper();
+
+        // Spot quotes on NSE: all stocks down -2% (Bearish sentiment)
+        when(marketDataService.fetchQuote(org.mockito.ArgumentMatchers.eq("NSE"), any()))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "98.0")
+                                .put("c", "100.0")
+                                .put("o", "99.5")
+                                .put("v", 50000L)
+                                .put("ap", "98.5"));
+
+        // Futures quote on NFO: +15% OI buildup for F&O stocks
+        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
+        when(marketDataService.fetchQuote(
+                        org.mockito.ArgumentMatchers.eq("NFO"),
+                        org.mockito.ArgumentMatchers.eq("556677")))
+                .thenReturn(
+                        mapper.createObjectNode()
+                                .put("lp", "98.0")
+                                .put("oi", 115000L)
+                                .put("poi", 100000L));
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).isNotEmpty();
+        assertThat(service.getActiveSetups().values())
+                .allSatisfy(
+                        s -> {
+                            assertThat(s.getDirection()).isEqualTo(LowestVolumeDirection.SHORT);
+                        });
+        // In HYBRID mode: up to 3 sector + up to 3 OI spurts = up to 6 total
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(6);
     }
 
     @Test

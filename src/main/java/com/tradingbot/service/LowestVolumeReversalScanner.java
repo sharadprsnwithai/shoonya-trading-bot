@@ -184,8 +184,10 @@ public class LowestVolumeReversalScanner {
     /**
      * Ranks all active F&O candidate stocks by Directional Open Interest Buildup at 09:25 IST: -
      * LONG: Positive price change (0 < pctChange <= 5.0%) + positive OI change (Long Buildup) -
-     * SHORT: Negative price change (-5.0% <= pctChange < 0) + positive OI change (Short Buildup) -
-     * Falls back to absolute |ΔOI%| ranking if no directional buildup stocks qualify.
+     * SHORT: Negative price change (-5.0% <= pctChange < 0) + positive OI change (Short Buildup)
+     *
+     * <p>Candidate stocks must be strictly aligned with the market sentiment direction. Directional
+     * buildup (OI increase) is prioritized; if needed, other price-aligned OI spurts are included.
      */
     public List<String> scanOiSpurts(
             Map<String, StockQuoteSnapshot> fnoQuotes, LowestVolumeDirection sentiment, int topN) {
@@ -193,7 +195,11 @@ public class LowestVolumeReversalScanner {
             return Collections.emptyList();
         }
 
-        List<StockQuoteSnapshot> directional = new ArrayList<>();
+        if (sentiment == null || sentiment == LowestVolumeDirection.NONE) {
+            return scanOiSpurts(fnoQuotes, topN);
+        }
+
+        List<StockQuoteSnapshot> eligible = new ArrayList<>();
         for (StockQuoteSnapshot q : fnoQuotes.values()) {
             if (q == null || q.symbol() == null) {
                 continue;
@@ -211,65 +217,83 @@ public class LowestVolumeReversalScanner {
                                 * 100.0;
             }
 
-            if (oiChange > 0.0001) {
-                if (sentiment == LowestVolumeDirection.LONG) {
-                    // Long Buildup: Price UP + OI UP
-                    if (q.pctChange() > 0.0 && q.pctChange() <= 5.0) {
-                        directional.add(
-                                new StockQuoteSnapshot(
-                                        q.symbol(),
-                                        q.ltp(),
-                                        q.prevClose(),
-                                        q.open(),
-                                        q.pctChange(),
-                                        q.volume(),
-                                        q.vwap(),
-                                        q.openInterest(),
-                                        q.prevDayOpenInterest(),
-                                        oiChange));
-                    }
-                } else if (sentiment == LowestVolumeDirection.SHORT) {
-                    // Short Buildup: Price DOWN + OI UP
-                    if (q.pctChange() < 0.0 && q.pctChange() >= -5.0) {
-                        directional.add(
-                                new StockQuoteSnapshot(
-                                        q.symbol(),
-                                        q.ltp(),
-                                        q.prevClose(),
-                                        q.open(),
-                                        q.pctChange(),
-                                        q.volume(),
-                                        q.vwap(),
-                                        q.openInterest(),
-                                        q.prevDayOpenInterest(),
-                                        oiChange));
-                    }
+            if (Math.abs(oiChange) <= 0.0001) {
+                continue;
+            }
+
+            // Directional price alignment with sentiment:
+            // LONG: Strictly positive % change (0 < pctChange <= 5.0%)
+            // SHORT: Strictly negative % change (-5.0% <= pctChange < 0)
+            if (sentiment == LowestVolumeDirection.LONG) {
+                if (q.pctChange() > 0.0 && q.pctChange() <= 5.0) {
+                    eligible.add(
+                            new StockQuoteSnapshot(
+                                    q.symbol(),
+                                    q.ltp(),
+                                    q.prevClose(),
+                                    q.open(),
+                                    q.pctChange(),
+                                    q.volume(),
+                                    q.vwap(),
+                                    q.openInterest(),
+                                    q.prevDayOpenInterest(),
+                                    oiChange));
+                }
+            } else if (sentiment == LowestVolumeDirection.SHORT) {
+                if (q.pctChange() < 0.0 && q.pctChange() >= -5.0) {
+                    eligible.add(
+                            new StockQuoteSnapshot(
+                                    q.symbol(),
+                                    q.ltp(),
+                                    q.prevClose(),
+                                    q.open(),
+                                    q.pctChange(),
+                                    q.volume(),
+                                    q.vwap(),
+                                    q.openInterest(),
+                                    q.prevDayOpenInterest(),
+                                    oiChange));
                 }
             }
         }
 
-        if (!directional.isEmpty()) {
-            directional.sort((a, b) -> Double.compare(b.oiPctChange(), a.oiPctChange()));
+        if (!eligible.isEmpty()) {
+            // Rank directional buildup (oiChange > 0) highest, sorted by oiChange descending;
+            // then other price-aligned OI activity sorted by |oiChange| descending.
+            eligible.sort(
+                    (a, b) -> {
+                        boolean aBuildup = a.oiPctChange() > 0.0001;
+                        boolean bBuildup = b.oiPctChange() > 0.0001;
+                        if (aBuildup && !bBuildup) return -1;
+                        if (!aBuildup && bBuildup) return 1;
+                        if (aBuildup) return Double.compare(b.oiPctChange(), a.oiPctChange());
+                        return Double.compare(
+                                Math.abs(b.oiPctChange()), Math.abs(a.oiPctChange()));
+                    });
+
             log.info(
-                    "[LVR-SCANNER] Directional OI Buildup ({}) found {} stocks. Top {}: {}",
+                    "[LVR-SCANNER] Directional OI Buildup ({}) found {} eligible stocks. Top {}: {}",
                     sentiment,
-                    directional.size(),
+                    eligible.size(),
                     topN,
-                    directional.stream()
+                    eligible.stream()
                             .limit(topN)
                             .map(
                                     s ->
                                             String.format(
                                                     java.util.Locale.US,
-                                                    "%s (+%.2f%% OI, %+.2f%% Prc)",
+                                                    "%s (%+.2f%% OI, %+.2f%% Prc)",
                                                     s.symbol(),
                                                     s.oiPctChange(),
                                                     s.pctChange()))
                             .toList());
-            return directional.stream().limit(topN).map(StockQuoteSnapshot::symbol).toList();
+            return eligible.stream().limit(topN).map(StockQuoteSnapshot::symbol).toList();
         }
 
-        return scanOiSpurts(fnoQuotes, topN);
+        log.info(
+                "[LVR-SCANNER] No eligible directional OI buildup stocks found for sentiment {}.",
+                sentiment);
+        return Collections.emptyList();
     }
 
     /**

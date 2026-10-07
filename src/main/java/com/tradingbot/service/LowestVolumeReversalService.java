@@ -744,25 +744,25 @@ public class LowestVolumeReversalService {
 
             if ("HYBRID".equalsIgnoreCase(scannerMode) && scanner != null) {
                 try {
-                    oiCandidates = scanner.scanOiSpurts(universeQuotes, sentiment, 2);
+                    oiCandidates = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
                 } catch (Exception e) {
                     log.warn("[LVR] OI Spurts scan failed during Hybrid scan: {}", e.getMessage());
                 }
 
-                // 1. Add top 2 sector candidates
-                int sectorTake = Math.min(2, candidateStocks.size());
+                // 1. Add top 3 sector candidates
+                int sectorTake = Math.min(3, candidateStocks.size());
                 for (int k = 0; k < sectorTake; k++) {
                     finalActiveList.add(candidateStocks.get(k));
                 }
 
-                // 2. Add top 2 OI spurt candidates (if not already included)
+                // 2. Add top 3 OI spurt candidates (if not already included)
                 for (String oiSym : oiCandidates) {
-                    if (!finalActiveList.contains(oiSym) && finalActiveList.size() < 4) {
+                    if (!finalActiveList.contains(oiSym) && finalActiveList.size() < 6) {
                         finalActiveList.add(oiSym);
                     }
                 }
 
-                // 3. If OI spurts yielded < 2 stocks, fill remaining slots from sector candidates
+                // 3. If OI spurts yielded < 3 stocks, fill remaining slots from sector candidates
                 for (String secSym : candidateStocks) {
                     if (!finalActiveList.contains(secSym) && finalActiveList.size() < 3) {
                         finalActiveList.add(secSym);
@@ -859,20 +859,22 @@ public class LowestVolumeReversalService {
 
             if (telegramAlerts && telegramService != null) {
                 if ("HYBRID".equalsIgnoreCase(scannerMode) && !oiCandidates.isEmpty()) {
-                    List<String> sectorLeaders = candidateStocks.stream().limit(2).toList();
+                    List<String> sectorLeaders = candidateStocks.stream().limit(3).toList();
                     telegramService.sendTextMessage(
                             String.format(
                                     "📊 *LVR 09:25 AM Morning Scan (Hybrid Mode)*\n"
                                             + "• Sentiment: *%s*\n"
                                             + "• Winning Sector: *%s* (%+.2f%%)\n"
-                                            + "• Sector Leaders (2): `%s`\n"
-                                            + "• OI Spurt Leaders (2): `%s`\n"
+                                            + "• Sector Leaders (%d): `%s`\n"
+                                            + "• OI Spurt Leaders (%d): `%s`\n"
                                             + "• Active Watchlist (%d): `%s`\n"
                                             + "• Standby Reservoir: %d stocks",
                                     sentiment,
                                     winningSector.sectorName(),
                                     winningSector.pctChange(),
+                                    sectorLeaders.size(),
                                     String.join(", ", sectorLeaders),
+                                    oiCandidates.size(),
                                     String.join(", ", oiCandidates),
                                     finalActiveList.size(),
                                     String.join(", ", finalActiveList),
@@ -1715,6 +1717,12 @@ public class LowestVolumeReversalService {
         if (instrumentType == LvrInstrumentType.FUTURES) {
             String contractSymbol = symbol + " FUT";
             String brokerTradingSymbol = StockFnoRegistry.formatFuturesTradingSymbol(symbol, null);
+            if (marketDataService != null) {
+                var fc = marketDataService.resolveFuturesContract(symbol);
+                if (fc != null && fc.tsym() != null && !fc.tsym().isBlank()) {
+                    brokerTradingSymbol = fc.tsym();
+                }
+            }
             position =
                     new LowestVolumePaperPosition(
                             tradeId,
@@ -2824,6 +2832,20 @@ public class LowestVolumeReversalService {
             List<LowestVolumeReversalScanner.SectorRankResult> rankedSectors =
                     scanner.rankSectors(sectorQuotes, sentiment);
 
+            if ("HYBRID".equalsIgnoreCase(scannerMode) || "OI_SPURTS".equalsIgnoreCase(scannerMode)) {
+                try {
+                    List<String> midOi = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
+                    for (String oiSym : midOi) {
+                        if (!activeSetups.containsKey(oiSym)
+                                && !exhaustedSymbols.contains(oiSym)
+                                && !candidateReservoir.contains(oiSym)) {
+                            candidateReservoir.add(oiSym);
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
             for (LowestVolumeReversalScanner.SectorRankResult sector : rankedSectors) {
                 List<StockQuoteSnapshot> sQuotes =
                         sectorQuotes.getOrDefault(sector.sectorName(), Collections.emptyList());
@@ -2987,10 +3009,12 @@ public class LowestVolumeReversalService {
                     setup.setOptionSupportStrike(supStrike);
                 }
                 log.info(
-                        "[LVR] Option Chain levels for {} (ATM={}): PCR={:.2f}, MaxCallOI Resistance={}, MaxPutOI Support={}",
+                        "[LVR] Option Chain levels for {} (ATM={}): PCR={}, MaxCallOI Resistance={}, MaxPutOI Support={}",
                         sym,
                         atm,
-                        setup.getPcr() != null ? setup.getPcr() : 0.0,
+                        setup.getPcr() != null
+                                ? String.format(java.util.Locale.ROOT, "%.2f", setup.getPcr())
+                                : "n/a",
                         setup.getOptionResistanceStrike(),
                         setup.getOptionSupportStrike());
             }
@@ -3174,7 +3198,8 @@ public class LowestVolumeReversalService {
                     if (oi == 0L
                             && prevOi == 0L
                             && (info != null
-                                    || StockFnoRegistry.getAllInstruments().containsKey(sym))) {
+                                    || StockFnoRegistry.getAllInstruments().containsKey(sym)
+                                    || !StockFnoRegistry.isIndex(sym))) {
                         try {
                             String futToken = marketDataService.resolveFuturesToken(sym);
                             if (futToken != null && !futToken.isBlank()) {
@@ -4691,6 +4716,12 @@ public class LowestVolumeReversalService {
             return pos.getBrokerTradingSymbol();
         }
         if (pos.getInstrumentType() == LvrInstrumentType.FUTURES) {
+            if (marketDataService != null) {
+                var fc = marketDataService.resolveFuturesContract(pos.getSymbol());
+                if (fc != null && fc.tsym() != null && !fc.tsym().isBlank()) {
+                    return fc.tsym();
+                }
+            }
             return StockFnoRegistry.formatFuturesTradingSymbol(pos.getSymbol(), null);
         } else if (pos.getAtmStrike() != null) {
             return StockFnoRegistry.formatTradingSymbol(

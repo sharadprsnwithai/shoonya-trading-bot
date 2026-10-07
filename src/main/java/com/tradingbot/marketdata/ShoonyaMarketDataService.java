@@ -44,6 +44,14 @@ public class ShoonyaMarketDataService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final Map<String, String> tokenCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, FuturesContract> futuresContractCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * A resolved near-month futures contract: the broker's real trading symbol (Shoonya naming,
+     * e.g. "RELIANCE27OCT26F") plus its instrument token.
+     */
+    public record FuturesContract(String tsym, String token) {}
 
     @Autowired
     public ShoonyaMarketDataService(ShoonyaConfig config, ShoonyaAuthenticator authenticator) {
@@ -268,59 +276,163 @@ public class ShoonyaMarketDataService {
     }
 
     /**
-     * Resolves the NFO/BFO derivative instrument token for the near-month futures contract of a
-     * given underlying symbol (e.g. "RELIANCE" -> "RELIANCE26OCTFUT").
+     * Resolves the NFO/BFO near-month futures contract for an underlying symbol (e.g. "RELIANCE" ->
+     * tsym "RELIANCE27OCT26F", token "123456").
+     *
+     * <p>Shoonya SearchScrip takes free text, not a hand-built trading symbol: a contract string
+     * that does not match the exchange naming convention exactly returns "No Data" (the old
+     * Zerodha-style "RELIANCE26OCTFUT" always did). We therefore search by the underlying and pick
+     * the nearest non-expired futures contract from the live results, which also keeps resolution
+     * immune to exchange expiry-day rule changes.
      */
-    public String resolveFuturesToken(String symbol) {
+    public FuturesContract resolveFuturesContract(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return null;
         }
         String clean = symbol.toUpperCase().trim();
         if (clean.startsWith("NSE:")) clean = clean.substring(4);
-        if (clean.startsWith("NFO:")) clean = clean.substring(4);
+        else if (clean.startsWith("NFO:")) clean = clean.substring(4);
+        else if (clean.startsWith("BSE:")) clean = clean.substring(4);
+        else if (clean.startsWith("BFO:")) clean = clean.substring(4);
 
-        String futTsym = StockFnoRegistry.formatFuturesTradingSymbol(clean, null);
-        if (tokenCache.containsKey(futTsym)) {
-            String cached = tokenCache.get(futTsym);
-            if (isValidNumericToken(cached)) {
-                return cached;
-            }
+        String searchSymbol = clean;
+        if ("NIFTY 50".equals(clean) || "NIFTY50".equals(clean)) {
+            searchSymbol = "NIFTY";
+        } else if ("BANK NIFTY".equals(clean) || "BANKNIFTY".equals(clean)) {
+            searchSymbol = "BANKNIFTY";
+        } else if ("FIN NIFTY".equals(clean)
+                || "FINNIFTY".equals(clean)
+                || "NIFTY FIN SERVICE".equals(clean)
+                || "NIFTY FINANCIAL SERVICES".equals(clean)) {
+            searchSymbol = "FINNIFTY";
+        } else if ("MIDCP NIFTY".equals(clean)
+                || "MIDCPNIFTY".equals(clean)
+                || "NIFTY MIDCAP 50".equals(clean)) {
+            searchSymbol = "MIDCPNIFTY";
+        } else if ("BSESN".equals(clean) || "SENSEX".equals(clean)) {
+            searchSymbol = "SENSEX";
         }
 
-        String segment = StockFnoRegistry.getSegment(clean);
+        // Month-scoped key (e.g. "RELIANCE26OCTFUT"): misses after expiry force a re-resolve.
+        String monthKey = StockFnoRegistry.formatFuturesTradingSymbol(searchSymbol, null);
+        FuturesContract cached = futuresContractCache.get(monthKey);
+        if (cached != null && isValidNumericToken(cached.token())) {
+            return cached;
+        }
+
+        String segment = StockFnoRegistry.getSegment(searchSymbol);
         String exch = (segment != null && !segment.isBlank()) ? segment : "NFO";
         try {
-            JsonNode searchRes = searchScrip(exch, futTsym);
-            if (searchRes != null && searchRes.isArray() && !searchRes.isEmpty()) {
-                for (JsonNode item : searchRes) {
-                    String tsym = item.path("tsym").asText("");
-                    if (tsym.equalsIgnoreCase(futTsym)) {
-                        String tok = item.path("token").asText("");
-                        if (isValidNumericToken(tok)) {
-                            tokenCache.put(futTsym, tok);
-                            return tok;
-                        }
-                    }
-                }
-                for (JsonNode item : searchRes) {
-                    String inst = item.path("instname").asText("");
-                    if ("FUTSTK".equalsIgnoreCase(inst)
-                            || "FUTIDX".equalsIgnoreCase(inst)
-                            || item.path("tsym").asText("").endsWith("FUT")) {
-                        String tok = item.path("token").asText("");
-                        if (isValidNumericToken(tok)) {
-                            tokenCache.put(futTsym, tok);
-                            return tok;
-                        }
-                    }
-                }
+            JsonNode values = searchScrip(exch, searchSymbol);
+            FuturesContract best = selectNearestFuturesContract(searchSymbol, values);
+            if (best != null) {
+                futuresContractCache.put(monthKey, best);
+                return best;
             }
         } catch (Exception e) {
             log.warn(
-                    "[MARKET-DATA] Failed to resolve futures token for {} ({}): {}",
-                    clean,
-                    futTsym,
+                    "[MARKET-DATA] Failed to resolve futures contract for {} ({}): {}",
+                    searchSymbol,
+                    monthKey,
                     e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Resolves the NFO/BFO derivative instrument token for the near-month futures contract of a
+     * given underlying symbol (e.g. "RELIANCE" -> token of "RELIANCE27OCT26F").
+     */
+    public String resolveFuturesToken(String symbol) {
+        FuturesContract contract = resolveFuturesContract(symbol);
+        return contract != null ? contract.token() : null;
+    }
+
+    /**
+     * Picks the nearest non-expired futures contract for {@code underlying} from SearchScrip
+     * results. Only FUTSTK/FUTIDX entries whose tsym starts with the exact underlying are
+     * considered (anchored pattern), so e.g. a search for "LT" never matches "LTIM..." contracts.
+     * Contracts with an unparseable expiry are accepted as a last resort (first match wins).
+     */
+    private FuturesContract selectNearestFuturesContract(String underlying, JsonNode values) {
+        if (values == null || !values.isArray() || values.isEmpty()) {
+            return null;
+        }
+        java.time.LocalDate today = java.time.LocalDate.now(StockFnoRegistry.getClock());
+        java.util.regex.Pattern tsymPattern = futuresTsymPattern(underlying);
+        FuturesContract best = null;
+        java.time.LocalDate bestExpiry = null;
+        for (JsonNode item : values) {
+            String inst = item.path("instname").asText("");
+            if (!"FUTSTK".equalsIgnoreCase(inst) && !"FUTIDX".equalsIgnoreCase(inst)) {
+                continue;
+            }
+            String tsym = item.path("tsym").asText("");
+            if (!tsymPattern.matcher(tsym).matches()) {
+                continue;
+            }
+            String tok = item.path("token").asText("");
+            if (!isValidNumericToken(tok)) {
+                continue;
+            }
+            java.time.LocalDate expiry = parseFuturesExpiry(tsym, underlying.length());
+            if (expiry != null && expiry.isBefore(today)) {
+                continue; // expired contract — roll over to the next listed month
+            }
+            if (best == null) {
+                best = new FuturesContract(tsym, tok);
+                bestExpiry = expiry;
+            } else if (expiry != null && (bestExpiry == null || expiry.isBefore(bestExpiry))) {
+                best = new FuturesContract(tsym, tok);
+                bestExpiry = expiry;
+            }
+        }
+        return best;
+    }
+
+    /** Anchored tsym pattern for an underlying: {@code NAME27OCT26F} or {@code NAME26OCTFUT}. */
+    private java.util.regex.Pattern futuresTsymPattern(String underlying) {
+        return java.util.regex.Pattern.compile(
+                "^"
+                        + java.util.regex.Pattern.quote(underlying)
+                        + "(?:\\d{2}[A-Z]{3}\\d{2}F|\\d{2}[A-Z]{3}FUT|\\d{2}[A-Z]{3}\\d{2}FUT)$");
+    }
+
+    /**
+     * Parses the futures expiry from a tsym. Accepted shapes after the underlying: {@code DDMMMYY}
+     * (exact date, Shoonya convention) or {@code YYMM} + "FUT" (month-only; the last day of that
+     * month is used as the expiry proxy). Returns null when unparseable.
+     */
+    private java.time.LocalDate parseFuturesExpiry(String tsym, int underlyingLength) {
+        if (tsym == null || tsym.length() <= underlyingLength) {
+            return null;
+        }
+        String suffix = tsym.substring(underlyingLength);
+        try {
+            java.time.format.DateTimeFormatter ddMmmYy =
+                    new java.time.format.DateTimeFormatterBuilder()
+                            .parseCaseInsensitive()
+                            .appendPattern("ddMMM")
+                            .appendValueReduced(java.time.temporal.ChronoField.YEAR, 2, 2, 2000)
+                            .toFormatter(java.util.Locale.ENGLISH);
+            if (suffix.matches("\\d{2}[A-Z]{3}\\d{2}(?:F|FUT)")) {
+                return java.time.LocalDate.parse(suffix.substring(0, 7), ddMmmYy);
+            }
+            if (suffix.matches("\\d{2}[A-Z]{3}FUT")) {
+                int yy = Integer.parseInt(suffix.substring(0, 2));
+                String mmm = suffix.substring(2, 5);
+                java.time.format.DateTimeFormatter mmmFmt =
+                        new java.time.format.DateTimeFormatterBuilder()
+                                .parseCaseInsensitive()
+                                .appendPattern("MMM")
+                                .toFormatter(java.util.Locale.ENGLISH);
+                java.time.temporal.TemporalAccessor accessor = mmmFmt.parse(mmm);
+                int monthVal = accessor.get(java.time.temporal.ChronoField.MONTH_OF_YEAR);
+                java.time.YearMonth ym = java.time.YearMonth.of(2000 + yy, monthVal);
+                return ym.atEndOfMonth();
+            }
+        } catch (Exception ignored) {
+            return null;
         }
         return null;
     }
@@ -504,6 +616,15 @@ public class ShoonyaMarketDataService {
                 }
 
                 if (response.statusCode() != 200) {
+                    // Shoonya returns HTTP 404 + "No Data" for a well-formed search that simply
+                    // matched nothing — a normal no-results response, not an error.
+                    if (response.statusCode() == 404 && body != null && body.contains("No Data")) {
+                        log.warn(
+                                "[SEARCH-SCRIP] No match for '{}' on {} (no contract listed).",
+                                searchText,
+                                exchange != null ? exchange : "NSE");
+                        return null;
+                    }
                     log.error(
                             "[SEARCH-SCRIP] HTTP error {} searching for {}: {}",
                             response.statusCode(),

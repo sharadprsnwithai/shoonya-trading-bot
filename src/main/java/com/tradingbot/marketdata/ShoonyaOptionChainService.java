@@ -39,20 +39,28 @@ public class ShoonyaOptionChainService {
 
     private static final Logger log = LoggerFactory.getLogger(ShoonyaOptionChainService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /** Fallback only (previous-month contract, stale after expiry) — see getNifty50OptionChain. */
     public static final String DEFAULT_NIFTY_FUT_SYMBOL = "NIFTY29SEP26F";
+
     public static final String DEFAULT_NIFTY_FUT_TOKEN = "68407";
 
     private final ShoonyaConfig config;
     private final ShoonyaAuthenticator authenticator;
+    private final ShoonyaMarketDataService marketDataService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ExecutorService executor = Executors.newFixedThreadPool(8);
 
     @Autowired
-    public ShoonyaOptionChainService(ShoonyaConfig config, ShoonyaAuthenticator authenticator) {
+    public ShoonyaOptionChainService(
+            ShoonyaConfig config,
+            ShoonyaAuthenticator authenticator,
+            ShoonyaMarketDataService marketDataService) {
         this(
                 config,
                 authenticator,
+                marketDataService,
                 new ObjectMapper(),
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
     }
@@ -60,10 +68,12 @@ public class ShoonyaOptionChainService {
     public ShoonyaOptionChainService(
             ShoonyaConfig config,
             ShoonyaAuthenticator authenticator,
+            ShoonyaMarketDataService marketDataService,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
         this.config = config;
         this.authenticator = authenticator;
+        this.marketDataService = marketDataService;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
     }
@@ -71,6 +81,18 @@ public class ShoonyaOptionChainService {
     /** Retrieves option chain for NIFTY 50 centered around ATM ± count strikes. */
     public OptionChainResponse getNifty50OptionChain(
             BigDecimal explicitStrike, int count, boolean fetchQuotes) {
+        // Resolve the live near-month NIFTY futures contract (real tsym for the chain anchor, live
+        // token for the underlying-price/ATM path) instead of the hardcoded previous-month
+        // constants, which went stale at every expiry. Falls back to the constants if resolution
+        // fails (previous behavior).
+        ShoonyaMarketDataService.FuturesContract contract =
+                marketDataService != null
+                        ? marketDataService.resolveFuturesContract("NIFTY")
+                        : null;
+        if (contract != null) {
+            return getOptionChain(
+                    "NIFTY", contract.tsym(), contract.token(), explicitStrike, count, fetchQuotes);
+        }
         return getOptionChain(
                 "NIFTY",
                 DEFAULT_NIFTY_FUT_SYMBOL,

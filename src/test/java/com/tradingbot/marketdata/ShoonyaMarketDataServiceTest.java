@@ -7,6 +7,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
@@ -15,6 +16,7 @@ import java.math.BigDecimal;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -225,36 +227,169 @@ class ShoonyaMarketDataServiceTest {
     }
 
     @Test
-    void testResolveFuturesToken_ResolvesAndCachesFuturesToken() {
+    void testResolveFuturesContract_SearchesUnderlyingNotHandBuiltTsym() {
+        List<String> searches = new ArrayList<>();
+        setClock(java.time.LocalDate.of(2026, 10, 7));
+        ShoonyaMarketDataService service =
+                serviceWithSearches(arr(fut("RELIANCE27OCT26F", "998877", "FUTSTK")), searches);
+
+        ShoonyaMarketDataService.FuturesContract contract =
+                service.resolveFuturesContract("RELIANCE");
+
+        assertThat(contract).isNotNull();
+        assertThat(contract.tsym()).isEqualTo("RELIANCE27OCT26F");
+        assertThat(contract.token()).isEqualTo("998877");
+        // Search text must be the underlying — the old code sent the hand-built
+        // Zerodha-style "RELIANCE26OCTFUT", which Shoonya always answers with "No Data".
+        assertThat(searches).containsExactly("RELIANCE");
+        // resolveFuturesToken delegates to the contract resolver.
+        assertThat(service.resolveFuturesToken("RELIANCE")).isEqualTo("998877");
+        assertThat(searches).hasSize(1);
+    }
+
+    @Test
+    void testResolveFuturesContract_PicksNearestNonExpiredContract() {
+        List<String> searches = new ArrayList<>();
+        setClock(java.time.LocalDate.of(2026, 10, 7));
+        ShoonyaMarketDataService service =
+                serviceWithSearches(
+                        arr(
+                                fut("RELIANCE29SEP26F", "111111", "FUTSTK"), // expired
+                                fut("RELIANCE24NOV26F", "333333", "FUTSTK"),
+                                fut("RELIANCE27OCT26F", "222222", "FUTSTK")),
+                        searches);
+
+        ShoonyaMarketDataService.FuturesContract contract =
+                service.resolveFuturesContract("RELIANCE");
+
+        assertThat(contract).isNotNull();
+        assertThat(contract.tsym()).isEqualTo("RELIANCE27OCT26F");
+        assertThat(contract.token()).isEqualTo("222222");
+    }
+
+    @Test
+    void testResolveFuturesContract_MustMatchUnderlyingExactly() {
+        List<String> searches = new ArrayList<>();
+        setClock(java.time.LocalDate.of(2026, 10, 7));
+        ShoonyaMarketDataService service =
+                serviceWithSearches(
+                        arr(
+                                fut("LTIM27OCT26F", "555555", "FUTSTK"),
+                                fut("LTTS27OCT26F", "666666", "FUTSTK"),
+                                fut("LT27OCT26F", "444444", "FUTSTK")),
+                        searches);
+
+        // A search for "LT" must never resolve LIM/LTIM/LTTS contracts.
+        ShoonyaMarketDataService.FuturesContract contract = service.resolveFuturesContract("LT");
+
+        assertThat(contract).isNotNull();
+        assertThat(contract.tsym()).isEqualTo("LT27OCT26F");
+        assertThat(contract.token()).isEqualTo("444444");
+    }
+
+    @Test
+    void testResolveFuturesContract_CachesByMonthKey() {
+        List<String> searches = new ArrayList<>();
+        setClock(java.time.LocalDate.of(2026, 10, 7));
+        ShoonyaMarketDataService service =
+                serviceWithSearches(arr(fut("RELIANCE27OCT26F", "998877", "FUTSTK")), searches);
+
+        assertThat(service.resolveFuturesContract("RELIANCE")).isNotNull();
+        assertThat(service.resolveFuturesContract("RELIANCE")).isNotNull();
+
+        assertThat(searches).hasSize(1); // second call served from the month-scoped cache
+    }
+
+    @Test
+    void testResolveFuturesContract_ReturnsNullWhenNoFuturesListed() {
+        List<String> searches = new ArrayList<>();
+        setClock(java.time.LocalDate.of(2026, 10, 7));
+        ShoonyaMarketDataService service =
+                serviceWithSearches(
+                        arr(
+                                fut("RELIANCE27OCT26C900", "222222", "OPTSTK"), // options only
+                                fut("RELIANCE27OCT26F", "abc", "FUTSTK")), // non-numeric token
+                        searches);
+
+        assertThat(service.resolveFuturesContract("RELIANCE")).isNull();
+        assertThat(service.resolveFuturesToken("RELIANCE")).isNull();
+        assertThat(searches).hasSize(2); // token path re-searched: nothing was cached
+    }
+
+    @Test
+    void testResolveFuturesContract_IndexSymbolNormalization() {
+        List<String> searches = new ArrayList<>();
+        setClock(java.time.LocalDate.of(2026, 10, 7));
+        ShoonyaMarketDataService service =
+                serviceWithSearches(
+                        arr(fut("NIFTY27OCT26F", "12345", "FUTIDX")),
+                        searches);
+
+        ShoonyaMarketDataService.FuturesContract contract = service.resolveFuturesContract("NIFTY 50");
+        assertThat(contract).isNotNull();
+        assertThat(contract.tsym()).isEqualTo("NIFTY27OCT26F");
+        assertThat(contract.token()).isEqualTo("12345");
+        assertThat(searches).containsExactly("NIFTY");
+    }
+
+    @Test
+    void testResolveFuturesContract_SupportsVariousTsymSuffixFormats() {
+        List<String> searches = new ArrayList<>();
+        setClock(java.time.LocalDate.of(2026, 10, 7));
+        ShoonyaMarketDataService service =
+                serviceWithSearches(
+                        arr(
+                                fut("INFY26OCTFUT", "554433", "FUTSTK"),
+                                fut("INFY27OCT26FUT", "554422", "FUTSTK")),
+                        searches);
+
+        ShoonyaMarketDataService.FuturesContract contract = service.resolveFuturesContract("INFY");
+        assertThat(contract).isNotNull();
+        assertThat(contract.token()).isIn("554433", "554422");
+    }
+
+    /** Builds a service whose SearchScrip returns {@code results} and records each search text. */
+    private ShoonyaMarketDataService serviceWithSearches(
+            JsonNode results, List<String> capturedSearches) {
         ShoonyaConfig config = new ShoonyaConfig();
         config.setEnabled(true);
         config.setUserId("USER123");
-
         ShoonyaAuthenticator mockAuth = mock(ShoonyaAuthenticator.class);
         when(mockAuth.getOrAuthenticateToken()).thenReturn("valid_session_token");
+        return new ShoonyaMarketDataService(config, mockAuth) {
+            @Override
+            public JsonNode searchScrip(String exchange, String searchText) {
+                capturedSearches.add(searchText);
+                return results;
+            }
+        };
+    }
 
-        ShoonyaMarketDataService service =
-                new ShoonyaMarketDataService(config, mockAuth) {
-                    @Override
-                    public com.fasterxml.jackson.databind.JsonNode searchScrip(
-                            String exchange, String searchText) {
-                        if ("NFO".equalsIgnoreCase(exchange) && searchText.startsWith("RELIANCE")) {
-                            ObjectMapper mapper = new ObjectMapper();
-                            return mapper.createArrayNode()
-                                    .add(
-                                            mapper.createObjectNode()
-                                                    .put("tsym", searchText)
-                                                    .put("token", "998877")
-                                                    .put("instname", "FUTSTK"));
-                        }
-                        return null;
-                    }
-                };
+    private static JsonNode fut(String tsym, String token, String instname) {
+        return new ObjectMapper()
+                .createObjectNode()
+                .put("tsym", tsym)
+                .put("token", token)
+                .put("instname", instname);
+    }
 
-        String futToken = service.resolveFuturesToken("RELIANCE");
-        assertThat(futToken).isEqualTo("998877");
+    private static JsonNode arr(JsonNode... items) {
+        com.fasterxml.jackson.databind.node.ArrayNode node = new ObjectMapper().createArrayNode();
+        for (JsonNode item : items) {
+            node.add(item);
+        }
+        return node;
+    }
 
-        // Verify caching - calling second time should return cached token without searchScrip
-        assertThat(service.resolveFuturesToken("RELIANCE")).isEqualTo("998877");
+    /** Pins StockFnoRegistry's clock (expiry math + month key) to a deterministic date. */
+    private static void setClock(java.time.LocalDate date) {
+        java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+        com.tradingbot.util.StockFnoRegistry.setClock(
+                java.time.Clock.fixed(date.atStartOfDay(ist).toInstant(), ist));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void resetClock() {
+        com.tradingbot.util.StockFnoRegistry.setClock(null);
     }
 }
