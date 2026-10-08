@@ -1,20 +1,26 @@
 package com.tradingbot.strategy.monthlyrange.engine;
 
 import com.tradingbot.model.Candle;
+import com.tradingbot.model.OptionChainResponse;
+import com.tradingbot.model.OptionStrike;
+import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
 import com.tradingbot.strategy.monthlyrange.model.GarchModelParams;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeForecast;
+import com.tradingbot.util.NseTradingCalendarUtil;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * Calculates monthly volatility forecasts, 1-SD and 2-SD price channels, and safe option strike
- * selection for NSE stocks and indices.
+ * Calculates monthly volatility forecasts, 1-SD and dynamic 2-SD (or 2.35-SD event) price channels,
+ * ATM straddle implied moves, and institutional Open Interest (OI) support/resistance strike boundaries.
  */
 @Component
 public class MonthlyRangeCalculator {
@@ -23,29 +29,56 @@ public class MonthlyRangeCalculator {
 
     private final Garch11Optimizer garchOptimizer;
     private final GarchVolForecaster volForecaster;
+    private final MonthlyRangeProperties properties;
 
     public MonthlyRangeCalculator(
             Garch11Optimizer garchOptimizer, GarchVolForecaster volForecaster) {
+        this(garchOptimizer, volForecaster, new MonthlyRangeProperties());
+    }
+
+    @Autowired
+    public MonthlyRangeCalculator(
+            Garch11Optimizer garchOptimizer,
+            GarchVolForecaster volForecaster,
+            MonthlyRangeProperties properties) {
         this.garchOptimizer = garchOptimizer;
         this.volForecaster = volForecaster;
+        this.properties = properties != null ? properties : new MonthlyRangeProperties();
     }
 
     /**
-     * Calculates the monthly range forecast for the specified symbol and daily candle history.
-     *
-     * @param rawSymbol clean or prefixed symbol (e.g. "RELIANCE", "NSE:TCS", "NIFTY50")
-     * @param dailyCandles historical daily candles (at least 30-500 bars recommended)
-     * @param horizonDays forward trading days horizon (typically 22)
-     * @return populated MonthlyRangeForecast
+     * Calculates the monthly range forecast using default current IST date and without live option chain.
      */
     public MonthlyRangeForecast calculate(
             String rawSymbol, List<Candle> dailyCandles, int horizonDays) {
+        LocalDate today = LocalDate.now(NseTradingCalendarUtil.IST_ZONE);
+        return calculate(rawSymbol, dailyCandles, horizonDays, today, null);
+    }
+
+    /**
+     * Calculates the fused monthly range forecast with event detection and Option Chain OI integration.
+     *
+     * @param rawSymbol clean or prefixed symbol (e.g. "RELIANCE", "NSE:TCS", "NIFTY50")
+     * @param dailyCandles historical daily candles
+     * @param horizonDays forward trading days horizon (typically 22)
+     * @param asOfDate date used for event/earnings cycle detection
+     * @param optionChain optional live/cached option chain containing OI and quotes
+     * @return populated MonthlyRangeForecast
+     */
+    public MonthlyRangeForecast calculate(
+            String rawSymbol,
+            List<Candle> dailyCandles,
+            int horizonDays,
+            LocalDate asOfDate,
+            OptionChainResponse optionChain) {
         String cleanSymbol = cleanSymbol(rawSymbol);
-        int horizon = horizonDays > 0 ? horizonDays : 22;
+        int horizon = horizonDays > 0 ? horizonDays : properties.getForecastHorizonDays();
+        LocalDate date = asOfDate != null ? asOfDate : LocalDate.now(NseTradingCalendarUtil.IST_ZONE);
+
+        BigDecimal strikeStep = resolveStrikeStep(cleanSymbol);
 
         if (dailyCandles == null || dailyCandles.isEmpty()) {
             log.warn("[MONTHLY-RANGE] No candle data available for symbol {}", cleanSymbol);
-            BigDecimal defaultStep = resolveStrikeStep(cleanSymbol);
             return new MonthlyRangeForecast(
                     cleanSymbol,
                     BigDecimal.ZERO,
@@ -57,13 +90,13 @@ public class MonthlyRangeCalculator {
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,
-                    defaultStep,
+                    strikeStep,
                     0.0,
                     BigDecimal.ZERO,
                     horizon,
                     false,
                     "NO_DATA",
-                    2.0,
+                    properties.getNormalConfidenceMultiplier(),
                     BigDecimal.ZERO,
                     null,
                     null,
@@ -92,23 +125,57 @@ public class MonthlyRangeCalculator {
         double monthlyVolPct = volResult.cumulativeMonthlyVolPct();
         double annualizedVolPct = volResult.annualizedVolPct();
 
-        // 3. Compute 1-SD (~68.3%) and 2-SD (~95.4%) Price Channels
+        // 3. Event / Earnings Detection & Confidence Multiplier (k)
+        boolean isEventMonth = isEarningsMonth(date);
+        String eventReason = isEventMonth ? resolveQuarterName(date) + " Earnings Cycle" : "Normal Month";
+        double k = isEventMonth ? properties.getEventConfidenceMultiplier() : properties.getNormalConfidenceMultiplier();
+
+        // 4. Compute 1-SD (~68.3%) and Dynamic k-SD Price Channels
         double lower1SdVal = spot * Math.exp(-1.0 * monthlyVolDec);
         double upper1SdVal = spot * Math.exp(+1.0 * monthlyVolDec);
-        double lower2SdVal = spot * Math.exp(-2.0 * monthlyVolDec);
-        double upper2SdVal = spot * Math.exp(+2.0 * monthlyVolDec);
+        double lower2SdVal = spot * Math.exp(-k * monthlyVolDec);
+        double upper2SdVal = spot * Math.exp(+k * monthlyVolDec);
 
         BigDecimal lower1Sd = BigDecimal.valueOf(lower1SdVal).setScale(2, RoundingMode.HALF_UP);
         BigDecimal upper1Sd = BigDecimal.valueOf(upper1SdVal).setScale(2, RoundingMode.HALF_UP);
         BigDecimal lower2Sd = BigDecimal.valueOf(lower2SdVal).setScale(2, RoundingMode.HALF_UP);
         BigDecimal upper2Sd = BigDecimal.valueOf(upper2SdVal).setScale(2, RoundingMode.HALF_UP);
 
-        // 4. Resolve NSE Strike Step & Snap Safe PE/CE Strikes
-        BigDecimal strikeStep = resolveStrikeStep(cleanSymbol);
-        BigDecimal safePeStrike = snapStrikeDown(lower2Sd, strikeStep);
-        BigDecimal safeCeStrike = snapStrikeUp(upper2Sd, strikeStep);
+        // 5. GARCH Base Snapped Strikes
+        BigDecimal garchPeStrike = snapStrikeDown(lower2Sd, strikeStep);
+        BigDecimal garchCeStrike = snapStrikeUp(upper2Sd, strikeStep);
 
-        // 5. Compute Historical Volatility (HV-30 annualized) and ATR-22
+        // 6. Option Chain Straddle Move & Institutional OI Walls
+        BigDecimal maxCallOiStrike = null;
+        BigDecimal maxPutOiStrike = null;
+        BigDecimal atmStraddleMove = BigDecimal.ZERO;
+
+        if (optionChain != null) {
+            maxCallOiStrike = optionChain.maxCallOiStrike();
+            maxPutOiStrike = optionChain.maxPutOiStrike();
+            atmStraddleMove = extractAtmStraddleMove(optionChain, spotPrice);
+        } else {
+            // Theoretical ATM Straddle approximation: ~ 0.8 * Spot * monthlyVol
+            double approxStraddle = 0.80 * spot * monthlyVolDec;
+            atmStraddleMove = BigDecimal.valueOf(approxStraddle).setScale(2, RoundingMode.HALF_UP);
+        }
+
+        // 7. Fused Conservative Strike Selection (Take outer protective strike)
+        BigDecimal safePeStrike = garchPeStrike;
+        if (maxPutOiStrike != null && maxPutOiStrike.compareTo(BigDecimal.ZERO) > 0) {
+            if (maxPutOiStrike.compareTo(safePeStrike) < 0) {
+                safePeStrike = snapStrikeDown(maxPutOiStrike, strikeStep);
+            }
+        }
+
+        BigDecimal safeCeStrike = garchCeStrike;
+        if (maxCallOiStrike != null && maxCallOiStrike.compareTo(BigDecimal.ZERO) > 0) {
+            if (maxCallOiStrike.compareTo(safeCeStrike) > 0) {
+                safeCeStrike = snapStrikeUp(maxCallOiStrike, strikeStep);
+            }
+        }
+
+        // 8. Compute Historical Volatility (HV-30 annualized) and ATR-22
         double hv30 = calculateHv30(returns);
         BigDecimal atr22 = calculateAtr(dailyCandles, 22);
 
@@ -127,13 +194,54 @@ public class MonthlyRangeCalculator {
                 round2(hv30),
                 atr22,
                 horizon,
-                false,
-                "Normal",
-                2.0,
-                BigDecimal.ZERO,
-                null,
-                null,
+                isEventMonth,
+                eventReason,
+                k,
+                atmStraddleMove,
+                maxCallOiStrike,
+                maxPutOiStrike,
                 Instant.now());
+    }
+
+    private boolean isEarningsMonth(LocalDate date) {
+        if (date == null) return false;
+        int month = date.getMonthValue();
+        return properties.getEarningsMonths().contains(month);
+    }
+
+    private String resolveQuarterName(LocalDate date) {
+        if (date == null) return "Quarterly";
+        int month = date.getMonthValue();
+        return switch (month) {
+            case 1, 2 -> "Q3";
+            case 4, 5 -> "Q4 (Annual)";
+            case 7, 8 -> "Q1";
+            case 10, 11 -> "Q2";
+            default -> "Quarterly";
+        };
+    }
+
+    private BigDecimal extractAtmStraddleMove(OptionChainResponse chain, BigDecimal spot) {
+        if (chain == null || chain.strikes() == null || chain.strikes().isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+
+        OptionStrike atmStrike =
+                chain.strikes().stream().filter(OptionStrike::isAtm).findFirst().orElse(null);
+
+        if (atmStrike != null) {
+            BigDecimal callLtp = (atmStrike.call() != null && atmStrike.call().ltp() != null)
+                    ? atmStrike.call().ltp()
+                    : BigDecimal.ZERO;
+            BigDecimal putLtp = (atmStrike.put() != null && atmStrike.put().ltp() != null)
+                    ? atmStrike.put().ltp()
+                    : BigDecimal.ZERO;
+            BigDecimal sum = callLtp.add(putLtp);
+            if (sum.compareTo(BigDecimal.ZERO) > 0) {
+                return sum.setScale(2, RoundingMode.HALF_UP);
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     private String cleanSymbol(String symbol) {
@@ -152,23 +260,16 @@ public class MonthlyRangeCalculator {
 
     public BigDecimal resolveStrikeStep(String cleanSymbol) {
         StockFnoRegistry.InstrumentInfo info = StockFnoRegistry.get(cleanSymbol);
-        if (info != null
-                && info.strikeStep() != null
-                && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
+        if (info != null && info.strikeStep() != null && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
             return info.strikeStep();
         }
 
-        // Fallbacks if not present in registry
         if (StockFnoRegistry.isIndex(cleanSymbol)) {
             return BigDecimal.valueOf(50.0);
         }
         return BigDecimal.valueOf(10.0);
     }
 
-    /**
-     * Floors a boundary price down to the nearest integer multiple of step: floor(price / step) *
-     * step
-     */
     public BigDecimal snapStrikeDown(BigDecimal price, BigDecimal step) {
         if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
             return price;
@@ -177,9 +278,6 @@ public class MonthlyRangeCalculator {
         return div.multiply(step).setScale(2, RoundingMode.HALF_UP);
     }
 
-    /**
-     * Ceils a boundary price up to the nearest integer multiple of step: ceil(price / step) * step
-     */
     public BigDecimal snapStrikeUp(BigDecimal price, BigDecimal step) {
         if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
             return price;
@@ -227,10 +325,7 @@ public class MonthlyRangeCalculator {
             double low = cur.low().doubleValue();
             double prevClose = prev.close().doubleValue();
 
-            double tr =
-                    Math.max(
-                            high - low,
-                            Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
+            double tr = Math.max(high - low, Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
             trSum += tr;
         }
 
