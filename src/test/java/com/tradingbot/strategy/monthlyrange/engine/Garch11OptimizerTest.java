@@ -1,6 +1,7 @@
 package com.tradingbot.strategy.monthlyrange.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import com.tradingbot.strategy.monthlyrange.model.GarchModelParams;
 import java.util.Random;
@@ -12,9 +13,8 @@ class Garch11OptimizerTest {
     private final Garch11Optimizer optimizer = new Garch11Optimizer();
 
     @Test
-    @DisplayName("Should fit valid GARCH(1,1) parameters on simulated return series")
+    @DisplayName("Should fit valid GARCH(1,1) parameters on simulated return series with well-conditioned scaling")
     void testFitGarchOnSimulatedReturns() {
-        // Generate simulated return series with known volatility dynamics
         Random random = new Random(42);
         int n = 500;
         double[] returns = new double[n];
@@ -34,11 +34,17 @@ class Garch11OptimizerTest {
 
         assertThat(params).isNotNull();
         assertThat(params.converged()).isTrue();
-        assertThat(params.omega()).isGreaterThan(0.0);
+        assertThat(params.omega()).isGreaterThan(0.0).isLessThan(0.001); // Well-scaled decimal omega
         assertThat(params.alpha()).isGreaterThanOrEqualTo(0.0);
         assertThat(params.beta()).isGreaterThanOrEqualTo(0.0);
         assertThat(params.persistence()).isLessThan(1.0);
         assertThat(params.longRunVariance()).isGreaterThan(0.0);
+
+        // Long run variance should be close to sample variance of returns
+        double sumSq = 0.0;
+        for (double r : returns) sumSq += r * r;
+        double sampleVar = sumSq / n;
+        assertThat(params.longRunVariance()).isCloseTo(sampleVar, within(sampleVar * 0.5));
     }
 
     @Test

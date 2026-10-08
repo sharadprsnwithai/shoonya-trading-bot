@@ -7,14 +7,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Pure Java Maximum Likelihood Estimation (MLE) optimizer for GARCH(1,1) volatility models. Uses
- * Nelder-Mead Simplex optimization with boundary penalty barriers to guarantee stationarity.
+ * Pure Java Maximum Likelihood Estimation (MLE) optimizer for GARCH(1,1) volatility models.
+ * Uses Nelder-Mead Simplex optimization with percentage scaling to ensure numerical stability.
  */
 @Component
 public class Garch11Optimizer {
 
     private static final Logger log = LoggerFactory.getLogger(Garch11Optimizer.class);
-    private static final double MIN_OMEGA = 1e-8;
+    private static final double MIN_OMEGA_PCT = 1e-4;
     private static final double MAX_PERSISTENCE = 0.998;
     private static final double PENALTY_BASE = 1e8;
 
@@ -31,8 +31,8 @@ public class Garch11Optimizer {
     }
 
     /**
-     * Fits a GARCH(1,1) model to an array of daily log returns: sigma_t^2 = omega + alpha *
-     * (r_{t-1} - mu)^2 + beta * sigma_{t-1}^2
+     * Fits a GARCH(1,1) model to an array of daily log returns:
+     * sigma_t^2 = omega + alpha * (r_{t-1} - mu)^2 + beta * sigma_{t-1}^2
      */
     public GarchModelParams fit(double[] returns) {
         if (returns == null || returns.length < 5) {
@@ -40,48 +40,57 @@ public class Garch11Optimizer {
                     returns != null ? calculateSampleVariance(returns) : 0.0001, "TOO_FEW_SAMPLES");
         }
 
-        double mean = calculateMean(returns);
-        double sampleVar = calculateSampleVariance(returns, mean);
-        if (sampleVar <= 1e-8) {
+        // Scale returns by 100 into percentage space for numerical stability
+        int t = returns.length;
+        double[] pctReturns = new double[t];
+        for (int i = 0; i < t; i++) {
+            pctReturns[i] = returns[i] * 100.0;
+        }
+
+        double meanPct = calculateMean(pctReturns);
+        double sampleVarPct = calculateSampleVariance(pctReturns, meanPct);
+        if (sampleVarPct <= 1e-6) {
             return createFallbackParams(1e-4, "ZERO_OR_TINY_VARIANCE");
         }
 
-        // Initial parameter estimates: alpha = 0.08, beta = 0.88 => persistence = 0.96
+        // Initial estimates in percentage variance space
         double initAlpha = 0.08;
         double initBeta = 0.88;
-        double initOmega = sampleVar * (1.0 - initAlpha - initBeta);
-        if (initOmega < MIN_OMEGA) {
-            initOmega = MIN_OMEGA;
+        double initOmegaPct = sampleVarPct * (1.0 - initAlpha - initBeta);
+        if (initOmegaPct < MIN_OMEGA_PCT) {
+            initOmegaPct = MIN_OMEGA_PCT;
         }
 
-        double[] initialPoint = new double[] {initOmega, initAlpha, initBeta};
-        NelderMeadResult result = optimizeNelderMead(returns, mean, sampleVar, initialPoint);
+        double[] initialPoint = new double[] {initOmegaPct, initAlpha, initBeta};
+        NelderMeadResult result = optimizeNelderMead(pctReturns, meanPct, sampleVarPct, initialPoint);
 
-        double omega = result.point[0];
+        double omegaPct = result.point[0];
         double alpha = result.point[1];
         double beta = result.point[2];
         double persistence = alpha + beta;
 
-        // Post-optimization safety clamp
-        if (omega < MIN_OMEGA || alpha < 0.0 || beta < 0.0 || persistence >= 1.0) {
-            return createFallbackParams(sampleVar, "OPTIMIZATION_OUT_OF_BOUNDS");
+        // Post-optimization bounds check
+        if (omegaPct < MIN_OMEGA_PCT || alpha < 0.0 || beta < 0.0 || persistence >= 1.0) {
+            return createFallbackParams(sampleVarPct / 10000.0, "OPTIMIZATION_OUT_OF_BOUNDS");
         }
 
-        double longRunVariance = omega / (1.0 - persistence);
+        // Descale parameters back to raw decimal return space
+        double omegaDec = omegaPct / 10000.0;
+        double longRunVarianceDec = omegaDec / (1.0 - persistence);
         double logLikelihood = -result.val;
 
         return new GarchModelParams(
-                omega,
+                omegaDec,
                 alpha,
                 beta,
-                longRunVariance,
+                longRunVarianceDec,
                 logLikelihood,
                 result.converged,
                 result.converged ? "CONVERGED" : "MAX_ITERATIONS_REACHED");
     }
 
-    private GarchModelParams createFallbackParams(double sampleVar, String reason) {
-        double safeVar = Math.max(sampleVar, 1e-6);
+    private GarchModelParams createFallbackParams(double sampleVarDec, String reason) {
+        double safeVar = Math.max(sampleVarDec, 1e-6);
         double fallbackAlpha = 0.08;
         double fallbackBeta = 0.88;
         double fallbackOmega = safeVar * (1.0 - fallbackAlpha - fallbackBeta);
@@ -116,15 +125,17 @@ public class Garch11Optimizer {
         return Math.max(sumSq / data.length, 1e-8);
     }
 
-    /** Calculates Negative Log-Likelihood (NLL) for GARCH(1,1) with Gaussian errors. */
+    /**
+     * Calculates Negative Log-Likelihood (NLL) for GARCH(1,1) in percentage space.
+     */
     double computeNll(double[] point, double[] returns, double mean, double sampleVar) {
         double omega = point[0];
         double alpha = point[1];
         double beta = point[2];
 
         // Soft penalty barriers
-        if (omega < MIN_OMEGA) {
-            return PENALTY_BASE + (MIN_OMEGA - omega) * 1e7;
+        if (omega < MIN_OMEGA_PCT) {
+            return PENALTY_BASE + (MIN_OMEGA_PCT - omega) * 1e7;
         }
         if (alpha < 0.0) {
             return PENALTY_BASE + (-alpha) * 1e7;
@@ -147,18 +158,11 @@ public class Garch11Optimizer {
                 currentSigma2 = omega + alpha * (prevEps * prevEps) + beta * currentSigma2;
             }
 
-            if (currentSigma2 <= 1e-12
-                    || Double.isNaN(currentSigma2)
-                    || Double.isInfinite(currentSigma2)) {
+            if (currentSigma2 <= 1e-8 || Double.isNaN(currentSigma2) || Double.isInfinite(currentSigma2)) {
                 return PENALTY_BASE;
             }
 
-            // Normal Log-Likelihood term: 0.5 * (ln(2*pi) + ln(sigma^2) + eps^2 / sigma^2)
-            nll +=
-                    0.5
-                            * (Math.log(2.0 * Math.PI)
-                                    + Math.log(currentSigma2)
-                                    + (eps * eps) / currentSigma2);
+            nll += 0.5 * (Math.log(2.0 * Math.PI) + Math.log(currentSigma2) + (eps * eps) / currentSigma2);
         }
 
         return Double.isNaN(nll) ? PENALTY_BASE : nll;
@@ -182,12 +186,10 @@ public class Garch11Optimizer {
         double[][] simplex = new double[dim + 1][dim];
         double[] values = new double[dim + 1];
 
-        // Vertex 0: start point
         simplex[0] = Arrays.copyOf(start, dim);
         values[0] = computeNll(simplex[0], returns, mean, sampleVar);
 
-        // Perturb remaining vertices
-        double[] steps = new double[] {start[0] * 0.2 + 1e-6, 0.03, 0.03};
+        double[] steps = new double[] {start[0] * 0.2 + 0.01, 0.03, 0.03};
         for (int i = 1; i <= dim; i++) {
             simplex[i] = Arrays.copyOf(start, dim);
             simplex[i][i - 1] += steps[i - 1];
@@ -202,17 +204,14 @@ public class Garch11Optimizer {
         boolean converged = false;
 
         for (int iter = 0; iter < maxIterations; iter++) {
-            // Sort simplex vertices by objective function value (ascending)
             sortSimplex(simplex, values);
 
-            // Check convergence tolerance
             double range = Math.abs(values[dim] - values[0]);
             if (range < tolerance) {
                 converged = true;
                 break;
             }
 
-            // Centroid of the best n vertices (excluding worst vertex dim)
             double[] centroid = new double[dim];
             for (int i = 0; i < dim; i++) {
                 for (int d = 0; d < dim; d++) {
@@ -220,7 +219,6 @@ public class Garch11Optimizer {
                 }
             }
 
-            // 1. Reflection
             double[] reflected = new double[dim];
             for (int d = 0; d < dim; d++) {
                 reflected[d] = centroid[d] + alphaNm * (centroid[d] - simplex[dim][d]);
@@ -233,7 +231,6 @@ public class Garch11Optimizer {
                 continue;
             }
 
-            // 2. Expansion
             if (reflectedVal < values[0]) {
                 double[] expanded = new double[dim];
                 for (int d = 0; d < dim; d++) {
@@ -250,9 +247,7 @@ public class Garch11Optimizer {
                 continue;
             }
 
-            // 3. Contraction
             if (reflectedVal < values[dim]) {
-                // Outside contraction
                 double[] contracted = new double[dim];
                 for (int d = 0; d < dim; d++) {
                     contracted[d] = centroid[d] + rhoNm * (reflected[d] - centroid[d]);
@@ -264,7 +259,6 @@ public class Garch11Optimizer {
                     continue;
                 }
             } else {
-                // Inside contraction
                 double[] contracted = new double[dim];
                 for (int d = 0; d < dim; d++) {
                     contracted[d] = centroid[d] - rhoNm * (centroid[d] - simplex[dim][d]);
@@ -277,7 +271,6 @@ public class Garch11Optimizer {
                 }
             }
 
-            // 4. Shrink towards best vertex
             for (int i = 1; i <= dim; i++) {
                 for (int d = 0; d < dim; d++) {
                     simplex[i][d] = simplex[0][d] + sigmaNm * (simplex[i][d] - simplex[0][d]);
