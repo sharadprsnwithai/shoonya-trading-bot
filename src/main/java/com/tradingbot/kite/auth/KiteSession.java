@@ -43,7 +43,7 @@ public class KiteSession {
         try {
             Files.deleteIfExists(sessionFile);
         } catch (IOException e) {
-            log.warn("[KITE-SESSION] Failed to delete session file: {}", e.getMessage());
+            log.warn("[KITE-SESSION] Failed to delete session file: {}", e.getMessage(), e);
         }
     }
 
@@ -58,7 +58,7 @@ public class KiteSession {
             log.info("[KITE-SESSION] Loaded Kite session for user {}", stored.userId());
             return true;
         } catch (IOException e) {
-            log.warn("[KITE-SESSION] Failed to load Kite session file: {}", e.getMessage());
+            log.warn("[KITE-SESSION] Failed to load Kite session file: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -83,7 +83,7 @@ public class KiteSession {
                     objectMapper.writeValueAsString(newSession),
                     StandardCharsets.UTF_8);
         } catch (IOException e) {
-            log.warn("[KITE-SESSION] Failed to persist Kite session: {}", e.getMessage());
+            log.warn("[KITE-SESSION] Failed to persist Kite session: {}", e.getMessage(), e);
         }
     }
 }

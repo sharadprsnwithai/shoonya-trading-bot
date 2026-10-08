@@ -265,7 +265,7 @@ public class HistoricalOhlcCacheService {
             }
             return true;
         } catch (Exception e) {
-            log.warn("[OHLC-CACHE] Error syncing symbol {}: {}", clean, e.getMessage());
+            log.warn("[OHLC-CACHE] Error syncing symbol {}: {}", clean, e.getMessage(), e);
             return false;
         }
     }
@@ -329,7 +329,7 @@ public class HistoricalOhlcCacheService {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("[OHLC-CACHE] Sync interrupted");
+            log.warn("[OHLC-CACHE] Sync interrupted", e);
         } finally {
             if (!executor.isTerminated()) {
                 executor.shutdownNow();

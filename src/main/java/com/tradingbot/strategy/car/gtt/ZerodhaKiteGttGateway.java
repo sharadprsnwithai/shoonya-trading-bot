@@ -98,7 +98,8 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
                     log.warn(
                             "[ZERODHA-GTT] Kite session invalid or expired placing GTT for {} (attempt {}). Re-authenticating...",
                             order.symbol(),
-                            attempt);
+                            attempt,
+                            e);
                     if (kiteAuthService.reAuthenticate()) {
                         continue;
                     }
@@ -130,7 +131,8 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
                 return gttId;
             }
         } catch (Exception e) {
-            log.warn("[ZERODHA-GTT] In-place modify of GTT {} failed: {}", gttId, e.getMessage());
+            log.warn(
+                    "[ZERODHA-GTT] In-place modify of GTT {} failed: {}", gttId, e.getMessage(), e);
         }
 
         // Fallback: cancel then recreate. The caller keeps the previous state entry when null is
@@ -155,7 +157,7 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
             log.info("[ZERODHA-GTT] Cancelling GTT trigger {}", gttId);
             return kiteRestClient.cancelGtt(gttId);
         } catch (Exception e) {
-            log.warn("[ZERODHA-GTT] Error cancelling GTT {}: {}", gttId, e.getMessage());
+            log.warn("[ZERODHA-GTT] Error cancelling GTT {}: {}", gttId, e.getMessage(), e);
             return false;
         }
     }
@@ -238,7 +240,7 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
                 }
             }
         } catch (Exception e) {
-            log.warn("[ZERODHA-GTT] Could not read fill for GTT {}: {}", gttId, e.getMessage());
+            log.warn("[ZERODHA-GTT] Could not read fill for GTT {}: {}", gttId, e.getMessage(), e);
         }
         return null;
     }
@@ -279,7 +281,8 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
                 if (attempt < maxAttempts && isTokenException(e) && kiteAuthService != null) {
                     log.warn(
                             "[ZERODHA-GTT] Kite session invalid or expired fetching holdings (attempt {}). Re-authenticating...",
-                            attempt);
+                            attempt,
+                            e);
                     if (kiteAuthService.reAuthenticate()) {
                         continue;
                     }
@@ -297,6 +300,10 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
         try {
             liveLtp = kiteRestClient.getLtp("NSE", order.symbol());
         } catch (Exception ignored) {
+            log.debug(
+                    "[ZERODHA-GTT] Live LTP fetch failed for {} — falling back to trigger price",
+                    order.symbol(),
+                    ignored);
         }
         if (liveLtp <= 0.0 && marketDataService != null) {
             try {
@@ -308,6 +315,10 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
                     }
                 }
             } catch (Exception ignored) {
+                log.debug(
+                        "[ZERODHA-GTT] Secondary quote lookup failed for {}",
+                        order.symbol(),
+                        ignored);
             }
         }
 
@@ -439,6 +450,7 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
         try {
             return Instant.parse(raw);
         } catch (Exception ignored) {
+            log.debug("[ZERODHA-GTT] Unparseable timestamp '{}'", raw, ignored);
         }
         return null;
     }

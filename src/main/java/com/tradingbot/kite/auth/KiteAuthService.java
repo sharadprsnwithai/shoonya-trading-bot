@@ -67,7 +67,8 @@ public class KiteAuthService {
             } catch (Exception e) {
                 log.warn(
                         "[KITE-AUTH] Headless auto-login notice: {}. Standing by for web login.",
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
     }
@@ -268,6 +269,10 @@ public class KiteAuthService {
                 }
             }
         } catch (Exception ignored) {
+            log.debug(
+                    "[KITE-AUTH] Could not extract request_token from redirect location: {}",
+                    locationUrl,
+                    ignored);
         }
         return null;
     }
@@ -348,7 +353,7 @@ public class KiteAuthService {
             }
             return new KiteStatus("ACTIVE", "session valid", userId);
         } catch (Exception e) {
-            log.debug("[KITE-AUTH] Profile check result: {}", e.getMessage());
+            log.debug("[KITE-AUTH] Profile check result: {}", e.getMessage(), e);
             return new KiteStatus("INACTIVE", e.getMessage(), null);
         }
     }

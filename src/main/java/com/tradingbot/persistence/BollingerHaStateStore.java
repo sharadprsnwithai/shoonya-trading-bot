@@ -22,6 +22,9 @@ import java.util.List;
  */
 public final class BollingerHaStateStore {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(BollingerHaStateStore.class);
+
     private static final ObjectMapper MAPPER =
             new ObjectMapper()
                     .registerModule(new JavaTimeModule())
@@ -82,7 +85,7 @@ public final class BollingerHaStateStore {
 
     /**
      * Loads state from {@code path}; returns {@code null} when the file does not exist or cannot be
-     * parsed (a corrupt snapshot must never block startup — it is logged by the caller).
+     * parsed (a corrupt snapshot must never block startup — the parse failure is logged here).
      */
     public static State load(Path path) {
         if (path == null || !Files.isRegularFile(path)) {
@@ -91,6 +94,11 @@ public final class BollingerHaStateStore {
         try {
             return MAPPER.readValue(path.toFile(), State.class);
         } catch (IOException e) {
+            log.warn(
+                    "[BOLLINGER-HA-STATE] Corrupt state file at {} — starting fresh: {}",
+                    path,
+                    e.getMessage(),
+                    e);
             return null;
         }
     }

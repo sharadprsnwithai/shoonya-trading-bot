@@ -101,7 +101,8 @@ public class SqliteBackupService {
         } catch (IOException e) {
             log.error(
                     "[SQLITE-BACKUP] Failed to quarantine corrupt database file: {}",
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
 
         // Attempt restore from newest valid backup
@@ -139,7 +140,8 @@ public class SqliteBackupService {
             log.warn(
                     "[SQLITE-BACKUP] Integrity check failed on {}: {}",
                     targetDb.getName(),
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return false;
         }
         return false;
@@ -252,7 +254,8 @@ public class SqliteBackupService {
                     log.error(
                             "[SQLITE-BACKUP] Failed copying backup to {}: {}",
                             dbPath,
-                            e.getMessage());
+                            e.getMessage(),
+                            e);
                 }
             } else {
                 log.warn(

@@ -212,7 +212,7 @@ public class TradeConsumerManager {
                 }
             }
         } catch (Exception e) {
-            log.warn("[CONSUMER-MGR] Broker drift reconciliation failed: {}", e.getMessage());
+            log.warn("[CONSUMER-MGR] Broker drift reconciliation failed: {}", e.getMessage(), e);
         }
     }
 

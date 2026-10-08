@@ -321,7 +321,7 @@ public class LowestVolumeReversalService {
         try {
             com.tradingbot.persistence.LvrStateStore.save(Path.of(stateFilePath), buildState());
         } catch (Exception e) {
-            log.error("[LVR] Failed to persist state to {}: {}", stateFilePath, e.getMessage());
+            log.error("[LVR] Failed to persist state to {}: {}", stateFilePath, e.getMessage(), e);
         }
     }
 
@@ -746,7 +746,10 @@ public class LowestVolumeReversalService {
                 try {
                     oiCandidates = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
                 } catch (Exception e) {
-                    log.warn("[LVR] OI Spurts scan failed during Hybrid scan: {}", e.getMessage());
+                    log.warn(
+                            "[LVR] OI Spurts scan failed during Hybrid scan: {}",
+                            e.getMessage(),
+                            e);
                 }
 
                 // 1. Add top 3 sector candidates
@@ -1252,7 +1255,8 @@ public class LowestVolumeReversalService {
                     setup.resetToScanning();
                 }
             } catch (Exception e) {
-                log.error("[LVR] Error processing 5m candles for {}: {}", symbol, e.getMessage());
+                log.error(
+                        "[LVR] Error processing 5m candles for {}: {}", symbol, e.getMessage(), e);
             }
         }
     }
@@ -1595,7 +1599,10 @@ public class LowestVolumeReversalService {
             }
         } catch (Exception e) {
             log.error(
-                    "[LVR] Error checking spot trigger breach for {}: {}", symbol, e.getMessage());
+                    "[LVR] Error checking spot trigger breach for {}: {}",
+                    symbol,
+                    e.getMessage(),
+                    e);
         }
     }
 
@@ -1975,7 +1982,8 @@ public class LowestVolumeReversalService {
                     log.warn(
                             "[LVR] Quote fetch failed for open position {} during evaluation: {}",
                             symbol,
-                            e.getMessage());
+                            e.getMessage(),
+                            e);
                 }
             }
         }
@@ -2458,7 +2466,10 @@ public class LowestVolumeReversalService {
                 }
             } catch (Exception e) {
                 log.error(
-                        "[LVR] Error evaluating open position for {}: {}", symbol, e.getMessage());
+                        "[LVR] Error evaluating open position for {}: {}",
+                        symbol,
+                        e.getMessage(),
+                        e);
             }
         }
         persistState();
@@ -2644,7 +2655,7 @@ public class LowestVolumeReversalService {
             com.tradingbot.persistence.LvrStateStore.save(statePath, snapshot);
             com.tradingbot.persistence.LvrStateStore.saveDatedArchive(statePath, snapshot, today);
         } catch (Exception e) {
-            log.error("[LVR] Failed to archive daily snapshot: {}", e.getMessage());
+            log.error("[LVR] Failed to archive daily snapshot: {}", e.getMessage(), e);
         }
 
         activeSetups.clear();
@@ -2844,6 +2855,10 @@ public class LowestVolumeReversalService {
                         }
                     }
                 } catch (Exception ignored) {
+                    log.warn(
+                            "[LVR] OI-spurts scan failed — continuing without it: {}",
+                            ignored.getMessage(),
+                            ignored);
                 }
             }
 
@@ -2954,7 +2969,10 @@ public class LowestVolumeReversalService {
             }
         } catch (Exception e) {
             log.debug(
-                    "[LVR] Error calculating VWAP from candles for {}: {}", symbol, e.getMessage());
+                    "[LVR] Error calculating VWAP from candles for {}: {}",
+                    symbol,
+                    e.getMessage(),
+                    e);
         }
         return 0.0;
     }
@@ -3023,7 +3041,8 @@ public class LowestVolumeReversalService {
             log.warn(
                     "[LVR] Could not resolve Option Chain levels for {}: {}",
                     setup.getSymbol(),
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
     }
 
@@ -3117,7 +3136,8 @@ public class LowestVolumeReversalService {
                         symbol,
                         strike,
                         optionType,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
         // Fallback: Query direct option quote via formatted exchange trading symbol
@@ -3149,7 +3169,8 @@ public class LowestVolumeReversalService {
             log.debug(
                     "[LVR] Direct option contract lookup failed for {}: {}",
                     symbol,
-                    ex.getMessage());
+                    ex.getMessage(),
+                    ex);
         }
         return 0.0;
     }
@@ -3216,7 +3237,8 @@ public class LowestVolumeReversalService {
                             log.debug(
                                     "[LVR] Unable to fetch futures OI for {}: {}",
                                     sym,
-                                    fex.getMessage());
+                                    fex.getMessage(),
+                                    fex);
                         }
                     }
 
@@ -3237,7 +3259,7 @@ public class LowestVolumeReversalService {
                     }
                 }
             } catch (Exception e) {
-                log.debug("[LVR] Error fetching morning quote for {}: {}", sym, e.getMessage());
+                log.debug("[LVR] Error fetching morning quote for {}: {}", sym, e.getMessage(), e);
             }
         }
         log.info(
@@ -3748,7 +3770,8 @@ public class LowestVolumeReversalService {
                 log.debug(
                         "[LVR] Error fetching live quote for sector constituent {}: {}",
                         constituent,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
 
@@ -3941,7 +3964,8 @@ public class LowestVolumeReversalService {
                     log.warn(
                             "[LVR] Failed to fetch daily candles from OHLC cache for {}: {}",
                             setup.getSymbol(),
-                            e.getMessage());
+                            e.getMessage(),
+                            e);
                 }
             }
 
@@ -3957,7 +3981,8 @@ public class LowestVolumeReversalService {
                     log.warn(
                             "[LVR] Failed to fetch daily candles from Shoonya for {}: {}",
                             setup.getSymbol(),
-                            e.getMessage());
+                            e.getMessage(),
+                            e);
                 }
             }
 
@@ -3979,7 +4004,8 @@ public class LowestVolumeReversalService {
             log.warn(
                     "[LVR] Could not initialize PDH/PDL for {}: {}",
                     setup.getSymbol(),
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
     }
 
@@ -4117,7 +4143,8 @@ public class LowestVolumeReversalService {
                 log.debug(
                         "[LVR] Error calculating unrealized PnL for {}: {}",
                         pos.getSymbol(),
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
         return totalUnrealized;

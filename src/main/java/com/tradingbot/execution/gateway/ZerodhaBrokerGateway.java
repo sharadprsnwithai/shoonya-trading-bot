@@ -128,7 +128,8 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                     log.warn(
                             "[ZERODHA-GATEWAY] Kite session invalid or expired during order placement for {} (attempt {}). Re-authenticating...",
                             request.symbol(),
-                            attempt);
+                            attempt,
+                            e);
                     boolean refreshed = kiteAuthService.reAuthenticate();
                     if (refreshed) {
                         log.info(
@@ -200,7 +201,8 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                     log.warn(
                             "[ZERODHA-GATEWAY] Kite session invalid or expired during order cancellation for {} (attempt {}). Re-authenticating...",
                             orderId,
-                            attempt);
+                            attempt,
+                            e);
                     if (kiteAuthService.reAuthenticate()) {
                         continue;
                     }
@@ -271,7 +273,8 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                 if (attempt < maxAttempts && isTokenException(e) && kiteAuthService != null) {
                     log.warn(
                             "[ZERODHA-GATEWAY] Kite session invalid or expired querying positions (attempt {}). Re-authenticating...",
-                            attempt);
+                            attempt,
+                            e);
                     if (kiteAuthService.reAuthenticate()) {
                         continue;
                     }
@@ -322,7 +325,8 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                 if (attempt < maxAttempts && isTokenException(e) && kiteAuthService != null) {
                     log.warn(
                             "[ZERODHA-GATEWAY] Kite session invalid or expired querying holdings (attempt {}). Re-authenticating...",
-                            attempt);
+                            attempt,
+                            e);
                     if (kiteAuthService.reAuthenticate()) {
                         continue;
                     }

@@ -78,6 +78,12 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
                 try {
                     orderType = OrderType.valueOf(String.valueOf(ot).trim().toUpperCase());
                 } catch (Exception ignored) {
+                    log.warn(
+                            "[CONSUMER:{}] Unrecognized orderType metadata '{}' — keeping default {}",
+                            getConsumerId(),
+                            ot,
+                            orderType,
+                            ignored);
                 }
             }
             if (orderType == OrderType.LMT

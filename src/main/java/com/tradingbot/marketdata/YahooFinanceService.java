@@ -245,7 +245,8 @@ public class YahooFinanceService {
                         "[YAHOO-FINANCE] Error fetching {} (attempt {}): {}",
                         ticker,
                         attempt,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
         return Collections.emptyList();

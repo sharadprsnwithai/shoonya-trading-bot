@@ -83,7 +83,7 @@ public class ShoonyaConfig {
         try {
             this.executionMode = ExecutionMode.valueOf(modeStr.trim().toUpperCase());
         } catch (Exception e) {
-            log.warn("Invalid EXECUTION_MODE '{}' in .env, defaulting to PAPER", modeStr);
+            log.warn("Invalid EXECUTION_MODE '{}' in .env, defaulting to PAPER", modeStr, e);
             this.executionMode = ExecutionMode.PAPER;
         }
         log.info("Execution mode initialized from .env / system: {}", this.executionMode);
@@ -111,7 +111,8 @@ public class ShoonyaConfig {
         } catch (Exception e) {
             log.debug(
                     "Dynamic public IP resolution from ipify failed ({}), using fallback.",
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
         return "58.84.60.54";
     }
@@ -135,7 +136,7 @@ public class ShoonyaConfig {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to load .env file: {}", e.getMessage());
+            log.warn("Failed to load .env file: {}", e.getMessage(), e);
         }
     }
 

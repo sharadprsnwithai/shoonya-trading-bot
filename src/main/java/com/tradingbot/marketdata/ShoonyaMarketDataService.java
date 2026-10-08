@@ -181,7 +181,7 @@ public class ShoonyaMarketDataService {
                 authenticator.getOrAuthenticateToken();
                 log.info("[MARKET-DATA] Session pre-warmed successfully.");
             } catch (Exception e) {
-                log.warn("[MARKET-DATA] Failed to pre-warm session: {}", e.getMessage());
+                log.warn("[MARKET-DATA] Failed to pre-warm session: {}", e.getMessage(), e);
             }
         }
     }
@@ -263,7 +263,8 @@ public class ShoonyaMarketDataService {
             log.warn(
                     "[MARKET-DATA] Failed to resolve token via SearchScrip for {}: {}",
                     clean,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
 
         if ("NIFTY50".equalsIgnoreCase(clean)
@@ -334,7 +335,8 @@ public class ShoonyaMarketDataService {
                     "[MARKET-DATA] Failed to resolve futures contract for {} ({}): {}",
                     searchSymbol,
                     monthKey,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
         return null;
     }
@@ -554,7 +556,8 @@ public class ShoonyaMarketDataService {
                         "[QUOTE] Error fetching quote for token {} (attempt {}): {}",
                         token,
                         attempt,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
         return null;
@@ -644,7 +647,8 @@ public class ShoonyaMarketDataService {
                         "[SEARCH-SCRIP] Error searching for scrip {} (attempt {}): {}",
                         searchText,
                         attempt,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
         return null;
@@ -754,7 +758,8 @@ public class ShoonyaMarketDataService {
                         "Error fetching Shoonya TPSeries for {} (attempt {}): {}",
                         symbol,
                         attempt,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
                 if (attempt == 2) {
                     return Collections.emptyList();
                 }
@@ -882,7 +887,8 @@ public class ShoonyaMarketDataService {
                             } catch (Exception e5) {
                                 log.debug(
                                         "Failed parsing Shoonya candle time string '{}', defaulting to now",
-                                        timeStr);
+                                        timeStr,
+                                        e5);
                             }
                         }
                     }

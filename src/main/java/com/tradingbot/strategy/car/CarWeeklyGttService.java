@@ -223,7 +223,8 @@ public class CarWeeklyGttService {
                 log.warn(
                         "[CAR-WEEKLY] Error checking {} live holdings: {}",
                         gw.getBrokerName(),
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
     }
@@ -262,7 +263,8 @@ public class CarWeeklyGttService {
                         "[CAR-WEEKLY] Could not read status of trigger {} for {}: {}",
                         order.gttId(),
                         key,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
                 continue;
             }
             if (status == null || status == GttStatus.PENDING) {
@@ -291,7 +293,8 @@ public class CarWeeklyGttService {
             log.warn(
                     "[CAR-WEEKLY] Could not read fill for trigger {}: {}",
                     order.gttId(),
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
 
         BigDecimal price = fill != null ? fill.price() : order.limitPrice();
@@ -358,7 +361,7 @@ public class CarWeeklyGttService {
         try {
             active = gateway.listActiveGtts();
         } catch (Exception e) {
-            log.warn("[CAR-WEEKLY] Could not list live triggers: {}", e.getMessage());
+            log.warn("[CAR-WEEKLY] Could not list live triggers: {}", e.getMessage(), e);
             return;
         }
         if (active == null || active.isEmpty()) {
@@ -550,7 +553,7 @@ public class CarWeeklyGttService {
                     }
                 } catch (Exception e) {
                     // A single bad symbol must not abort the run before state is saved.
-                    log.warn("[CAR-WEEKLY] Analysis failed for {}: {}", symbol, e.getMessage());
+                    log.warn("[CAR-WEEKLY] Analysis failed for {}: {}", symbol, e.getMessage(), e);
                 }
             }
         }
@@ -886,7 +889,7 @@ public class CarWeeklyGttService {
         try {
             telegramService.sendTextMessage(message);
         } catch (Exception e) {
-            log.warn("[CAR-WEEKLY] Could not send alert: {}", e.getMessage());
+            log.warn("[CAR-WEEKLY] Could not send alert: {}", e.getMessage(), e);
         }
     }
 
@@ -929,7 +932,8 @@ public class CarWeeklyGttService {
             log.warn(
                     "[CAR-WEEKLY] Could not load state from {} (will start with fresh state): {}",
                     properties.getStateFilePath(),
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
     }
 

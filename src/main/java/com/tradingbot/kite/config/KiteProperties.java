@@ -98,7 +98,7 @@ public class KiteProperties {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed loading .env for Kite properties: {}", e.getMessage());
+            log.warn("Failed loading .env for Kite properties: {}", e.getMessage(), e);
         }
     }
 

@@ -94,7 +94,8 @@ public class KiteRestClient {
             log.warn(
                     "[KITE-REST] Failed to fetch order history for {}: {}",
                     orderId,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return List.of();
         }
     }
@@ -133,7 +134,7 @@ public class KiteRestClient {
                 }
             }
         } catch (Exception e) {
-            log.warn("[KITE-REST] Failed to read Kite positions: {}", e.getMessage());
+            log.warn("[KITE-REST] Failed to read Kite positions: {}", e.getMessage(), e);
         }
         return 0;
     }
@@ -152,7 +153,7 @@ public class KiteRestClient {
             log.info("[KITE-REST] Cancelled Kite order: {}", orderId);
             return true;
         } catch (Exception e) {
-            log.warn("[KITE-REST] Failed to cancel Kite order {}: {}", orderId, e.getMessage());
+            log.warn("[KITE-REST] Failed to cancel Kite order {}: {}", orderId, e.getMessage(), e);
             return false;
         }
     }
@@ -213,7 +214,8 @@ public class KiteRestClient {
                     "[KITE-REST] HTTP {} error on GET {}: {}",
                     e.getStatusCode(),
                     path,
-                    e.getResponseBodyAsString());
+                    e.getResponseBodyAsString(),
+                    e);
             throw new IllegalStateException(
                     "Kite GET " + path + " failed: " + e.getResponseBodyAsString(), e);
         }
@@ -254,7 +256,8 @@ public class KiteRestClient {
                     e.getStatusCode(),
                     method,
                     path,
-                    e.getResponseBodyAsString());
+                    e.getResponseBodyAsString(),
+                    e);
             throw new IllegalStateException(
                     "Kite " + method + " " + path + " failed: " + e.getResponseBodyAsString(), e);
         }
@@ -308,7 +311,7 @@ public class KiteRestClient {
                 return data.path(instrument).path("last_price").asDouble(0.0);
             }
         } catch (Exception e) {
-            log.debug("[KITE-REST] Failed to fetch LTP for {}: {}", instrument, e.getMessage());
+            log.debug("[KITE-REST] Failed to fetch LTP for {}: {}", instrument, e.getMessage(), e);
         }
         return 0.0;
     }
@@ -330,7 +333,8 @@ public class KiteRestClient {
             log.warn(
                     "[KITE-REST] Failed to cancel Kite GTT trigger {}: {}",
                     triggerId,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return false;
         }
     }
@@ -339,7 +343,7 @@ public class KiteRestClient {
         try {
             return get("/gtt/triggers").path("data");
         } catch (Exception e) {
-            log.warn("[KITE-REST] Failed to fetch Kite GTT triggers: {}", e.getMessage());
+            log.warn("[KITE-REST] Failed to fetch Kite GTT triggers: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -361,7 +365,8 @@ public class KiteRestClient {
             log.warn(
                     "[KITE-REST] Failed to fetch Kite GTT trigger {}: {}",
                     triggerId,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return null;
         }
     }
@@ -391,7 +396,8 @@ public class KiteRestClient {
             log.warn(
                     "[KITE-REST] Failed to modify Kite GTT trigger {}: {}",
                     triggerId,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return false;
         }
     }

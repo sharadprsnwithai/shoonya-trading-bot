@@ -123,7 +123,7 @@ public class ShoonyaAuthenticator {
             JsonNode root = objectMapper.readTree(resp.body());
             return "Ok".equalsIgnoreCase(root.path("stat").asText());
         } catch (Exception e) {
-            log.warn("Shoonya session validation probe failed: {}", e.getMessage());
+            log.warn("Shoonya session validation probe failed: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -236,7 +236,7 @@ public class ShoonyaAuthenticator {
             return activeToken;
 
         } catch (Exception e) {
-            log.error("Shoonya login failed: {}", e.getMessage());
+            log.error("Shoonya login failed: {}", e.getMessage(), e);
             throw new RuntimeException("Shoonya authentication failure: " + e.getMessage(), e);
         }
     }
@@ -249,7 +249,7 @@ public class ShoonyaAuthenticator {
                 log.info("Invalidated and deleted Shoonya session file.");
             }
         } catch (Exception e) {
-            log.warn("Failed to delete Shoonya session file: {}", e.getMessage());
+            log.warn("Failed to delete Shoonya session file: {}", e.getMessage(), e);
         }
     }
 
@@ -273,7 +273,7 @@ public class ShoonyaAuthenticator {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to parse existing Shoonya session file: {}", e.getMessage());
+            log.warn("Failed to parse existing Shoonya session file: {}", e.getMessage(), e);
         }
         return null;
     }
@@ -290,7 +290,7 @@ public class ShoonyaAuthenticator {
             data.put("createdAt", Instant.now().toString());
             objectMapper.writeValue(SESSION_FILE, data);
         } catch (Exception e) {
-            log.warn("Failed to write Shoonya session cache file: {}", e.getMessage());
+            log.warn("Failed to write Shoonya session cache file: {}", e.getMessage(), e);
         }
     }
 }

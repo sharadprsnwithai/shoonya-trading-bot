@@ -130,8 +130,8 @@ def get_macro_drivers():
                 prev = d['Close'].iloc[-2]
                 pct = ((ltp - prev) / prev) * 100.0
                 res[name] = (ltp, pct)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"warning: failed computing change for {name}: {e}")
     return res
 
 def generate_report():

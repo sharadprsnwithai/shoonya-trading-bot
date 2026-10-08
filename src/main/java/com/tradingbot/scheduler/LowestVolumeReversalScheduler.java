@@ -51,7 +51,7 @@ public class LowestVolumeReversalScheduler {
                         "[LVR-SCHEDULER] Ensuring Zerodha Kite session is active and pre-warmed for today's market session...");
                 kiteAuthService.ensureActiveSession();
             } catch (Exception e) {
-                log.warn("[LVR-SCHEDULER] Kite session pre-warm notice: {}", e.getMessage());
+                log.warn("[LVR-SCHEDULER] Kite session pre-warm notice: {}", e.getMessage(), e);
             }
         }
     }

@@ -74,6 +74,7 @@ def run_backtest(dynamic_sizing=False):
                     df_d.index = df_d.index.tz_convert('Asia/Kolkata')
                 daily_data[sym] = df_d
         except Exception as e:
+            print(f"warning: failed loading daily data for {ticker}: {e}")
             continue
 
     all_dates = sorted(list(set(d for df in data_5m.values() for d in df.index.date)))

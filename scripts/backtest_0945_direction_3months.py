@@ -119,8 +119,8 @@ def run_3month_market_direction_backtest():
                 d['VWAP'] = calculate_intraday_vwap(d)
                 d['EMA10'] = calculate_ema(d['Close'], 10)
                 stock_data[s] = d
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"warning: failed loading 5m data for {s}: {e}")
 
     print(f"✅ Loaded 5m data for Nifty 50 and {len(stock_data)} liquid sector stocks.\n")
 

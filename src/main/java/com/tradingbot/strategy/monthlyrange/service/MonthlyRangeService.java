@@ -145,7 +145,8 @@ public class MonthlyRangeService {
                 log.warn(
                         "[MONTHLY-RANGE] Failed to fetch live option chain for {}: {}",
                         symbol,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
 

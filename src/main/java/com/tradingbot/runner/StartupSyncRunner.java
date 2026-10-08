@@ -100,7 +100,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                 fetchAndReportPositions("SHOONYA", shoonyaPositions);
             }
         } catch (Exception e) {
-            log.warn("Shoonya Startup Sync Notice: {}", e.getMessage());
+            log.warn("Shoonya Startup Sync Notice: {}", e.getMessage(), e);
         }
 
         try {
@@ -123,7 +123,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                 }
             }
         } catch (Exception e) {
-            log.warn("Zerodha Kite Startup Notice: {}", e.getMessage());
+            log.warn("Zerodha Kite Startup Notice: {}", e.getMessage(), e);
         }
 
         try {
@@ -152,7 +152,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                 Thread.sleep(350);
             }
         } catch (Exception e) {
-            log.warn("Historical Benchmark Candle Sync Notice: {}", e.getMessage());
+            log.warn("Historical Benchmark Candle Sync Notice: {}", e.getMessage(), e);
         }
 
         try {
@@ -181,7 +181,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                         });
             }
         } catch (Exception e) {
-            log.warn("Yahoo Historical OHLC Cache Startup Notice: {}", e.getMessage());
+            log.warn("Yahoo Historical OHLC Cache Startup Notice: {}", e.getMessage(), e);
         }
 
         try {
@@ -198,7 +198,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                 }
             }
         } catch (Exception e) {
-            log.warn("CAR Weekly GTT Startup Notice: {}", e.getMessage());
+            log.warn("CAR Weekly GTT Startup Notice: {}", e.getMessage(), e);
         }
 
         log.info("==================================================================");

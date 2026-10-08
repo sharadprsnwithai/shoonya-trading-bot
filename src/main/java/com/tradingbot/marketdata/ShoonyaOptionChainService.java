@@ -371,7 +371,8 @@ public class ShoonyaOptionChainService {
                                                                     log.debug(
                                                                             "Quote fetch failed for token {}: {}",
                                                                             draft.token,
-                                                                            e.getMessage());
+                                                                            e.getMessage(),
+                                                                            e);
                                                                 }
                                                             },
                                                             executor))
@@ -386,7 +387,8 @@ public class ShoonyaOptionChainService {
                         }
                         log.warn(
                                 "Option chain quote batch fetch timed out or interrupted: {}",
-                                e.getMessage());
+                                e.getMessage(),
+                                e);
                     }
                 }
 
@@ -461,7 +463,8 @@ public class ShoonyaOptionChainService {
                         "Option chain fetch attempt {} failed for {}: {}",
                         attempt,
                         futSymbol,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
                 if (attempt == 2) {
                     log.error(
                             "Failed to fetch option chain for {} after 2 attempts",
@@ -509,7 +512,7 @@ public class ShoonyaOptionChainService {
             }
             return objectMapper.readTree(resp.body());
         } catch (Exception e) {
-            log.debug("GetQuotes API threw exception for token {}: {}", token, e.getMessage());
+            log.debug("GetQuotes API threw exception for token {}: {}", token, e.getMessage(), e);
             return null;
         }
     }
@@ -633,7 +636,7 @@ public class ShoonyaOptionChainService {
             executor.shutdownNow();
             log.info("[OPTION-CHAIN] Executor shutdown complete.");
         } catch (Exception e) {
-            log.debug("[OPTION-CHAIN] Error shutting down executor: {}", e.getMessage());
+            log.debug("[OPTION-CHAIN] Error shutting down executor: {}", e.getMessage(), e);
         }
     }
 

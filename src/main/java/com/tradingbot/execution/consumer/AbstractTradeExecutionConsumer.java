@@ -302,6 +302,11 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                             Integer.parseInt(
                                     String.valueOf(signal.metadata().get("remainingQuantity")));
                 } catch (Exception ignore) {
+                    log.warn(
+                            "[CONSUMER:{}] Unparseable remainingQuantity metadata '{}' — using full quantity",
+                            consumerId,
+                            signal.metadata().get("remainingQuantity"),
+                            ignore);
                 }
             }
             if (remainingQty > 0) {
@@ -363,7 +368,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                     consumerId,
                     slOrderId,
                     key,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return null;
         }
     }
@@ -460,7 +466,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                         "[CONSUMER:{}] Order status poll failed for {}: {}",
                         consumerId,
                         orderId,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
                 return null;
             }
             if (status == OrderStatus.COMPLETE
@@ -579,7 +586,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                     "[CONSUMER:{}] Protective SL threw for {}: {}",
                     consumerId,
                     entryRequest.symbol(),
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
     }
 
