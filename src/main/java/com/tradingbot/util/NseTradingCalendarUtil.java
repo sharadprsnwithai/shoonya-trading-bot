@@ -162,17 +162,22 @@ public final class NseTradingCalendarUtil {
     }
 
     /**
-     * Calculates the last Wednesday of the month.
+     * Calculates the last Wednesday of the month. If the last Wednesday is an exchange holiday,
+     * rolls backward to the preceding trading day so scheduled routines are never skipped.
      *
      * @param year the calendar year
      * @param month the calendar month (1-12)
-     * @return the last Wednesday date
+     * @return the last active post-expiry trading day
      */
     public static LocalDate getLastWednesdayOfMonth(int year, int month) {
         LocalDate lastDayOfMonth = LocalDate.of(year, month, 1).plusMonths(1).minusDays(1);
         LocalDate current = lastDayOfMonth;
 
         while (current.getDayOfWeek() != DayOfWeek.WEDNESDAY) {
+            current = current.minusDays(1);
+        }
+
+        while (!isTradingDay(current)) {
             current = current.minusDays(1);
         }
         return current;
@@ -188,13 +193,14 @@ public final class NseTradingCalendarUtil {
     }
 
     /**
-     * Checks if the specified date is the last Wednesday of its calendar month.
+     * Checks if the specified date is the active last Wednesday (or holiday-rolled session) of its
+     * calendar month.
      *
      * @param date the date to check
-     * @return true if date is the last Wednesday of the month
+     * @return true if date is the last Wednesday session of the month
      */
     public static boolean isLastWednesdayOfMonth(LocalDate date) {
-        if (date == null || date.getDayOfWeek() != DayOfWeek.WEDNESDAY) {
+        if (date == null || !isTradingDay(date)) {
             return false;
         }
         LocalDate lastWed = getLastWednesdayOfMonth(date.getYear(), date.getMonthValue());
