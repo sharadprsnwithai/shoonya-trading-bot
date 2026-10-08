@@ -61,6 +61,12 @@ public class MonthlyRangeCalculator {
                     0.0,
                     BigDecimal.ZERO,
                     horizon,
+                    false,
+                    "NO_DATA",
+                    2.0,
+                    BigDecimal.ZERO,
+                    null,
+                    null,
                     Instant.now());
         }
 
@@ -121,6 +127,12 @@ public class MonthlyRangeCalculator {
                 round2(hv30),
                 atr22,
                 horizon,
+                false,
+                "Normal",
+                2.0,
+                BigDecimal.ZERO,
+                null,
+                null,
                 Instant.now());
     }
 

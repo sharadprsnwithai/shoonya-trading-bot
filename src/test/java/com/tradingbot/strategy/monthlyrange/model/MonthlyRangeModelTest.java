@@ -30,18 +30,25 @@ class MonthlyRangeModelTest {
         assertThat(props.getForecastHorizonDays()).isEqualTo(22);
         assertThat(props.getHistoryLookbackDays()).isEqualTo(504);
         assertThat(props.isTelegramAlertsEnabled()).isTrue();
+        assertThat(props.getNormalConfidenceMultiplier()).isEqualTo(2.0);
+        assertThat(props.getEventConfidenceMultiplier()).isEqualTo(2.35);
+        assertThat(props.getEarningsMonths()).containsExactly(1, 4, 7, 10);
+        assertThat(props.getIvHvSpikeThreshold()).isEqualTo(1.25);
 
         props.setEnabled(false);
         props.setForecastHorizonDays(20);
+        props.setEventConfidenceMultiplier(2.5);
         assertThat(props.isEnabled()).isFalse();
         assertThat(props.getForecastHorizonDays()).isEqualTo(20);
+        assertThat(props.getEventConfidenceMultiplier()).isEqualTo(2.5);
     }
 
     @Test
     @DisplayName("GarchModelParams record holds model coefficients and persistence")
     void testGarchModelParams() {
         GarchModelParams params =
-                new GarchModelParams(0.000005, 0.08, 0.90, 0.00005, -1250.5, true, "CONVERGED");
+                new GarchModelParams(
+                        0.000005, 0.08, 0.90, 0.00005, -1250.5, true, "CONVERGED");
 
         assertThat(params.omega()).isEqualTo(0.000005);
         assertThat(params.alpha()).isEqualTo(0.08);
@@ -52,7 +59,7 @@ class MonthlyRangeModelTest {
     }
 
     @Test
-    @DisplayName("MonthlyRangeForecast correctly models expected bounds and strikes")
+    @DisplayName("MonthlyRangeForecast correctly models fused event, IV, and OI boundaries")
     void testMonthlyRangeForecast() {
         MonthlyRangeForecast forecast =
                 new MonthlyRangeForecast(
@@ -70,6 +77,12 @@ class MonthlyRangeModelTest {
                         18.20,
                         new BigDecimal("42.50"),
                         22,
+                        true,
+                        "Q3 Earnings Cycle",
+                        2.35,
+                        new BigDecimal("160.00"),
+                        new BigDecimal("3100.00"),
+                        new BigDecimal("2500.00"),
                         Instant.now());
 
         assertThat(forecast.symbol()).isEqualTo("RELIANCE");
@@ -77,6 +90,12 @@ class MonthlyRangeModelTest {
         assertThat(forecast.monthlyVolPct()).isEqualTo(5.50);
         assertThat(forecast.safePeStrike()).isEqualByComparingTo("2500.00");
         assertThat(forecast.safeCeStrike()).isEqualByComparingTo("3100.00");
+        assertThat(forecast.isEventMonth()).isTrue();
+        assertThat(forecast.eventReason()).isEqualTo("Q3 Earnings Cycle");
+        assertThat(forecast.confidenceMultiplier()).isEqualTo(2.35);
+        assertThat(forecast.atmStraddleMove()).isEqualByComparingTo("160.00");
+        assertThat(forecast.maxCallOiStrike()).isEqualByComparingTo("3100.00");
+        assertThat(forecast.maxPutOiStrike()).isEqualByComparingTo("2500.00");
     }
 
     @Test
@@ -98,14 +117,16 @@ class MonthlyRangeModelTest {
                         15.80,
                         new BigDecimal("55.00"),
                         22,
+                        false,
+                        "Normal Month",
+                        2.00,
+                        new BigDecimal("180.00"),
+                        new BigDecimal("4200.00"),
+                        new BigDecimal("3600.00"),
                         Instant.now());
 
         MonthlyRangeReport report =
-                new MonthlyRangeReport(
-                        Instant.now(),
-                        "2026-10",
-                        List.of(forecast),
-                        "All 1 symbols computed successfully.");
+                new MonthlyRangeReport(Instant.now(), "2026-10", List.of(forecast), "All 1 symbols computed successfully.");
 
         assertThat(report.forecasts()).hasSize(1);
         assertThat(report.cycle()).isEqualTo("2026-10");

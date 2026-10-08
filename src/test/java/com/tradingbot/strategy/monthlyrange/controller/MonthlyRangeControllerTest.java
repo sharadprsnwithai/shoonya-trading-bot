@@ -44,6 +44,12 @@ class MonthlyRangeControllerTest {
                 18.0,
                 new BigDecimal("42.00"),
                 22,
+                false,
+                "Normal",
+                2.00,
+                new BigDecimal("150.00"),
+                new BigDecimal("3100.00"),
+                new BigDecimal("2500.00"),
                 Instant.now());
     }
 
