@@ -75,4 +75,35 @@ class NseTradingCalendarUtilTest {
         assertTrue(NseTradingCalendarUtil.isLastWednesdayOfMonth(LocalDate.of(2026, 10, 28)));
         assertFalse(NseTradingCalendarUtil.isLastWednesdayOfMonth(LocalDate.of(2026, 10, 21)));
     }
+
+    @Test
+    @DisplayName("Exact post-expiry session detection across month boundaries and normal months")
+    void testPostExpirySessionDetection() {
+        // Normal month: October 2026 (Expiry is Tuesday Oct 27 -> Post-expiry is Wednesday Oct 28)
+        assertTrue(
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(
+                        LocalDate.of(2026, 10, 28)));
+        assertFalse(
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(
+                        LocalDate.of(2026, 10, 27)));
+        assertFalse(
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(
+                        LocalDate.of(2026, 10, 29)));
+
+        // Month ending on Tuesday: June 30, 2026 is Tuesday expiry -> Post-expiry is July 1, 2026
+        assertTrue(
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(
+                        LocalDate.of(2026, 7, 1)));
+        assertFalse(
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(
+                        LocalDate.of(2026, 6, 24))); // Premature Wednesday must be false
+
+        // Month ending on Tuesday: March 31, 2026 is Tuesday expiry -> Post-expiry is April 1, 2026
+        assertTrue(
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(
+                        LocalDate.of(2026, 4, 1)));
+        assertFalse(
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(
+                        LocalDate.of(2026, 3, 25))); // Premature Wednesday must be false
+    }
 }

@@ -162,6 +162,60 @@ public final class NseTradingCalendarUtil {
     }
 
     /**
+     * Finds the first active trading day strictly after the specified date.
+     *
+     * @param date the reference date
+     * @return the next active trading session date
+     */
+    public static LocalDate getFirstTradingDayAfter(LocalDate date) {
+        if (date == null) {
+            return null;
+        }
+        LocalDate next = date.plusDays(1);
+        while (!isTradingDay(next)) {
+            next = next.plusDays(1);
+        }
+        return next;
+    }
+
+    /**
+     * Checks if today in IST timezone is the first active trading day immediately following the
+     * monthly Tuesday stock options expiry.
+     *
+     * @return true if today is the post-expiry trading session
+     */
+    public static boolean isTodayFirstTradingDayPostMonthlyTuesdayExpiry() {
+        return isFirstTradingDayPostMonthlyTuesdayExpiry(LocalDate.now(IST_ZONE));
+    }
+
+    /**
+     * Checks if the specified date is the first active trading day immediately following a monthly
+     * Tuesday stock options expiry (handles month-end rollovers, e.g. June 30 -> July 1).
+     *
+     * @param date the date to check
+     * @return true if date is the post-expiry trading session
+     */
+    public static boolean isFirstTradingDayPostMonthlyTuesdayExpiry(LocalDate date) {
+        if (date == null || !isTradingDay(date)) {
+            return false;
+        }
+
+        // 1. Check current month's expiry
+        LocalDate curExpiry = getMonthlyExpiryTuesday(date.getYear(), date.getMonthValue());
+        LocalDate postCur = getFirstTradingDayAfter(curExpiry);
+        if (date.equals(postCur)) {
+            return true;
+        }
+
+        // 2. Check previous month's expiry (for month rollovers into 1st/2nd of next month)
+        LocalDate prevMonthDate = date.minusMonths(1);
+        LocalDate prevExpiry =
+                getMonthlyExpiryTuesday(prevMonthDate.getYear(), prevMonthDate.getMonthValue());
+        LocalDate postPrev = getFirstTradingDayAfter(prevExpiry);
+        return date.equals(postPrev);
+    }
+
+    /**
      * Calculates the last Wednesday of the month. If the last Wednesday is an exchange holiday,
      * rolls backward to the preceding trading day so scheduled routines are never skipped.
      *
