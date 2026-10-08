@@ -119,9 +119,18 @@ public class ShoonyaOptionChainService {
                 || "NIFTY 50".equalsIgnoreCase(cleanUnderlying)) {
             return getNifty50OptionChain(explicitStrike, count, fetchQuotes);
         } else {
-            // Stock F&O Underlying (e.g. BSE, LAURUSLABS, SAIL, POLYCAB, etc.)
+            // Stock F&O Underlying (e.g. RELIANCE, TCS, HDFCBANK, INFY, etc.)
+            ShoonyaMarketDataService.FuturesContract stockContract =
+                    marketDataService != null
+                            ? marketDataService.resolveFuturesContract(cleanUnderlying)
+                            : null;
+            String futTsym =
+                    stockContract != null && stockContract.tsym() != null
+                            ? stockContract.tsym()
+                            : cleanUnderlying;
+            String futTok = stockContract != null ? stockContract.token() : "";
             return getOptionChain(
-                    cleanUnderlying, cleanUnderlying, "", explicitStrike, count, fetchQuotes);
+                    cleanUnderlying, futTsym, futTok, explicitStrike, count, fetchQuotes);
         }
     }
 
