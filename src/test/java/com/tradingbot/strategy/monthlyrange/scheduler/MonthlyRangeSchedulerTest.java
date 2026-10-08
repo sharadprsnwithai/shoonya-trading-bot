@@ -24,7 +24,8 @@ class MonthlyRangeSchedulerTest {
     }
 
     @Test
-    @DisplayName("Should execute scheduled post-expiry routine when date is first session post-expiry (Oct 28)")
+    @DisplayName(
+            "Should execute scheduled post-expiry routine when date is first session post-expiry (Oct 28)")
     void testExecuteOnPostExpirySession() {
         LocalDate postExpiryOct2026 = LocalDate.of(2026, 10, 28);
         scheduler.executeRoutineForDate(postExpiryOct2026);
@@ -33,7 +34,8 @@ class MonthlyRangeSchedulerTest {
     }
 
     @Test
-    @DisplayName("Should execute scheduled post-expiry routine when month ends on Tuesday (June 30 -> July 1)")
+    @DisplayName(
+            "Should execute scheduled post-expiry routine when month ends on Tuesday (June 30 -> July 1)")
     void testExecuteOnMonthRolloverPostExpirySession() {
         LocalDate postExpiryJuly1_2026 = LocalDate.of(2026, 7, 1);
         scheduler.executeRoutineForDate(postExpiryJuly1_2026);

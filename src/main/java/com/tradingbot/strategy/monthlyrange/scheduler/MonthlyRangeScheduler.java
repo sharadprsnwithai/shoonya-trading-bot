@@ -10,9 +10,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * Scheduler for Monthly Option Range GARCH Strategy.
- * Runs on weekdays at 10:00 AM IST and executes on the exact first trading session
- * immediately following the monthly Tuesday stock options expiry.
+ * Scheduler for Monthly Option Range GARCH Strategy. Runs on weekdays at 10:00 AM IST and executes
+ * on the exact first trading session immediately following the monthly Tuesday stock options
+ * expiry.
  */
 @Service
 public class MonthlyRangeScheduler {
@@ -29,8 +29,8 @@ public class MonthlyRangeScheduler {
     }
 
     /**
-     * Evaluates every weekday at 10:00 AM IST whether today is the first active trading day
-     * post monthly Tuesday expiry.
+     * Evaluates every weekday at 10:00 AM IST whether today is the first active trading day post
+     * monthly Tuesday expiry.
      */
     @Scheduled(
             cron = "${trading-bot.strategy.monthly-range.cron:0 0 10 ? * MON-FRI}",
