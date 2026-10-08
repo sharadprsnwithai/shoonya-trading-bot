@@ -7,8 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Pure Java Maximum Likelihood Estimation (MLE) optimizer for GARCH(1,1) volatility models.
- * Uses Nelder-Mead Simplex optimization with percentage scaling to ensure numerical stability.
+ * Pure Java Maximum Likelihood Estimation (MLE) optimizer for GARCH(1,1) volatility models. Uses
+ * Nelder-Mead Simplex optimization with percentage scaling to ensure numerical stability.
  */
 @Component
 public class Garch11Optimizer {
@@ -31,8 +31,8 @@ public class Garch11Optimizer {
     }
 
     /**
-     * Fits a GARCH(1,1) model to an array of daily log returns:
-     * sigma_t^2 = omega + alpha * (r_{t-1} - mu)^2 + beta * sigma_{t-1}^2
+     * Fits a GARCH(1,1) model to an array of daily log returns: sigma_t^2 = omega + alpha *
+     * (r_{t-1} - mu)^2 + beta * sigma_{t-1}^2
      */
     public GarchModelParams fit(double[] returns) {
         if (returns == null || returns.length < 5) {
@@ -62,7 +62,8 @@ public class Garch11Optimizer {
         }
 
         double[] initialPoint = new double[] {initOmegaPct, initAlpha, initBeta};
-        NelderMeadResult result = optimizeNelderMead(pctReturns, meanPct, sampleVarPct, initialPoint);
+        NelderMeadResult result =
+                optimizeNelderMead(pctReturns, meanPct, sampleVarPct, initialPoint);
 
         double omegaPct = result.point[0];
         double alpha = result.point[1];
@@ -125,9 +126,7 @@ public class Garch11Optimizer {
         return Math.max(sumSq / data.length, 1e-8);
     }
 
-    /**
-     * Calculates Negative Log-Likelihood (NLL) for GARCH(1,1) in percentage space.
-     */
+    /** Calculates Negative Log-Likelihood (NLL) for GARCH(1,1) in percentage space. */
     double computeNll(double[] point, double[] returns, double mean, double sampleVar) {
         double omega = point[0];
         double alpha = point[1];
@@ -158,11 +157,17 @@ public class Garch11Optimizer {
                 currentSigma2 = omega + alpha * (prevEps * prevEps) + beta * currentSigma2;
             }
 
-            if (currentSigma2 <= 1e-8 || Double.isNaN(currentSigma2) || Double.isInfinite(currentSigma2)) {
+            if (currentSigma2 <= 1e-8
+                    || Double.isNaN(currentSigma2)
+                    || Double.isInfinite(currentSigma2)) {
                 return PENALTY_BASE;
             }
 
-            nll += 0.5 * (Math.log(2.0 * Math.PI) + Math.log(currentSigma2) + (eps * eps) / currentSigma2);
+            nll +=
+                    0.5
+                            * (Math.log(2.0 * Math.PI)
+                                    + Math.log(currentSigma2)
+                                    + (eps * eps) / currentSigma2);
         }
 
         return Double.isNaN(nll) ? PENALTY_BASE : nll;

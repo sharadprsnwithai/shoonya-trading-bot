@@ -60,30 +60,95 @@ class MonthlyRangeCalculatorTest {
     }
 
     private OptionChainResponse createMockOptionChain(
-            String symbol, BigDecimal spot, BigDecimal strike1, BigDecimal strike2, BigDecimal maxCallOiStrike, BigDecimal maxPutOiStrike) {
+            String symbol,
+            BigDecimal spot,
+            BigDecimal strike1,
+            BigDecimal strike2,
+            BigDecimal maxCallOiStrike,
+            BigDecimal maxPutOiStrike) {
         List<OptionStrike> strikes = new ArrayList<>();
 
         // Add 2 strikes near spot where neither has exact isAtm=true
         OptionContract call1 =
-                new OptionContract(symbol + "CE", "1", "CE", strike1, new BigDecimal("90.00"), 50000L, 1000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "CE",
+                        "1",
+                        "CE",
+                        strike1,
+                        new BigDecimal("90.00"),
+                        50000L,
+                        1000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         OptionContract put1 =
-                new OptionContract(symbol + "PE", "2", "PE", strike1, new BigDecimal("65.00"), 40000L, 1000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "PE",
+                        "2",
+                        "PE",
+                        strike1,
+                        new BigDecimal("65.00"),
+                        40000L,
+                        1000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         strikes.add(new OptionStrike(strike1, false, call1, put1));
 
         OptionContract call2 =
-                new OptionContract(symbol + "CE", "3", "CE", strike2, new BigDecimal("80.00"), 55000L, 1200L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "CE",
+                        "3",
+                        "CE",
+                        strike2,
+                        new BigDecimal("80.00"),
+                        55000L,
+                        1200L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         OptionContract put2 =
-                new OptionContract(symbol + "PE", "4", "PE", strike2, new BigDecimal("75.00"), 45000L, 1200L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "PE",
+                        "4",
+                        "PE",
+                        strike2,
+                        new BigDecimal("75.00"),
+                        45000L,
+                        1200L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         strikes.add(new OptionStrike(strike2, false, call2, put2));
 
         // Add Max Call OI Strike
         OptionContract maxCall =
-                new OptionContract(symbol + "CE", "5", "CE", maxCallOiStrike, new BigDecimal("12.00"), 250000L, 5000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "CE",
+                        "5",
+                        "CE",
+                        maxCallOiStrike,
+                        new BigDecimal("12.00"),
+                        250000L,
+                        5000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         strikes.add(new OptionStrike(maxCallOiStrike, false, maxCall, null));
 
         // Add Max Put OI Strike
         OptionContract maxPut =
-                new OptionContract(symbol + "PE", "6", "PE", maxPutOiStrike, new BigDecimal("10.00"), 280000L, 6000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "PE",
+                        "6",
+                        "PE",
+                        maxPutOiStrike,
+                        new BigDecimal("10.00"),
+                        280000L,
+                        6000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         strikes.add(new OptionStrike(maxPutOiStrike, false, null, maxPut));
 
         return new OptionChainResponse(
@@ -91,12 +156,14 @@ class MonthlyRangeCalculatorTest {
     }
 
     @Test
-    @DisplayName("Should detect earnings month and apply asymmetric multipliers (PE: 2.45 sigma, CE: 2.25 sigma)")
+    @DisplayName(
+            "Should detect earnings month and apply asymmetric multipliers (PE: 2.45 sigma, CE: 2.25 sigma)")
     void testEarningsMonthAsymmetricMultipliers() {
         List<Candle> candles = generateMockCandles("RELIANCE", 2800.0, 100, 0.01);
         LocalDate octoberDate = LocalDate.of(2026, 10, 28);
 
-        MonthlyRangeForecast forecast = calculator.calculate("RELIANCE", candles, 22, octoberDate, null);
+        MonthlyRangeForecast forecast =
+                calculator.calculate("RELIANCE", candles, 22, octoberDate, null);
 
         assertThat(forecast.isEventMonth()).isTrue();
         assertThat(forecast.confidenceMultiplier()).isEqualTo(2.45); // PE skew multiplier reported
@@ -104,7 +171,8 @@ class MonthlyRangeCalculatorTest {
 
         // Normal month (March)
         LocalDate marchDate = LocalDate.of(2026, 3, 25);
-        MonthlyRangeForecast marchForecast = calculator.calculate("RELIANCE", candles, 22, marchDate, null);
+        MonthlyRangeForecast marchForecast =
+                calculator.calculate("RELIANCE", candles, 22, marchDate, null);
         assertThat(marchForecast.isEventMonth()).isFalse();
         assertThat(marchForecast.confidenceMultiplier()).isEqualTo(2.10);
 
@@ -113,7 +181,8 @@ class MonthlyRangeCalculatorTest {
     }
 
     @Test
-    @DisplayName("Should reliably resolve nearest strike ATM Straddle even with fractional spot and no exact isAtm flag")
+    @DisplayName(
+            "Should reliably resolve nearest strike ATM Straddle even with fractional spot and no exact isAtm flag")
     void testNearestStrikeAtmStraddleResolution() {
         List<Candle> candles = generateMockCandles("RELIANCE", 2814.60, 100, 0.01);
         LocalDate date = LocalDate.of(2026, 10, 28);

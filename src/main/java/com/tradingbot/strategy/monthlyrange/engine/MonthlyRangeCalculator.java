@@ -277,7 +277,9 @@ public class MonthlyRangeCalculator {
 
     public BigDecimal resolveStrikeStep(String cleanSymbol) {
         StockFnoRegistry.InstrumentInfo info = StockFnoRegistry.get(cleanSymbol);
-        if (info != null && info.strikeStep() != null && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
+        if (info != null
+                && info.strikeStep() != null
+                && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
             return info.strikeStep();
         }
 
@@ -342,7 +344,10 @@ public class MonthlyRangeCalculator {
             double low = cur.low().doubleValue();
             double prevClose = prev.close().doubleValue();
 
-            double tr = Math.max(high - low, Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
+            double tr =
+                    Math.max(
+                            high - low,
+                            Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
             trSum += tr;
         }
 

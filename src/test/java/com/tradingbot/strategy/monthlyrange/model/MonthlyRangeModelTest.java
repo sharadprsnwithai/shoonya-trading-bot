@@ -50,8 +50,7 @@ class MonthlyRangeModelTest {
     @DisplayName("GarchModelParams record holds model coefficients and persistence")
     void testGarchModelParams() {
         GarchModelParams params =
-                new GarchModelParams(
-                        0.000005, 0.08, 0.90, 0.00005, -1250.5, true, "CONVERGED");
+                new GarchModelParams(0.000005, 0.08, 0.90, 0.00005, -1250.5, true, "CONVERGED");
 
         assertThat(params.omega()).isEqualTo(0.000005);
         assertThat(params.alpha()).isEqualTo(0.08);
@@ -129,7 +128,11 @@ class MonthlyRangeModelTest {
                         Instant.now());
 
         MonthlyRangeReport report =
-                new MonthlyRangeReport(Instant.now(), "2026-10", List.of(forecast), "All 1 symbols computed successfully.");
+                new MonthlyRangeReport(
+                        Instant.now(),
+                        "2026-10",
+                        List.of(forecast),
+                        "All 1 symbols computed successfully.");
 
         assertThat(report.forecasts()).hasSize(1);
         assertThat(report.cycle()).isEqualTo("2026-10");

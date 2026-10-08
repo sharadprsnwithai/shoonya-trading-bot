@@ -13,7 +13,8 @@ class Garch11OptimizerTest {
     private final Garch11Optimizer optimizer = new Garch11Optimizer();
 
     @Test
-    @DisplayName("Should fit valid GARCH(1,1) parameters on simulated return series with well-conditioned scaling")
+    @DisplayName(
+            "Should fit valid GARCH(1,1) parameters on simulated return series with well-conditioned scaling")
     void testFitGarchOnSimulatedReturns() {
         Random random = new Random(42);
         int n = 500;
@@ -34,7 +35,9 @@ class Garch11OptimizerTest {
 
         assertThat(params).isNotNull();
         assertThat(params.converged()).isTrue();
-        assertThat(params.omega()).isGreaterThan(0.0).isLessThan(0.001); // Well-scaled decimal omega
+        assertThat(params.omega())
+                .isGreaterThan(0.0)
+                .isLessThan(0.001); // Well-scaled decimal omega
         assertThat(params.alpha()).isGreaterThanOrEqualTo(0.0);
         assertThat(params.beta()).isGreaterThanOrEqualTo(0.0);
         assertThat(params.persistence()).isLessThan(1.0);

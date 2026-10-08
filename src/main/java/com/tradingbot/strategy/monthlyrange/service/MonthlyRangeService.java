@@ -243,7 +243,8 @@ public class MonthlyRangeService {
         sb.append("💡 *Execution Rules:*\n")
                 .append("1. Sell OTM Strangles / Credit Spreads outside Final Safe Strikes.\n")
                 .append("2. Book profits early at *70%–80% decay*.\n")
-                .append("3. ⚠️ *Physical Delivery Risk:* Square off or roll short stock options before Expiry Week Monday to avoid 100% margin spikes.");
+                .append(
+                        "3. ⚠️ *Physical Delivery Risk:* Square off or roll short stock options before Expiry Week Monday to avoid 100% margin spikes.");
         return sb.toString();
     }
 
