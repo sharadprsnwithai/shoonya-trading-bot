@@ -5,9 +5,7 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-/**
- * Configuration properties for the Monthly Option Range GARCH(1,1) strategy.
- */
+/** Configuration properties for the Monthly Option Range GARCH(1,1) strategy. */
 @Component
 @ConfigurationProperties(prefix = "trading-bot.strategy.monthly-range")
 public class MonthlyRangeProperties {
@@ -32,7 +30,8 @@ public class MonthlyRangeProperties {
     // Event & Earnings Month Tuning
     private double normalConfidenceMultiplier = 2.00;
     private double eventConfidenceMultiplier = 2.35;
-    private List<Integer> earningsMonths = new ArrayList<>(List.of(1, 4, 7, 10)); // Jan, Apr, Jul, Oct
+    private List<Integer> earningsMonths =
+            new ArrayList<>(List.of(1, 4, 7, 10)); // Jan, Apr, Jul, Oct
     private double ivHvSpikeThreshold = 1.25;
 
     public boolean isEnabled() {
@@ -104,7 +103,8 @@ public class MonthlyRangeProperties {
     }
 
     public void setEarningsMonths(List<Integer> earningsMonths) {
-        this.earningsMonths = earningsMonths != null ? new ArrayList<>(earningsMonths) : new ArrayList<>();
+        this.earningsMonths =
+                earningsMonths != null ? new ArrayList<>(earningsMonths) : new ArrayList<>();
     }
 
     public double getIvHvSpikeThreshold() {

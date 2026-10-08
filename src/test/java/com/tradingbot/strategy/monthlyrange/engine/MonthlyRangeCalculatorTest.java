@@ -60,24 +60,68 @@ class MonthlyRangeCalculatorTest {
     }
 
     private OptionChainResponse createMockOptionChain(
-            String symbol, BigDecimal spot, BigDecimal atmStrike, BigDecimal maxCallOiStrike, BigDecimal maxPutOiStrike) {
+            String symbol,
+            BigDecimal spot,
+            BigDecimal atmStrike,
+            BigDecimal maxCallOiStrike,
+            BigDecimal maxPutOiStrike) {
         List<OptionStrike> strikes = new ArrayList<>();
 
         // Add ATM strike with LTPs
         OptionContract atmCall =
-                new OptionContract(symbol + "CE", "1", "CE", atmStrike, new BigDecimal("85.00"), 50000L, 1000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "CE",
+                        "1",
+                        "CE",
+                        atmStrike,
+                        new BigDecimal("85.00"),
+                        50000L,
+                        1000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         OptionContract atmPut =
-                new OptionContract(symbol + "PE", "2", "PE", atmStrike, new BigDecimal("75.00"), 40000L, 1000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "PE",
+                        "2",
+                        "PE",
+                        atmStrike,
+                        new BigDecimal("75.00"),
+                        40000L,
+                        1000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         strikes.add(new OptionStrike(atmStrike, true, atmCall, atmPut));
 
         // Add Max Call OI Strike
         OptionContract maxCall =
-                new OptionContract(symbol + "CE", "3", "CE", maxCallOiStrike, new BigDecimal("12.00"), 250000L, 5000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "CE",
+                        "3",
+                        "CE",
+                        maxCallOiStrike,
+                        new BigDecimal("12.00"),
+                        250000L,
+                        5000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         strikes.add(new OptionStrike(maxCallOiStrike, false, maxCall, null));
 
         // Add Max Put OI Strike
         OptionContract maxPut =
-                new OptionContract(symbol + "PE", "4", "PE", maxPutOiStrike, new BigDecimal("10.00"), 280000L, 6000L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                new OptionContract(
+                        symbol + "PE",
+                        "4",
+                        "PE",
+                        maxPutOiStrike,
+                        new BigDecimal("10.00"),
+                        280000L,
+                        6000L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO);
         strikes.add(new OptionStrike(maxPutOiStrike, false, null, maxPut));
 
         return new OptionChainResponse(
@@ -85,12 +129,14 @@ class MonthlyRangeCalculatorTest {
     }
 
     @Test
-    @DisplayName("Should detect earnings month (October) and expand confidence multiplier to 2.35 sigma")
+    @DisplayName(
+            "Should detect earnings month (October) and expand confidence multiplier to 2.35 sigma")
     void testEarningsMonthMultiplierExpansion() {
         List<Candle> candles = generateMockCandles("RELIANCE", 2800.0, 100, 0.01);
         LocalDate octoberDate = LocalDate.of(2026, 10, 28); // Q2 Earnings month
 
-        MonthlyRangeForecast forecast = calculator.calculate("RELIANCE", candles, 22, octoberDate, null);
+        MonthlyRangeForecast forecast =
+                calculator.calculate("RELIANCE", candles, 22, octoberDate, null);
 
         assertThat(forecast.isEventMonth()).isTrue();
         assertThat(forecast.confidenceMultiplier()).isEqualTo(2.35);
@@ -98,7 +144,8 @@ class MonthlyRangeCalculatorTest {
 
         // Normal month (March)
         LocalDate marchDate = LocalDate.of(2026, 3, 25);
-        MonthlyRangeForecast marchForecast = calculator.calculate("RELIANCE", candles, 22, marchDate, null);
+        MonthlyRangeForecast marchForecast =
+                calculator.calculate("RELIANCE", candles, 22, marchDate, null);
         assertThat(marchForecast.isEventMonth()).isFalse();
         assertThat(marchForecast.confidenceMultiplier()).isEqualTo(2.00);
 
@@ -115,7 +162,12 @@ class MonthlyRangeCalculatorTest {
 
         // Max Call OI at 3200 (further out than GARCH), Max Put OI at 2500 (further out than GARCH)
         OptionChainResponse chain =
-                createMockOptionChain("RELIANCE", new BigDecimal("2800.00"), new BigDecimal("2800.00"), new BigDecimal("3200.00"), new BigDecimal("2500.00"));
+                createMockOptionChain(
+                        "RELIANCE",
+                        new BigDecimal("2800.00"),
+                        new BigDecimal("2800.00"),
+                        new BigDecimal("3200.00"),
+                        new BigDecimal("2500.00"));
 
         MonthlyRangeForecast forecast = calculator.calculate("RELIANCE", candles, 22, date, chain);
 

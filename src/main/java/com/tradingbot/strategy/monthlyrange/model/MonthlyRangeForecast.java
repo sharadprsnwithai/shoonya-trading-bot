@@ -4,8 +4,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * Monthly Range Forecast and option strike boundaries for a single symbol,
- * fused with GARCH, Implied Volatility (IV), and Institutional Open Interest (OI) walls.
+ * Monthly Range Forecast and option strike boundaries for a single symbol, fused with GARCH,
+ * Implied Volatility (IV), and Institutional Open Interest (OI) walls.
  */
 public record MonthlyRangeForecast(
         String symbol,
