@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,9 +20,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * Calculates monthly volatility forecasts, 1-SD and dynamic 2-SD (or 2.35-SD event) price channels,
- * ATM straddle implied moves, and institutional Open Interest (OI) support/resistance strike
- * boundaries.
+ * Calculates monthly volatility forecasts, 1-SD and dynamic asymmetric 2-SD price channels
+ * (incorporating negative return skew), ATM straddle implied moves, and institutional Open Interest
+ * (OI) support/resistance strike boundaries.
  */
 @Component
 public class MonthlyRangeCalculator {
@@ -58,15 +59,8 @@ public class MonthlyRangeCalculator {
     }
 
     /**
-     * Calculates the fused monthly range forecast with event detection and Option Chain OI
-     * integration.
-     *
-     * @param rawSymbol clean or prefixed symbol (e.g. "RELIANCE", "NSE:TCS", "NIFTY50")
-     * @param dailyCandles historical daily candles
-     * @param horizonDays forward trading days horizon (typically 22)
-     * @param asOfDate date used for event/earnings cycle detection
-     * @param optionChain optional live/cached option chain containing OI and quotes
-     * @return populated MonthlyRangeForecast
+     * Calculates the fused monthly range forecast with asymmetric event detection and Option Chain
+     * OI integration.
      */
     public MonthlyRangeForecast calculate(
             String rawSymbol,
@@ -100,7 +94,7 @@ public class MonthlyRangeCalculator {
                     horizon,
                     false,
                     "NO_DATA",
-                    properties.getNormalConfidenceMultiplier(),
+                    properties.getNormalPeMultiplier(),
                     BigDecimal.ZERO,
                     null,
                     null,
@@ -129,20 +123,24 @@ public class MonthlyRangeCalculator {
         double monthlyVolPct = volResult.cumulativeMonthlyVolPct();
         double annualizedVolPct = volResult.annualizedVolPct();
 
-        // 3. Event / Earnings Detection & Confidence Multiplier (k)
+        // 3. Event / Earnings Detection & Asymmetric Confidence Multipliers (kPE, kCE)
         boolean isEventMonth = isEarningsMonth(date);
         String eventReason =
                 isEventMonth ? resolveQuarterName(date) + " Earnings Cycle" : "Normal Month";
-        double k =
+        double kPe =
                 isEventMonth
-                        ? properties.getEventConfidenceMultiplier()
-                        : properties.getNormalConfidenceMultiplier();
+                        ? properties.getEventPeMultiplier()
+                        : properties.getNormalPeMultiplier();
+        double kCe =
+                isEventMonth
+                        ? properties.getEventCeMultiplier()
+                        : properties.getNormalCeMultiplier();
 
-        // 4. Compute 1-SD (~68.3%) and Dynamic k-SD Price Channels
+        // 4. Compute 1-SD (~68.3%) and Asymmetric Dynamic k-SD Price Channels
         double lower1SdVal = spot * Math.exp(-1.0 * monthlyVolDec);
         double upper1SdVal = spot * Math.exp(+1.0 * monthlyVolDec);
-        double lower2SdVal = spot * Math.exp(-k * monthlyVolDec);
-        double upper2SdVal = spot * Math.exp(+k * monthlyVolDec);
+        double lower2SdVal = spot * Math.exp(-kPe * monthlyVolDec);
+        double upper2SdVal = spot * Math.exp(+kCe * monthlyVolDec);
 
         BigDecimal lower1Sd = BigDecimal.valueOf(lower1SdVal).setScale(2, RoundingMode.HALF_UP);
         BigDecimal upper1Sd = BigDecimal.valueOf(upper1SdVal).setScale(2, RoundingMode.HALF_UP);
@@ -204,7 +202,7 @@ public class MonthlyRangeCalculator {
                 horizon,
                 isEventMonth,
                 eventReason,
-                k,
+                kPe,
                 atmStraddleMove,
                 maxCallOiStrike,
                 maxPutOiStrike,
@@ -229,22 +227,31 @@ public class MonthlyRangeCalculator {
         };
     }
 
+    /**
+     * Resolves the nearest strike to current spot price and calculates total ATM Straddle premium.
+     */
     private BigDecimal extractAtmStraddleMove(OptionChainResponse chain, BigDecimal spot) {
-        if (chain == null || chain.strikes() == null || chain.strikes().isEmpty()) {
+        if (chain == null || chain.strikes() == null || chain.strikes().isEmpty() || spot == null) {
             return BigDecimal.ZERO;
         }
 
-        OptionStrike atmStrike =
-                chain.strikes().stream().filter(OptionStrike::isAtm).findFirst().orElse(null);
+        double spotVal = spot.doubleValue();
+        OptionStrike nearestStrike =
+                chain.strikes().stream()
+                        .filter(s -> s.strikePrice() != null)
+                        .min(
+                                Comparator.comparingDouble(
+                                        s -> Math.abs(s.strikePrice().doubleValue() - spotVal)))
+                        .orElse(null);
 
-        if (atmStrike != null) {
+        if (nearestStrike != null) {
             BigDecimal callLtp =
-                    (atmStrike.call() != null && atmStrike.call().ltp() != null)
-                            ? atmStrike.call().ltp()
+                    (nearestStrike.call() != null && nearestStrike.call().ltp() != null)
+                            ? nearestStrike.call().ltp()
                             : BigDecimal.ZERO;
             BigDecimal putLtp =
-                    (atmStrike.put() != null && atmStrike.put().ltp() != null)
-                            ? atmStrike.put().ltp()
+                    (nearestStrike.put() != null && nearestStrike.put().ltp() != null)
+                            ? nearestStrike.put().ltp()
                             : BigDecimal.ZERO;
             BigDecimal sum = callLtp.add(putLtp);
             if (sum.compareTo(BigDecimal.ZERO) > 0) {
@@ -270,9 +277,7 @@ public class MonthlyRangeCalculator {
 
     public BigDecimal resolveStrikeStep(String cleanSymbol) {
         StockFnoRegistry.InstrumentInfo info = StockFnoRegistry.get(cleanSymbol);
-        if (info != null
-                && info.strikeStep() != null
-                && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
+        if (info != null && info.strikeStep() != null && info.strikeStep().compareTo(BigDecimal.ZERO) > 0) {
             return info.strikeStep();
         }
 
@@ -337,10 +342,7 @@ public class MonthlyRangeCalculator {
             double low = cur.low().doubleValue();
             double prevClose = prev.close().doubleValue();
 
-            double tr =
-                    Math.max(
-                            high - low,
-                            Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
+            double tr = Math.max(high - low, Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
             trSum += tr;
         }
 

@@ -138,7 +138,9 @@ public class MonthlyRangeService {
         OptionChainResponse optionChain = null;
         if (optionChainService != null) {
             try {
-                optionChain = optionChainService.getIndexOptionChain(symbol, null, 15, true);
+                optionChain =
+                        optionChainService.getIndexOptionChain(
+                                symbol, null, properties.getOptionChainStrikeCount(), true);
             } catch (Exception e) {
                 log.warn(
                         "[MONTHLY-RANGE] Failed to fetch live option chain for {}: {}",
@@ -162,13 +164,17 @@ public class MonthlyRangeService {
 
         boolean hasEvent = report.forecasts().stream().anyMatch(MonthlyRangeForecast::isEventMonth);
         if (hasEvent) {
-            sb.append("⚡ *Regime:* ⚠️ *EARNINGS MONTH* (")
-                    .append(properties.getEventConfidenceMultiplier())
-                    .append("σ Multiplier Applied)\n\n");
+            sb.append("⚡ *Regime:* ⚠️ *EARNINGS MONTH* (Asymmetric Multiplier: PE ")
+                    .append(properties.getEventPeMultiplier())
+                    .append("σ / CE ")
+                    .append(properties.getEventCeMultiplier())
+                    .append("σ Applied)\n\n");
         } else {
-            sb.append("⚡ *Regime:* ✅ *NORMAL MONTH* (")
-                    .append(properties.getNormalConfidenceMultiplier())
-                    .append("σ Multiplier)\n\n");
+            sb.append("⚡ *Regime:* ✅ *NORMAL MONTH* (PE ")
+                    .append(properties.getNormalPeMultiplier())
+                    .append("σ / CE ")
+                    .append(properties.getNormalCeMultiplier())
+                    .append("σ Multipliers)\n\n");
         }
 
         for (MonthlyRangeForecast f : report.forecasts()) {
@@ -234,8 +240,10 @@ public class MonthlyRangeService {
                     .append("%\n\n");
         }
 
-        sb.append(
-                "💡 *Execution Guideline:* Sell OTM Strangles / Credit Spreads outside Final Safe Strikes. Square off at 75% profit target before expiry week.");
+        sb.append("💡 *Execution Rules:*\n")
+                .append("1. Sell OTM Strangles / Credit Spreads outside Final Safe Strikes.\n")
+                .append("2. Book profits early at *70%–80% decay*.\n")
+                .append("3. ⚠️ *Physical Delivery Risk:* Square off or roll short stock options before Expiry Week Monday to avoid 100% margin spikes.");
         return sb.toString();
     }
 
