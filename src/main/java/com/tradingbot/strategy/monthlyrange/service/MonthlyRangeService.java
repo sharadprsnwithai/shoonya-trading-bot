@@ -1,7 +1,9 @@
 package com.tradingbot.strategy.monthlyrange.service;
 
+import com.tradingbot.marketdata.ShoonyaOptionChainService;
 import com.tradingbot.marketdata.YahooFinanceService;
 import com.tradingbot.model.Candle;
+import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
 import com.tradingbot.strategy.monthlyrange.engine.MonthlyRangeCalculator;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeForecast;
@@ -9,6 +11,7 @@ import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -21,7 +24,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Orchestrates monthly range forecasting, multi-asset quantitative calculation, and Telegram
- * advisory reporting for NSE equities and benchmark indices.
+ * advisory reporting for NSE equities and benchmark indices with GARCH + IV + OI Fusion.
  */
 @Service
 public class MonthlyRangeService {
@@ -32,6 +35,7 @@ public class MonthlyRangeService {
     private final MonthlyRangeProperties properties;
     private final MonthlyRangeCalculator calculator;
     private final YahooFinanceService yahooFinanceService;
+    private final ShoonyaOptionChainService optionChainService;
     private final TelegramService telegramService;
 
     @Autowired
@@ -39,10 +43,12 @@ public class MonthlyRangeService {
             MonthlyRangeProperties properties,
             MonthlyRangeCalculator calculator,
             YahooFinanceService yahooFinanceService,
+            @Autowired(required = false) ShoonyaOptionChainService optionChainService,
             @Autowired(required = false) TelegramService telegramService) {
         this.properties = properties;
         this.calculator = calculator;
         this.yahooFinanceService = yahooFinanceService;
+        this.optionChainService = optionChainService;
         this.telegramService = telegramService;
     }
 
@@ -57,7 +63,7 @@ public class MonthlyRangeService {
         int horizon = properties.getForecastHorizonDays();
 
         log.info(
-                "[MONTHLY-RANGE] Starting monthly range forecast for cycle {} with {} symbols: {}",
+                "[MONTHLY-RANGE] Starting fused monthly range forecast for cycle {} with {} symbols: {}",
                 cycle,
                 symbols.size(),
                 symbols);
@@ -68,7 +74,7 @@ public class MonthlyRangeService {
 
         for (String symbol : symbols) {
             try {
-                MonthlyRangeForecast forecast = generateForecastForSymbol(symbol, horizon);
+                MonthlyRangeForecast forecast = generateForecastForSymbol(symbol, horizon, today);
                 forecasts.add(forecast);
                 successCount++;
             } catch (Exception e) {
@@ -78,7 +84,8 @@ public class MonthlyRangeService {
                         e.getMessage(),
                         e);
                 failureCount++;
-                forecasts.add(calculator.calculate(symbol, List.of(), horizon));
+                forecasts.add(
+                        calculator.calculate(symbol, List.of(), horizon, today, null));
             }
         }
 
@@ -96,10 +103,7 @@ public class MonthlyRangeService {
                 String telegramMsg = formatTelegramMessage(report);
                 telegramService.sendTextMessage(telegramMsg);
             } catch (Exception e) {
-                log.error(
-                        "[MONTHLY-RANGE] Failed to dispatch Telegram report: {}",
-                        e.getMessage(),
-                        e);
+                log.error("[MONTHLY-RANGE] Failed to dispatch Telegram report: {}", e.getMessage(), e);
             }
         }
 
@@ -110,26 +114,56 @@ public class MonthlyRangeService {
      * Calculates the monthly range forecast for a single symbol using default configured horizon.
      */
     public MonthlyRangeForecast generateForecastForSymbol(String symbol) {
-        return generateForecastForSymbol(symbol, properties.getForecastHorizonDays());
+        return generateForecastForSymbol(
+                symbol, properties.getForecastHorizonDays(), LocalDate.now(NseTradingCalendarUtil.IST_ZONE));
     }
 
-    /** Calculates the monthly range forecast for a single symbol with specified horizon. */
+    /**
+     * Calculates the monthly range forecast for a single symbol with specified horizon.
+     */
     public MonthlyRangeForecast generateForecastForSymbol(String symbol, int horizonDays) {
+        return generateForecastForSymbol(
+                symbol, horizonDays, LocalDate.now(NseTradingCalendarUtil.IST_ZONE));
+    }
+
+    /**
+     * Calculates the monthly range forecast for a single symbol with specified horizon and date.
+     */
+    public MonthlyRangeForecast generateForecastForSymbol(
+            String symbol, int horizonDays, LocalDate asOfDate) {
         int yearsBack = (properties.getHistoryLookbackDays() > 252) ? 2 : 1;
         List<Candle> dailyCandles = yahooFinanceService.fetchDailyCandles(symbol, yearsBack);
-        return calculator.calculate(symbol, dailyCandles, horizonDays);
+
+        OptionChainResponse optionChain = null;
+        if (optionChainService != null) {
+            try {
+                optionChain = optionChainService.getIndexOptionChain(symbol, null, 15, true);
+            } catch (Exception e) {
+                log.warn(
+                        "[MONTHLY-RANGE] Failed to fetch live option chain for {}: {}",
+                        symbol,
+                        e.getMessage());
+            }
+        }
+
+        return calculator.calculate(symbol, dailyCandles, horizonDays, asOfDate, optionChain);
     }
 
-    /** Formats the Monthly Range Report into a crisp Markdown message for Telegram. */
+    /**
+     * Formats the Monthly Range Report into a crisp Markdown message for Telegram.
+     */
     public String formatTelegramMessage(MonthlyRangeReport report) {
         StringBuilder sb = new StringBuilder();
-        sb.append("📊 *MONTHLY OPTION RANGE FORECAST (GARCH-1,1)*\n");
-        sb.append("📅 *Cycle:* `")
-                .append(report.cycle())
-                .append("` | *Horizon:* ")
-                .append(properties.getForecastHorizonDays())
-                .append(" Trading Days\n");
-        sb.append("🎯 *Confidence Band:* 95.4% (2-SD Safe Selling Zone)\n\n");
+        sb.append("📊 *MONTHLY OPTION RANGE FORECAST (GARCH + IV + OI FUSION)*\n");
+        sb.append("📅 *Cycle:* `").append(report.cycle()).append("` | *Horizon:* ")
+                .append(properties.getForecastHorizonDays()).append(" Trading Days\n");
+
+        boolean hasEvent = report.forecasts().stream().anyMatch(MonthlyRangeForecast::isEventMonth);
+        if (hasEvent) {
+            sb.append("⚡ *Regime:* ⚠️ *EARNINGS MONTH* (").append(properties.getEventConfidenceMultiplier()).append("σ Multiplier Applied)\n\n");
+        } else {
+            sb.append("⚡ *Regime:* ✅ *NORMAL MONTH* (").append(properties.getNormalConfidenceMultiplier()).append("σ Multiplier)\n\n");
+        }
 
         for (MonthlyRangeForecast f : report.forecasts()) {
             if (f.spotPrice().compareTo(BigDecimal.ZERO) <= 0) {
@@ -142,44 +176,27 @@ public class MonthlyRangeService {
             double ceBuffer =
                     calculateBufferPct(f.safeCeStrike().doubleValue(), f.spotPrice().doubleValue());
 
-            sb.append("🔹 *")
-                    .append(f.symbol())
-                    .append("* (Spot: ₹")
-                    .append(f.spotPrice())
-                    .append(")\n");
-            sb.append(" • *GARCH Vol (Monthly):* `")
-                    .append(f.monthlyVolPct())
-                    .append("%` (Ann: ")
-                    .append(f.annualizedVolPct())
-                    .append("%)\n");
-            sb.append(" • *1-SD Range (68%):* ₹")
-                    .append(f.lower1Sd())
-                    .append(" - ₹")
-                    .append(f.upper1Sd())
-                    .append("\n");
-            sb.append(" • *2-SD Range (95%):* ₹")
-                    .append(f.lower2Sd())
-                    .append(" - ₹")
-                    .append(f.upper2Sd())
-                    .append("\n");
-            sb.append(" • 🛡️ *Safe PE Strike:* `₹")
-                    .append(f.safePeStrike())
-                    .append("` [ -")
-                    .append(String.format(java.util.Locale.US, "%.1f", peBuffer))
-                    .append("% ]\n");
-            sb.append(" • 🛡️ *Safe CE Strike:* `₹")
-                    .append(f.safeCeStrike())
-                    .append("` [ +")
-                    .append(String.format(java.util.Locale.US, "%.1f", ceBuffer))
-                    .append("% ]\n");
-            sb.append(" • *ATR-22:* ₹")
-                    .append(f.atr22())
-                    .append(" | *HV-30:* ")
-                    .append(f.hv30AnnualizedPct())
-                    .append("%\n\n");
+            String badge = f.isEventMonth() ? "⚠️ " + f.eventReason() : "✅ Normal";
+
+            sb.append("🔹 *").append(f.symbol()).append("* (Spot: ₹").append(f.spotPrice()).append(")\n");
+            sb.append(" • *Regime:* `").append(badge).append("` | *Conf:* ").append(f.confidenceMultiplier()).append("σ\n");
+            sb.append(" • *GARCH Monthly Vol:* `").append(f.monthlyVolPct()).append("%` (Ann: ").append(f.annualizedVolPct()).append("%)\n");
+            sb.append(" • *GARCH Band:* ₹").append(f.lower2Sd()).append(" - ₹").append(f.upper2Sd()).append("\n");
+            if (f.atmStraddleMove() != null && f.atmStraddleMove().compareTo(BigDecimal.ZERO) > 0) {
+                sb.append(" • *ATM Straddle Move:* ±₹").append(f.atmStraddleMove()).append("\n");
+            }
+            if (f.maxPutOiStrike() != null && f.maxPutOiStrike().compareTo(BigDecimal.ZERO) > 0) {
+                sb.append(" • 🛡️ *OI Support (Max Put):* ₹").append(f.maxPutOiStrike()).append("\n");
+            }
+            if (f.maxCallOiStrike() != null && f.maxCallOiStrike().compareTo(BigDecimal.ZERO) > 0) {
+                sb.append(" • 🛡️ *OI Resistance (Max Call):* ₹").append(f.maxCallOiStrike()).append("\n");
+            }
+            sb.append(" • 🎯 *FINAL SAFE PE STRIKE:* `₹").append(f.safePeStrike()).append("` [ -").append(String.format(java.util.Locale.US, "%.1f", peBuffer)).append("% ]\n");
+            sb.append(" • 🎯 *FINAL SAFE CE STRIKE:* `₹").append(f.safeCeStrike()).append("` [ +").append(String.format(java.util.Locale.US, "%.1f", ceBuffer)).append("% ]\n");
+            sb.append(" • *ATR-22:* ₹").append(f.atr22()).append(" | *HV-30:* ").append(f.hv30AnnualizedPct()).append("%\n\n");
         }
 
-        sb.append("💡 *Guideline:* Sell OTM Strangles outside 2-SD strikes post Tuesday expiry.");
+        sb.append("💡 *Execution Guideline:* Sell OTM Strangles / Credit Spreads outside Final Safe Strikes. Square off at 75% profit target before expiry week.");
         return sb.toString();
     }
 
