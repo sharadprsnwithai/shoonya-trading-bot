@@ -10,8 +10,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * Scheduler for Monthly Option Range GARCH Strategy. Runs on the last Wednesday of each month at
- * 10:00 AM IST (post last-Tuesday monthly expiry).
+ * Scheduler for Monthly Option Range GARCH Strategy.
+ * Runs on weekdays at 10:00 AM IST and executes on the exact first trading session
+ * immediately following the monthly Tuesday stock options expiry.
  */
 @Service
 public class MonthlyRangeScheduler {
@@ -28,13 +29,13 @@ public class MonthlyRangeScheduler {
     }
 
     /**
-     * Triggers every Wednesday at 10:00 AM IST, evaluating whether today is the last Wednesday of
-     * the month before executing the post-expiry GARCH volatility routine.
+     * Evaluates every weekday at 10:00 AM IST whether today is the first active trading day
+     * post monthly Tuesday expiry.
      */
     @Scheduled(
-            cron = "${trading-bot.strategy.monthly-range.cron:0 0 10 ? * WED}",
+            cron = "${trading-bot.strategy.monthly-range.cron:0 0 10 ? * MON-FRI}",
             zone = "Asia/Kolkata")
-    public void scheduledWednesdayRoutine() {
+    public void scheduledWeekdayRoutine() {
         LocalDate today = LocalDate.now(NseTradingCalendarUtil.IST_ZONE);
         executeRoutineForDate(today);
     }
@@ -45,15 +46,15 @@ public class MonthlyRangeScheduler {
             return;
         }
 
-        if (!NseTradingCalendarUtil.isLastWednesdayOfMonth(date)) {
+        if (!NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(date)) {
             log.debug(
-                    "[MONTHLY-RANGE-SCHEDULER] Date {} is not the last Wednesday of the month. Skipping.",
+                    "[MONTHLY-RANGE-SCHEDULER] Date {} is not the post-expiry trading day. Skipping.",
                     date);
             return;
         }
 
         log.info(
-                "[MONTHLY-RANGE-SCHEDULER] Last Wednesday of the month detected ({}). Executing post-expiry GARCH monthly range forecast...",
+                "[MONTHLY-RANGE-SCHEDULER] First trading session post-expiry detected ({}). Executing GARCH monthly range forecast...",
                 date);
 
         try {

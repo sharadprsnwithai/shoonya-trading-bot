@@ -16,7 +16,7 @@ class MonthlyRangeModelTest {
     void testMonthlyRangePropertiesDefaults() {
         MonthlyRangeProperties props = new MonthlyRangeProperties();
         assertThat(props.isEnabled()).isTrue();
-        assertThat(props.getCron()).isEqualTo("0 0 10 ? * WED");
+        assertThat(props.getCron()).isEqualTo("0 0 10 ? * MON-FRI");
         assertThat(props.getSymbols())
                 .containsExactly(
                         "RELIANCE",

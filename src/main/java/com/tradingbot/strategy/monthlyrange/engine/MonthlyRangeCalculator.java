@@ -291,18 +291,20 @@ public class MonthlyRangeCalculator {
 
     public BigDecimal snapStrikeDown(BigDecimal price, BigDecimal step) {
         if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
-            return price;
+            return price != null ? price : BigDecimal.ZERO;
         }
         BigDecimal div = price.divide(step, 0, RoundingMode.FLOOR);
-        return div.multiply(step).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal result = div.multiply(step).setScale(2, RoundingMode.HALF_UP);
+        return result.compareTo(step) < 0 ? step : result;
     }
 
     public BigDecimal snapStrikeUp(BigDecimal price, BigDecimal step) {
         if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
-            return price;
+            return price != null ? price : BigDecimal.ZERO;
         }
         BigDecimal div = price.divide(step, 0, RoundingMode.CEILING);
-        return div.multiply(step).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal result = div.multiply(step).setScale(2, RoundingMode.HALF_UP);
+        return result.compareTo(step) < 0 ? step : result;
     }
 
     private double calculateHv30(double[] returns) {

@@ -24,18 +24,26 @@ class MonthlyRangeSchedulerTest {
     }
 
     @Test
-    @DisplayName(
-            "Should execute scheduled post-expiry routine when date is last Wednesday of month")
-    void testExecuteOnLastWednesday() {
-        LocalDate lastWedOct2026 = LocalDate.of(2026, 10, 28);
-        scheduler.executeRoutineForDate(lastWedOct2026);
+    @DisplayName("Should execute scheduled post-expiry routine when date is first session post-expiry (Oct 28)")
+    void testExecuteOnPostExpirySession() {
+        LocalDate postExpiryOct2026 = LocalDate.of(2026, 10, 28);
+        scheduler.executeRoutineForDate(postExpiryOct2026);
 
         verify(service, times(1)).generateMonthlyReport();
     }
 
     @Test
-    @DisplayName("Should skip execution if date is not the last Wednesday of month")
-    void testSkipIfNotLastWednesday() {
+    @DisplayName("Should execute scheduled post-expiry routine when month ends on Tuesday (June 30 -> July 1)")
+    void testExecuteOnMonthRolloverPostExpirySession() {
+        LocalDate postExpiryJuly1_2026 = LocalDate.of(2026, 7, 1);
+        scheduler.executeRoutineForDate(postExpiryJuly1_2026);
+
+        verify(service, times(1)).generateMonthlyReport();
+    }
+
+    @Test
+    @DisplayName("Should skip execution if date is not post-expiry session")
+    void testSkipIfNotPostExpirySession() {
         LocalDate midWedOct2026 = LocalDate.of(2026, 10, 14);
         scheduler.executeRoutineForDate(midWedOct2026);
 
@@ -46,8 +54,8 @@ class MonthlyRangeSchedulerTest {
     @DisplayName("Should skip execution if strategy is disabled in properties")
     void testSkipIfDisabled() {
         properties.setEnabled(false);
-        LocalDate lastWedOct2026 = LocalDate.of(2026, 10, 28);
-        scheduler.executeRoutineForDate(lastWedOct2026);
+        LocalDate postExpiryOct2026 = LocalDate.of(2026, 10, 28);
+        scheduler.executeRoutineForDate(postExpiryOct2026);
 
         verify(service, never()).generateMonthlyReport();
     }

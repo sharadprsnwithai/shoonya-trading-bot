@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 public class MonthlyRangeProperties {
 
     private boolean enabled = true;
-    private String cron = "0 0 10 ? * WED";
+    private String cron = "0 0 10 ? * MON-FRI";
     private List<String> symbols =
             new ArrayList<>(
                     List.of(
