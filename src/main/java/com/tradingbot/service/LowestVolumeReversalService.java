@@ -570,15 +570,24 @@ public class LowestVolumeReversalService {
 
             // If OI_SPURTS mode is active, select top institutional F&O stocks directly
             if ("OI_SPURTS".equalsIgnoreCase(scannerMode) && scanner != null) {
-                boolean oiDataAvailable =
-                        universeQuotes.values().stream().anyMatch(q -> q.openInterest() > 0);
+                long oiCount =
+                        universeQuotes.values().stream()
+                                .filter(q -> q.openInterest() > 0 || q.prevDayOpenInterest() > 0)
+                                .count();
+                log.info(
+                        "[LVR] OI_SPURTS morning scan input: {} universe quotes, {} carry OI.",
+                        universeQuotes.size(),
+                        oiCount);
+                boolean oiDataAvailable = oiCount > 0;
                 if (!oiDataAvailable) {
                     // H8: OI data missing entirely — fail the scan loudly instead of silently
                     // running a different selection mode than the operator configured.
                     log.error(
                             "[LVR] OI_SPURTS mode active but no quote carried open interest"
-                                    + " (`oi` missing/zero across the universe). Scan failed;"
-                                    + " will retry next cycle. Sector Rotation fallback disabled.");
+                                    + " ({}/{} quotes have oi>0). Scan failed; will retry next"
+                                    + " cycle. Sector Rotation fallback disabled.",
+                            oiCount,
+                            universeQuotes.size());
                     this.universeScanCompletedToday = false;
                     if (telegramAlerts && telegramService != null) {
                         telegramService.sendTextMessage(
@@ -743,8 +752,26 @@ public class LowestVolumeReversalService {
             List<String> oiCandidates = Collections.emptyList();
 
             if ("HYBRID".equalsIgnoreCase(scannerMode) && scanner != null) {
+                long hybridQuotesWithOi =
+                        universeQuotes.values().stream()
+                                .filter(
+                                        q ->
+                                                q != null
+                                                        && (q.openInterest() > 0
+                                                                || q.prevDayOpenInterest() > 0))
+                                .count();
+                log.info(
+                        "[LVR] Hybrid OI-spurts scan input: {} universe quotes, {} carry OI,"
+                                + " sentiment={}.",
+                        universeQuotes.size(),
+                        hybridQuotesWithOi,
+                        sentiment);
                 try {
                     oiCandidates = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
+                    log.info(
+                            "[LVR] Hybrid OI-spurts scan returned {} candidates: {}",
+                            oiCandidates.size(),
+                            oiCandidates);
                 } catch (Exception e) {
                     log.warn(
                             "[LVR] OI Spurts scan failed during Hybrid scan: {}",
@@ -2845,8 +2872,26 @@ public class LowestVolumeReversalService {
 
             if ("HYBRID".equalsIgnoreCase(scannerMode)
                     || "OI_SPURTS".equalsIgnoreCase(scannerMode)) {
+                long middayQuotesWithOi =
+                        universeQuotes.values().stream()
+                                .filter(
+                                        q ->
+                                                q != null
+                                                        && (q.openInterest() > 0
+                                                                || q.prevDayOpenInterest() > 0))
+                                .count();
+                log.info(
+                        "[LVR] Midday OI-spurts rescan input: {} universe quotes, {} carry OI,"
+                                + " sentiment={}.",
+                        universeQuotes.size(),
+                        middayQuotesWithOi,
+                        sentiment);
                 try {
                     List<String> midOi = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
+                    log.info(
+                            "[LVR] Midday OI-spurts rescan returned {} reservoir candidates: {}",
+                            midOi.size(),
+                            midOi);
                     for (String oiSym : midOi) {
                         if (!activeSetups.containsKey(oiSym)
                                 && !exhaustedSymbols.contains(oiSym)
@@ -3190,6 +3235,9 @@ public class LowestVolumeReversalService {
                 morningScanDelayMs);
 
         int count = 0;
+        int cashOiQuotes = 0;
+        int futuresEnrichedQuotes = 0;
+        int futuresEnrichMisses = 0;
         for (String sym : allSymbols) {
             count++;
             try {
@@ -3213,6 +3261,9 @@ public class LowestVolumeReversalService {
                     // (previous-day closing OI). The earlier `oio`/`oipct` names do not exist in
                     // GetQuotes, which silently zeroed the OI_SPURTS mode.
                     long prevOi = quote.path("poi").asLong(0L);
+                    if (oi > 0L || prevOi > 0L) {
+                        cashOiQuotes++;
+                    }
 
                     // If quote is from cash equities segment (oi == 0) and symbol is an F&O
                     // underlying,
@@ -3222,6 +3273,7 @@ public class LowestVolumeReversalService {
                             && (info != null
                                     || StockFnoRegistry.getAllInstruments().containsKey(sym)
                                     || !StockFnoRegistry.isIndex(sym))) {
+                        boolean enriched = false;
                         try {
                             String futToken = marketDataService.resolveFuturesToken(sym);
                             if (futToken != null && !futToken.isBlank()) {
@@ -3231,6 +3283,7 @@ public class LowestVolumeReversalService {
                                 if (futQuote != null) {
                                     oi = futQuote.path("oi").asLong(0L);
                                     prevOi = futQuote.path("poi").asLong(0L);
+                                    enriched = oi > 0L || prevOi > 0L;
                                 }
                             }
                         } catch (Exception fex) {
@@ -3239,6 +3292,11 @@ public class LowestVolumeReversalService {
                                     sym,
                                     fex.getMessage(),
                                     fex);
+                        }
+                        if (enriched) {
+                            futuresEnrichedQuotes++;
+                        } else {
+                            futuresEnrichMisses++;
                         }
                     }
 
@@ -3266,6 +3324,24 @@ public class LowestVolumeReversalService {
                 "[LVR] Morning quote fetch completed. Successfully fetched {} / {} symbols.",
                 quoteMap.size(),
                 allSymbols.size());
+        long quotesWithOi =
+                quoteMap.values().stream()
+                        .filter(q -> q.openInterest() > 0 || q.prevDayOpenInterest() > 0)
+                        .count();
+        log.info(
+                "[LVR] Morning quote OI coverage: {}/{} quotes carry open interest ({} from cash"
+                        + " segment, {} enriched from NFO futures, {} futures-OI lookups missed).",
+                quotesWithOi,
+                quoteMap.size(),
+                cashOiQuotes,
+                futuresEnrichedQuotes,
+                futuresEnrichMisses);
+        if (!quoteMap.isEmpty() && quotesWithOi == 0) {
+            log.warn(
+                    "[LVR] OI coverage is ZERO across the fetched universe — OI-spurt scans will"
+                            + " return no candidates. Check GetQuotes `oi`/`poi` fields and NFO futures"
+                            + " enrichment.");
+        }
         return quoteMap;
     }
 

@@ -200,6 +200,8 @@ public class LowestVolumeReversalScanner {
         }
 
         List<StockQuoteSnapshot> eligible = new ArrayList<>();
+        int quotesWithOiChange = 0;
+        int priceAligned = 0;
         for (StockQuoteSnapshot q : fnoQuotes.values()) {
             if (q == null || q.symbol() == null) {
                 continue;
@@ -220,12 +222,14 @@ public class LowestVolumeReversalScanner {
             if (Math.abs(oiChange) <= 0.0001) {
                 continue;
             }
+            quotesWithOiChange++;
 
             // Directional price alignment with sentiment:
             // LONG: Strictly positive % change (0 < pctChange <= 5.0%)
             // SHORT: Strictly negative % change (-5.0% <= pctChange < 0)
             if (sentiment == LowestVolumeDirection.LONG) {
                 if (q.pctChange() > 0.0 && q.pctChange() <= 5.0) {
+                    priceAligned++;
                     eligible.add(
                             new StockQuoteSnapshot(
                                     q.symbol(),
@@ -241,6 +245,7 @@ public class LowestVolumeReversalScanner {
                 }
             } else if (sentiment == LowestVolumeDirection.SHORT) {
                 if (q.pctChange() < 0.0 && q.pctChange() >= -5.0) {
+                    priceAligned++;
                     eligible.add(
                             new StockQuoteSnapshot(
                                     q.symbol(),
@@ -271,9 +276,12 @@ public class LowestVolumeReversalScanner {
                     });
 
             log.info(
-                    "[LVR-SCANNER] Directional OI Buildup ({}) found {} eligible stocks. Top {}: {}",
+                    "[LVR-SCANNER] Directional OI Buildup ({}) found {} eligible of {} with-OI"
+                            + " quotes ({} universe). Top {}: {}",
                     sentiment,
                     eligible.size(),
+                    quotesWithOiChange,
+                    fnoQuotes.size(),
                     topN,
                     eligible.stream()
                             .limit(topN)
@@ -290,8 +298,10 @@ public class LowestVolumeReversalScanner {
         }
 
         log.info(
-                "[LVR-SCANNER] No eligible directional OI buildup stocks found for sentiment {}.",
-                sentiment);
+                "[LVR-SCANNER] No eligible directional OI buildup stocks for sentiment {}: {}"
+                        + " universe quotes, {} carried OI change, {} price-aligned (LONG band"
+                        + " 0<pct<=5%, SHORT band -5%<=pct<0).",
+                sentiment, fnoQuotes.size(), quotesWithOiChange, priceAligned);
         return Collections.emptyList();
     }
 
@@ -342,8 +352,10 @@ public class LowestVolumeReversalScanner {
                 (a, b) -> Double.compare(Math.abs(b.oiPctChange()), Math.abs(a.oiPctChange())));
 
         log.info(
-                "[LVR-SCANNER] OI Spurts ranking evaluated on {} F&O stocks. Top {}: {}",
+                "[LVR-SCANNER] OI Spurts ranking evaluated {} F&O stocks with OI change (of {}"
+                        + " universe quotes). Top {}: {}",
                 eligible.size(),
+                fnoQuotes.size(),
                 topN,
                 eligible.stream()
                         .limit(topN)
