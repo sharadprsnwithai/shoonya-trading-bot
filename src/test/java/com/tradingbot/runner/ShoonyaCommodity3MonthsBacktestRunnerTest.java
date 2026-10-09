@@ -28,7 +28,7 @@ class ShoonyaCommodity3MonthsBacktestRunnerTest {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd-MMM-yyyy").withZone(IST);
 
     @Test
-    @DisplayName("Comprehensive 3-Month Shoonya Replay for Silver Mini and Crude Oil Mini (20-EMA Filter + 2.5 RR)")
+    @DisplayName("Comprehensive 3-Month Shoonya Replay for Silver, Crude Oil, and Gold Mini (20-EMA Filter + 2.5 RR)")
     void testShoonyaCommodities3MonthsBacktest() {
         ShoonyaConfig config = ShoonyaConfig.load();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
@@ -36,7 +36,7 @@ class ShoonyaCommodity3MonthsBacktestRunnerTest {
         TechnicalAnalysisService taService = new TechnicalAnalysisService();
 
         System.out.println("==========================================================================================");
-        System.out.println(" 🚀 MCX COMMODITIES 3-MONTH OFFICIAL SHOONYA REPLAY: SILVER & CRUDE OIL (2.5 RR)");
+        System.out.println(" 🚀 MCX 3-COMMODITY OFFICIAL SHOONYA REPLAY: SILVER, CRUDE OIL & GOLD (2.5 RR)");
         System.out.println("==========================================================================================");
         System.out.println("⚙️ Strategy: 1:30 PM Directional Bias + 15m VWAP Crossover + 20-EMA Trend Filter");
         System.out.println("📦 Risk Model: 1:2.5 RR Full Target Exit | SL Anchored to VWAP | Max 1 Trade/Day | EOD 23:15");
@@ -44,21 +44,28 @@ class ShoonyaCommodity3MonthsBacktestRunnerTest {
 
         int daysBack = 90;
 
-        // 1. Run Silver Mini
+        // 1. Run Silver Mini (SILVERM: 5 kg, 1 pt = ₹5)
         List<CommodityTradePosition> silverTrades = runSingleCommodityReplay(
                 "SILVERM", "483080", "495214", "MCX", 5, 1.0, daysBack, marketDataService, taService);
 
-        // 2. Run Crude Oil Mini
+        // 2. Run Crude Oil Mini (CRUDEOILM: 10 barrels, 1 pt = ₹10)
         List<CommodityTradePosition> crudeTrades = runSingleCommodityReplay(
                 "CRUDEOILM", "569901", "569900", "MCX", 10, 1.0, daysBack, marketDataService, taService);
 
-        // 3. Print Individual & Combined Reports
+        // 3. Run Gold Mini (GOLDM: 100 grams / 10 units of 10g, 1 pt = ₹10)
+        List<CommodityTradePosition> goldTrades = runSingleCommodityReplay(
+                "GOLDM", "571445", "495213", "MCX", 10, 1.0, daysBack, marketDataService, taService);
+
+        // 4. Print Individual Reports
         printSingleReport("SILVER MINI (SILVERM — 5 kg)", silverTrades);
         printSingleReport("CRUDE OIL MINI (CRUDEOILM — 10 bbl)", crudeTrades);
+        printSingleReport("GOLD MINI (GOLDM — 100 g)", goldTrades);
 
+        // 5. Print Combined Portfolio Summary
         List<CommodityTradePosition> combinedTrades = new ArrayList<>();
         if (silverTrades != null) combinedTrades.addAll(silverTrades);
         if (crudeTrades != null) combinedTrades.addAll(crudeTrades);
+        if (goldTrades != null) combinedTrades.addAll(goldTrades);
         combinedTrades.sort((a, b) -> a.entryTime().compareTo(b.entryTime()));
 
         printCombinedSummary(combinedTrades);
@@ -301,7 +308,7 @@ class ShoonyaCommodity3MonthsBacktestRunnerTest {
         double avgLoss = (losses > 0) ? grossLoss.divide(BigDecimal.valueOf(losses), 2, RoundingMode.HALF_UP).doubleValue() : 0.0;
 
         System.out.println("\n" + "#".repeat(95));
-        System.out.println(" 🏆 COMBINED MULTI-COMMODITY PORTFOLIO (SILVERM + CRUDEOILM) — LAST 3 MONTHS");
+        System.out.println(" 🏆 COMBINED 3-COMMODITY PORTFOLIO (SILVERM + CRUDEOILM + GOLDM) — LAST 3 MONTHS");
         System.out.println("#".repeat(95));
         System.out.printf(" Total Portfolio Trades  : %d\n", allTrades.size());
         System.out.printf(" Winning Trades          : %d (%.1f%%)\n", wins, wr);
