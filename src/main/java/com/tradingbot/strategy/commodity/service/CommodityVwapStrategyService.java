@@ -325,18 +325,76 @@ public class CommodityVwapStrategyService {
 
         double unitMultiplier = CommodityRegistry.getUnitMultiplier(pos.symbol());
 
-        if ("LONG".equalsIgnoreCase(pos.side())) {
-            if (liveLtp.compareTo(pos.targetPrice()) >= 0) {
-                closeTrade(setup, pos, liveLtp, "TARGET_HIT", unitMultiplier);
-            } else if (liveLtp.compareTo(pos.stopLoss()) <= 0) {
+        // Phase 1: Not yet partial booked -> Check Target 1 (1:2.5 RR) or Initial Stop Loss
+        if (!pos.isPartialBooked()) {
+            boolean hitTarget =
+                    "LONG".equalsIgnoreCase(pos.side())
+                            ? liveLtp.compareTo(pos.targetPrice()) >= 0
+                            : liveLtp.compareTo(pos.targetPrice()) <= 0;
+
+            boolean hitSl =
+                    "LONG".equalsIgnoreCase(pos.side())
+                            ? liveLtp.compareTo(pos.stopLoss()) <= 0
+                            : liveLtp.compareTo(pos.stopLoss()) >= 0;
+
+            if (hitTarget) {
+                pos.executePartialBook(liveLtp, Instant.now(), unitMultiplier);
+                log.info(
+                        "[COMMODITY-VWAP] {} TARGET HIT @ {}: 50% booked (PnL=₹{}), SL moved to Cost (₹{})",
+                        pos.symbol(), liveLtp, pos.partialPnl(), pos.entryPrice());
+                sendTelegramPartialBookAlert(pos);
+
+                if (pos.isClosed()) {
+                    setup.completeTrade(pos);
+                    closedTrades.add(pos);
+                    sendTelegramExitAlert(pos);
+                }
+                return;
+            } else if (hitSl) {
                 closeTrade(setup, pos, liveLtp, "STOP_LOSS_HIT", unitMultiplier);
+                return;
             }
-        } else if ("SHORT".equalsIgnoreCase(pos.side())) {
-            if (liveLtp.compareTo(pos.targetPrice()) <= 0) {
-                closeTrade(setup, pos, liveLtp, "TARGET_HIT", unitMultiplier);
-            } else if (liveLtp.compareTo(pos.stopLoss()) >= 0) {
-                closeTrade(setup, pos, liveLtp, "STOP_LOSS_HIT", unitMultiplier);
+        }
+
+        // Phase 2: Partial booked -> Dynamic 10 EMA Trailing for Runner
+        if (pos.isPartialBooked() && !pos.isClosed()) {
+            updateRunner10EmaTrailing(pos);
+
+            boolean hitDynamicSl =
+                    "LONG".equalsIgnoreCase(pos.side())
+                            ? liveLtp.compareTo(pos.currentStopLoss()) <= 0
+                            : liveLtp.compareTo(pos.currentStopLoss()) >= 0;
+
+            if (hitDynamicSl) {
+                String reason =
+                        pos.currentStopLoss().compareTo(pos.entryPrice()) == 0
+                                ? "COST_BREAKEVEN_EXIT"
+                                : "RUNNER_10EMA_TRAIL_EXIT";
+                closeTrade(setup, pos, liveLtp, reason, unitMultiplier);
             }
+        }
+    }
+
+    private void updateRunner10EmaTrailing(CommodityTradePosition pos) {
+        try {
+            List<Candle> candles =
+                    marketDataService != null
+                            ? marketDataService.fetch15MinCandles(pos.symbol(), 5)
+                            : null;
+            if (candles != null && candles.size() >= 10 && taService != null) {
+                double[] closes =
+                        candles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
+                double[] ema10Series = taService.calculateEmaSeries(closes, 10);
+                if (ema10Series.length > 0 && !Double.isNaN(ema10Series[ema10Series.length - 1])) {
+                    double latestEma = ema10Series[ema10Series.length - 1];
+                    pos.updateDynamicStopLoss(BigDecimal.valueOf(latestEma));
+                }
+            }
+        } catch (Exception e) {
+            log.debug(
+                    "[COMMODITY-VWAP] Could not update 10 EMA trailing SL for {}: {}",
+                    pos.symbol(),
+                    e.getMessage());
         }
     }
 
@@ -525,6 +583,26 @@ public class CommodityVwapStrategyService {
                         pos.targetPrice(),
                         pos.risk(),
                         pos.quantity());
+        telegramService.sendTextMessage(msg);
+    }
+
+    private void sendTelegramPartialBookAlert(CommodityTradePosition pos) {
+        if (!properties.isTelegramAlertsEnabled() || telegramService == null) return;
+        String msg =
+                String.format(
+                        "💰 *[COMMODITY TARGET HIT — 50%% BOOKED]* 💰\n"
+                                + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                                + "Contract: *%s* (%s)\n"
+                                + "Target 1 (1:2.5 RR) Reached @ *₹%.2f*\n"
+                                + "Booked P&L: *₹%.2f*\n"
+                                + "SL Moved to Cost: *₹%.2f* (Risk-free)\n"
+                                + "Remaining Runner: *%d lots* trailing with 10 EMA.",
+                        pos.symbol(),
+                        pos.side(),
+                        pos.partialExitPrice(),
+                        pos.partialPnl(),
+                        pos.entryPrice(),
+                        pos.remainingQuantity());
         telegramService.sendTextMessage(msg);
     }
 

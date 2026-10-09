@@ -183,13 +183,24 @@ class CommodityVwapStrategyServiceTest {
         assertThat(pos.targetPrice())
                 .isEqualByComparingTo(new BigDecimal("5605.00")); // 5530 + 2.5*30
 
-        // 2. Next check: Target is reached (LTP = 5610 >= 5605)
+        // 2. Next check: Target is reached (LTP = 5610 >= 5605) -> 50% partial booked, SL moved to
+        // Cost
         quoteNode.put("lp", "5610.00");
         service.evaluateSymbolCycle("CRUDEOIL", LocalTime.of(15, 0));
 
+        assertThat(setup.getState()).isEqualTo(CommoditySetupState.IN_TRADE);
+        assertThat(setup.getActivePosition().isPartialBooked()).isTrue();
+        assertThat(setup.getActivePosition().isClosed()).isFalse();
+        assertThat(setup.getActivePosition().currentStopLoss())
+                .isEqualByComparingTo(new BigDecimal("5530.00")); // Moved to Cost
+
+        // 3. Next check: Runner dynamic trailing SL hit (LTP = 5525 <= 5530)
+        quoteNode.put("lp", "5525.00");
+        service.evaluateSymbolCycle("CRUDEOIL", LocalTime.of(15, 15));
+
         assertThat(setup.getState()).isEqualTo(CommoditySetupState.COMPLETED);
         assertThat(setup.getActivePosition().isClosed()).isTrue();
-        assertThat(setup.getActivePosition().exitReason()).isEqualTo("TARGET_HIT");
+        assertThat(setup.getActivePosition().exitReason()).isEqualTo("COST_BREAKEVEN_EXIT");
         assertThat(setup.getTradesToday()).isEqualTo(1);
     }
 

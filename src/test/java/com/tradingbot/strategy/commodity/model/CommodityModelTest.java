@@ -64,7 +64,85 @@ class CommodityModelTest {
     }
 
     @Test
-    @DisplayName("Should track setup state machine correctly")
+    @DisplayName("Should execute 50% partial booking at Target and move SL to Cost for LONG")
+    void testPartialBookingAndRunnerExitLong() {
+        BigDecimal entryPrice = new BigDecimal("100.00");
+        BigDecimal stopLoss = new BigDecimal("90.00"); // 10 pts risk
+        BigDecimal riskRewardRatio = new BigDecimal("2.5"); // Target = 125
+
+        CommodityTradePosition pos =
+                CommodityTradePosition.createLong(
+                        "SILVERM", entryPrice, stopLoss, riskRewardRatio, 2, Instant.now());
+
+        assertThat(pos.targetPrice()).isEqualByComparingTo(new BigDecimal("125.00"));
+        assertThat(pos.isPartialBooked()).isFalse();
+
+        // 1. Book 50% partial at Target 1 (125.00)
+        CommodityTradePosition partialPos =
+                pos.executePartialBook(new BigDecimal("125.00"), Instant.now(), 1.0);
+        assertThat(partialPos.isPartialBooked()).isTrue();
+        assertThat(partialPos.isClosed()).isFalse();
+        assertThat(partialPos.remainingQuantity()).isEqualTo(1);
+        assertThat(partialPos.currentStopLoss())
+                .isEqualByComparingTo(new BigDecimal("100.00")); // Moved to Cost
+        assertThat(partialPos.partialPnl())
+                .isEqualByComparingTo(new BigDecimal("25.00")); // (125 - 100) * 1
+
+        // 2. Dynamic 10 EMA Trailing update (EMA = 115 > entryPrice 100)
+        partialPos.updateDynamicStopLoss(new BigDecimal("115.00"));
+        assertThat(partialPos.currentStopLoss()).isEqualByComparingTo(new BigDecimal("115.00"));
+
+        // 3. Runner Exit at Dynamic SL (115.00)
+        CommodityTradePosition closedPos =
+                partialPos.close(
+                        new BigDecimal("115.00"), Instant.now(), "RUNNER_10EMA_TRAIL_EXIT", 1.0);
+        assertThat(closedPos.isClosed()).isTrue();
+        assertThat(closedPos.runnerPnl())
+                .isEqualByComparingTo(new BigDecimal("15.00")); // (115 - 100) * 1
+        assertThat(closedPos.pnl()).isEqualByComparingTo(new BigDecimal("40.00")); // 25 + 15
+        assertThat(closedPos.exitReason()).isEqualTo("RUNNER_10EMA_TRAIL_EXIT");
+    }
+
+    @Test
+    @DisplayName("Should execute 50% partial booking at Target and move SL to Cost for SHORT")
+    void testPartialBookingAndRunnerExitShort() {
+        BigDecimal entryPrice = new BigDecimal("100.00");
+        BigDecimal stopLoss = new BigDecimal("110.00"); // 10 pts risk
+        BigDecimal riskRewardRatio = new BigDecimal("2.5"); // Target = 75
+
+        CommodityTradePosition pos =
+                CommodityTradePosition.createShort(
+                        "SILVERM", entryPrice, stopLoss, riskRewardRatio, 2, Instant.now());
+
+        assertThat(pos.targetPrice()).isEqualByComparingTo(new BigDecimal("75.00"));
+        assertThat(pos.isPartialBooked()).isFalse();
+
+        // 1. Book 50% partial at Target 1 (75.00)
+        CommodityTradePosition partialPos =
+                pos.executePartialBook(new BigDecimal("75.00"), Instant.now(), 1.0);
+        assertThat(partialPos.isPartialBooked()).isTrue();
+        assertThat(partialPos.isClosed()).isFalse();
+        assertThat(partialPos.remainingQuantity()).isEqualTo(1);
+        assertThat(partialPos.currentStopLoss())
+                .isEqualByComparingTo(new BigDecimal("100.00")); // Moved to Cost
+        assertThat(partialPos.partialPnl())
+                .isEqualByComparingTo(new BigDecimal("25.00")); // (100 - 75) * 1
+
+        // 2. Dynamic 10 EMA Trailing update (EMA = 85 < entryPrice 100)
+        partialPos.updateDynamicStopLoss(new BigDecimal("85.00"));
+        assertThat(partialPos.currentStopLoss()).isEqualByComparingTo(new BigDecimal("85.00"));
+
+        // 3. Runner Exit at Dynamic SL (85.00)
+        CommodityTradePosition closedPos =
+                partialPos.close(
+                        new BigDecimal("85.00"), Instant.now(), "RUNNER_10EMA_TRAIL_EXIT", 1.0);
+        assertThat(closedPos.isClosed()).isTrue();
+        assertThat(closedPos.runnerPnl())
+                .isEqualByComparingTo(new BigDecimal("15.00")); // (100 - 85) * 1
+        assertThat(closedPos.pnl()).isEqualByComparingTo(new BigDecimal("40.00")); // 25 + 15
+        assertThat(closedPos.exitReason()).isEqualTo("RUNNER_10EMA_TRAIL_EXIT");
+    }
+
     void testSetupState() {
         CommoditySetup setup = new CommoditySetup("GOLD");
         assertThat(setup.getSymbol()).isEqualTo("GOLD");
