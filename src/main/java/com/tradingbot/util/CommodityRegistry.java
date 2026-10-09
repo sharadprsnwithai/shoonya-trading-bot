@@ -49,6 +49,16 @@ public final class CommodityRegistry {
                         1.0)); // 1 barrel per lot unit -> 100 barrels per lot
         register(
                 new CommodityMetadata(
+                        "CRUDEOILM",
+                        "Crude Oil Mini Futures",
+                        "CL=F",
+                        "MCX",
+                        10,
+                        new BigDecimal("1.00"),
+                        new BigDecimal("50.00"),
+                        1.0)); // 10 barrels per lot
+        register(
+                new CommodityMetadata(
                         "GOLD",
                         "Gold Futures",
                         "GC=F",
@@ -59,6 +69,16 @@ public final class CommodityRegistry {
                         0.321507)); // 0.321507 troy oz per 10g unit -> 32.1507 oz (1 kg) per lot
         register(
                 new CommodityMetadata(
+                        "GOLDM",
+                        "Gold Mini Futures",
+                        "GC=F",
+                        "MCX",
+                        10,
+                        new BigDecimal("1.00"),
+                        new BigDecimal("100.00"),
+                        0.321507)); // 100 grams (10 units) per lot
+        register(
+                new CommodityMetadata(
                         "SILVER",
                         "Silver Futures",
                         "SI=F",
@@ -67,6 +87,16 @@ public final class CommodityRegistry {
                         new BigDecimal("1.00"),
                         new BigDecimal("500.00"),
                         32.15075)); // 32.15075 troy oz per kg -> 964.5225 oz (30 kg) per lot
+        register(
+                new CommodityMetadata(
+                        "SILVERM",
+                        "Silver Mini Futures",
+                        "SI=F",
+                        "MCX",
+                        5,
+                        new BigDecimal("1.00"),
+                        new BigDecimal("500.00"),
+                        32.15075)); // 5 kg per lot
         register(
                 new CommodityMetadata(
                         "COPPER",
@@ -95,12 +125,22 @@ public final class CommodityRegistry {
 
     private CommodityRegistry() {}
 
+    public static String toMiniSymbol(String symbol) {
+        if (symbol == null) return null;
+        String clean = symbol.trim().toUpperCase();
+        if ("GOLD".equals(clean)) return "GOLDM";
+        if ("SILVER".equals(clean)) return "SILVERM";
+        if ("CRUDEOIL".equals(clean) || "CRUDE".equals(clean)) return "CRUDEOILM";
+        return clean;
+    }
+
     public static boolean isCommodity(String symbol) {
         if (symbol == null) return false;
         String clean = symbol.trim().toUpperCase();
         return COMMODITIES.containsKey(clean)
                 || "CRUDE".equals(clean)
                 || "CRUDE OIL".equals(clean)
+                || "CRUDEOILM".equals(clean)
                 || "GOLDM".equals(clean)
                 || "SILVERM".equals(clean);
     }
