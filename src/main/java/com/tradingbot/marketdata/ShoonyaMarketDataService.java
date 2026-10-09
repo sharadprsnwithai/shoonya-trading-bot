@@ -150,6 +150,20 @@ public class ShoonyaMarketDataService {
     }
 
     /**
+     * Fetches 15-minute candles for a symbol.
+     *
+     * @param symbol Canonical symbol (e.g. "GOLD", "SILVER", "CRUDEOIL")
+     * @param daysBack Number of calendar days back to fetch
+     * @return Chronological list of 15-minute Candle instances
+     */
+    public List<Candle> fetch15MinCandles(String symbol, int daysBack) {
+        String token = resolveToken(symbol);
+        String exchange = resolveExchange(symbol);
+        int boundedDays = Math.max(5, Math.min(daysBack, 15));
+        return fetchHistoricalCandles(exchange, token, symbol, "15", boundedDays);
+    }
+
+    /**
      * Warms the in-memory token cache at startup with all pre-registered F&O instruments and
      * indices.
      */
