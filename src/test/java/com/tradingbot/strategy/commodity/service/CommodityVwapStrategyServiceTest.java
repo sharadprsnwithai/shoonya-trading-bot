@@ -181,10 +181,10 @@ class CommodityVwapStrategyServiceTest {
         assertThat(pos.entryPrice()).isEqualByComparingTo(new BigDecimal("5530.00"));
         assertThat(pos.stopLoss()).isEqualByComparingTo(new BigDecimal("5500.00")); // VWAP
         assertThat(pos.targetPrice())
-                .isEqualByComparingTo(new BigDecimal("5590.00")); // 5530 + 2*30
+                .isEqualByComparingTo(new BigDecimal("5605.00")); // 5530 + 2.5*30
 
-        // 2. Next check: Target is reached (LTP = 5595 >= 5590)
-        quoteNode.put("lp", "5595.00");
+        // 2. Next check: Target is reached (LTP = 5610 >= 5605)
+        quoteNode.put("lp", "5610.00");
         service.evaluateSymbolCycle("CRUDEOIL", LocalTime.of(15, 0));
 
         assertThat(setup.getState()).isEqualTo(CommoditySetupState.COMPLETED);
@@ -222,7 +222,7 @@ class CommodityVwapStrategyServiceTest {
         assertThat(pos.entryPrice()).isEqualByComparingTo(new BigDecimal("75000.00"));
         assertThat(pos.stopLoss()).isEqualByComparingTo(new BigDecimal("75300.00"));
         assertThat(pos.targetPrice())
-                .isEqualByComparingTo(new BigDecimal("74400.00")); // 75000 - 2*300
+                .isEqualByComparingTo(new BigDecimal("74250.00")); // 75000 - 2.5*300
 
         // 2. Stop Loss is hit (LTP = 75310 >= 75300)
         quoteNode.put("lp", "75310.00");

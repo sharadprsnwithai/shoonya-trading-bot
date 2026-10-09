@@ -15,10 +15,10 @@ class CommodityVwapPropertiesTest {
         CommodityVwapProperties props = new CommodityVwapProperties();
 
         assertThat(props.isEnabled()).isTrue();
-        assertThat(props.getSymbols()).containsExactly("GOLD", "SILVER", "CRUDEOIL");
+        assertThat(props.getSymbols()).containsExactly("SILVER");
         assertThat(props.getPcrBullishMin()).isEqualTo(1.15);
         assertThat(props.getPcrBearishMax()).isEqualTo(0.85);
-        assertThat(props.getRiskRewardRatio()).isEqualTo(2.0);
+        assertThat(props.getRiskRewardRatio()).isEqualTo(2.5);
         assertThat(props.getEntryCutoff()).isEqualTo(LocalTime.of(22, 30));
         assertThat(props.getEodSquareOffTime()).isEqualTo(LocalTime.of(23, 15));
         assertThat(props.getMaxTradesPerSymbol()).isEqualTo(1);

@@ -16,8 +16,8 @@ public class CommodityVwapProperties {
     /** Whether the commodity strategy is globally enabled. */
     private boolean enabled = true;
 
-    /** List of commodity symbols to track. Defaults to GOLD, SILVER, CRUDEOIL. */
-    private List<String> symbols = new ArrayList<>(List.of("GOLD", "SILVER", "CRUDEOIL"));
+    /** List of commodity symbols to track. Defaults to SILVER. */
+    private List<String> symbols = new ArrayList<>(List.of("SILVER"));
 
     /** Minimum PCR value to classify directional bias as BULLISH. */
     private double pcrBullishMin = 1.15;
@@ -25,8 +25,8 @@ public class CommodityVwapProperties {
     /** Maximum PCR value to classify directional bias as BEARISH. */
     private double pcrBearishMax = 0.85;
 
-    /** Target Risk-to-Reward ratio (e.g. 2.0 for 1:2 RR). */
-    private double riskRewardRatio = 2.0;
+    /** Target Risk-to-Reward ratio (e.g. 2.5 for 1:2.5 RR). */
+    private double riskRewardRatio = 2.5;
 
     /** Intraday time after which no new setups are armed (default 22:30 IST). */
     private LocalTime entryCutoff = LocalTime.of(22, 30);
