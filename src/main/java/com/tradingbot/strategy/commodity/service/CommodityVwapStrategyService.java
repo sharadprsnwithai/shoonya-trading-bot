@@ -264,8 +264,50 @@ public class CommodityVwapStrategyService {
     }
 
     private void checkBreakoutExecution(CommoditySetup setup) {
+        // 1. Check trigger age expiration (e.g. 30 minutes = 2 bars)
+        if (setup.getArmedTime() != null && properties.getMaxTriggerAgeMinutes() > 0) {
+            long ageMinutes =
+                    java.time.Duration.between(setup.getArmedTime(), Instant.now()).toMinutes();
+            if (ageMinutes > properties.getMaxTriggerAgeMinutes()) {
+                log.info(
+                        "[COMMODITY-VWAP] {} trigger expired (age: {} min > max: {} min). Returning to BIAS_IDENTIFIED.",
+                        setup.getSymbol(),
+                        ageMinutes,
+                        properties.getMaxTriggerAgeMinutes());
+                setup.setState(CommoditySetupState.BIAS_IDENTIFIED);
+                return;
+            }
+        }
+
         BigDecimal liveLtp = fetchLiveLtp(setup.getSymbol());
         if (liveLtp == null || liveLtp.compareTo(BigDecimal.ZERO) <= 0) return;
+
+        // 2. Optional EMA Trend Filter confirmation (e.g. 20 EMA)
+        if (properties.isEmaTrendFilterEnabled()) {
+            Double emaValue = fetchLatestEma(setup.getSymbol(), properties.getEmaPeriod());
+            if (emaValue != null && !Double.isNaN(emaValue)) {
+                if (setup.getState() == CommoditySetupState.ARMED_LONG
+                        && liveLtp.doubleValue() < emaValue) {
+                    log.debug(
+                            "[COMMODITY-VWAP] {} LONG entry skipped: LTP {} < EMA{} {}",
+                            setup.getSymbol(),
+                            liveLtp,
+                            properties.getEmaPeriod(),
+                            emaValue);
+                    return;
+                }
+                if (setup.getState() == CommoditySetupState.ARMED_SHORT
+                        && liveLtp.doubleValue() > emaValue) {
+                    log.debug(
+                            "[COMMODITY-VWAP] {} SHORT entry skipped: LTP {} > EMA{} {}",
+                            setup.getSymbol(),
+                            liveLtp,
+                            properties.getEmaPeriod(),
+                            emaValue);
+                    return;
+                }
+            }
+        }
 
         String miniSymbol = CommodityRegistry.toMiniSymbol(setup.getSymbol());
         CommodityRegistry.CommodityMetadata meta = CommodityRegistry.getMetadata(miniSymbol);
@@ -314,6 +356,26 @@ public class CommodityVwapStrategyService {
                 sendTelegramEntryAlert(pos);
             }
         }
+    }
+
+    private Double fetchLatestEma(String symbol, int period) {
+        try {
+            List<Candle> candles =
+                    marketDataService != null
+                            ? marketDataService.fetch15MinCandles(symbol, 5)
+                            : null;
+            if (candles != null && candles.size() >= period && taService != null) {
+                double[] closes =
+                        candles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
+                double[] emaSeries = taService.calculateEmaSeries(closes, period);
+                if (emaSeries.length > 0 && !Double.isNaN(emaSeries[emaSeries.length - 1])) {
+                    return emaSeries[emaSeries.length - 1];
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[COMMODITY-VWAP] Error fetching EMA for {}: {}", symbol, e.getMessage());
+        }
+        return null;
     }
 
     private void manageActiveTrade(CommoditySetup setup) {

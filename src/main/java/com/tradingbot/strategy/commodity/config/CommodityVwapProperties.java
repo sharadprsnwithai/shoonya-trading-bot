@@ -37,6 +37,18 @@ public class CommodityVwapProperties {
     /** Max allowed trades per symbol per trading session. */
     private int maxTradesPerSymbol = 1;
 
+    /** Whether to enforce 20-EMA trend alignment to filter out false counter-trend crossovers. */
+    private boolean emaTrendFilterEnabled = true;
+
+    /** EMA period for trend filter (default 20). */
+    private int emaPeriod = 20;
+
+    /**
+     * Maximum allowed minutes for a trigger to stay armed before expiring (default 30 min = 2
+     * bars).
+     */
+    private int maxTriggerAgeMinutes = 30;
+
     /** Whether to dispatch real-time Telegram notifications. */
     private boolean telegramAlertsEnabled = true;
 
@@ -46,6 +58,30 @@ public class CommodityVwapProperties {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public boolean isEmaTrendFilterEnabled() {
+        return emaTrendFilterEnabled;
+    }
+
+    public void setEmaTrendFilterEnabled(boolean emaTrendFilterEnabled) {
+        this.emaTrendFilterEnabled = emaTrendFilterEnabled;
+    }
+
+    public int getEmaPeriod() {
+        return emaPeriod;
+    }
+
+    public void setEmaPeriod(int emaPeriod) {
+        this.emaPeriod = emaPeriod;
+    }
+
+    public int getMaxTriggerAgeMinutes() {
+        return maxTriggerAgeMinutes;
+    }
+
+    public void setMaxTriggerAgeMinutes(int maxTriggerAgeMinutes) {
+        this.maxTriggerAgeMinutes = maxTriggerAgeMinutes;
     }
 
     public List<String> getSymbols() {
