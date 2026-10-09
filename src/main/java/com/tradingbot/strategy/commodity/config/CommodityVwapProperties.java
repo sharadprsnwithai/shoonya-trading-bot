@@ -57,6 +57,27 @@ public class CommodityVwapProperties {
      */
     private int maxTriggerAgeMinutes = 30;
 
+    /**
+     * Whether to suppress new breakout entries during high-impact US macro news (18:00 - 18:15
+     * IST).
+     */
+    private boolean macroNewsBlackoutEnabled = true;
+
+    /**
+     * Whether to suppress new Crude Oil breakout entries during US EIA Inventory prints (Wed 20:00
+     * - 20:15 IST).
+     */
+    private boolean eiaInventoryBlackoutEnabled = true;
+
+    /**
+     * Minimum days to expiry (DTE) required to trade contract; avoids MCX 5-day physical tender
+     * period.
+     */
+    private int minDteDays = 5;
+
+    /** Whether to require breakout candle volume >= 10-bar average volume. */
+    private boolean volumeConfirmationEnabled = true;
+
     /** Execution mode (PAPER or LIVE). Defaults to PAPER. */
     private String executionMode = "PAPER";
 
@@ -101,6 +122,38 @@ public class CommodityVwapProperties {
 
     public void setMaxTriggerAgeMinutes(int maxTriggerAgeMinutes) {
         this.maxTriggerAgeMinutes = maxTriggerAgeMinutes;
+    }
+
+    public boolean isMacroNewsBlackoutEnabled() {
+        return macroNewsBlackoutEnabled;
+    }
+
+    public void setMacroNewsBlackoutEnabled(boolean macroNewsBlackoutEnabled) {
+        this.macroNewsBlackoutEnabled = macroNewsBlackoutEnabled;
+    }
+
+    public boolean isEiaInventoryBlackoutEnabled() {
+        return eiaInventoryBlackoutEnabled;
+    }
+
+    public void setEiaInventoryBlackoutEnabled(boolean eiaInventoryBlackoutEnabled) {
+        this.eiaInventoryBlackoutEnabled = eiaInventoryBlackoutEnabled;
+    }
+
+    public int getMinDteDays() {
+        return minDteDays;
+    }
+
+    public void setMinDteDays(int minDteDays) {
+        this.minDteDays = minDteDays;
+    }
+
+    public boolean isVolumeConfirmationEnabled() {
+        return volumeConfirmationEnabled;
+    }
+
+    public void setVolumeConfirmationEnabled(boolean volumeConfirmationEnabled) {
+        this.volumeConfirmationEnabled = volumeConfirmationEnabled;
     }
 
     public List<String> getSymbols() {

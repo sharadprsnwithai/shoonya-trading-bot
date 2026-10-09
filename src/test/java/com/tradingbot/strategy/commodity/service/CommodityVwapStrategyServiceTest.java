@@ -290,6 +290,38 @@ class CommodityVwapStrategyServiceTest {
                 .isEqualByComparingTo(new BigDecimal("5540.00"));
     }
 
+    @Test
+    @DisplayName("Should detect high-impact macro news and EIA inventory blackout windows")
+    void testMacroNewsBlackoutGuard() {
+        // 18:05 IST is within US Macro Release window (18:00 - 18:15)
+        assertThat(
+                        service.isMacroNewsBlackout(
+                                LocalTime.of(18, 5), java.time.DayOfWeek.TUESDAY, "SILVER"))
+                .isTrue();
+        assertThat(
+                        service.isMacroNewsBlackout(
+                                LocalTime.of(17, 55), java.time.DayOfWeek.TUESDAY, "SILVER"))
+                .isFalse();
+        assertThat(
+                        service.isMacroNewsBlackout(
+                                LocalTime.of(18, 20), java.time.DayOfWeek.TUESDAY, "SILVER"))
+                .isFalse();
+
+        // 20:05 IST on Wednesday is EIA Crude Inventory window
+        assertThat(
+                        service.isMacroNewsBlackout(
+                                LocalTime.of(20, 5), java.time.DayOfWeek.WEDNESDAY, "CRUDEOIL"))
+                .isTrue();
+        assertThat(
+                        service.isMacroNewsBlackout(
+                                LocalTime.of(20, 5), java.time.DayOfWeek.THURSDAY, "CRUDEOIL"))
+                .isFalse();
+        assertThat(
+                        service.isMacroNewsBlackout(
+                                LocalTime.of(20, 5), java.time.DayOfWeek.WEDNESDAY, "SILVER"))
+                .isFalse();
+    }
+
     private OptionChainResponse createMockChain(String underlying, long putOi, long callOi) {
         double pcr = callOi > 0 ? (double) putOi / callOi : 0.0;
         double roundedPcr = Math.round(pcr * 100.0) / 100.0;
