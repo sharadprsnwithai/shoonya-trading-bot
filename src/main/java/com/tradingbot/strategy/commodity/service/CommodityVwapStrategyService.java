@@ -610,57 +610,77 @@ public class CommodityVwapStrategyService {
             CommoditySetup setup, BigDecimal trigger, BigDecimal vwap, String side) {
         if (!properties.isTelegramAlertsEnabled() || telegramService == null) return;
         String emoji = "LONG".equals(side) ? "🟢" : "🔴";
+        String modeTag =
+                "PAPER".equalsIgnoreCase(properties.getExecutionMode()) ? " [PAPER]" : " [LIVE]";
         String msg =
                 String.format(
-                        "🔔 *[COMMODITY VWAP SETUP ARMED]* 🔔\n"
+                        "🔔 *[COMMODITY VWAP SETUP ARMED%s]* 🔔\n"
                                 + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                                 + "Instrument: *%s*\n"
                                 + "Direction: *%s %s*\n"
                                 + "Breakout Trigger: *₹%.2f*\n"
                                 + "Intraday VWAP (SL Anchor): *₹%.2f*\n"
-                                + "Target RR: *1:2*\n"
+                                + "Target RR: *1:%.1f*\n"
+                                + "Mode: `%s`\n"
                                 + "Awaiting breakout to execute trade.",
-                        setup.getSymbol(), side, emoji, trigger, vwap);
+                        modeTag,
+                        setup.getSymbol(),
+                        side,
+                        emoji,
+                        trigger,
+                        vwap,
+                        properties.getRiskRewardRatio(),
+                        properties.getExecutionMode());
         telegramService.sendTextMessage(msg);
     }
 
     private void sendTelegramEntryAlert(CommodityTradePosition pos) {
         if (!properties.isTelegramAlertsEnabled() || telegramService == null) return;
         String emoji = "LONG".equalsIgnoreCase(pos.side()) ? "🟢 🚀" : "🔴 🚀";
+        String modeTag =
+                "PAPER".equalsIgnoreCase(properties.getExecutionMode()) ? " [PAPER]" : " [LIVE]";
         String msg =
                 String.format(
-                        "⚡ *[COMMODITY TRADE ENTERED]* ⚡\n"
+                        "⚡ *[COMMODITY TRADE ENTERED%s]* ⚡\n"
                                 + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                                 + "Contract: *%s*\n"
                                 + "Side: *%s %s*\n"
                                 + "Entry Price: *₹%.2f*\n"
                                 + "Stop Loss: *₹%.2f*\n"
-                                + "Target (1:2 RR): *₹%.2f*\n"
-                                + "Risk: *₹%.2f* | Qty: *%d*",
+                                + "Target (1:%.1f RR): *₹%.2f*\n"
+                                + "Risk: *₹%.2f* | Qty: *%d*\n"
+                                + "Mode: `%s`",
+                        modeTag,
                         pos.symbol(),
                         pos.side(),
                         emoji,
                         pos.entryPrice(),
                         pos.stopLoss(),
+                        properties.getRiskRewardRatio(),
                         pos.targetPrice(),
                         pos.risk(),
-                        pos.quantity());
+                        pos.quantity(),
+                        properties.getExecutionMode());
         telegramService.sendTextMessage(msg);
     }
 
     private void sendTelegramPartialBookAlert(CommodityTradePosition pos) {
         if (!properties.isTelegramAlertsEnabled() || telegramService == null) return;
+        String modeTag =
+                "PAPER".equalsIgnoreCase(properties.getExecutionMode()) ? " [PAPER]" : " [LIVE]";
         String msg =
                 String.format(
-                        "💰 *[COMMODITY TARGET HIT — 50%% BOOKED]* 💰\n"
+                        "💰 *[COMMODITY TARGET HIT — 50%% BOOKED%s]* 💰\n"
                                 + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                                 + "Contract: *%s* (%s)\n"
-                                + "Target 1 (1:2.5 RR) Reached @ *₹%.2f*\n"
+                                + "Target 1 (1:%.1f RR) Reached @ *₹%.2f*\n"
                                 + "Booked P&L: *₹%.2f*\n"
                                 + "SL Moved to Cost: *₹%.2f* (Risk-free)\n"
                                 + "Remaining Runner: *%d lots* trailing with 10 EMA.",
+                        modeTag,
                         pos.symbol(),
                         pos.side(),
+                        properties.getRiskRewardRatio(),
                         pos.partialExitPrice(),
                         pos.partialPnl(),
                         pos.entryPrice(),
@@ -671,14 +691,17 @@ public class CommodityVwapStrategyService {
     private void sendTelegramExitAlert(CommodityTradePosition pos) {
         if (!properties.isTelegramAlertsEnabled() || telegramService == null) return;
         String emoji = pos.pnl().compareTo(BigDecimal.ZERO) >= 0 ? "🎯 💰" : "🛑";
+        String modeTag =
+                "PAPER".equalsIgnoreCase(properties.getExecutionMode()) ? " [PAPER]" : " [LIVE]";
         String msg =
                 String.format(
-                        "🏁 *[COMMODITY TRADE EXIT]* 🏁\n"
+                        "🏁 *[COMMODITY TRADE EXIT%s]* 🏁\n"
                                 + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                                 + "Contract: *%s* (%s)\n"
                                 + "Reason: *%s %s*\n"
                                 + "Entry: *₹%.2f* ➔ Exit: *₹%.2f*\n"
                                 + "Realized P&L: *₹%.2f*",
+                        modeTag,
                         pos.symbol(),
                         pos.side(),
                         pos.exitReason(),

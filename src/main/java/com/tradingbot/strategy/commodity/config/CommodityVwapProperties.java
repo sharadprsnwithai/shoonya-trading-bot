@@ -49,6 +49,9 @@ public class CommodityVwapProperties {
      */
     private int maxTriggerAgeMinutes = 30;
 
+    /** Execution mode (PAPER or LIVE). Defaults to PAPER. */
+    private String executionMode = "PAPER";
+
     /** Whether to dispatch real-time Telegram notifications. */
     private boolean telegramAlertsEnabled = true;
 
@@ -58,6 +61,14 @@ public class CommodityVwapProperties {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getExecutionMode() {
+        return executionMode;
+    }
+
+    public void setExecutionMode(String executionMode) {
+        this.executionMode = executionMode;
     }
 
     public boolean isEmaTrendFilterEnabled() {
