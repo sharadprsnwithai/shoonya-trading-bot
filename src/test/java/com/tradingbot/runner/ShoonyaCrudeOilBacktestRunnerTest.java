@@ -23,20 +23,26 @@ import org.junit.jupiter.api.Test;
 class ShoonyaCrudeOilBacktestRunnerTest {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm").withZone(IST);
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd-MMM-yyyy").withZone(IST);
+    private static final DateTimeFormatter TIME_FMT =
+            DateTimeFormatter.ofPattern("HH:mm").withZone(IST);
+    private static final DateTimeFormatter DATE_FMT =
+            DateTimeFormatter.ofPattern("dd-MMM-yyyy").withZone(IST);
 
     @Test
-    @DisplayName("Fetch real Shoonya candles and backtest MCX Crude Oil Mini (CRUDEOILM) with 1:2.5 Full Exit")
+    @DisplayName(
+            "Fetch real Shoonya candles and backtest MCX Crude Oil Mini (CRUDEOILM) with 1:2.5 Full Exit")
     void testShoonyaCrudeOilBacktest() {
         ShoonyaConfig config = ShoonyaConfig.load();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
         ShoonyaMarketDataService marketDataService = new ShoonyaMarketDataService(config, auth);
         TechnicalAnalysisService taService = new TechnicalAnalysisService();
 
-        System.out.println("==========================================================================================");
-        System.out.println(" 🚀 MCX CRUDE OIL MINI (CRUDEOILM) - SHOONYA HISTORICAL TPSERIES REPLAY (2.5 RR FULL EXIT)");
-        System.out.println("==========================================================================================");
+        System.out.println(
+                "==========================================================================================");
+        System.out.println(
+                " 🚀 MCX CRUDE OIL MINI (CRUDEOILM) - SHOONYA HISTORICAL TPSERIES REPLAY (2.5 RR FULL EXIT)");
+        System.out.println(
+                "==========================================================================================");
 
         // Fetch historical 15m candles from Shoonya for CRUDEOILM (Token 569901)
         String token = "569901";
@@ -44,23 +50,32 @@ class ShoonyaCrudeOilBacktestRunnerTest {
         String exchange = "MCX";
         int daysBack = 35; // Last 1 month plus
 
-        System.out.printf("[SHOONYA] Fetching %d-day 15m historical candles for %s:%s (Token %s) from Finvasia...\n",
+        System.out.printf(
+                "[SHOONYA] Fetching %d-day 15m historical candles for %s:%s (Token %s) from Finvasia...\n",
                 daysBack, exchange, symbol, token);
 
-        List<Candle> candles = marketDataService.fetchHistoricalCandles(exchange, token, symbol, "15", daysBack);
+        List<Candle> candles =
+                marketDataService.fetchHistoricalCandles(exchange, token, symbol, "15", daysBack);
         if (candles == null || candles.isEmpty()) {
-            System.out.printf("[SHOONYA] No candles returned for token %s. Trying near-month CRUDEOIL token 569900...\n", token);
+            System.out.printf(
+                    "[SHOONYA] No candles returned for token %s. Trying near-month CRUDEOIL token 569900...\n",
+                    token);
             token = "569900";
-            candles = marketDataService.fetchHistoricalCandles(exchange, token, "CRUDEOIL", "15", daysBack);
+            candles =
+                    marketDataService.fetchHistoricalCandles(
+                            exchange, token, "CRUDEOIL", "15", daysBack);
         }
 
         if (candles == null || candles.isEmpty()) {
-            System.err.println("❌ Could not fetch candles from Shoonya. Please verify active session.");
+            System.err.println(
+                    "❌ Could not fetch candles from Shoonya. Please verify active session.");
             return;
         }
 
-        System.out.printf("✅ Successfully retrieved %d candles directly from Shoonya API!\n", candles.size());
-        System.out.printf("   First Candle: %s | Latest Candle: %s\n",
+        System.out.printf(
+                "✅ Successfully retrieved %d candles directly from Shoonya API!\n", candles.size());
+        System.out.printf(
+                "   First Candle: %s | Latest Candle: %s\n",
                 DATE_FMT.format(candles.get(0).timestamp()),
                 DATE_FMT.format(candles.get(candles.size() - 1).timestamp()));
 
@@ -136,26 +151,43 @@ class ShoonyaCrudeOilBacktestRunnerTest {
                     BigDecimal close = currBar.close();
 
                     if (barTime.isAfter(LocalTime.of(23, 14))) {
-                        activePosition.close(close, currBar.timestamp(), "EOD_SQUAREOFF", unitMultiplier);
+                        activePosition.close(
+                                close, currBar.timestamp(), "EOD_SQUAREOFF", unitMultiplier);
                         allTrades.add(activePosition);
                         break;
                     } else if ("LONG".equalsIgnoreCase(activePosition.side())) {
                         if (low.compareTo(activePosition.stopLoss()) <= 0) {
-                            activePosition.close(activePosition.stopLoss(), currBar.timestamp(), "STOP_LOSS", unitMultiplier);
+                            activePosition.close(
+                                    activePosition.stopLoss(),
+                                    currBar.timestamp(),
+                                    "STOP_LOSS",
+                                    unitMultiplier);
                             allTrades.add(activePosition);
                             break;
                         } else if (high.compareTo(activePosition.targetPrice()) >= 0) {
-                            activePosition.close(activePosition.targetPrice(), currBar.timestamp(), "TARGET_HIT", unitMultiplier);
+                            activePosition.close(
+                                    activePosition.targetPrice(),
+                                    currBar.timestamp(),
+                                    "TARGET_HIT",
+                                    unitMultiplier);
                             allTrades.add(activePosition);
                             break;
                         }
                     } else if ("SHORT".equalsIgnoreCase(activePosition.side())) {
                         if (high.compareTo(activePosition.stopLoss()) >= 0) {
-                            activePosition.close(activePosition.stopLoss(), currBar.timestamp(), "STOP_LOSS", unitMultiplier);
+                            activePosition.close(
+                                    activePosition.stopLoss(),
+                                    currBar.timestamp(),
+                                    "STOP_LOSS",
+                                    unitMultiplier);
                             allTrades.add(activePosition);
                             break;
                         } else if (low.compareTo(activePosition.targetPrice()) <= 0) {
-                            activePosition.close(activePosition.targetPrice(), currBar.timestamp(), "TARGET_HIT", unitMultiplier);
+                            activePosition.close(
+                                    activePosition.targetPrice(),
+                                    currBar.timestamp(),
+                                    "TARGET_HIT",
+                                    unitMultiplier);
                             allTrades.add(activePosition);
                             break;
                         }
@@ -173,11 +205,18 @@ class ShoonyaCrudeOilBacktestRunnerTest {
                             risk = entPrice.multiply(new BigDecimal("0.002"));
                             sl = entPrice.subtract(risk);
                         }
-                        activePosition = CommodityTradePosition.createLong(
-                                "CRUDEOILM", entPrice, sl, riskRewardRatio, miniLotSize, currBar.timestamp());
+                        activePosition =
+                                CommodityTradePosition.createLong(
+                                        "CRUDEOILM",
+                                        entPrice,
+                                        sl,
+                                        riskRewardRatio,
+                                        miniLotSize,
+                                        currBar.timestamp());
                         armed = false;
                         continue;
-                    } else if ("SHORT".equals(armedSide) && currBar.low().compareTo(triggerPrice) <= 0) {
+                    } else if ("SHORT".equals(armedSide)
+                            && currBar.low().compareTo(triggerPrice) <= 0) {
                         BigDecimal entPrice = triggerPrice;
                         BigDecimal sl = setupVwap;
                         BigDecimal risk = sl.subtract(entPrice).abs();
@@ -185,8 +224,14 @@ class ShoonyaCrudeOilBacktestRunnerTest {
                             risk = entPrice.multiply(new BigDecimal("0.002"));
                             sl = entPrice.add(risk);
                         }
-                        activePosition = CommodityTradePosition.createShort(
-                                "CRUDEOILM", entPrice, sl, riskRewardRatio, miniLotSize, currBar.timestamp());
+                        activePosition =
+                                CommodityTradePosition.createShort(
+                                        "CRUDEOILM",
+                                        entPrice,
+                                        sl,
+                                        riskRewardRatio,
+                                        miniLotSize,
+                                        currBar.timestamp());
                         armed = false;
                         continue;
                     }
@@ -194,12 +239,16 @@ class ShoonyaCrudeOilBacktestRunnerTest {
 
                 // C. VWAP Crossover Check (before 22:30 IST)
                 if (barTime.isBefore(LocalTime.of(22, 30)) && activePosition == null) {
-                    if (bias == CommodityBias.BULLISH && prevBar.close().doubleValue() <= prevVwap && currBar.close().doubleValue() > currVwap) {
+                    if (bias == CommodityBias.BULLISH
+                            && prevBar.close().doubleValue() <= prevVwap
+                            && currBar.close().doubleValue() > currVwap) {
                         armed = true;
                         armedSide = "LONG";
                         triggerPrice = currBar.high();
                         setupVwap = BigDecimal.valueOf(currVwap);
-                    } else if (bias == CommodityBias.BEARISH && prevBar.close().doubleValue() >= prevVwap && currBar.close().doubleValue() < currVwap) {
+                    } else if (bias == CommodityBias.BEARISH
+                            && prevBar.close().doubleValue() >= prevVwap
+                            && currBar.close().doubleValue() < currVwap) {
                         armed = true;
                         armedSide = "SHORT";
                         triggerPrice = currBar.low();
@@ -222,20 +271,46 @@ class ShoonyaCrudeOilBacktestRunnerTest {
         long losses = trades.stream().filter(t -> t.pnl().compareTo(BigDecimal.ZERO) <= 0).count();
         double wr = (double) wins / trades.size() * 100.0;
 
-        BigDecimal totalPnl = trades.stream().map(CommodityTradePosition::pnl).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal grossProfit = trades.stream().map(CommodityTradePosition::pnl).filter(p -> p.compareTo(BigDecimal.ZERO) > 0).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal grossLoss = trades.stream().map(CommodityTradePosition::pnl).filter(p -> p.compareTo(BigDecimal.ZERO) < 0).reduce(BigDecimal.ZERO, BigDecimal::add).abs();
+        BigDecimal totalPnl =
+                trades.stream()
+                        .map(CommodityTradePosition::pnl)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal grossProfit =
+                trades.stream()
+                        .map(CommodityTradePosition::pnl)
+                        .filter(p -> p.compareTo(BigDecimal.ZERO) > 0)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal grossLoss =
+                trades.stream()
+                        .map(CommodityTradePosition::pnl)
+                        .filter(p -> p.compareTo(BigDecimal.ZERO) < 0)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
+                        .abs();
 
-        double profitFactor = (grossLoss.compareTo(BigDecimal.ZERO) > 0)
-                ? grossProfit.divide(grossLoss, 2, RoundingMode.HALF_UP).doubleValue()
-                : grossProfit.doubleValue();
+        double profitFactor =
+                (grossLoss.compareTo(BigDecimal.ZERO) > 0)
+                        ? grossProfit.divide(grossLoss, 2, RoundingMode.HALF_UP).doubleValue()
+                        : grossProfit.doubleValue();
 
-        double avgWin = (wins > 0) ? grossProfit.divide(BigDecimal.valueOf(wins), 2, RoundingMode.HALF_UP).doubleValue() : 0.0;
-        double avgLoss = (losses > 0) ? grossLoss.divide(BigDecimal.valueOf(losses), 2, RoundingMode.HALF_UP).doubleValue() : 0.0;
+        double avgWin =
+                (wins > 0)
+                        ? grossProfit
+                                .divide(BigDecimal.valueOf(wins), 2, RoundingMode.HALF_UP)
+                                .doubleValue()
+                        : 0.0;
+        double avgLoss =
+                (losses > 0)
+                        ? grossLoss
+                                .divide(BigDecimal.valueOf(losses), 2, RoundingMode.HALF_UP)
+                                .doubleValue()
+                        : 0.0;
 
-        System.out.println("==========================================================================================");
-        System.out.println(" 📊 OFFICIAL SHOONYA MCX CRUDE OIL (CRUDEOILM) BACKTEST PERFORMANCE (1:2.5 FULL EXIT)");
-        System.out.println("==========================================================================================");
+        System.out.println(
+                "==========================================================================================");
+        System.out.println(
+                " 📊 OFFICIAL SHOONYA MCX CRUDE OIL (CRUDEOILM) BACKTEST PERFORMANCE (1:2.5 FULL EXIT)");
+        System.out.println(
+                "==========================================================================================");
         System.out.printf(" Total Trades Executed   : %d\n", trades.size());
         System.out.printf(" Winning Trades          : %d (%.1f%%)\n", wins, wr);
         System.out.printf(" Losing Trades           : %d (%.1f%%)\n", losses, 100.0 - wr);
@@ -243,16 +318,20 @@ class ShoonyaCrudeOilBacktestRunnerTest {
         System.out.printf(" Net Realized P&L        : ₹%,.2f\n", totalPnl);
         System.out.printf(" Average Winning Trade   : ₹%,.2f\n", avgWin);
         System.out.printf(" Average Losing Trade    : ₹%,.2f\n", avgLoss);
-        System.out.println("==========================================================================================\n");
+        System.out.println(
+                "==========================================================================================\n");
 
         System.out.println("📋 DETAILED TRADE LOG FROM SHOONYA MARKET DATA:");
-        System.out.printf("%-12s | %-6s | %-6s | %-14s | %-14s | %-16s | %-14s\n",
+        System.out.printf(
+                "%-12s | %-6s | %-6s | %-14s | %-14s | %-16s | %-14s\n",
                 "Date", "Time", "Side", "Entry (₹)", "Exit (₹)", "Reason", "Realized P&L");
-        System.out.println("------------------------------------------------------------------------------------------");
+        System.out.println(
+                "------------------------------------------------------------------------------------------");
         for (CommodityTradePosition t : trades) {
             String dStr = DATE_FMT.format(t.entryTime());
             String tStr = TIME_FMT.format(t.entryTime());
-            System.out.printf("%-12s | %-6s | %-6s | ₹%-13.1f | ₹%-13.1f | %-16s | ₹%,.2f\n",
+            System.out.printf(
+                    "%-12s | %-6s | %-6s | ₹%-13.1f | ₹%-13.1f | %-16s | ₹%,.2f\n",
                     dStr, tStr, t.side(), t.entryPrice(), t.exitPrice(), t.exitReason(), t.pnl());
         }
     }

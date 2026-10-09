@@ -16,8 +16,8 @@ public class CommodityVwapProperties {
     /** Whether the commodity strategy is globally enabled. */
     private boolean enabled = true;
 
-    /** List of commodity symbols to track. Defaults to SILVER. */
-    private List<String> symbols = new ArrayList<>(List.of("SILVER"));
+    /** List of commodity symbols to track. Defaults to SILVER, CRUDEOIL. */
+    private List<String> symbols = new ArrayList<>(List.of("SILVER", "CRUDEOIL"));
 
     /** Minimum PCR value to classify directional bias as BULLISH. */
     private double pcrBullishMin = 1.15;

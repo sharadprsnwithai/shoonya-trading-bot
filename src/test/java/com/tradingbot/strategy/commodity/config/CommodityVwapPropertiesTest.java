@@ -15,7 +15,7 @@ class CommodityVwapPropertiesTest {
         CommodityVwapProperties props = new CommodityVwapProperties();
 
         assertThat(props.isEnabled()).isTrue();
-        assertThat(props.getSymbols()).containsExactly("SILVER");
+        assertThat(props.getSymbols()).containsExactly("SILVER", "CRUDEOIL");
         assertThat(props.getPcrBullishMin()).isEqualTo(1.15);
         assertThat(props.getPcrBearishMax()).isEqualTo(0.85);
         assertThat(props.getRiskRewardRatio()).isEqualTo(2.5);
