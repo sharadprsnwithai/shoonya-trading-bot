@@ -32,6 +32,13 @@ public class CommodityVwapProperties {
     private double maxRiskPct = 0.008;
 
     /**
+     * Minimum full-position risk (risk x quantity x unit multiplier) expressed as a multiple of the
+     * estimated round-trip transaction cost (e.g. 0.8 = the position must risk at least 80% of its
+     * round-trip cost). Entries whose expectancy cannot cover costs are skipped. Set 0 to disable.
+     */
+    private double minRiskToCostRatio = 0.8;
+
+    /**
      * Intraday time from which breakout entries are active (default 15:30 IST / European pit open).
      */
     private LocalTime entryStartTime = LocalTime.of(15, 30);
@@ -58,16 +65,36 @@ public class CommodityVwapProperties {
     private int maxTriggerAgeMinutes = 30;
 
     /**
-     * Whether to suppress new breakout entries during high-impact US macro news (18:00 - 18:15
-     * IST).
+     * Whether to suppress new breakout entries around high-impact US macro news releases (NFP, CPI,
+     * PPI, Retail Sales at 08:30 ET, DST-mapped to IST).
      */
     private boolean macroNewsBlackoutEnabled = true;
 
     /**
-     * Whether to suppress new Crude Oil breakout entries during US EIA Inventory prints (Wed 20:00
-     * - 20:15 IST).
+     * Whether to suppress new Crude Oil breakout entries during US EIA Inventory prints (Wed 10:30
+     * ET, DST-mapped to IST).
      */
     private boolean eiaInventoryBlackoutEnabled = true;
+
+    /**
+     * Half-width in minutes of the news blackout window around each US release (e.g. 30 = a
+     * 60-minute total window). Conservative default reflects that impact extends well beyond the
+     * print itself.
+     */
+    private int blackoutHalfWidthMinutes = 30;
+
+    /**
+     * Daily max-loss circuit breaker in INR (realized + floating). When today's total loss reaches
+     * this limit the breaker trips and latches for the rest of the session, halting new entries.
+     * Set to 0 or negative to disable.
+     */
+    private double maxDailyLossInr = 8000.0;
+
+    /**
+     * Maximum number of losing trades allowed per day before new entries are halted (loss-count
+     * kill-switch). Set to 0 or negative to disable.
+     */
+    private int maxDailyLosses = 2;
 
     /**
      * Minimum days to expiry (DTE) required to trade contract; avoids MCX 5-day physical tender
@@ -78,11 +105,150 @@ public class CommodityVwapProperties {
     /** Whether to require breakout candle volume >= 10-bar average volume. */
     private boolean volumeConfirmationEnabled = true;
 
+    /**
+     * Number of prior bars forming the average-volume baseline for the volume confirmation gate.
+     */
+    private int volumeAvgPeriod = 10;
+
+    /**
+     * Minimum ratio of the arming bar's volume to the prior-bar average volume (e.g. 1.0 = must
+     * match or exceed the average).
+     */
+    private double volumeMinRatio = 1.0;
+
+    /** Adaptive PCR z-score confirmation settings. */
+    private PcrZScore pcrZScore = new PcrZScore();
+
     /** Execution mode (PAPER or LIVE). Defaults to PAPER. */
     private String executionMode = "PAPER";
 
     /** Whether to dispatch real-time Telegram notifications. */
     private boolean telegramAlertsEnabled = true;
+
+    /** Round-trip transaction cost assumptions applied to reported and backtested PnL. */
+    private Costs costs = new Costs();
+
+    /** Nested configuration for transaction cost modeling. */
+    public static class Costs {
+
+        /** Brokerage charged per lot per side in INR. */
+        private double brokerageInrPerLotPerSide = 25.0;
+
+        /** Slippage assumed per side, in basis points of contract notional. */
+        private double slippageBpsPerSide = 5.0;
+
+        public double getBrokerageInrPerLotPerSide() {
+            return brokerageInrPerLotPerSide;
+        }
+
+        public void setBrokerageInrPerLotPerSide(double brokerageInrPerLotPerSide) {
+            this.brokerageInrPerLotPerSide = brokerageInrPerLotPerSide;
+        }
+
+        public double getSlippageBpsPerSide() {
+            return slippageBpsPerSide;
+        }
+
+        public void setSlippageBpsPerSide(double slippageBpsPerSide) {
+            this.slippageBpsPerSide = slippageBpsPerSide;
+        }
+    }
+
+    /**
+     * Adaptive PCR confirmation: once enough daily PCR samples have been recorded, a
+     * static-threshold bias signal is vetoed unless it is also unusual relative to the recent PCR
+     * regime (z-score). Until {@code minSamples} is reached the static thresholds alone decide
+     * (bootstrap phase).
+     */
+    public static class PcrZScore {
+
+        /** Whether the z-score veto is active once enough samples exist. */
+        private boolean enabled = true;
+
+        /** Maximum number of most-recent daily PCR samples kept per symbol. */
+        private int windowSize = 20;
+
+        /** Minimum samples required before the z-score veto engages. */
+        private int minSamples = 10;
+
+        /** Minimum z-score for a BULLISH PCR reading to be confirmed. */
+        private double zBullish = 0.5;
+
+        /** Maximum z-score for a BEARISH PCR reading to be confirmed. */
+        private double zBearish = -0.5;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getWindowSize() {
+            return windowSize;
+        }
+
+        public void setWindowSize(int windowSize) {
+            this.windowSize = windowSize;
+        }
+
+        public int getMinSamples() {
+            return minSamples;
+        }
+
+        public void setMinSamples(int minSamples) {
+            this.minSamples = minSamples;
+        }
+
+        public double getZBullish() {
+            return zBullish;
+        }
+
+        public void setZBullish(double zBullish) {
+            this.zBullish = zBullish;
+        }
+
+        public double getZBearish() {
+            return zBearish;
+        }
+
+        public void setZBearish(double zBearish) {
+            this.zBearish = zBearish;
+        }
+    }
+
+    public int getVolumeAvgPeriod() {
+        return volumeAvgPeriod;
+    }
+
+    public void setVolumeAvgPeriod(int volumeAvgPeriod) {
+        this.volumeAvgPeriod = volumeAvgPeriod;
+    }
+
+    public double getVolumeMinRatio() {
+        return volumeMinRatio;
+    }
+
+    public void setVolumeMinRatio(double volumeMinRatio) {
+        this.volumeMinRatio = volumeMinRatio;
+    }
+
+    public PcrZScore getPcrZScore() {
+        return pcrZScore;
+    }
+
+    public void setPcrZScore(PcrZScore pcrZScore) {
+        this.pcrZScore = pcrZScore;
+    }
+
+    public Costs getCosts() {
+        return costs;
+    }
+
+    public void setCosts(Costs costs) {
+        this.costs = costs;
+    }
 
     public boolean isEnabled() {
         return enabled;
@@ -140,6 +306,30 @@ public class CommodityVwapProperties {
         this.eiaInventoryBlackoutEnabled = eiaInventoryBlackoutEnabled;
     }
 
+    public int getBlackoutHalfWidthMinutes() {
+        return blackoutHalfWidthMinutes;
+    }
+
+    public void setBlackoutHalfWidthMinutes(int blackoutHalfWidthMinutes) {
+        this.blackoutHalfWidthMinutes = blackoutHalfWidthMinutes;
+    }
+
+    public double getMaxDailyLossInr() {
+        return maxDailyLossInr;
+    }
+
+    public void setMaxDailyLossInr(double maxDailyLossInr) {
+        this.maxDailyLossInr = maxDailyLossInr;
+    }
+
+    public int getMaxDailyLosses() {
+        return maxDailyLosses;
+    }
+
+    public void setMaxDailyLosses(int maxDailyLosses) {
+        this.maxDailyLosses = maxDailyLosses;
+    }
+
     public int getMinDteDays() {
         return minDteDays;
     }
@@ -194,6 +384,14 @@ public class CommodityVwapProperties {
 
     public void setMaxRiskPct(double maxRiskPct) {
         this.maxRiskPct = maxRiskPct;
+    }
+
+    public double getMinRiskToCostRatio() {
+        return minRiskToCostRatio;
+    }
+
+    public void setMinRiskToCostRatio(double minRiskToCostRatio) {
+        this.minRiskToCostRatio = minRiskToCostRatio;
     }
 
     public LocalTime getEntryStartTime() {

@@ -1,358 +1,402 @@
 package com.tradingbot.runner;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.offset;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
-import com.tradingbot.strategy.commodity.model.CommodityBias;
+import com.tradingbot.strategy.commodity.config.CommodityVwapProperties;
+import com.tradingbot.strategy.commodity.feed.MutableClock;
+import com.tradingbot.strategy.commodity.feed.ReplayCommodityQuoteFeed;
+import com.tradingbot.strategy.commodity.model.CommodityBacktestMetrics;
+import com.tradingbot.strategy.commodity.model.CommodityCostModel;
+import com.tradingbot.strategy.commodity.model.CommoditySetup;
+import com.tradingbot.strategy.commodity.model.CommoditySetupState;
 import com.tradingbot.strategy.commodity.model.CommodityTradePosition;
+import com.tradingbot.strategy.commodity.service.CommodityVwapStrategyService;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * 1-month replay of the PRODUCTION commodity VWAP rules: drives the real {@link
+ * CommodityVwapStrategyService} bar-by-bar through {@link ReplayCommodityQuoteFeed} with a mutable
+ * clock, applies transaction costs, asserts production invariants, and persists standardized JSON
+ * metrics to {@code data/backtest/}.
+ *
+ * <p>Bias is supplied as a price/VWAP proxy PCR (no historical option chains exist); every other
+ * rule — window gating, arming, trigger-age expiry, EMA filter, 0.8% risk cap, 2.5 RR, partial book
+ * + breakeven + 10-EMA trailing, blackouts, EOD square-off, 1 trade/day — runs through the
+ * unmodified production code path.
+ */
 class ShoonyaCommodity1MonthBacktestRunnerTest {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm").withZone(IST);
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd-MMM-yyyy").withZone(IST);
+    private static final DateTimeFormatter TIME_FMT =
+            DateTimeFormatter.ofPattern("HH:mm").withZone(IST);
+    private static final DateTimeFormatter DATE_FMT =
+            DateTimeFormatter.ofPattern("dd-MMM-yyyy").withZone(IST);
+
+    private static final double PROXY_BULLISH_PCR = 1.30;
+    private static final double PROXY_BEARISH_PCR = 0.70;
 
     @Test
-    @DisplayName("Official Shoonya 1-Month Replay: Silver Mini & Crude Oil Mini with All Drawdown Filters (2.5 RR)")
-    void testShoonyaCommodities1MonthBacktest() {
+    @DisplayName(
+            "Production-Rules 1-Month Replay: SILVER + CRUDEOIL via CommodityVwapStrategyService (costs, invariants, JSON metrics)")
+    void testProductionRules1MonthReplay() {
         ShoonyaConfig config = ShoonyaConfig.load();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
         ShoonyaMarketDataService marketDataService = new ShoonyaMarketDataService(config, auth);
         TechnicalAnalysisService taService = new TechnicalAnalysisService();
+        CommodityVwapProperties properties = new CommodityVwapProperties();
 
-        System.out.println("==========================================================================================");
-        System.out.println(" 🚀 OFFICIAL SHOONYA MCX COMMODITIES 1-MONTH REPLAY (SILVERM + CRUDEOILM — 1:2.5 RR)");
-        System.out.println("==========================================================================================");
-        System.out.println("⚙️ Filters: 20-EMA Trend Filter | Max 0.8% Risk Cap | Prime Session Window (15:30 - 21:30)");
-        System.out.println("📦 Execution: 1:2.5 RR Target Exit | SL at VWAP | Max 1 Trade/Day | EOD Square-off 23:15");
-        System.out.println("==========================================================================================\n");
+        System.out.println(
+                "==========================================================================================");
+        System.out.println(
+                " 🚀 PRODUCTION-RULES MCX COMMODITY 1-MONTH REPLAY (SILVER + CRUDEOIL — via Strategy Service)");
+        System.out.println(
+                "==========================================================================================");
+        System.out.println(
+                "⚙️ Rules: 13:30 bias | 15m VWAP crossover | 20-EMA | 0.8% risk cap | 1:2.5 RR");
+        System.out.println(
+                "📦 Exits: 50% partial @ target + SL to cost + 10-EMA runner | 1 trade/day | EOD 23:15");
+        System.out.println(
+                "💰 Costs: brokerage + slippage applied (net metrics) | Bias: price/VWAP PROXY (no PCR history)");
+        System.out.println(
+                "==========================================================================================\n");
 
-        int daysBack = 35; // Last 1 month (approx 25 trading sessions)
+        int daysBack = 35;
 
-        // 1. Run Silver Mini (SILVERM: 5 kg, 1 pt = ₹5)
-        List<CommodityTradePosition> silverTrades = runSingleCommodityReplay(
-                "SILVERM", "483080", "495214", "MCX", 5, 1.0, daysBack, marketDataService, taService);
+        List<CommodityTradePosition> silverTrades =
+                runProductionReplay(
+                        "SILVER",
+                        "483080",
+                        "495214",
+                        daysBack,
+                        marketDataService,
+                        taService,
+                        properties);
+        List<CommodityTradePosition> crudeTrades =
+                runProductionReplay(
+                        "CRUDEOIL",
+                        "569901",
+                        "569900",
+                        daysBack,
+                        marketDataService,
+                        taService,
+                        properties);
 
-        // 2. Run Crude Oil Mini (CRUDEOILM: 10 barrels, 1 pt = ₹10)
-        List<CommodityTradePosition> crudeTrades = runSingleCommodityReplay(
-                "CRUDEOILM", "569901", "569900", "MCX", 10, 1.0, daysBack, marketDataService, taService);
+        assumeTrue(
+                silverTrades != null || crudeTrades != null,
+                "No Shoonya candle data available (credentials/network) - replay skipped.");
 
-        // 3. Print Individual Reports
-        printSingleReport("SILVER MINI (SILVERM — 5 kg)", silverTrades);
-        printSingleReport("CRUDE OIL MINI (CRUDEOILM — 10 bbl)", crudeTrades);
-
-        // 4. Print Combined Portfolio Summary
         List<CommodityTradePosition> combinedTrades = new ArrayList<>();
-        if (silverTrades != null) combinedTrades.addAll(silverTrades);
-        if (crudeTrades != null) combinedTrades.addAll(crudeTrades);
+        StringBuilder label = new StringBuilder("1-month production-rules replay [");
+        if (silverTrades != null) {
+            printSingleReport("SILVER (SILVERM — 5 kg)", silverTrades);
+            combinedTrades.addAll(silverTrades);
+            label.append("SILVER ");
+        }
+        if (crudeTrades != null) {
+            printSingleReport("CRUDE OIL (CRUDEOILM — 10 bbl)", crudeTrades);
+            combinedTrades.addAll(crudeTrades);
+            label.append("CRUDEOIL ");
+        }
+        label.append("]");
         combinedTrades.sort((a, b) -> a.entryTime().compareTo(b.entryTime()));
 
         printCombinedSummary(combinedTrades);
+
+        // ---- Production invariants (the reason this test exists) ----
+        assertProductionInvariants(combinedTrades, properties);
+
+        // ---- Standardized net-of-costs metrics + JSON persistence ----
+        CommodityBacktestMetrics metrics =
+                CommodityBacktestMetrics.compute(
+                        label.toString(), combinedTrades, CommodityCostModel.from(properties));
+
+        System.out.println("\n" + "#".repeat(95));
+        System.out.printf(" 🧾 NET-OF-COSTS METRICS : %s%n", metrics.summaryLine());
+        System.out.println("#".repeat(95));
+
+        assertThat(metrics.netPnl())
+                .isCloseTo(metrics.grossPnl() - metrics.totalCosts(), offset(0.05));
+
+        Path outDir = Path.of("data", "backtest");
+        Path outFile = outDir.resolve("commodity-vwap-" + LocalDate.now(IST) + ".json");
+        try {
+            metrics.writeJson(outDir, outFile.getFileName().toString());
+        } catch (Exception e) {
+            throw new AssertionError("Failed to persist backtest metrics JSON to " + outFile, e);
+        }
+        assertThat(Files.exists(outFile)).as("metrics JSON written").isTrue();
+        System.out.printf("📁 Metrics persisted    : %s%n", outFile.toAbsolutePath());
     }
 
-    private List<CommodityTradePosition> runSingleCommodityReplay(
+    /**
+     * Runs one symbol through the production service, day by day. Returns {@code null} when candle
+     * data could not be fetched (caller treats as "no data"), or the (possibly empty) trade list.
+     */
+    private List<CommodityTradePosition> runProductionReplay(
             String symbol,
             String primaryToken,
             String fallbackToken,
-            String exchange,
-            int lotSize,
-            double unitMultiplier,
             int daysBack,
             ShoonyaMarketDataService marketDataService,
-            TechnicalAnalysisService taService) {
+            TechnicalAnalysisService taService,
+            CommodityVwapProperties properties) {
 
-        System.out.printf("[SHOONYA] Fetching %d-day 15m candles for %s:%s (Token %s)...\n",
-                daysBack, exchange, symbol, primaryToken);
-
-        List<Candle> candles = marketDataService.fetchHistoricalCandles(exchange, primaryToken, symbol, "15", daysBack);
+        System.out.printf("[SHOONYA] Fetching %d-day 15m candles for %s...%n", daysBack, symbol);
+        List<Candle> candles =
+                marketDataService.fetchHistoricalCandles(
+                        "MCX", primaryToken, symbol, "15", daysBack);
         if (candles == null || candles.isEmpty()) {
-            System.out.printf("[SHOONYA] Fallback to secondary token %s for %s...\n", fallbackToken, symbol);
-            candles = marketDataService.fetchHistoricalCandles(exchange, fallbackToken, symbol, "15", daysBack);
+            System.out.printf("[SHOONYA] Fallback token %s for %s...%n", fallbackToken, symbol);
+            candles =
+                    marketDataService.fetchHistoricalCandles(
+                            "MCX", fallbackToken, symbol, "15", daysBack);
         }
-
         if (candles == null || candles.isEmpty()) {
-            System.err.printf("❌ Could not fetch candles from Shoonya for %s.\n", symbol);
-            return Collections.emptyList();
+            System.err.printf("❌ Could not fetch candles from Shoonya for %s.%n", symbol);
+            return null;
         }
-
-        System.out.printf("✅ Retrieved %d candles from Shoonya (%s to %s)\n",
+        System.out.printf(
+                "✅ Retrieved %d candles (%s to %s)%n",
                 candles.size(),
                 DATE_FMT.format(candles.get(0).timestamp()),
                 DATE_FMT.format(candles.get(candles.size() - 1).timestamp()));
 
+        ReplayCommodityQuoteFeed feed = new ReplayCommodityQuoteFeed(candles);
+        MutableClock clock = new MutableClock(candles.get(0).timestamp(), IST);
+        CommodityVwapProperties symbolProps = new CommodityVwapProperties();
+        symbolProps.setSymbols(List.of(symbol));
+        symbolProps.setRiskRewardRatio(properties.getRiskRewardRatio());
+        symbolProps.setMaxRiskPct(properties.getMaxRiskPct());
+        symbolProps.setEntryStartTime(properties.getEntryStartTime());
+        symbolProps.setEntryCutoff(properties.getEntryCutoff());
+        symbolProps.setEodSquareOffTime(properties.getEodSquareOffTime());
+        symbolProps.setMaxTradesPerSymbol(properties.getMaxTradesPerSymbol());
+        symbolProps.setTelegramAlertsEnabled(false);
+
+        CommodityVwapStrategyService service =
+                new CommodityVwapStrategyService(symbolProps, feed, taService, null, clock, null);
+
         Map<LocalDate, List<Candle>> sessionMap = new TreeMap<>();
         for (Candle c : candles) {
-            LocalDate d = LocalDate.ofInstant(c.timestamp(), IST);
-            sessionMap.computeIfAbsent(d, k -> new ArrayList<>()).add(c);
+            sessionMap
+                    .computeIfAbsent(
+                            LocalDate.ofInstant(c.timestamp(), IST), k -> new ArrayList<>())
+                    .add(c);
         }
 
         List<CommodityTradePosition> trades = new ArrayList<>();
-        BigDecimal riskRewardRatio = new BigDecimal("2.5");
-        BigDecimal maxRiskPct = new BigDecimal("0.008"); // 0.8% cap
-        LocalTime entryStartTime = LocalTime.of(15, 30);
-        LocalTime entryCutoff = LocalTime.of(21, 30);
 
-        for (Map.Entry<LocalDate, List<Candle>> entryMap : sessionMap.entrySet()) {
-            List<Candle> dayCandles = entryMap.getValue();
+        for (Map.Entry<LocalDate, List<Candle>> session : sessionMap.entrySet()) {
+            List<Candle> dayCandles = session.getValue();
             if (dayCandles.size() < 6) continue;
 
-            double[] vwapSeries = taService.calculateVwapSeries(dayCandles);
-            double[] closes = dayCandles.stream().mapToDouble(c -> c.close().doubleValue()).toArray();
-            double[] ema20Series = taService.calculateEmaSeries(closes, 20);
+            // Mirrors the 13:00 IST daily session-reset scheduler job
+            service.resetSession(true);
 
-            // Bias at 13:30 IST
-            Candle bar1330 = null;
-            double vwap1330 = 0.0;
+            // Anchor bar at/before 13:30 + session VWAP series (proxy-bias input only)
+            double[] dayVwap = taService.calculateVwapSeries(dayCandles);
             Candle openBar = dayCandles.get(0);
+            Candle bar1330 = null;
             int idx1330 = -1;
-
             for (int i = 0; i < dayCandles.size(); i++) {
                 Candle c = dayCandles.get(i);
-                LocalTime t = LocalTime.ofInstant(c.timestamp(), IST);
-                if (!t.isAfter(LocalTime.of(13, 30))) {
+                if (!LocalTime.ofInstant(c.timestamp(), IST).isAfter(LocalTime.of(13, 30))) {
                     bar1330 = c;
-                    vwap1330 = vwapSeries[i];
                     idx1330 = i;
                 }
             }
-
             if (bar1330 == null || idx1330 < 1) continue;
 
-            CommodityBias bias;
+            // Price/VWAP proxy bias (old backtest rule) -> synthetic PCR for the production path
             double cClose = bar1330.close().doubleValue();
             double oPrice = openBar.open().doubleValue();
-            if (cClose >= vwap1330 && cClose >= oPrice) {
-                bias = CommodityBias.BULLISH;
-            } else if (cClose <= vwap1330 && cClose <= oPrice) {
-                bias = CommodityBias.BEARISH;
+            boolean bullish;
+            if (cClose >= dayVwap[idx1330] && cClose >= oPrice) {
+                bullish = true;
+            } else if (cClose <= dayVwap[idx1330] && cClose <= oPrice) {
+                bullish = false;
             } else {
-                bias = (cClose >= vwap1330) ? CommodityBias.BULLISH : CommodityBias.BEARISH;
+                bullish = cClose >= dayVwap[idx1330];
             }
+            feed.setProxyPcr(bullish ? PROXY_BULLISH_PCR : PROXY_BEARISH_PCR);
 
-            boolean armed = false;
-            String armedSide = null;
-            BigDecimal triggerPrice = null;
-            BigDecimal setupVwap = null;
-            int armedIndex = -1;
-            CommodityTradePosition activePosition = null;
+            for (int i = idx1330; i < dayCandles.size(); i++) {
+                Candle bar = dayCandles.get(i);
+                LocalTime barTime = LocalTime.ofInstant(bar.timestamp(), IST);
+                clock.setInstant(bar.timestamp());
+                feed.advanceTo(bar.timestamp());
 
-            for (int i = idx1330 + 1; i < dayCandles.size(); i++) {
-                Candle currBar = dayCandles.get(i);
-                Candle prevBar = dayCandles.get(i - 1);
-                LocalTime barTime = LocalTime.ofInstant(currBar.timestamp(), IST);
-                double currVwap = vwapSeries[i];
-                double prevVwap = vwapSeries[i - 1];
-                double currEma20 = ema20Series[i];
-
-                if (activePosition != null) {
-                    BigDecimal high = currBar.high();
-                    BigDecimal low = currBar.low();
-                    BigDecimal close = currBar.close();
-
-                    if (barTime.isAfter(LocalTime.of(23, 14))) {
-                        activePosition.close(close, currBar.timestamp(), "EOD_SQUAREOFF", unitMultiplier);
-                        trades.add(activePosition);
-                        break;
-                    } else if ("LONG".equalsIgnoreCase(activePosition.side())) {
-                        if (low.compareTo(activePosition.stopLoss()) <= 0) {
-                            activePosition.close(activePosition.stopLoss(), currBar.timestamp(), "STOP_LOSS", unitMultiplier);
-                            trades.add(activePosition);
-                            break;
-                        } else if (high.compareTo(activePosition.targetPrice()) >= 0) {
-                            activePosition.close(activePosition.targetPrice(), currBar.timestamp(), "TARGET_HIT", unitMultiplier);
-                            trades.add(activePosition);
-                            break;
-                        }
-                    } else if ("SHORT".equalsIgnoreCase(activePosition.side())) {
-                        if (high.compareTo(activePosition.stopLoss()) >= 0) {
-                            activePosition.close(activePosition.stopLoss(), currBar.timestamp(), "STOP_LOSS", unitMultiplier);
-                            trades.add(activePosition);
-                            break;
-                        } else if (low.compareTo(activePosition.targetPrice()) <= 0) {
-                            activePosition.close(activePosition.targetPrice(), currBar.timestamp(), "TARGET_HIT", unitMultiplier);
-                            trades.add(activePosition);
-                            break;
-                        }
-                    }
+                if (i == idx1330) {
+                    feed.setPendingLtp(bar.close());
+                    service.evaluateDailyBias();
                     continue;
                 }
 
-                // Check Breakout with 20 EMA trend confirmation & fresh age <= 2 bars (30 min)
-                if (armed && activePosition == null) {
-                    int age = i - armedIndex;
-                    if (age > 2) {
-                        armed = false;
-                    } else {
-                        boolean trendOk = "LONG".equals(armedSide)
-                                ? (Double.isNaN(currEma20) || currBar.close().doubleValue() >= currEma20)
-                                : (Double.isNaN(currEma20) || currBar.close().doubleValue() <= currEma20);
-
-                        if (trendOk) {
-                            if ("LONG".equals(armedSide) && currBar.high().compareTo(triggerPrice) >= 0) {
-                                BigDecimal entPrice = triggerPrice;
-                                BigDecimal sl = setupVwap;
-                                BigDecimal risk = entPrice.subtract(sl).abs();
-                                BigDecimal maxRisk = entPrice.multiply(maxRiskPct);
-                                if (risk.compareTo(maxRisk) > 0) {
-                                    sl = entPrice.subtract(maxRisk);
-                                } else if (risk.compareTo(entPrice.multiply(new BigDecimal("0.001"))) <= 0) {
-                                    sl = entPrice.subtract(entPrice.multiply(new BigDecimal("0.002")));
-                                }
-                                activePosition = CommodityTradePosition.createLong(
-                                        symbol, entPrice, sl, riskRewardRatio, lotSize, currBar.timestamp());
-                                armed = false;
-                                continue;
-                            } else if ("SHORT".equals(armedSide) && currBar.low().compareTo(triggerPrice) <= 0) {
-                                BigDecimal entPrice = triggerPrice;
-                                BigDecimal sl = setupVwap;
-                                BigDecimal risk = sl.subtract(entPrice).abs();
-                                BigDecimal maxRisk = entPrice.multiply(maxRiskPct);
-                                if (risk.compareTo(maxRisk) > 0) {
-                                    sl = entPrice.add(maxRisk);
-                                } else if (risk.compareTo(entPrice.multiply(new BigDecimal("0.001"))) <= 0) {
-                                    sl = entPrice.add(entPrice.multiply(new BigDecimal("0.002")));
-                                }
-                                activePosition = CommodityTradePosition.createShort(
-                                        symbol, entPrice, sl, riskRewardRatio, lotSize, currBar.timestamp());
-                                armed = false;
-                                continue;
-                            }
-                        }
+                CommoditySetup setup = service.getSetup(symbol);
+                if (setup.getState() == CommoditySetupState.IN_TRADE
+                        && setup.getActivePosition() != null) {
+                    // Adverse extreme first (conservative worst-case SL), then favorable
+                    boolean isLong = "LONG".equalsIgnoreCase(setup.getActivePosition().side());
+                    feed.setPendingLtp(isLong ? bar.low() : bar.high());
+                    service.evaluateSymbolCycle(symbol, barTime);
+                    if (setup.getState() == CommoditySetupState.IN_TRADE) {
+                        feed.setPendingLtp(isLong ? bar.high() : bar.low());
+                        service.evaluateSymbolCycle(symbol, barTime);
                     }
+                } else {
+                    feed.setPendingLtp(bar.close());
+                    service.evaluateSymbolCycle(symbol, barTime);
                 }
 
-                // VWAP Crossover Check (Prime Session Window: 15:30 to 21:30 IST)
-                if (barTime.isAfter(entryStartTime.minusMinutes(1)) && barTime.isBefore(entryCutoff) && activePosition == null) {
-                    if (bias == CommodityBias.BULLISH && prevBar.close().doubleValue() <= prevVwap && currBar.close().doubleValue() > currVwap) {
-                        armed = true;
-                        armedSide = "LONG";
-                        triggerPrice = currBar.high();
-                        setupVwap = BigDecimal.valueOf(currVwap);
-                        armedIndex = i;
-                    } else if (bias == CommodityBias.BEARISH && prevBar.close().doubleValue() >= prevVwap && currBar.close().doubleValue() < currVwap) {
-                        armed = true;
-                        armedSide = "SHORT";
-                        triggerPrice = currBar.low();
-                        setupVwap = BigDecimal.valueOf(currVwap);
-                        armedIndex = i;
-                    }
+                // Production EOD square-off runs at 23:15 IST
+                if (!barTime.isBefore(symbolProps.getEodSquareOffTime())
+                        && setup.getState() == CommoditySetupState.IN_TRADE) {
+                    feed.setPendingLtp(bar.close());
+                    service.squareOffAllPositions("EOD_SQUARE_OFF");
                 }
+            }
+
+            // Safety: never carry a position past its session
+            service.squareOffAllPositions("EOD_SQUARE_OFF");
+
+            CommoditySetup setup = service.getSetup(symbol);
+            if (setup.getActivePosition() != null && setup.getActivePosition().isClosed()) {
+                trades.add(setup.getActivePosition());
             }
         }
 
+        System.out.printf(
+                "📈 %s production replay: %d trade(s) over %d session(s)%n",
+                symbol, trades.size(), sessionMap.size());
         return trades;
+    }
+
+    /** Asserts the invariants production code must uphold on every trade. */
+    private void assertProductionInvariants(
+            List<CommodityTradePosition> trades, CommodityVwapProperties properties) {
+        Map<String, Long> tradesPerSymbolDay = new HashMap<>();
+
+        for (CommodityTradePosition t : trades) {
+            String where = t.symbol() + " " + DATE_FMT.format(t.entryTime());
+
+            // 1. Entries only inside the 15:30-21:30 IST session window
+            LocalTime entryLocal = LocalTime.ofInstant(t.entryTime(), IST);
+            assertThat(!entryLocal.isBefore(properties.getEntryStartTime()))
+                    .as("entry at/after 15:30 for %s", where)
+                    .isTrue();
+            assertThat(entryLocal.isBefore(properties.getEntryCutoff()))
+                    .as("entry before 21:30 for %s", where)
+                    .isTrue();
+
+            // 2. Per-unit risk capped at 0.8% of entry (small epsilon for 2-dp rounding)
+            double risk = t.risk().doubleValue();
+            double entry = t.entryPrice().doubleValue();
+            assertThat(risk)
+                    .as("risk cap for %s", where)
+                    .isLessThanOrEqualTo(entry * properties.getMaxRiskPct() + 0.01);
+
+            // 3. Target anchored at 1:2.5 RR from entry
+            double rr = properties.getRiskRewardRatio();
+            double expectedTarget = "LONG".equals(t.side()) ? entry + rr * risk : entry - rr * risk;
+            assertThat(t.targetPrice().doubleValue())
+                    .as("target = entry +/- %.1f x risk for %s", rr, where)
+                    .isCloseTo(expectedTarget, offset(0.02));
+
+            // 4. Every collected trade is closed with a recorded reason
+            assertThat(t.isClosed()).as("trade closed for %s", where).isTrue();
+            assertThat(t.exitReason()).as("exit reason for %s", where).isNotBlank();
+
+            // 5. Max 1 trade per symbol per session
+            String dayKey = t.symbol() + "|" + LocalDate.ofInstant(t.entryTime(), IST);
+            tradesPerSymbolDay.merge(dayKey, 1L, Long::sum);
+        }
+
+        tradesPerSymbolDay.forEach(
+                (key, count) ->
+                        assertThat(count)
+                                .as("max 1 trade/day for %s", key)
+                                .isLessThanOrEqualTo((long) properties.getMaxTradesPerSymbol()));
     }
 
     private void printSingleReport(String title, List<CommodityTradePosition> trades) {
         if (trades.isEmpty()) return;
 
         long wins = trades.stream().filter(t -> t.pnl().compareTo(BigDecimal.ZERO) > 0).count();
-        long losses = trades.stream().filter(t -> t.pnl().compareTo(BigDecimal.ZERO) <= 0).count();
+        long losses = trades.size() - wins;
         double wr = (double) wins / trades.size() * 100.0;
 
-        BigDecimal totalPnl = trades.stream().map(CommodityTradePosition::pnl).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal grossProfit = trades.stream().map(CommodityTradePosition::pnl).filter(p -> p.compareTo(BigDecimal.ZERO) > 0).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal grossLoss = trades.stream().map(CommodityTradePosition::pnl).filter(p -> p.compareTo(BigDecimal.ZERO) < 0).reduce(BigDecimal.ZERO, BigDecimal::add).abs();
-
-        double profitFactor = (grossLoss.compareTo(BigDecimal.ZERO) > 0)
-                ? grossProfit.divide(grossLoss, 2, RoundingMode.HALF_UP).doubleValue()
-                : grossProfit.doubleValue();
-
-        double avgWin = (wins > 0) ? grossProfit.divide(BigDecimal.valueOf(wins), 2, RoundingMode.HALF_UP).doubleValue() : 0.0;
-        double avgLoss = (losses > 0) ? grossLoss.divide(BigDecimal.valueOf(losses), 2, RoundingMode.HALF_UP).doubleValue() : 0.0;
-
-        // Calculate Max Drawdown
-        BigDecimal cumPnl = BigDecimal.ZERO;
-        BigDecimal peak = BigDecimal.ZERO;
-        BigDecimal maxDd = BigDecimal.ZERO;
-        for (CommodityTradePosition t : trades) {
-            cumPnl = cumPnl.add(t.pnl());
-            if (cumPnl.compareTo(peak) > 0) peak = cumPnl;
-            BigDecimal dd = peak.subtract(cumPnl);
-            if (dd.compareTo(maxDd) > 0) maxDd = dd;
-        }
+        BigDecimal totalPnl =
+                trades.stream()
+                        .map(CommodityTradePosition::pnl)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         System.out.println("\n" + "=".repeat(95));
-        System.out.printf(" 📊 %s — 1-MONTH PERFORMANCE (SHOONYA LIVE FEED)\n", title);
+        System.out.printf(" 📊 %s — PRODUCTION-RULES REPLAY\n", title);
         System.out.println("=".repeat(95));
         System.out.printf(" Total Trades Executed   : %d\n", trades.size());
         System.out.printf(" Winning Trades          : %d (%.1f%%)\n", wins, wr);
         System.out.printf(" Losing Trades           : %d (%.1f%%)\n", losses, 100.0 - wr);
-        System.out.printf(" Profit Factor           : %.2f\n", profitFactor);
-        System.out.printf(" Net Realized P&L        : ₹%,.2f\n", totalPnl);
-        System.out.printf(" Average Winning Trade   : ₹%,.2f\n", avgWin);
-        System.out.printf(" Average Losing Trade    : ₹%,.2f\n", avgLoss);
-        System.out.printf(" Maximum Drawdown (DD)   : ₹%,.2f\n", maxDd);
+        System.out.printf(" Gross Realized P&L      : ₹%,.2f\n", totalPnl);
         System.out.println("=".repeat(95));
 
         System.out.println("\n📋 TRADE LOG:");
-        System.out.printf("%-12s | %-6s | %-6s | %-14s | %-14s | %-16s | %-14s\n",
-                "Date", "Time", "Side", "Entry (₹)", "Exit (₹)", "Reason", "Realized P&L");
+        System.out.printf(
+                "%-12s | %-6s | %-6s | %-14s | %-14s | %-18s | %-14s\n",
+                "Date", "Time", "Side", "Entry (₹)", "Exit (₹)", "Reason", "Gross P&L");
         System.out.println("-".repeat(95));
         for (CommodityTradePosition t : trades) {
-            String dStr = DATE_FMT.format(t.entryTime());
-            String tStr = TIME_FMT.format(t.entryTime());
-            System.out.printf("%-12s | %-6s | %-6s | ₹%-13.1f | ₹%-13.1f | %-16s | ₹%,.2f\n",
-                    dStr, tStr, t.side(), t.entryPrice(), t.exitPrice(), t.exitReason(), t.pnl());
+            System.out.printf(
+                    "%-12s | %-6s | %-6s | ₹%-13.1f | ₹%-13.1f | %-18s | ₹%,.2f\n",
+                    DATE_FMT.format(t.entryTime()),
+                    TIME_FMT.format(t.entryTime()),
+                    t.side(),
+                    t.entryPrice(),
+                    t.exitPrice(),
+                    t.exitReason(),
+                    t.pnl());
         }
     }
 
     private void printCombinedSummary(List<CommodityTradePosition> allTrades) {
-        if (allTrades.isEmpty()) return;
-
-        long wins = allTrades.stream().filter(t -> t.pnl().compareTo(BigDecimal.ZERO) > 0).count();
-        long losses = allTrades.stream().filter(t -> t.pnl().compareTo(BigDecimal.ZERO) <= 0).count();
-        double wr = (double) wins / allTrades.size() * 100.0;
-
-        BigDecimal totalPnl = allTrades.stream().map(CommodityTradePosition::pnl).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal grossProfit = allTrades.stream().map(CommodityTradePosition::pnl).filter(p -> p.compareTo(BigDecimal.ZERO) > 0).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal grossLoss = allTrades.stream().map(CommodityTradePosition::pnl).filter(p -> p.compareTo(BigDecimal.ZERO) < 0).reduce(BigDecimal.ZERO, BigDecimal::add).abs();
-
-        double profitFactor = (grossLoss.compareTo(BigDecimal.ZERO) > 0)
-                ? grossProfit.divide(grossLoss, 2, RoundingMode.HALF_UP).doubleValue()
-                : grossProfit.doubleValue();
-
-        double avgWin = (wins > 0) ? grossProfit.divide(BigDecimal.valueOf(wins), 2, RoundingMode.HALF_UP).doubleValue() : 0.0;
-        double avgLoss = (losses > 0) ? grossLoss.divide(BigDecimal.valueOf(losses), 2, RoundingMode.HALF_UP).doubleValue() : 0.0;
-
-        // Calculate Max Drawdown
-        BigDecimal cumPnl = BigDecimal.ZERO;
-        BigDecimal peak = BigDecimal.ZERO;
-        BigDecimal maxDd = BigDecimal.ZERO;
-        for (CommodityTradePosition t : allTrades) {
-            cumPnl = cumPnl.add(t.pnl());
-            if (cumPnl.compareTo(peak) > 0) peak = cumPnl;
-            BigDecimal dd = peak.subtract(cumPnl);
-            if (dd.compareTo(maxDd) > 0) maxDd = dd;
+        if (allTrades.isEmpty()) {
+            System.out.println("\n⚠️ No trades produced by the production rules this period.");
+            return;
         }
 
+        long wins = allTrades.stream().filter(t -> t.pnl().compareTo(BigDecimal.ZERO) > 0).count();
+        BigDecimal totalPnl =
+                allTrades.stream()
+                        .map(CommodityTradePosition::pnl)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         System.out.println("\n" + "#".repeat(95));
-        System.out.println(" 🏆 COMBINED MULTI-COMMODITY PORTFOLIO (SILVERM + CRUDEOILM) — PAST 1 MONTH");
+        System.out.println(" 🏆 COMBINED PORTFOLIO (SILVER + CRUDEOIL) — GROSS, PAST 1 MONTH");
         System.out.println("#".repeat(95));
         System.out.printf(" Total Portfolio Trades  : %d\n", allTrades.size());
-        System.out.printf(" Winning Trades          : %d (%.1f%%)\n", wins, wr);
-        System.out.printf(" Losing Trades           : %d (%.1f%%)\n", losses, 100.0 - wr);
-        System.out.printf(" Portfolio Profit Factor : %.2f\n", profitFactor);
-        System.out.printf(" Total Net Realized P&L  : ₹%,.2f\n", totalPnl);
-        System.out.printf(" Average Winning Trade   : ₹%,.2f\n", avgWin);
-        System.out.printf(" Average Losing Trade    : ₹%,.2f\n", avgLoss);
-        System.out.printf(" Maximum Portfolio DD    : ₹%,.2f\n", maxDd);
-        System.out.printf(" Return on Max DD        : %.2fx\n", (totalPnl.doubleValue() / maxDd.doubleValue()));
+        System.out.printf(
+                " Winning Trades          : %d (%.1f%%)\n",
+                wins, (double) wins / allTrades.size() * 100.0);
+        System.out.printf(" Total Gross Realized P&L: ₹%,.2f\n", totalPnl);
         System.out.println("#".repeat(95));
     }
 }

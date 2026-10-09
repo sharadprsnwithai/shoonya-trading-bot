@@ -24,6 +24,13 @@ class CommodityVwapSchedulerTest {
     }
 
     @Test
+    @DisplayName("Should reset session daily at 13:00 before the bias run")
+    void testScheduledDailySessionReset() {
+        scheduler.scheduledDailySessionReset();
+        verify(strategyService).resetSession(false);
+    }
+
+    @Test
     @DisplayName("Should invoke 1:30 PM bias check when strategy enabled")
     void testScheduled130PmBiasCheck() {
         scheduler.scheduled130PmBiasCheck();
@@ -38,6 +45,13 @@ class CommodityVwapSchedulerTest {
     }
 
     @Test
+    @DisplayName("Should invoke 1-minute active-trade monitor when strategy enabled")
+    void testScheduled1MinTradeMonitor() {
+        scheduler.scheduled1MinTradeMonitor();
+        verify(strategyService).manageActiveTrades();
+    }
+
+    @Test
     @DisplayName("Should invoke 23:15 EOD square off when strategy enabled")
     void testScheduledEodSquareOff() {
         scheduler.scheduledEodSquareOff();
@@ -49,12 +63,16 @@ class CommodityVwapSchedulerTest {
     void testDisabledStrategy() {
         properties.setEnabled(false);
 
+        scheduler.scheduledDailySessionReset();
         scheduler.scheduled130PmBiasCheck();
         scheduler.scheduled15MinCycle();
+        scheduler.scheduled1MinTradeMonitor();
         scheduler.scheduledEodSquareOff();
 
+        verify(strategyService, never()).resetSession(false);
         verify(strategyService, never()).evaluateDailyBias();
         verify(strategyService, never()).evaluateStrategyCycle();
+        verify(strategyService, never()).manageActiveTrades();
         verify(strategyService, never()).squareOffAllPositions("EOD_SQUARE_OFF");
     }
 }

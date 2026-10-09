@@ -23,6 +23,21 @@ public class CommodityVwapScheduler {
     }
 
     /**
+     * Executes daily at 1:00 PM IST (13:00) on weekdays to reset per-session state (trade counters,
+     * setups, closed trades) before the 1:30 PM bias run. Without this, {@code tradesToday} would
+     * never clear and each symbol would be limited to one trade forever.
+     */
+    @Scheduled(cron = "0 0 13 ? * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledDailySessionReset() {
+        if (!properties.isEnabled()) {
+            log.debug("[COMMODITY-SCHEDULER] Strategy disabled. Skipping daily session reset.");
+            return;
+        }
+        log.info("[COMMODITY-SCHEDULER] Triggering 13:00 IST daily session reset...");
+        strategyService.resetSession(false);
+    }
+
+    /**
      * Executes daily at 1:30 PM IST (13:30) on weekdays to calculate Open Interest PCR and
      * establish the macro directional bias.
      */
@@ -48,6 +63,20 @@ public class CommodityVwapScheduler {
         log.debug(
                 "[COMMODITY-SCHEDULER] Triggering 15-minute commodity strategy evaluation cycle...");
         strategyService.evaluateStrategyCycle();
+    }
+
+    /**
+     * Executes every minute on weekdays to manage open positions (target/SL checks, runner
+     * trailing) between 15m bars. Exits checked only on 15m closes let stop losses gap through by
+     * up to a full bar (observed -4.2R in the 1-month baseline); the 1-minute loop bounds that
+     * exposure. Arming and new entries remain 15m-only.
+     */
+    @Scheduled(cron = "0 * * * * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduled1MinTradeMonitor() {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        strategyService.manageActiveTrades();
     }
 
     /**
