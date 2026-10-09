@@ -122,7 +122,7 @@ class CommodityVwapStrategyServiceTest {
         when(marketDataService.fetch15MinCandles(eq("CRUDEOIL"), anyInt())).thenReturn(candles);
         when(taService.calculateVwapSeries(anyList())).thenReturn(new double[] {5500.0, 5505.0});
 
-        service.evaluateSymbolCycle("CRUDEOIL", LocalTime.of(14, 0));
+        service.evaluateSymbolCycle("CRUDEOIL", LocalTime.of(16, 0));
 
         assertThat(setup.getState()).isEqualTo(CommoditySetupState.ARMED_LONG);
         assertThat(setup.getTriggerHigh()).isEqualByComparingTo(new BigDecimal("5530.00"));
@@ -145,7 +145,7 @@ class CommodityVwapStrategyServiceTest {
         when(marketDataService.fetch15MinCandles(eq("GOLD"), anyInt())).thenReturn(candles);
         when(taService.calculateVwapSeries(anyList())).thenReturn(new double[] {75100.0, 75100.0});
 
-        service.evaluateSymbolCycle("GOLD", LocalTime.of(14, 15));
+        service.evaluateSymbolCycle("GOLD", LocalTime.of(16, 15));
 
         assertThat(setup.getState()).isEqualTo(CommoditySetupState.ARMED_SHORT);
         assertThat(setup.getTriggerLow()).isEqualByComparingTo(new BigDecimal("75000.00"));
@@ -172,7 +172,7 @@ class CommodityVwapStrategyServiceTest {
         when(marketDataService.resolveExchange(anyString())).thenReturn("MCX");
         when(marketDataService.fetchQuote("MCX", "12345")).thenReturn(quoteNode);
 
-        service.evaluateSymbolCycle("CRUDEOIL", LocalTime.of(14, 30));
+        service.evaluateSymbolCycle("CRUDEOIL", LocalTime.of(16, 30));
 
         assertThat(setup.getState()).isEqualTo(CommoditySetupState.IN_TRADE);
         CommodityTradePosition pos = setup.getActivePosition();
@@ -224,7 +224,7 @@ class CommodityVwapStrategyServiceTest {
         when(marketDataService.resolveExchange(anyString())).thenReturn("MCX");
         when(marketDataService.fetchQuote("MCX", "67890")).thenReturn(quoteNode);
 
-        service.evaluateSymbolCycle("GOLD", LocalTime.of(14, 30));
+        service.evaluateSymbolCycle("GOLD", LocalTime.of(16, 30));
 
         assertThat(setup.getState()).isEqualTo(CommoditySetupState.IN_TRADE);
         CommodityTradePosition pos = setup.getActivePosition();

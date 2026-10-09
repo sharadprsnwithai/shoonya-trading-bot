@@ -186,17 +186,18 @@ public class CommodityVwapStrategyService {
             return;
         }
 
-        // 3. Breakout Execution check if ARMED
-        if (setup.getState() == CommoditySetupState.ARMED_LONG
-                || setup.getState() == CommoditySetupState.ARMED_SHORT) {
-            checkBreakoutExecution(setup);
-            if (setup.getState() == CommoditySetupState.IN_TRADE) {
-                return;
+        // 3. Breakout Execution check if ARMED (within liquidity session window)
+        if (!nowTime.isBefore(properties.getEntryStartTime())
+                && nowTime.isBefore(properties.getEntryCutoff())) {
+            if (setup.getState() == CommoditySetupState.ARMED_LONG
+                    || setup.getState() == CommoditySetupState.ARMED_SHORT) {
+                checkBreakoutExecution(setup);
+                if (setup.getState() == CommoditySetupState.IN_TRADE) {
+                    return;
+                }
             }
-        }
 
-        // 4. VWAP Crossover Check (only if before cutoff time and not in-trade)
-        if (nowTime.isBefore(properties.getEntryCutoff())) {
+            // 4. VWAP Crossover Check
             checkVwapCrossover(setup);
         }
     }
@@ -317,13 +318,20 @@ public class CommodityVwapStrategyService {
         if (setup.getState() == CommoditySetupState.ARMED_LONG && setup.getTriggerHigh() != null) {
             if (liveLtp.compareTo(setup.getTriggerHigh()) >= 0) {
                 BigDecimal entryPrice = setup.getTriggerHigh();
-                BigDecimal stopLoss =
+                BigDecimal rawStopLoss =
                         setup.getVwapAtSetup() != null
                                 ? setup.getVwapAtSetup()
                                 : liveLtp.subtract(BigDecimal.ONE);
+                BigDecimal risk = entryPrice.subtract(rawStopLoss).abs();
+                BigDecimal maxRisk =
+                        entryPrice.multiply(BigDecimal.valueOf(properties.getMaxRiskPct()));
+                if (properties.getMaxRiskPct() > 0 && risk.compareTo(maxRisk) > 0) {
+                    rawStopLoss = entryPrice.subtract(maxRisk);
+                }
+
                 CommodityTradePosition pos =
                         CommodityTradePosition.createLong(
-                                miniSymbol, entryPrice, stopLoss, rr, lotSize, Instant.now());
+                                miniSymbol, entryPrice, rawStopLoss, rr, lotSize, Instant.now());
                 setup.enterTrade(pos);
 
                 log.info(
@@ -338,13 +346,20 @@ public class CommodityVwapStrategyService {
                 && setup.getTriggerLow() != null) {
             if (liveLtp.compareTo(setup.getTriggerLow()) <= 0) {
                 BigDecimal entryPrice = setup.getTriggerLow();
-                BigDecimal stopLoss =
+                BigDecimal rawStopLoss =
                         setup.getVwapAtSetup() != null
                                 ? setup.getVwapAtSetup()
                                 : liveLtp.add(BigDecimal.ONE);
+                BigDecimal risk = rawStopLoss.subtract(entryPrice).abs();
+                BigDecimal maxRisk =
+                        entryPrice.multiply(BigDecimal.valueOf(properties.getMaxRiskPct()));
+                if (properties.getMaxRiskPct() > 0 && risk.compareTo(maxRisk) > 0) {
+                    rawStopLoss = entryPrice.add(maxRisk);
+                }
+
                 CommodityTradePosition pos =
                         CommodityTradePosition.createShort(
-                                miniSymbol, entryPrice, stopLoss, rr, lotSize, Instant.now());
+                                miniSymbol, entryPrice, rawStopLoss, rr, lotSize, Instant.now());
                 setup.enterTrade(pos);
 
                 log.info(

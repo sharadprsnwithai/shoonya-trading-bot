@@ -28,8 +28,16 @@ public class CommodityVwapProperties {
     /** Target Risk-to-Reward ratio (e.g. 2.5 for 1:2.5 RR). */
     private double riskRewardRatio = 2.5;
 
-    /** Intraday time after which no new setups are armed (default 22:30 IST). */
-    private LocalTime entryCutoff = LocalTime.of(22, 30);
+    /** Maximum allowed stop loss risk percentage of entry price (e.g. 0.008 = 0.8%). */
+    private double maxRiskPct = 0.008;
+
+    /**
+     * Intraday time from which breakout entries are active (default 15:30 IST / European pit open).
+     */
+    private LocalTime entryStartTime = LocalTime.of(15, 30);
+
+    /** Intraday time after which no new setups are armed (default 21:30 IST). */
+    private LocalTime entryCutoff = LocalTime.of(21, 30);
 
     /** Intraday time at which all open positions are squared off (default 23:15 IST). */
     private LocalTime eodSquareOffTime = LocalTime.of(23, 15);
@@ -125,6 +133,22 @@ public class CommodityVwapProperties {
 
     public void setRiskRewardRatio(double riskRewardRatio) {
         this.riskRewardRatio = riskRewardRatio;
+    }
+
+    public double getMaxRiskPct() {
+        return maxRiskPct;
+    }
+
+    public void setMaxRiskPct(double maxRiskPct) {
+        this.maxRiskPct = maxRiskPct;
+    }
+
+    public LocalTime getEntryStartTime() {
+        return entryStartTime;
+    }
+
+    public void setEntryStartTime(LocalTime entryStartTime) {
+        this.entryStartTime = entryStartTime;
     }
 
     public LocalTime getEntryCutoff() {
