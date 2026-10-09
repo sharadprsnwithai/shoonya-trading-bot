@@ -18,8 +18,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("research")
 class ShoonyaCommodityDrawdownReductionTest {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -28,7 +30,7 @@ class ShoonyaCommodityDrawdownReductionTest {
 
     @Test
     @DisplayName(
-            "Evaluate Drawdown Reduction Mechanisms on 3-Month Shoonya Data (RSI + EMA20 + Risk Cap)")
+            "RESEARCH (price-bias, not production): Drawdown Reduction Mechanisms on 3-Month Shoonya Data (RSI + EMA20 + Risk Cap)")
     void testShoonyaDrawdownReduction() {
         ShoonyaConfig config = ShoonyaConfig.load();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
@@ -52,16 +54,28 @@ class ShoonyaCommodityDrawdownReductionTest {
                 marketDataService.fetchHistoricalCandles(
                         "MCX", "569901", "CRUDEOILM", "15", daysBack);
 
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                (silverCandles != null && !silverCandles.isEmpty())
+                        || (crudeCandles != null && !crudeCandles.isEmpty()),
+                "No Shoonya candle data available - research replay skipped.");
+
         // Run Baseline vs RSI Fortress Guard
         System.out.println("\n[EXPERIMENT 1] SILVER MINI (SILVERM — 5 kg):");
-        runReplayVariation("SILVERM", silverCandles, 5, 1.0, taService, false);
+        runReplayVariation("SILVERM", "SILVERM", silverCandles, 5, 1.0, taService, false);
         runReplayVariation(
-                "SILVERM + RSI Guard (50-72 L / 28-50 S)", silverCandles, 5, 1.0, taService, true);
+                "SILVERM + RSI Guard (50-72 L / 28-50 S)",
+                "SILVERM",
+                silverCandles,
+                5,
+                1.0,
+                taService,
+                true);
 
         System.out.println("\n[EXPERIMENT 2] CRUDE OIL MINI (CRUDEOILM — 10 bbl):");
-        runReplayVariation("CRUDEOILM", crudeCandles, 10, 1.0, taService, false);
+        runReplayVariation("CRUDEOILM", "CRUDEOILM", crudeCandles, 10, 1.0, taService, false);
         runReplayVariation(
                 "CRUDEOILM + RSI Guard (50-72 L / 28-50 S)",
+                "CRUDEOILM",
                 crudeCandles,
                 10,
                 1.0,
@@ -71,6 +85,7 @@ class ShoonyaCommodityDrawdownReductionTest {
 
     private void runReplayVariation(
             String label,
+            String symbol,
             List<Candle> candles,
             int lotSize,
             double unitMultiplier,
@@ -228,7 +243,7 @@ class ShoonyaCommodityDrawdownReductionTest {
                                 }
                                 activePosition =
                                         CommodityTradePosition.createLong(
-                                                "SILVERM",
+                                                symbol,
                                                 entPrice,
                                                 sl,
                                                 riskRewardRatio,
@@ -248,7 +263,7 @@ class ShoonyaCommodityDrawdownReductionTest {
                                 }
                                 activePosition =
                                         CommodityTradePosition.createShort(
-                                                "SILVERM",
+                                                symbol,
                                                 entPrice,
                                                 sl,
                                                 riskRewardRatio,

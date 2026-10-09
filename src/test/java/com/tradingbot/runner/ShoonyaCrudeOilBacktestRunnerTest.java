@@ -1,5 +1,7 @@
 package com.tradingbot.runner;
 
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
@@ -18,8 +20,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("research")
 class ShoonyaCrudeOilBacktestRunnerTest {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -30,7 +34,7 @@ class ShoonyaCrudeOilBacktestRunnerTest {
 
     @Test
     @DisplayName(
-            "Fetch real Shoonya candles and backtest MCX Crude Oil Mini (CRUDEOILM) with 1:2.5 Full Exit")
+            "RESEARCH (price-bias, not production): Shoonya Crude Oil Mini (CRUDEOILM) 1:2.5 Full Exit")
     void testShoonyaCrudeOilBacktest() {
         ShoonyaConfig config = ShoonyaConfig.load();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
@@ -69,6 +73,7 @@ class ShoonyaCrudeOilBacktestRunnerTest {
         if (candles == null || candles.isEmpty()) {
             System.err.println(
                     "❌ Could not fetch candles from Shoonya. Please verify active session.");
+            assumeTrue(false, "No Shoonya candle data available - research replay skipped.");
             return;
         }
 

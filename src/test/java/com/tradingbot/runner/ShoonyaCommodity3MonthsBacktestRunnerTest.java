@@ -1,5 +1,7 @@
 package com.tradingbot.runner;
 
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
@@ -19,8 +21,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("research")
 class ShoonyaCommodity3MonthsBacktestRunnerTest {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -31,7 +35,7 @@ class ShoonyaCommodity3MonthsBacktestRunnerTest {
 
     @Test
     @DisplayName(
-            "Comprehensive 3-Month Shoonya Replay for Silver, Crude Oil, and Gold Mini (20-EMA Filter + 2.5 RR)")
+            "RESEARCH (price-bias, not production): 3-Month Shoonya Replay for Silver, Crude Oil, and Gold Mini (20-EMA Filter + 2.5 RR)")
     void testShoonyaCommodities3MonthsBacktest() {
         ShoonyaConfig config = ShoonyaConfig.load();
         ShoonyaAuthenticator auth = new ShoonyaAuthenticator(config);
@@ -135,6 +139,7 @@ class ShoonyaCommodity3MonthsBacktestRunnerTest {
 
         if (candles == null || candles.isEmpty()) {
             System.err.printf("❌ Could not fetch candles from Shoonya for %s.\n", symbol);
+            assumeTrue(false, "No Shoonya candle data available - research replay skipped.");
             return Collections.emptyList();
         }
 

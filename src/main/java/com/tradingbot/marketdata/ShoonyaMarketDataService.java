@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.model.Candle;
+import com.tradingbot.util.CommodityRegistry;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -337,6 +338,11 @@ public class ShoonyaMarketDataService {
 
         String segment = StockFnoRegistry.getSegment(searchSymbol);
         String exch = (segment != null && !segment.isBlank()) ? segment : "NFO";
+        // MCX commodities are not in StockFnoRegistry (which defaults to NFO); route them
+        // explicitly so SearchScrip hits the commodity exchange and FUTCOM contracts match.
+        if (CommodityRegistry.isCommodity(searchSymbol)) {
+            exch = "MCX";
+        }
         try {
             JsonNode values = searchScrip(exch, searchSymbol);
             FuturesContract best = selectNearestFuturesContract(searchSymbol, values);
@@ -380,7 +386,9 @@ public class ShoonyaMarketDataService {
         java.time.LocalDate bestExpiry = null;
         for (JsonNode item : values) {
             String inst = item.path("instname").asText("");
-            if (!"FUTSTK".equalsIgnoreCase(inst) && !"FUTIDX".equalsIgnoreCase(inst)) {
+            if (!"FUTSTK".equalsIgnoreCase(inst)
+                    && !"FUTIDX".equalsIgnoreCase(inst)
+                    && !"FUTCOM".equalsIgnoreCase(inst)) {
                 continue;
             }
             String tsym = item.path("tsym").asText("");
@@ -451,6 +459,14 @@ public class ShoonyaMarketDataService {
             return null;
         }
         return null;
+    }
+
+    /**
+     * Public wrapper over {@link #parseFuturesExpiry} so quote feeds (e.g. the commodity VWAP
+     * strategy's DTE gate) can derive a contract's expiry date from its resolved trading symbol.
+     */
+    public java.time.LocalDate parseContractExpiry(String tsym, int underlyingLength) {
+        return parseFuturesExpiry(tsym, underlyingLength);
     }
 
     /** Resolves the exchange for a given symbol (e.g. "NSE", "BSE", "MCX", "NFO"). */

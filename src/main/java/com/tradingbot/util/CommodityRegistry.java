@@ -9,6 +9,12 @@ import java.util.Map;
 /**
  * Registry maintaining Major Commodity instruments (Crude Oil, Gold, Silver, Copper, Natural Gas),
  * lot sizes, tick sizes, strike intervals, and Yahoo / Broker symbol mappings.
+ *
+ * <p>Note on {@code unitMultiplier}: MCX contracts are quoted natively in INR per standard unit
+ * (INR per 10 g for gold, INR per kg for silver and copper, INR per barrel for crude), so PnL =
+ * price delta x quantity and the multiplier is {@code 1.0} for all MCX instruments. USD-conversion
+ * factors (e.g. 32.15075 troy oz per kg) belong to Yahoo/USD-denominated data pipelines only —
+ * applying them to MCX prices mis-scales PnL.
  */
 public final class CommodityRegistry {
 
@@ -66,7 +72,7 @@ public final class CommodityRegistry {
                         100,
                         new BigDecimal("1.00"),
                         new BigDecimal("100.00"),
-                        0.321507)); // 0.321507 troy oz per 10g unit -> 32.1507 oz (1 kg) per lot
+                        1.0)); // INR per 10g quoted natively on MCX
         register(
                 new CommodityMetadata(
                         "GOLDM",
@@ -76,7 +82,7 @@ public final class CommodityRegistry {
                         10,
                         new BigDecimal("1.00"),
                         new BigDecimal("100.00"),
-                        0.321507)); // 100 grams (10 units) per lot
+                        1.0)); // INR per 10g quoted natively on MCX
         register(
                 new CommodityMetadata(
                         "SILVER",
@@ -86,7 +92,7 @@ public final class CommodityRegistry {
                         30,
                         new BigDecimal("1.00"),
                         new BigDecimal("500.00"),
-                        32.15075)); // 32.15075 troy oz per kg -> 964.5225 oz (30 kg) per lot
+                        1.0)); // INR per kg quoted natively on MCX
         register(
                 new CommodityMetadata(
                         "SILVERM",
@@ -96,7 +102,7 @@ public final class CommodityRegistry {
                         5,
                         new BigDecimal("1.00"),
                         new BigDecimal("500.00"),
-                        32.15075)); // 5 kg per lot
+                        1.0)); // INR per kg quoted natively on MCX
         register(
                 new CommodityMetadata(
                         "COPPER",
@@ -106,7 +112,7 @@ public final class CommodityRegistry {
                         2500,
                         new BigDecimal("0.05"),
                         new BigDecimal("5.00"),
-                        2.20462)); // 2.20462 lbs per kg -> 5511.55 lbs (2500 kg) per lot
+                        1.0)); // INR per kg quoted natively on MCX
         register(
                 new CommodityMetadata(
                         "NATURALGAS",
