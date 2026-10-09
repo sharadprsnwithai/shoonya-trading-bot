@@ -159,4 +159,37 @@ class TelegramBotCommandListenerTest {
         assertNotNull(response);
         assertTrue(response.contains("MONTHLY OPTION RANGE"));
     }
+
+    @Test
+    void testHandleCommodityCommands() {
+        com.tradingbot.strategy.commodity.service.CommodityVwapStrategyService commodityService =
+                mock(com.tradingbot.strategy.commodity.service.CommodityVwapStrategyService.class);
+        when(commodityService.formatTelegramReport())
+                .thenReturn("⚡ MCX Commodity VWAP Strategy Status");
+
+        TelegramBotCommandListener listenerWithCommodity =
+                new TelegramBotCommandListener(
+                        lvrService,
+                        null,
+                        null,
+                        commodityService,
+                        telegramService,
+                        shoonyaConfig,
+                        objectMapper,
+                        httpClient);
+
+        String statusResp = listenerWithCommodity.processCommand("/commodity");
+        assertNotNull(statusResp);
+        assertTrue(statusResp.contains("MCX Commodity VWAP Strategy Status"));
+
+        String scanResp = listenerWithCommodity.processCommand("/commodity_scan");
+        assertNotNull(scanResp);
+        assertTrue(scanResp.contains("Commodity 15-Minute Strategy Cycle executed"));
+        verify(commodityService, times(1)).evaluateStrategyCycle();
+
+        String biasResp = listenerWithCommodity.processCommand("/commodity_bias");
+        assertNotNull(biasResp);
+        assertTrue(biasResp.contains("Commodity 1:30 PM Bias Evaluation executed"));
+        verify(commodityService, times(1)).evaluateDailyBias();
+    }
 }
