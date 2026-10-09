@@ -53,6 +53,17 @@ public record Candle(
         return new Candle(symbol, "5", timestamp, open, high, low, close, volume);
     }
 
+    public static Candle ofDaily(
+            String symbol,
+            Instant timestamp,
+            BigDecimal open,
+            BigDecimal high,
+            BigDecimal low,
+            BigDecimal close,
+            long volume) {
+        return new Candle(symbol, "D", timestamp, open, high, low, close, volume);
+    }
+
     @JsonIgnore
     public String formattedTime() {
         return FORMATTER.format(timestamp);

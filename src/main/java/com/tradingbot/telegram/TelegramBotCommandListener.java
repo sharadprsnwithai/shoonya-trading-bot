@@ -35,6 +35,9 @@ public class TelegramBotCommandListener {
     private static final Logger log = LoggerFactory.getLogger(TelegramBotCommandListener.class);
 
     private final LowestVolumeReversalService lvrService;
+    private final com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService;
+    private final com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService
+            monthlyRangeService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -47,11 +50,18 @@ public class TelegramBotCommandListener {
     @Autowired
     public TelegramBotCommandListener(
             @Autowired(required = false) LowestVolumeReversalService lvrService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService
+                            monthlyRangeService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
         this(
                 lvrService,
+                carWeeklyService,
+                monthlyRangeService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -64,7 +74,37 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
+        this(lvrService, null, null, telegramService, shoonyaConfig, objectMapper, httpClient);
+    }
+
+    public TelegramBotCommandListener(
+            LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            TelegramService telegramService,
+            ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
+        this(
+                lvrService,
+                carWeeklyService,
+                null,
+                telegramService,
+                shoonyaConfig,
+                objectMapper,
+                httpClient);
+    }
+
+    public TelegramBotCommandListener(
+            LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyRangeService,
+            TelegramService telegramService,
+            ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
         this.lvrService = lvrService;
+        this.carWeeklyService = carWeeklyService;
+        this.monthlyRangeService = monthlyRangeService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
@@ -105,7 +145,7 @@ public class TelegramBotCommandListener {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                log.error("[TELEGRAM LISTENER] Error in poll loop: {}", e.getMessage());
+                log.error("[TELEGRAM LISTENER] Error in poll loop: {}", e.getMessage(), e);
                 try {
                     Thread.sleep(5000);
                 } catch (InterruptedException ignored) {
@@ -151,9 +191,9 @@ public class TelegramBotCommandListener {
             }
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            log.debug("[TELEGRAM LISTENER] Polling thread interrupted");
+            log.debug("[TELEGRAM LISTENER] Polling thread interrupted", ie);
         } catch (Exception e) {
-            log.debug("[TELEGRAM LISTENER] pollUpdates exception: {}", e.getMessage());
+            log.debug("[TELEGRAM LISTENER] pollUpdates exception: {}", e.getMessage(), e);
         }
     }
 
@@ -229,6 +269,46 @@ public class TelegramBotCommandListener {
                 lvrService.runMorningUniverseScan();
                 return "🌅 LVR Morning Universe Scan executed!\n\n" + processCommand("/status");
 
+            case "/car":
+            case "/car_status":
+                if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
+                var pState = carWeeklyService.getPortfolioState();
+                int investedUnits =
+                        pState.getHoldings().values().stream()
+                                .mapToInt(
+                                        com.tradingbot.strategy.car.model.CarHolding
+                                                ::accumulatedUnits)
+                                .sum();
+                return String.format(
+                        "📈 *CAR Weekly GTT Strategy Status*\n\n"
+                                + "• Total Capital: `₹%.2f`\n"
+                                + "• Unit Size (1/40th): `₹%.2f`\n"
+                                + "• Invested Units: `%d / %d`\n"
+                                + "• Available Units: `%d`\n"
+                                + "• Active Demat Holdings: `%d`\n"
+                                + "• Active GTT Orders: `%d`",
+                        pState.getTotalCapital().doubleValue(),
+                        pState.getUnitSize().doubleValue(),
+                        investedUnits,
+                        pState.getNumParts(),
+                        pState.getAvailableUnits(),
+                        pState.getHoldings().size(),
+                        pState.getGttOrders().size());
+
+            case "/car_run":
+            case "/car_weekly":
+                if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
+                carWeeklyService.runSundayWeeklyRoutine();
+                return "🚀 CAR Weekly GTT Routine executed! GTT orders placed on Kite.\n\n"
+                        + processCommand("/car");
+
+            case "/monthlyrange":
+            case "/monthly_range":
+            case "/garch":
+                if (monthlyRangeService == null) return "⚠️ Monthly Range Service not active.";
+                var monthlyReport = monthlyRangeService.generateMonthlyReport();
+                return monthlyRangeService.formatTelegramMessage(monthlyReport);
+
             case "/exit":
             case "/squareoff":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
@@ -237,7 +317,28 @@ public class TelegramBotCommandListener {
 
             case "/reset":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
-                lvrService.resetDaily();
+                {
+                    boolean force =
+                            java.util.Arrays.stream(parts)
+                                    .skip(1)
+                                    .anyMatch(a -> a.equalsIgnoreCase("force"));
+                    boolean duringTradingHours = lvrService.isWithinTradingHours();
+                    // H6: an intraday /reset flattens live positions — refuse unless forced.
+                    if (duringTradingHours && !force) {
+                        log.warn(
+                                "[AUDIT] Telegram /reset REFUSED: caller=telegram,"
+                                        + " duringTradingHours=true, force=false");
+                        return "⛔ Intraday reset refused — market is open and positions may be"
+                                + " live. Send `/reset force` to flatten positions and reset"
+                                + " (realized P&L is preserved).";
+                    }
+                    lvrService.resetDaily(force);
+                    log.warn(
+                            "[AUDIT] Telegram /reset EXECUTED: caller=telegram, force={},"
+                                    + " duringTradingHours={}",
+                            force,
+                            duringTradingHours);
+                }
                 return "🔄 LVR daily session state reset successfully.";
 
             case "/help":
@@ -247,7 +348,10 @@ public class TelegramBotCommandListener {
                         + "• `/scan` - Execute immediate 5m strategy cycle\n"
                         + "• `/morning_scan` - Force 09:25 AM morning scan\n"
                         + "• `/exit` - Square off all open positions immediately\n"
-                        + "• `/reset` - Reset daily session state\n"
+                        + "• `/reset [force]` - Reset daily session state (`force` required intraday)\n"
+                        + "• `/car` - Live CAR Weekly GTT Portfolio Status\n"
+                        + "• `/car_run` - Force execute CAR Weekly GTT Sunday routine & place orders\n"
+                        + "• `/monthlyrange` - Calculate GARCH Monthly Option Range & Safe Strikes\n"
                         + "• `/help` - Show this command menu";
         }
     }

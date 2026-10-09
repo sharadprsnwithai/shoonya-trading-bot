@@ -136,8 +136,8 @@ def run(candles, rsi_period, ema_period, overbought, oversold, lookback, rr,
     for o in outs:
         try:
             _c = candles
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"warning: timeframe probe failed for {o}: {e}")
     tt = candles[-1]["dt"]
     tg = f"{tt:%Y-%m-%d}"
 

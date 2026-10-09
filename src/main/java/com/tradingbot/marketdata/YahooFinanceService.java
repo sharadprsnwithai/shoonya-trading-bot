@@ -102,11 +102,7 @@ public class YahooFinanceService {
             return "POLICYBZR.NS";
         }
 
-        if ("TATAMOTORS".equalsIgnoreCase(clean)) {
-            return "TATAMOTORS.NS";
-        }
-
-        if ("TMPV".equalsIgnoreCase(clean)) {
+        if ("TATAMOTORS".equalsIgnoreCase(clean) || "TMPV".equalsIgnoreCase(clean)) {
             return "TMPV.NS";
         }
 
@@ -249,7 +245,8 @@ public class YahooFinanceService {
                         "[YAHOO-FINANCE] Error fetching {} (attempt {}): {}",
                         ticker,
                         attempt,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
             }
         }
         return Collections.emptyList();

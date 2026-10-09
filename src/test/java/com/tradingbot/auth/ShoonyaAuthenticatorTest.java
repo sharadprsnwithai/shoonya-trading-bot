@@ -1,6 +1,7 @@
 package com.tradingbot.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -95,5 +96,84 @@ class ShoonyaAuthenticatorTest {
         boolean isValid = auth.validateSessionToken("test_expired_token");
 
         assertThat(isValid).isFalse();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testHeadlessLoginReportsHttp502HtmlInsteadOfJsonParseError() throws Exception {
+        HttpClient mockClient = mock(HttpClient.class);
+        HttpResponse<String> resp502 =
+                response(
+                        502,
+                        "<html><head><title>502 Bad Gateway</title></head>"
+                                + "<body><center><h1>502 Bad Gateway</h1></center></body></html>");
+        when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(resp502);
+
+        ShoonyaAuthenticator auth =
+                new ShoonyaAuthenticator(oauthConfig(), new ObjectMapper(), mockClient);
+
+        assertThatThrownBy(auth::executeHeadlessLogin)
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("QuickAuth")
+                .hasMessageContaining("HTTP 502")
+                .hasMessageNotContaining("Unexpected character");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testHeadlessLoginReportsGenAcsTokHtmlResponse() throws Exception {
+        HttpClient mockClient = mock(HttpClient.class);
+        HttpResponse<String> quickAuthOk =
+                response(200, "{\"stat\":\"Ok\",\"code\":\"AUTHCODE123\"}");
+        HttpResponse<String> genAcsHtml = response(200, "<html><body>maintenance</body></html>");
+        when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(quickAuthOk, genAcsHtml);
+
+        ShoonyaAuthenticator auth =
+                new ShoonyaAuthenticator(oauthConfig(), new ObjectMapper(), mockClient);
+
+        assertThatThrownBy(auth::executeHeadlessLogin)
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("GenAcsTok")
+                .hasMessageContaining("HTTP 200")
+                .hasMessageContaining("<html>");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testValidateSessionTokenReturnsFalseOnHtmlErrorPage() throws Exception {
+        HttpClient mockClient = mock(HttpClient.class);
+        HttpResponse<String> resp502 =
+                response(502, "<html><head><title>502 Bad Gateway</title></head></html>");
+        when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(resp502);
+
+        ShoonyaAuthenticator auth =
+                new ShoonyaAuthenticator(oauthConfig(), new ObjectMapper(), mockClient);
+
+        assertThat(auth.validateSessionToken("some_token")).isFalse();
+    }
+
+    private static ShoonyaConfig oauthConfig() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        config.setEnabled(true);
+        config.setUserId("USER123");
+        config.setPassword("secret");
+        config.setTotpSecret("");
+        config.setClientId("client123");
+        config.setSecretKey("secret123");
+        config.setVendorCode("NOREN_API");
+        config.setBaseUrl("https://api.shoonya.com");
+        config.setPublicIp("1.2.3.4");
+        return config;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static HttpResponse<String> response(int status, String body) {
+        HttpResponse<String> resp = mock(HttpResponse.class);
+        when(resp.statusCode()).thenReturn(status);
+        when(resp.body()).thenReturn(body);
+        return resp;
     }
 }

@@ -39,20 +39,28 @@ public class ShoonyaOptionChainService {
 
     private static final Logger log = LoggerFactory.getLogger(ShoonyaOptionChainService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /** Fallback only (previous-month contract, stale after expiry) — see getNifty50OptionChain. */
     public static final String DEFAULT_NIFTY_FUT_SYMBOL = "NIFTY29SEP26F";
+
     public static final String DEFAULT_NIFTY_FUT_TOKEN = "68407";
 
     private final ShoonyaConfig config;
     private final ShoonyaAuthenticator authenticator;
+    private final ShoonyaMarketDataService marketDataService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ExecutorService executor = Executors.newFixedThreadPool(8);
 
     @Autowired
-    public ShoonyaOptionChainService(ShoonyaConfig config, ShoonyaAuthenticator authenticator) {
+    public ShoonyaOptionChainService(
+            ShoonyaConfig config,
+            ShoonyaAuthenticator authenticator,
+            ShoonyaMarketDataService marketDataService) {
         this(
                 config,
                 authenticator,
+                marketDataService,
                 new ObjectMapper(),
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
     }
@@ -60,10 +68,12 @@ public class ShoonyaOptionChainService {
     public ShoonyaOptionChainService(
             ShoonyaConfig config,
             ShoonyaAuthenticator authenticator,
+            ShoonyaMarketDataService marketDataService,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
         this.config = config;
         this.authenticator = authenticator;
+        this.marketDataService = marketDataService;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
     }
@@ -71,6 +81,18 @@ public class ShoonyaOptionChainService {
     /** Retrieves option chain for NIFTY 50 centered around ATM ± count strikes. */
     public OptionChainResponse getNifty50OptionChain(
             BigDecimal explicitStrike, int count, boolean fetchQuotes) {
+        // Resolve the live near-month NIFTY futures contract (real tsym for the chain anchor, live
+        // token for the underlying-price/ATM path) instead of the hardcoded previous-month
+        // constants, which went stale at every expiry. Falls back to the constants if resolution
+        // fails (previous behavior).
+        ShoonyaMarketDataService.FuturesContract contract =
+                marketDataService != null
+                        ? marketDataService.resolveFuturesContract("NIFTY")
+                        : null;
+        if (contract != null) {
+            return getOptionChain(
+                    "NIFTY", contract.tsym(), contract.token(), explicitStrike, count, fetchQuotes);
+        }
         return getOptionChain(
                 "NIFTY",
                 DEFAULT_NIFTY_FUT_SYMBOL,
@@ -97,9 +119,18 @@ public class ShoonyaOptionChainService {
                 || "NIFTY 50".equalsIgnoreCase(cleanUnderlying)) {
             return getNifty50OptionChain(explicitStrike, count, fetchQuotes);
         } else {
-            // Stock F&O Underlying (e.g. BSE, LAURUSLABS, SAIL, POLYCAB, etc.)
+            // Stock F&O Underlying (e.g. RELIANCE, TCS, HDFCBANK, INFY, etc.)
+            ShoonyaMarketDataService.FuturesContract stockContract =
+                    marketDataService != null
+                            ? marketDataService.resolveFuturesContract(cleanUnderlying)
+                            : null;
+            String futTsym =
+                    stockContract != null && stockContract.tsym() != null
+                            ? stockContract.tsym()
+                            : cleanUnderlying;
+            String futTok = stockContract != null ? stockContract.token() : "";
             return getOptionChain(
-                    cleanUnderlying, cleanUnderlying, "", explicitStrike, count, fetchQuotes);
+                    cleanUnderlying, futTsym, futTok, explicitStrike, count, fetchQuotes);
         }
     }
 
@@ -340,7 +371,8 @@ public class ShoonyaOptionChainService {
                                                                     log.debug(
                                                                             "Quote fetch failed for token {}: {}",
                                                                             draft.token,
-                                                                            e.getMessage());
+                                                                            e.getMessage(),
+                                                                            e);
                                                                 }
                                                             },
                                                             executor))
@@ -355,7 +387,8 @@ public class ShoonyaOptionChainService {
                         }
                         log.warn(
                                 "Option chain quote batch fetch timed out or interrupted: {}",
-                                e.getMessage());
+                                e.getMessage(),
+                                e);
                     }
                 }
 
@@ -430,7 +463,8 @@ public class ShoonyaOptionChainService {
                         "Option chain fetch attempt {} failed for {}: {}",
                         attempt,
                         futSymbol,
-                        e.getMessage());
+                        e.getMessage(),
+                        e);
                 if (attempt == 2) {
                     log.error(
                             "Failed to fetch option chain for {} after 2 attempts",
@@ -478,7 +512,7 @@ public class ShoonyaOptionChainService {
             }
             return objectMapper.readTree(resp.body());
         } catch (Exception e) {
-            log.debug("GetQuotes API threw exception for token {}: {}", token, e.getMessage());
+            log.debug("GetQuotes API threw exception for token {}: {}", token, e.getMessage(), e);
             return null;
         }
     }
@@ -520,8 +554,12 @@ public class ShoonyaOptionChainService {
                     StockFnoRegistry.estimateTheoreticalPremium(
                             underlying, atmStrike, sp, "PE", dteDays);
 
-            long callOi = 50000L + (Math.abs(i) * 12000L);
-            long putOi = 48000L + (Math.abs(i) * 11000L);
+            long callOi =
+                    (i >= 0) ? (50000L + (i * 20000L)) : Math.max(5000L, 50000L + (i * 10000L));
+            long putOi =
+                    (i <= 0)
+                            ? (50000L + (Math.abs(i) * 20000L))
+                            : Math.max(5000L, 50000L - (i * 10000L));
 
             totalCallOi += callOi;
             totalPutOi += putOi;
@@ -598,7 +636,7 @@ public class ShoonyaOptionChainService {
             executor.shutdownNow();
             log.info("[OPTION-CHAIN] Executor shutdown complete.");
         } catch (Exception e) {
-            log.debug("[OPTION-CHAIN] Error shutting down executor: {}", e.getMessage());
+            log.debug("[OPTION-CHAIN] Error shutting down executor: {}", e.getMessage(), e);
         }
     }
 

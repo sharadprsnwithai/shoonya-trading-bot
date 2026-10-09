@@ -1,311 +1,465 @@
+import sys
+import io
+import math
 import datetime
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from test_vwap_st_variations import calculate_supertrend, calculate_adx, calculate_intraday_vwap
+from collections import defaultdict
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).fillna(0)
-    loss = (-delta.where(delta < 0, 0)).fillna(0)
+# Ensure UTF-8 output
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+UNIVERSE = [
+    "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", 
+    "SBIN.NS", "TATASTEEL.NS", "MARUTI.NS", "SUNPHARMA.NS", "BHARTIARTL.NS", 
+    "AXISBANK.NS", "KOTAKBANK.NS", "HINDALCO.NS", "BHEL.NS", "ITC.NS", 
+    "LT.NS", "BAJFINANCE.NS", "M&M.NS", "NTPC.NS", "COALINDIA.NS",
+    "JINDALSTEL.NS", "VEDL.NS", "CIPLA.NS", "DRREDDY.NS",
+    "WIPRO.NS", "TECHM.NS", "HEROMOTOCO.NS", "EICHERMOT.NS", "BAJAJ-AUTO.NS",
+    "VOLTAS.NS", "RADICO.NS", "RVNL.NS", "PERSISTENT.NS", "COFORGE.NS"
+]
+
+LOT_SIZES = {
+    "RELIANCE": 250, "TCS": 175, "INFY": 400, "HDFCBANK": 550, "ICICIBANK": 700,
+    "SBIN": 750, "TATASTEEL": 5500, "MARUTI": 50, "SUNPHARMA": 350, "BHARTIARTL": 475,
+    "AXISBANK": 625, "KOTAKBANK": 400, "HINDALCO": 1400, "BHEL": 2625, "ITC": 1600,
+    "LT": 175, "BAJFINANCE": 125, "M&M": 350, "NTPC": 1500, "COALINDIA": 2100,
+    "JINDALSTEL": 625, "VEDL": 1150, "CIPLA": 650, "DRREDDY": 125,
+    "WIPRO": 1500, "TECHM": 600, "HEROMOTOCO": 150, "EICHERMOT": 175, "BAJAJ-AUTO": 75,
+    "VOLTAS": 600, "RADICO": 300, "RVNL": 2500, "PERSISTENT": 100, "COFORGE": 150
+}
+
+def round_to_tick(val):
+    return round(val * 20.0) / 20.0
+
+def calculate_vwap(df):
+    vol = df['Volume'].replace(0, 1)
+    typical = (df['High'] + df['Low'] + df['Close']) / 3.0
+    return (typical * vol).cumsum() / vol.cumsum()
+
+def calculate_ema(series, span=10):
+    return series.ewm(span=span, adjust=False).mean()
+
+def run_experiment(data_5m, daily_data, trading_dates, 
+                   use_vande_bharat=True, 
+                   max_consecutive_losses=2, 
+                   max_sl_pct=1.0, 
+                   daily_ema_filter=False,
+                   max_daily_trades=2):
     
-    avg_gain = gain.rolling(window=period, min_periods=period).mean()
-    avg_loss = loss.rolling(window=period, min_periods=period).mean()
-    
-    for i in range(period, len(series)):
-        avg_gain.iloc[i] = (avg_gain.iloc[i-1] * (period - 1) + gain.iloc[i]) / period
-        avg_loss.iloc[i] = (avg_loss.iloc[i-1] * (period - 1) + loss.iloc[i]) / period
-        
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-def backtest_drawdown_optimizer(
-    df_merged,
-    max_trades_per_day=2,
-    stop_after_one_loss=False,
-    max_daily_loss_pts=30.0,         # Hard daily drawdown cap in option pts (e.g. ~Rs 19,500 on 10 lots)
-    trailing_step_enabled=True,      # Multi-step trailing stop
-    trail_step_1_trigger=15.0,       # At +15 pts, lock +2 pts (Breakeven)
-    trail_step_2_trigger=28.0,       # At +28 pts, lock +18 pts
-    vwap_max_distance_pts=45.0,      # Don't chase: skip entry if spot is > 45 pts away from VWAP
-    adx_threshold=20.0,
-    dead_zone_rsi_filter=False,
-    start_time_str="09:30",
-    end_time_str="14:15",
-    sl_pts=30.0,                     # Tighter base SL (30 pts instead of 35)
-    tp_pts=50.0
-):
-    LOT_SIZE = 65
-    NUM_LOTS = 10
-    TOTAL_QTY = LOT_SIZE * NUM_LOTS
-
     trades = []
-    current_trade = None
-    trades_today = 0
-    daily_pnl_pts = 0.0
-    current_day = None
+    daily_pnls = defaultdict(float)
 
-    dates = df_merged['DateOnly'].values
-    times = df_merged.index.time
-    closes = df_merged['Close'].values
-    vwaps = df_merged['VWAP'].values
-    st_dirs = df_merged['ST_Direction'].values
-    adxs = df_merged['ADX'].values
-    p_dis = df_merged['Plus_DI'].values
-    m_dis = df_merged['Minus_DI'].values
-    rsi_15ms = df_merged['RSI_15m'].values
-
-    start_t = datetime.time.fromisoformat(start_time_str)
-    end_t = datetime.time.fromisoformat(end_time_str)
-
-    for i in range(1, len(df_merged)):
-        day = dates[i]
-        t = times[i]
-        spot = closes[i]
-        vwap = vwaps[i]
-        st_dir = st_dirs[i]
-        adx = adxs[i]
-        p_di = p_dis[i]
-        m_di = m_dis[i]
-        rsi_15 = rsi_15ms[i]
-        timestamp = df_merged.index[i]
-
-        prev_spot = closes[i - 1]
-        prev_vwap = vwaps[i - 1]
-        prev_st_dir = st_dirs[i - 1]
-
-        if day != current_day:
-            current_day = day
-            trades_today = 0
-            daily_pnl_pts = 0.0
-            if current_trade:
-                current_trade['exit_time'] = timestamp
-                current_trade['exit_spot'] = spot
-                current_trade['exit_reason'] = "DAY_END"
-                trades.append(current_trade)
-                current_trade = None
-
-        # 1. Manage Open Position
-        if current_trade is not None:
-            entry_spot = current_trade['entry_spot']
-            direction = current_trade['direction']
+    for trade_date in trading_dates:
+        candidates_pool = []
+        for sym, df in data_5m.items():
+            day_df = df[df.index.date == trade_date]
+            if len(day_df) < 5: continue
             
-            hours_held = (timestamp - current_trade['entry_time']).total_seconds() / 3600.0
-            theta_pts = hours_held * 2.5 # theta decay
+            d_df = daily_data.get(sym)
+            if d_df is None or d_df.empty: continue
+            past_days = d_df[d_df.index.date < trade_date]
+            if past_days.empty: continue
+            prev_day = past_days.iloc[-1]
+            pdh = float(prev_day['High'])
+            pdl = float(prev_day['Low'])
 
-            if direction == 'BULLISH':
-                spot_move = spot - entry_spot
-                opt_pnl_pts = (spot_move * 0.50) + theta_pts
-            else:
-                spot_move = entry_spot - spot
-                opt_pnl_pts = (spot_move * 0.50) + theta_pts
+            # Daily 20 EMA calculation
+            daily_ema20 = None
+            if len(past_days) >= 20:
+                daily_ema20 = float(calculate_ema(past_days['Close'], span=20).iloc[-1])
 
-            if opt_pnl_pts > current_trade['max_fav_pts']:
-                current_trade['max_fav_pts'] = opt_pnl_pts
+            c1 = day_df.iloc[0]
+            c2 = day_df.iloc[1]
+            open_p = float(c1['Open'])
+            ltp_0925 = float(c2['Close'])
+            pct_chg = ((ltp_0925 - open_p) / open_p) * 100.0
 
-            # Dynamic Stepped Trailing Stop
-            effective_sl = -sl_pts
-            if trailing_step_enabled:
-                if current_trade['max_fav_pts'] >= trail_step_2_trigger:
-                    effective_sl = 18.0
-                elif current_trade['max_fav_pts'] >= trail_step_1_trigger:
-                    effective_sl = 2.0
+            candidates_pool.append({
+                'symbol': sym,
+                'pct_chg': pct_chg,
+                'day_df': day_df,
+                'pdh': pdh,
+                'pdl': pdl,
+                'daily_ema20': daily_ema20,
+                'lot_size': LOT_SIZES.get(sym, 250)
+            })
 
-            # SL or Trailing SL hit
-            if opt_pnl_pts <= effective_sl:
-                exit_reason = "TRAIL_SL_LOCK" if effective_sl > -sl_pts else "STOP_LOSS"
-                current_trade['exit_time'] = timestamp
-                current_trade['exit_spot'] = spot
-                current_trade['opt_pts'] = effective_sl
-                current_trade['pnl'] = effective_sl * TOTAL_QTY
-                current_trade['exit_reason'] = exit_reason
-                daily_pnl_pts += effective_sl
-                trades.append(current_trade)
-                current_trade = None
-                continue
+        if not candidates_pool: continue
 
-            # Target Profit Hit
-            elif opt_pnl_pts >= tp_pts:
-                current_trade['exit_time'] = timestamp
-                current_trade['exit_spot'] = spot
-                current_trade['opt_pts'] = tp_pts
-                current_trade['pnl'] = tp_pts * TOTAL_QTY
-                current_trade['exit_reason'] = "TARGET_PROFIT"
-                daily_pnl_pts += tp_pts
-                trades.append(current_trade)
-                current_trade = None
-                continue
+        gainers = sorted([c for c in candidates_pool if c['pct_chg'] > 0.0], key=lambda x: x['pct_chg'], reverse=True)[:5]
+        losers = sorted([c for c in candidates_pool if c['pct_chg'] < 0.0], key=lambda x: x['pct_chg'])[:5]
+        watchlist = [(c, 'LONG') for c in gainers] + [(c, 'SHORT') for c in losers]
 
-            # Supertrend Flip Exit
-            if (direction == 'BULLISH' and st_dir == -1) or (direction == 'BEARISH' and st_dir == 1):
-                current_trade['exit_time'] = timestamp
-                current_trade['exit_spot'] = spot
-                current_trade['opt_pts'] = opt_pnl_pts
-                current_trade['pnl'] = opt_pnl_pts * TOTAL_QTY
-                current_trade['exit_reason'] = "ST_FLIP"
-                daily_pnl_pts += opt_pnl_pts
-                trades.append(current_trade)
-                current_trade = None
-                continue
+        session_trades = 0
+        consecutive_losses_today = 0
 
-            # Mandatory EOD Square-Off at 15:05 IST
-            if t >= datetime.time(15, 5):
-                current_trade['exit_time'] = timestamp
-                current_trade['exit_spot'] = spot
-                current_trade['opt_pts'] = opt_pnl_pts
-                current_trade['pnl'] = opt_pnl_pts * TOTAL_QTY
-                current_trade['exit_reason'] = "EOD_SQUARE_OFF"
-                daily_pnl_pts += opt_pnl_pts
-                trades.append(current_trade)
-                current_trade = None
-                continue
+        for candidate, direction in watchlist:
+            if session_trades >= max_daily_trades: break
+            if consecutive_losses_today >= max_consecutive_losses: break
 
-        # 2. Check New Entry Conditions
-        if current_trade is None and trades_today < max_trades_per_day:
-            if stop_after_one_loss and daily_pnl_pts < 0:
-                continue # Circuit breaker after 1 loss
+            sym = candidate['symbol']
+            day_df = candidate['day_df']
+            pdh = candidate['pdh']
+            pdl = candidate['pdl']
+            daily_ema20 = candidate['daily_ema20']
+            lot_size = candidate['lot_size']
+            lots = 2
+            total_qty = lots * lot_size
 
-            if daily_pnl_pts <= -max_daily_loss_pts:
-                continue # Daily max loss cap reached
+            # Macro Trend Filter: Long only if above Daily 20 EMA, Short only if below Daily 20 EMA
+            if daily_ema_filter and daily_ema20 is not None:
+                c_open = float(day_df.iloc[0]['Open'])
+                if direction == 'LONG' and c_open < daily_ema20:
+                    continue
+                elif direction == 'SHORT' and c_open > daily_ema20:
+                    continue
 
-            if start_t <= t <= end_t:
-                if adx >= adx_threshold:
-                    if dead_zone_rsi_filter and (45.0 <= rsi_15 <= 55.0):
+            day_df = day_df.copy()
+            day_df['VWAP'] = calculate_vwap(day_df)
+            day_df['EMA10'] = calculate_ema(day_df['Close'], span=10)
+
+            c1_3 = day_df.iloc[:3]
+            rolling_lowest_vol = float(c1_3['Volume'].replace(0, np.nan).min())
+            if np.isnan(rolling_lowest_vol):
+                rolling_lowest_vol = float(c1_3['Volume'].iloc[-1])
+
+            armed_setup = None
+
+            for i in range(3, len(day_df)):
+                candle = day_df.iloc[i]
+                c_time = candle.name.time()
+                if c_time >= datetime.time(13, 0): break
+
+                c_open = float(candle['Open'])
+                c_high = float(candle['High'])
+                c_low = float(candle['Low'])
+                c_close = float(candle['Close'])
+                c_vol = float(candle['Volume'])
+                c_vwap = float(candle['VWAP'])
+                is_green = c_close > c_open
+                is_red = c_close < c_open
+
+                if armed_setup is not None:
+                    trigger_p = armed_setup['trigger_price']
+                    sl_p = armed_setup['sl_price']
+                    t1_p = armed_setup['t1_price']
+                    setup_dir = armed_setup['direction']
+
+                    # Check max SL % filter
+                    sl_dist_pct = (abs(trigger_p - sl_p) / trigger_p) * 100.0
+                    if sl_dist_pct > max_sl_pct:
+                        armed_setup = None
                         continue
 
-                    # Bullish Entry
-                    vwap_dist = spot - vwap
-                    if 0 < vwap_dist <= vwap_max_distance_pts and st_dir == 1 and p_di > m_di:
-                        bull_cross = (prev_spot <= prev_vwap and spot > vwap) or (prev_st_dir == -1 and st_dir == 1) or (trades_today == 0)
-                        if bull_cross:
-                            current_trade = {
-                                'trade_id': f"TRD_{len(trades)+1}",
-                                'entry_time': timestamp,
-                                'direction': 'BULLISH',
-                                'entry_spot': spot,
-                                'vwap_at_entry': vwap,
-                                'adx_at_entry': adx,
-                                'max_fav_pts': 0.0,
-                                'opt_pts': 0.0,
-                                'pnl': 0.0,
-                                'exit_time': None,
-                                'exit_spot': None,
-                                'exit_reason': None
-                            }
-                            trades_today += 1
+                    if setup_dir == 'LONG' and c_low <= sl_p:
+                        armed_setup = None
+                    elif setup_dir == 'SHORT' and c_high >= sl_p:
+                        armed_setup = None
+                    elif setup_dir == 'LONG' and c_high >= trigger_p:
+                        entry_price = trigger_p
+                        if entry_price > c_vwap and entry_price > pdh:
+                            trade_res = simulate_trade(day_df, i, 'LONG', entry_price, sl_p, t1_p, total_qty, lot_size, lots, sym, trade_date, armed_setup['pattern'])
+                            trades.append(trade_res)
+                            pnl = trade_res['realized_pnl']
+                            daily_pnls[trade_date] += pnl
+                            session_trades += 1
+                            if pnl < 0:
+                                consecutive_losses_today += 1
+                            else:
+                                consecutive_losses_today = 0
+                            armed_setup = None
+                            break
+                        else:
+                            armed_setup = None
+                    elif setup_dir == 'SHORT' and c_low <= trigger_p:
+                        entry_price = trigger_p
+                        if entry_price < c_vwap and entry_price < pdl:
+                            trade_res = simulate_trade(day_df, i, 'SHORT', entry_price, sl_p, t1_p, total_qty, lot_size, lots, sym, trade_date, armed_setup['pattern'])
+                            trades.append(trade_res)
+                            pnl = trade_res['realized_pnl']
+                            daily_pnls[trade_date] += pnl
+                            session_trades += 1
+                            if pnl < 0:
+                                consecutive_losses_today += 1
+                            else:
+                                consecutive_losses_today = 0
+                            armed_setup = None
+                            break
+                        else:
+                            armed_setup = None
 
-                    # Bearish Entry
-                    vwap_dist_bear = vwap - spot
-                    if 0 < vwap_dist_bear <= vwap_max_distance_pts and st_dir == -1 and m_di > p_di:
-                        bear_cross = (prev_spot >= prev_vwap and spot < vwap) or (prev_st_dir == 1 and st_dir == -1) or (trades_today == 0)
-                        if bear_cross:
-                            current_trade = {
-                                'trade_id': f"TRD_{len(trades)+1}",
-                                'entry_time': timestamp,
-                                'direction': 'BEARISH',
-                                'entry_spot': spot,
-                                'vwap_at_entry': vwap,
-                                'adx_at_entry': adx,
-                                'max_fav_pts': 0.0,
-                                'opt_pts': 0.0,
-                                'pnl': 0.0,
-                                'exit_time': None,
-                                'exit_spot': None,
-                                'exit_reason': None
-                            }
-                            trades_today += 1
+                is_opposite = is_red if direction == 'LONG' else is_green
 
-    if not trades:
-        return {'trades': 0, 'win_rate': 0, 'pnl': 0, 'profit_factor': 0, 'max_dd': 0, 'trades_df': pd.DataFrame()}
+                lvr_matched = False
+                if is_opposite and c_vol > 0 and c_vol <= rolling_lowest_vol:
+                    if direction == 'LONG':
+                        trg = round_to_tick(c_high + 0.05)
+                        raw_sl = round_to_tick(c_low - 0.05)
+                        risk = max(trg - raw_sl, trg * 0.0035)
+                        sl = round_to_tick(trg - risk)
+                        t1 = round_to_tick(trg + (2.0 * risk))
+                    else:
+                        trg = round_to_tick(c_low - 0.05)
+                        raw_sl = round_to_tick(c_high + 0.05)
+                        risk = max(raw_sl - trg, trg * 0.0035)
+                        sl = round_to_tick(trg + risk)
+                        t1 = round_to_tick(trg - (2.0 * risk))
 
-    df_res = pd.DataFrame(trades)
-    wins = df_res[df_res['pnl'] > 0]
-    losses = df_res[df_res['pnl'] <= 0]
-    win_rate = (len(wins) / len(df_res)) * 100.0
-    total_pnl = df_res['pnl'].sum()
-    gross_profit = wins['pnl'].sum() if not wins.empty else 0.0
-    gross_loss = abs(losses['pnl'].sum()) if not losses.empty else 1.0
-    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+                    armed_setup = {
+                        'direction': direction,
+                        'trigger_price': trg,
+                        'sl_price': sl,
+                        't1_price': t1,
+                        'pattern': 'SETUP_2_LVR_PULLBACK',
+                        'armed_index': i
+                    }
+                    rolling_lowest_vol = c_vol
+                    lvr_matched = True
+                elif c_vol > 0 and c_vol < rolling_lowest_vol:
+                    rolling_lowest_vol = c_vol
 
-    df_res['cum_pnl'] = df_res['pnl'].cumsum()
-    df_res['peak'] = df_res['cum_pnl'].cummax()
-    df_res['drawdown'] = df_res['cum_pnl'] - df_res['peak']
-    max_dd = df_res['drawdown'].min()
+                if use_vande_bharat and not lvr_matched and i >= 1:
+                    prev = day_df.iloc[i - 1]
+                    prev_open = float(prev['Open'])
+                    prev_close = float(prev['Close'])
+                    prev_high = float(prev['High'])
+                    prev_low = float(prev['Low'])
+                    prev_vol = float(prev['Volume'])
+
+                    is_inside = (c_high <= prev_high and c_low >= prev_low)
+                    vb_vol_floor = (c_vol <= prev_vol and (rolling_lowest_vol == 0 or c_vol <= rolling_lowest_vol * 2.0))
+
+                    if direction == 'LONG' and (prev_close > prev_open) and is_red and is_inside and vb_vol_floor:
+                        trg = round_to_tick(prev_high + 0.05)
+                        raw_sl = round_to_tick(c_low - 0.05)
+                        risk = max(trg - raw_sl, trg * 0.0035)
+                        sl = round_to_tick(trg - risk)
+                        t1 = round_to_tick(trg + (2.0 * risk))
+                        armed_setup = {
+                            'direction': direction,
+                            'trigger_price': trg,
+                            'sl_price': sl,
+                            't1_price': t1,
+                            'pattern': 'SETUP_3_VANDE_BHARAT',
+                            'armed_index': i
+                        }
+                    elif direction == 'SHORT' and (prev_close < prev_open) and is_green and is_inside and vb_vol_floor:
+                        trg = round_to_tick(prev_low - 0.05)
+                        raw_sl = round_to_tick(c_high + 0.05)
+                        risk = max(raw_sl - trg, trg * 0.0035)
+                        sl = round_to_tick(trg + risk)
+                        t1 = round_to_tick(trg - (2.0 * risk))
+                        armed_setup = {
+                            'direction': direction,
+                            'trigger_price': trg,
+                            'sl_price': sl,
+                            't1_price': t1,
+                            'pattern': 'SETUP_3_VANDE_BHARAT',
+                            'armed_index': i
+                        }
+
+    return calculate_metrics(trades, daily_pnls)
+
+def simulate_trade(day_df, entry_idx, direction, entry_p, sl_p, t1_p, total_qty, lot_size, lots, sym, trade_date, pattern):
+    half_qty = (lots // 2) * lot_size if lots > 1 else total_qty // 2
+    runner_qty = total_qty - half_qty
+
+    partial_booked = False
+    current_sl = sl_p
+    realized_pnl = 0.0
+    exit_reason = "EOD_1500_EXIT"
+    exit_time = None
+    exit_price = None
+
+    for j in range(entry_idx + 1, len(day_df)):
+        bar = day_df.iloc[j]
+        bar_time = bar.name.time()
+        b_high = float(bar['High'])
+        b_low = float(bar['Low'])
+        b_close = float(bar['Close'])
+        b_ema10 = float(bar['EMA10'])
+
+        if bar_time >= datetime.time(15, 0):
+            exit_price = b_close
+            exit_time = bar.name
+            exit_reason = "15:00_EOD_HARD_EXIT"
+            if partial_booked:
+                runner_pts = (exit_price - entry_p) if direction == 'LONG' else (entry_p - exit_price)
+                realized_pnl += (runner_pts * runner_qty)
+            else:
+                pts = (exit_price - entry_p) if direction == 'LONG' else (entry_p - exit_price)
+                realized_pnl = pts * total_qty
+            break
+
+        if direction == 'LONG':
+            if b_low <= current_sl:
+                exit_price = current_sl
+                exit_time = bar.name
+                exit_reason = "COST_SL_HIT" if partial_booked else "STOP_LOSS_HIT"
+                if partial_booked:
+                    runner_pts = current_sl - entry_p
+                    realized_pnl += (runner_pts * runner_qty)
+                else:
+                    realized_pnl = (current_sl - entry_p) * total_qty
+                break
+        else:
+            if b_high >= current_sl:
+                exit_price = current_sl
+                exit_time = bar.name
+                exit_reason = "COST_SL_HIT" if partial_booked else "STOP_LOSS_HIT"
+                if partial_booked:
+                    runner_pts = entry_p - current_sl
+                    realized_pnl += (runner_pts * runner_qty)
+                else:
+                    realized_pnl = (entry_p - current_sl) * total_qty
+                break
+
+        if not partial_booked:
+            if direction == 'LONG' and b_high >= t1_p:
+                partial_booked = True
+                current_sl = entry_p
+                gain_pts = t1_p - entry_p
+                realized_pnl += (gain_pts * half_qty)
+            elif direction == 'SHORT' and b_low <= t1_p:
+                partial_booked = True
+                current_sl = entry_p
+                gain_pts = entry_p - t1_p
+                realized_pnl += (gain_pts * half_qty)
+
+        if partial_booked:
+            if direction == 'LONG' and b_close < b_ema10:
+                exit_price = b_close
+                exit_time = bar.name
+                exit_reason = "10_EMA_RUNNER_EXIT"
+                runner_pts = exit_price - entry_p
+                realized_pnl += (runner_pts * runner_qty)
+                break
+            elif direction == 'SHORT' and b_close > b_ema10:
+                exit_price = b_close
+                exit_time = bar.name
+                exit_reason = "10_EMA_RUNNER_EXIT"
+                runner_pts = entry_p - exit_price
+                realized_pnl += (runner_pts * runner_qty)
+                break
 
     return {
-        'trades': len(df_res),
+        'date': trade_date,
+        'symbol': sym,
+        'direction': direction,
+        'pattern': pattern,
+        'entry_price': entry_p,
+        'exit_price': exit_price,
+        'sl_price': sl_p,
+        'target_price': t1_p,
+        'lots': lots,
+        'total_qty': total_qty,
+        'realized_pnl': realized_pnl,
+        'exit_reason': exit_reason,
+        'partial_booked': partial_booked
+    }
+
+def calculate_metrics(trades, daily_pnls):
+    if not trades:
+        return {'total_trades': 0, 'net_pnl': 0, 'win_rate': 0, 'profit_factor': 0, 'max_dd': 0}
+
+    df_trades = pd.DataFrame(trades)
+    total_trades = len(df_trades)
+    wins = df_trades[df_trades['realized_pnl'] > 0]
+    losses = df_trades[df_trades['realized_pnl'] < 0]
+
+    win_rate = (len(wins) / total_trades) * 100.0
+    total_pnl = df_trades['realized_pnl'].sum()
+    gross_profit = wins['realized_pnl'].sum()
+    gross_loss = abs(losses['realized_pnl'].sum())
+    profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf')
+
+    pnl_series = pd.Series(list(daily_pnls.values()))
+    cum_pnl = pnl_series.cumsum()
+    peak = cum_pnl.cummax()
+    drawdown = peak - cum_pnl
+    max_dd = drawdown.max() if not drawdown.empty else 0.0
+
+    return {
+        'total_trades': total_trades,
+        'wins': len(wins),
+        'losses': len(losses),
         'win_rate': win_rate,
-        'pnl': total_pnl,
         'gross_profit': gross_profit,
         'gross_loss': gross_loss,
+        'net_pnl': total_pnl,
         'profit_factor': profit_factor,
-        'max_dd': max_dd,
-        'trades_df': df_res
+        'max_dd': max_dd
     }
 
 def main():
-    ticker = "^NSEI"
-    df_5m = yf.download(ticker, period="60d", interval="5m", progress=False)
-    if isinstance(df_5m.columns, pd.MultiIndex):
-        df_5m.columns = df_5m.columns.get_level_values(0)
+    print("================================================================================")
+    print(" 🔬 SYSTEMATIC DRAWDOWN REDUCTION OPTIMIZATION EXPERIMENTS")
+    print("================================================================================")
 
-    if df_5m.index.tz is None:
-        df_5m.index = df_5m.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
-    else:
-        df_5m.index = df_5m.index.tz_convert('Asia/Kolkata')
+    data_5m = {}
+    daily_data = {}
 
-    df_5m = df_5m.between_time('09:15', '15:30')
-    df_5m = calculate_intraday_vwap(df_5m)
+    for ticker in UNIVERSE:
+        sym = ticker.replace(".NS", "")
+        try:
+            df_5m = yf.download(ticker, interval='5m', period='60d', progress=False)
+            if df_5m.empty or len(df_5m) < 50: continue
+            if isinstance(df_5m.columns, pd.MultiIndex): df_5m.columns = df_5m.columns.get_level_values(0)
+            df_5m.index = pd.to_datetime(df_5m.index).tz_convert('Asia/Kolkata')
+            data_5m[sym] = df_5m
 
-    df_15m = df_5m.resample('15min', closed='left', label='left').agg({
-        'Open': 'first',
-        'High': 'max',
-        'Low': 'min',
-        'Close': 'last',
-        'Volume': 'sum'
-    }).dropna()
+            df_d = yf.download(ticker, interval='1d', period='90d', progress=False)
+            if not df_d.empty:
+                if isinstance(df_d.columns, pd.MultiIndex): df_d.columns = df_d.columns.get_level_values(0)
+                if df_d.index.tz is None:
+                    df_d.index = df_d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+                else:
+                    df_d.index = df_d.index.tz_convert('Asia/Kolkata')
+                daily_data[sym] = df_d
+        except Exception as e:
+            print(f"warning: failed loading daily data for {ticker}: {e}")
+            continue
 
-    df_15m = calculate_supertrend(df_15m, period=10, multiplier=2.0)
-    df_15m = calculate_adx(df_15m, period=14)
-    df_15m['RSI_15m'] = calculate_rsi(df_15m['Close'], 14)
-
-    df_5m['Time_15m'] = df_5m.index.floor('15min')
-    cols_15m = ['SuperTrend', 'ST_Direction', 'ADX', 'Plus_DI', 'Minus_DI', 'RSI_15m']
-    df_15m_subset = df_15m[cols_15m].shift(1)
-    df_merged = df_5m.join(df_15m_subset, on='Time_15m', rsuffix='_15m')
-    df_merged = df_merged.dropna(subset=['SuperTrend', 'VWAP', 'ADX', 'RSI_15m'])
-
-    print("=========================================================================================================")
-    print("DRAWDOWN REDUCTION & RISK MANAGEMENT EXPERIMENTS (10 LOTS / 650 QTY)")
-    print("=========================================================================================================")
+    all_dates = sorted(list(set(d for df in data_5m.values() for d in df.index.date)))
+    trading_dates = all_dates[1:]
 
     experiments = [
-        ("Base Setup (Fixed 35pt SL, No Trailing, No Limit)", {
-            "max_trades_per_day": 2, "stop_after_one_loss": False, "trailing_step_enabled": False, "vwap_max_distance_pts": 999.0, "sl_pts": 35.0
+        ("1. Baseline (Current Fixed 2 Lots, Max 3 Trades)", {
+            'use_vande_bharat': True, 'max_consecutive_losses': 3, 'max_sl_pct': 10.0, 'daily_ema_filter': False, 'max_daily_trades': 3
         }),
-        ("Step 1: Stepped Trailing Stop (Lock breakeven @ +15, Lock +18 @ +28)", {
-            "max_trades_per_day": 2, "stop_after_one_loss": False, "trailing_step_enabled": True, "trail_step_1_trigger": 15.0, "trail_step_2_trigger": 28.0, "vwap_max_distance_pts": 999.0, "sl_pts": 30.0
+        ("2. Pure LVR Pullback Only (Disable Setup 3 Vande Bharat)", {
+            'use_vande_bharat': False, 'max_consecutive_losses': 3, 'max_sl_pct': 10.0, 'daily_ema_filter': False, 'max_daily_trades': 3
         }),
-        ("Step 2: No-Chasing Rule (Max Distance from VWAP <= 40 pts)", {
-            "max_trades_per_day": 2, "stop_after_one_loss": False, "trailing_step_enabled": True, "trail_step_1_trigger": 15.0, "trail_step_2_trigger": 28.0, "vwap_max_distance_pts": 40.0, "sl_pts": 30.0
+        ("3. Tight SL Range Filter (Max SL <= 0.75% of stock price)", {
+            'use_vande_bharat': False, 'max_consecutive_losses': 3, 'max_sl_pct': 0.75, 'daily_ema_filter': False, 'max_daily_trades': 3
         }),
-        ("Step 3: 1-Loss-and-Done Circuit Breaker + Trailing SL", {
-            "max_trades_per_day": 2, "stop_after_one_loss": True, "trailing_step_enabled": True, "trail_step_1_trigger": 15.0, "trail_step_2_trigger": 28.0, "vwap_max_distance_pts": 40.0, "sl_pts": 30.0
+        ("4. Daily 1-Loss Circuit Breaker (Max 1 Loss per day, Max 2 Trades)", {
+            'use_vande_bharat': False, 'max_consecutive_losses': 1, 'max_sl_pct': 0.75, 'daily_ema_filter': False, 'max_daily_trades': 2
         }),
-        ("Step 4: ADX >= 22 (Avoid Weak Choppy Trends) + Trailing SL", {
-            "max_trades_per_day": 2, "stop_after_one_loss": False, "trailing_step_enabled": True, "trail_step_1_trigger": 15.0, "trail_step_2_trigger": 28.0, "adx_threshold": 22.0, "vwap_max_distance_pts": 40.0, "sl_pts": 30.0
+        ("5. Macro Daily 20 EMA Trend Alignment Filter", {
+            'use_vande_bharat': False, 'max_consecutive_losses': 1, 'max_sl_pct': 0.75, 'daily_ema_filter': True, 'max_daily_trades': 2
         }),
-        ("Step 5: [CHAMPION] Trailing Stop + No-Chase (<=35pts VWAP) + ADX>=22", {
-            "max_trades_per_day": 2, "stop_after_one_loss": False, "trailing_step_enabled": True, "trail_step_1_trigger": 15.0, "trail_step_2_trigger": 28.0, "adx_threshold": 22.0, "vwap_max_distance_pts": 35.0, "sl_pts": 28.0
-        })
+        ("6. Master Low-Drawdown System (Pure LVR + SL <= 0.60% + Daily Trend + Max 1 Loss/Day)", {
+            'use_vande_bharat': False, 'max_consecutive_losses': 1, 'max_sl_pct': 0.60, 'daily_ema_filter': True, 'max_daily_trades': 2
+        }),
     ]
 
+    results = []
     for name, params in experiments:
-        res = backtest_drawdown_optimizer(df_merged, **params)
-        pnl_str = f"+Rs {res['pnl']:,.2f}" if res['pnl'] >= 0 else f"-Rs {abs(res['pnl']):,.2f}"
-        dd_str = f"-Rs {abs(res['max_dd']):,.2f}"
-        print(f"\n>> {name}")
-        print(f"   Trades: {res['trades']:<2} | Win Rate: {res['win_rate']:<4.1f}% | Net PnL: {pnl_str:<14} | PF: {res['profit_factor']:<4.2f} | Max DD: {dd_str}")
+        res = run_experiment(data_5m, daily_data, trading_dates, **params)
+        res['name'] = name
+        results.append(res)
+
+    print("\n" + "="*105)
+    print(f"{'Experiment Configuration':<48} | {'Trades':<6} | {'Win Rate':<8} | {'Profit Factor':<13} | {'Net P&L (₹)':<14} | {'Max Drawdown (₹)':<16}")
+    print("="*105)
+    for r in results:
+        pnl_str = f"+₹{r['net_pnl']:,.0f}" if r['net_pnl'] >= 0 else f"-₹{abs(r['net_pnl']):,.0f}"
+        dd_str = f"₹{r['max_dd']:,.0f}"
+        print(f"{r['name']:<48} | {r['total_trades']:<6d} | {r['win_rate']:<7.1f}% | {r['profit_factor']:<13.2f} | {pnl_str:<14} | {dd_str:<16}")
+    print("="*105)
 
 if __name__ == '__main__':
     main()

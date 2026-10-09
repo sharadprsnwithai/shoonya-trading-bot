@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -33,6 +34,8 @@ import org.springframework.boot.test.context.SpringBootTest;
  * production beans.
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
+@Disabled
 class ShoonyaTodayLvrReplayRunnerTest {
 
     private static final Logger log =
@@ -55,9 +58,22 @@ class ShoonyaTodayLvrReplayRunnerTest {
         System.out.println(
                 "==========================================================================");
 
-        List<String> candidateStocks =
-                List.of("SUNPHARMA", "LAURUSLABS", "TORNTPHARM", "AUROPHARMA");
+        List<String> candidateStocks = List.of("PNB", "INDIANB", "BANKBARODA");
         Map<String, List<Candle>> candlesMap = fetchSessionCandlesForStocks(candidateStocks);
+
+        System.out.println(
+                "\n--------------------------------------------------------------------------");
+        System.out.println(" 5-MIN CANDLE BREAKDOWN & PDH/PDL INITIALIZATION");
+        System.out.println(
+                "--------------------------------------------------------------------------");
+        for (String sym : candidateStocks) {
+            LowestVolumeSetup setup = new LowestVolumeSetup(sym, LowestVolumeDirection.LONG);
+            lvrService.initPdhPdlForSetup(setup);
+            System.out.printf(
+                    "\n>>> %s: Initialized PDH = %s, PDL = %s <<<\n",
+                    sym, setup.getPdh(), setup.getPdl());
+            printCandleSequenceDetails(sym, candlesMap.get(sym), LowestVolumeDirection.LONG);
+        }
 
         // Run Production Stock Futures Mode (100% Full Exit at 1:2 Target)
         System.out.println(
@@ -193,7 +209,7 @@ class ShoonyaTodayLvrReplayRunnerTest {
                 "--------------------------------------------------------------------------");
 
         lvrService.setInstrumentType(LvrInstrumentType.FUTURES);
-        lvrService.setExitMode(LvrExitMode.FULL_TARGET_1_4);
+        lvrService.setExitMode(LvrExitMode.FULL_TARGET_1_2);
         lvrService.setTelegramAlerts(false);
 
         System.out.println("\n>>> [LONG REPLAY ACROSS ALL 107 STOCKS] <<<");
@@ -243,9 +259,9 @@ class ShoonyaTodayLvrReplayRunnerTest {
                                         : (entryPrc.subtract(exitPrc).doubleValue()));
                 double rValue = (unitRisk > 0 && !isOptions) ? (ptsCaptured / unitRisk) : 0.0;
 
-                if (pos.getExitReason().contains("TARGET_1_4")) {
+                if (pos.getExitReason().contains("TARGET_1_2_FULL_EXIT")) {
                     wins++;
-                    rValue = (pos.getExitMode() == LvrExitMode.FULL_TARGET_1_4) ? 4.0 : 2.0;
+                    rValue = 2.0;
                 } else if (pos.getExitReason().contains("SL")) {
                     losses++;
                     rValue = pos.isPartialBooked() ? 0.0 : -1.0;

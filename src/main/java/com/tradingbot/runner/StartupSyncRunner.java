@@ -11,6 +11,7 @@ import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.execution.BrokerPosition;
 import com.tradingbot.telegram.TelegramService;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -25,6 +26,11 @@ import org.springframework.stereotype.Component;
  * for all configured brokers, and synchronizes benchmark OHLC data.
  */
 @Component
+@org.springframework.context.annotation.Profile("!test")
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = "trading-bot.startup-sync.enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class StartupSyncRunner implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(StartupSyncRunner.class);
@@ -41,6 +47,9 @@ public class StartupSyncRunner implements CommandLineRunner {
     private final KiteAuthService kiteAuthService;
     private final KiteProperties kiteProperties;
     private final TelegramService telegramService;
+    private final com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService;
+    private final java.util.Set<String> reportedBrokers =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @Autowired
     public StartupSyncRunner(
@@ -52,7 +61,9 @@ public class StartupSyncRunner implements CommandLineRunner {
             @Autowired(required = false) ZerodhaBrokerGateway zerodhaGateway,
             @Autowired(required = false) KiteAuthService kiteAuthService,
             @Autowired(required = false) KiteProperties kiteProperties,
-            @Autowired(required = false) TelegramService telegramService) {
+            @Autowired(required = false) TelegramService telegramService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService) {
         this.config = config;
         this.authenticator = authenticator;
         this.marketDataService = marketDataService;
@@ -62,6 +73,7 @@ public class StartupSyncRunner implements CommandLineRunner {
         this.kiteAuthService = kiteAuthService;
         this.kiteProperties = kiteProperties;
         this.telegramService = telegramService;
+        this.carWeeklyService = carWeeklyService;
     }
 
     @Override
@@ -88,29 +100,15 @@ public class StartupSyncRunner implements CommandLineRunner {
                 fetchAndReportPositions("SHOONYA", shoonyaPositions);
             }
         } catch (Exception e) {
-            log.warn("Shoonya Startup Sync Notice: {}", e.getMessage());
+            log.warn("Shoonya Startup Sync Notice: {}", e.getMessage(), e);
         }
 
         try {
             // 2. Check Zerodha Kite Auth & Fetch Active Positions
             if (kiteAuthService != null && zerodhaGateway != null) {
                 log.info("[2/4] Checking Zerodha Kite Connect authentication status...");
+                kiteAuthService.ensureActiveSession();
                 KiteAuthService.KiteStatus kiteStatus = kiteAuthService.status();
-
-                // If not active, attempt automated headless login if credentials present
-                if (!"ACTIVE".equalsIgnoreCase(kiteStatus.status())
-                        && kiteProperties != null
-                        && kiteProperties.hasAutoLoginCredentials()) {
-                    log.info(
-                            "[2/4] Zerodha Kite inactive. Attempting automated TOTP login for user"
-                                    + " {}...",
-                            kiteProperties.userId());
-                    try {
-                        kiteStatus = kiteAuthService.performAutoLogin();
-                    } catch (Exception e) {
-                        log.warn("[2/4] Automated Zerodha login notice: {}", e.getMessage());
-                    }
-                }
 
                 if ("ACTIVE".equalsIgnoreCase(kiteStatus.status())) {
                     log.info(
@@ -125,7 +123,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                 }
             }
         } catch (Exception e) {
-            log.warn("Zerodha Kite Startup Notice: {}", e.getMessage());
+            log.warn("Zerodha Kite Startup Notice: {}", e.getMessage(), e);
         }
 
         try {
@@ -135,7 +133,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                     String exchange, String token, String symbol, String timeframe) {}
             List<InstrumentTarget> targets =
                     List.of(
-                            new InstrumentTarget("NFO", "68407", "NIFTY50", "5"),
+                            new InstrumentTarget("NSE", "26000", "NSE:NIFTY50", "5"),
                             new InstrumentTarget("NSE", "2885", "NSE:RELIANCE", "5"),
                             new InstrumentTarget("NSE", "11536", "NSE:TCS", "5"),
                             new InstrumentTarget("NSE", "1594", "NSE:INFY", "5"));
@@ -154,17 +152,17 @@ public class StartupSyncRunner implements CommandLineRunner {
                 Thread.sleep(350);
             }
         } catch (Exception e) {
-            log.warn("Historical Benchmark Candle Sync Notice: {}", e.getMessage());
+            log.warn("Historical Benchmark Candle Sync Notice: {}", e.getMessage(), e);
         }
 
         try {
             // 4. Verify Historical OHLC Local SQLite / Memory Cache
-            log.info("[4/4] Checking Yahoo Finance Historical OHLC Database cache status...");
+            log.info("[4/5] Checking Yahoo Finance Historical OHLC Database cache status...");
             if (ohlcCacheService != null
                     && (ohlcCacheService.getCachedSymbolCount() == 0
                             || !ohlcCacheService.isCacheValidForToday())) {
                 log.info(
-                        "[4/4] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating background sync...",
+                        "[4/5] OHLC Database is empty or stale (cached: {}, valid: {}). Initiating background sync...",
                         ohlcCacheService.getCachedSymbolCount(),
                         ohlcCacheService.isCacheValidForToday());
                 java.util.concurrent.CompletableFuture.runAsync(
@@ -183,7 +181,24 @@ public class StartupSyncRunner implements CommandLineRunner {
                         });
             }
         } catch (Exception e) {
-            log.warn("Yahoo Historical OHLC Cache Startup Notice: {}", e.getMessage());
+            log.warn("Yahoo Historical OHLC Cache Startup Notice: {}", e.getMessage(), e);
+        }
+
+        try {
+            // 5. CAR Weekly GTT Strategy Sunday Reconciliation Check
+            if (carWeeklyService != null) {
+                LocalDate today = LocalDate.now(IST);
+                if (today.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {
+                    log.info(
+                            "[5/5] Startup on Sunday detected. Executing CAR Weekly GTT routine...");
+                    carWeeklyService.runSundayWeeklyRoutine();
+                } else {
+                    log.info(
+                            "[5/5] CAR Weekly GTT Strategy ready (Next scheduled run: Sunday 10:00 AM IST).");
+                }
+            }
+        } catch (Exception e) {
+            log.warn("CAR Weekly GTT Startup Notice: {}", e.getMessage(), e);
         }
 
         log.info("==================================================================");
@@ -191,9 +206,19 @@ public class StartupSyncRunner implements CommandLineRunner {
         log.info("==================================================================");
     }
 
-    private void fetchAndReportPositions(String brokerName, List<BrokerPosition> positions) {
+    private synchronized void fetchAndReportPositions(
+            String brokerName, List<BrokerPosition> positions) {
         if (positions == null || positions.isEmpty()) {
             log.info("[{}] No active open positions in Cash or Derivatives.", brokerName);
+            return;
+        }
+
+        // Deduplicate startup position alerts so it is never sent twice
+        String reportKey = brokerName + ":" + LocalDate.now(IST);
+        if (!reportedBrokers.add(reportKey)) {
+            log.debug(
+                    "[{}] Startup positions already reported today. Skipping duplicate alert.",
+                    brokerName);
             return;
         }
 

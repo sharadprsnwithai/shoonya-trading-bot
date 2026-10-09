@@ -365,4 +365,43 @@ class StockFnoRegistryTest {
         assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 29));
         assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
     }
+
+    @Test
+    void testFuturesSymbolRollsAfterMonthlyExpiry() {
+        // September 2026 expiry is Thursday Sep 24, 2026.
+        // On Friday Sep 25, 2026, a null expiry must roll to Oct 2026 (H3).
+        try {
+            StockFnoRegistry.setClock(
+                    java.time.Clock.fixed(
+                            java.time.Instant.parse("2026-09-25T06:00:00Z"),
+                            java.time.ZoneId.of("Asia/Kolkata")));
+            String sym = StockFnoRegistry.formatFuturesTradingSymbol("RELIANCE", null);
+            assertThat(sym).isEqualTo("RELIANCE26OCTFUT");
+        } finally {
+            StockFnoRegistry.setClock(null);
+        }
+    }
+
+    @Test
+    void testFuturesSymbolHonorsExplicitExpiry() {
+        // Contract: a non-null expiry is an actual expiry and must be honored, not re-rolled.
+        LocalDate actualExpiry = LocalDate.of(2026, 9, 24);
+        String sym = StockFnoRegistry.formatFuturesTradingSymbol("RELIANCE", actualExpiry);
+        assertThat(sym).isEqualTo("RELIANCE26SEPFUT");
+    }
+
+    @Test
+    void testFuturesSymbolResolvesNextMonthlyFromClockWithoutRoll() {
+        // Mid-cycle (Oct 5): null expiry resolves the current month's expiry (Oct 29).
+        try {
+            StockFnoRegistry.setClock(
+                    java.time.Clock.fixed(
+                            java.time.Instant.parse("2026-10-05T06:00:00Z"),
+                            java.time.ZoneId.of("Asia/Kolkata")));
+            String sym = StockFnoRegistry.formatFuturesTradingSymbol("RELIANCE", null);
+            assertThat(sym).isEqualTo("RELIANCE26OCTFUT");
+        } finally {
+            StockFnoRegistry.setClock(null);
+        }
+    }
 }

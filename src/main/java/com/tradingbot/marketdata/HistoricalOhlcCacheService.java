@@ -48,6 +48,7 @@ public class HistoricalOhlcCacheService {
     private final YahooFinanceService yahooService;
     private final ObjectMapper objectMapper;
     private final SqliteHistoricalOhlcRepository sqliteRepository;
+    private final ShoonyaMarketDataService shoonyaMarketDataService;
     private final String stateFilePath;
     private final boolean jsonBackupEnabled;
 
@@ -60,19 +61,30 @@ public class HistoricalOhlcCacheService {
             YahooFinanceService yahooService,
             ObjectMapper objectMapper,
             @Autowired(required = false) SqliteHistoricalOhlcRepository sqliteRepository,
+            @Autowired(required = false) ShoonyaMarketDataService shoonyaMarketDataService,
             @Value("${trading-bot.ohlc.cache-file-path:data/historical_ohlc.json}")
                     String stateFilePath,
             @Value("${trading-bot.ohlc.json-backup-enabled:true}") boolean jsonBackupEnabled) {
         this.yahooService = yahooService;
         this.objectMapper = objectMapper.copy().findAndRegisterModules();
         this.sqliteRepository = sqliteRepository;
+        this.shoonyaMarketDataService = shoonyaMarketDataService;
         this.stateFilePath = stateFilePath;
         this.jsonBackupEnabled = jsonBackupEnabled;
     }
 
     public HistoricalOhlcCacheService(
+            YahooFinanceService yahooService,
+            ObjectMapper objectMapper,
+            SqliteHistoricalOhlcRepository sqliteRepository,
+            String stateFilePath,
+            boolean jsonBackupEnabled) {
+        this(yahooService, objectMapper, sqliteRepository, null, stateFilePath, jsonBackupEnabled);
+    }
+
+    public HistoricalOhlcCacheService(
             YahooFinanceService yahooService, ObjectMapper objectMapper, String stateFilePath) {
-        this(yahooService, objectMapper, null, stateFilePath, true);
+        this(yahooService, objectMapper, null, null, stateFilePath, true);
     }
 
     @PostConstruct
@@ -222,8 +234,23 @@ public class HistoricalOhlcCacheService {
         String clean = normalizeSymbol(symbol);
         try {
             List<Candle> daily = yahooService.fetchDailyCandles(clean, yearsBack);
+            if ((daily == null || daily.isEmpty()) && shoonyaMarketDataService != null) {
+                log.info(
+                        "[OHLC-CACHE] Yahoo returned no data for {}. Falling back to Shoonya"
+                                + " historical daily candles...",
+                        clean);
+                daily =
+                        shoonyaMarketDataService.fetchDailyCandles(
+                                clean,
+                                // 365 calendar days is only ~245 trading sessions, short of the
+                                // 252-session window the CAR anchor searches; fetch a full year
+                                // of calendar days so the fallback is not silently truncated.
+                                (int) Math.min(365L * Math.max(1, yearsBack), 1200L));
+            }
             if (daily == null || daily.isEmpty()) {
-                log.debug("[OHLC-CACHE] No daily candles returned from Yahoo for {}", clean);
+                log.debug(
+                        "[OHLC-CACHE] No daily candles returned from Yahoo or Shoonya for {}",
+                        clean);
                 return false;
             }
 
@@ -238,7 +265,7 @@ public class HistoricalOhlcCacheService {
             }
             return true;
         } catch (Exception e) {
-            log.warn("[OHLC-CACHE] Error syncing symbol {}: {}", clean, e.getMessage());
+            log.warn("[OHLC-CACHE] Error syncing symbol {}: {}", clean, e.getMessage(), e);
             return false;
         }
     }
@@ -302,7 +329,7 @@ public class HistoricalOhlcCacheService {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("[OHLC-CACHE] Sync interrupted");
+            log.warn("[OHLC-CACHE] Sync interrupted", e);
         } finally {
             if (!executor.isTerminated()) {
                 executor.shutdownNow();

@@ -1,7 +1,16 @@
 package com.tradingbot.execution.consumer;
 
+import com.tradingbot.execution.gateway.BrokerOrderGateway;
 import com.tradingbot.model.execution.ExecutionMode;
+import com.tradingbot.model.order.OrderRequest;
+import com.tradingbot.model.order.OrderResponse;
+import com.tradingbot.model.order.OrderStatus;
+import com.tradingbot.model.order.OrderType;
+import com.tradingbot.model.order.ProductType;
+import com.tradingbot.model.order.TransactionType;
+import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -21,6 +30,7 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     private final String consumerId;
     private final String brokerName;
     private final ExecutionMode executionMode;
+    private final java.util.Map<String, ExecutionMode> strategyModes;
     private final double quantityMultiplier;
     private final boolean enabled;
     private final long maxSignalAgeSeconds;
@@ -33,9 +43,29 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             double quantityMultiplier,
             boolean enabled,
             long maxSignalAgeSeconds) {
+        this(
+                consumerId,
+                brokerName,
+                executionMode,
+                java.util.Collections.emptyMap(),
+                quantityMultiplier,
+                enabled,
+                maxSignalAgeSeconds);
+    }
+
+    protected AbstractTradeExecutionConsumer(
+            String consumerId,
+            String brokerName,
+            ExecutionMode executionMode,
+            java.util.Map<String, ExecutionMode> strategyModes,
+            double quantityMultiplier,
+            boolean enabled,
+            long maxSignalAgeSeconds) {
         this.consumerId = consumerId;
         this.brokerName = brokerName;
         this.executionMode = executionMode != null ? executionMode : ExecutionMode.PAPER;
+        this.strategyModes =
+                strategyModes != null ? strategyModes : java.util.Collections.emptyMap();
         this.quantityMultiplier = quantityMultiplier > 0 ? quantityMultiplier : 1.0;
         this.enabled = enabled;
         this.maxSignalAgeSeconds = maxSignalAgeSeconds > 0 ? maxSignalAgeSeconds : 30L;
@@ -89,6 +119,19 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             long ageSeconds =
                     Math.abs(Duration.between(signal.timestamp(), Instant.now()).getSeconds());
             if (ageSeconds > maxSignalAgeSeconds) {
+                // H11: exit-family signals must NEVER be dropped as stale — a delayed exit is
+                // exactly the signal that has to reach the broker to flatten an open position.
+                if (isExitAction(signal.action())) {
+                    log.warn(
+                            "[CONSUMER:{}] Stale EXIT signal {} (Age: {}s > Max: {}s) for {} —"
+                                    + " executing anyway to flatten the broker position.",
+                            consumerId,
+                            signal.signalId(),
+                            ageSeconds,
+                            maxSignalAgeSeconds,
+                            signal.tradingSymbol());
+                    return true;
+                }
                 log.warn(
                         "[CONSUMER:{}] Dropping STALE signal {} (Age: {}s > Max: {}s) for {}",
                         consumerId,
@@ -102,6 +145,20 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         return true;
     }
 
+    public ExecutionMode resolveMode(TradeSignal signal) {
+        if (signal != null
+                && signal.strategyId() != null
+                && strategyModes.containsKey(signal.strategyId())) {
+            return strategyModes.get(signal.strategyId());
+        }
+        return this.executionMode;
+    }
+
+    @Override
+    public java.util.Map<String, ExecutionMode> getStrategyModes() {
+        return strategyModes;
+    }
+
     private void processSignalSafe(TradeSignal signal) {
         try {
             int targetQty = calculateQuantity(signal.baseQuantity());
@@ -113,7 +170,8 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                 return;
             }
 
-            if (executionMode == ExecutionMode.PAPER) {
+            ExecutionMode effectiveMode = resolveMode(signal);
+            if (effectiveMode == ExecutionMode.PAPER) {
                 handlePaperExecution(signal, targetQty);
             } else {
                 handleLiveExecution(signal, targetQty);
@@ -130,6 +188,459 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
 
     protected int calculateQuantity(int baseQuantity) {
         return (int) Math.round(baseQuantity * quantityMultiplier);
+    }
+
+    // --- C3: order validation, failed-fill ledger, best-effort protective SL ---
+
+    private final java.util.Set<String> confirmedEntries =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Set<String> unconfirmedEntries =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Map<String, String> protectiveSlOrders =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    protected static boolean isEntryAction(com.tradingbot.strategy.SignalAction action) {
+        if (action == null) return false;
+        String n = action.name();
+        return n.startsWith("ENTRY") || n.equals("BUY") || n.equals("SELL");
+    }
+
+    protected static boolean isExitAction(com.tradingbot.strategy.SignalAction action) {
+        if (action == null) return false;
+        String n = action.name();
+        // SQUARE_OFF is a full flatten: like EXIT_* it must cancel the resting protective stop,
+        // clear the entry ledger and pass the unconfirmed-entry guard.
+        return n.startsWith("EXIT") || action == SignalAction.SQUARE_OFF;
+    }
+
+    protected static boolean isPartialExitAction(com.tradingbot.strategy.SignalAction action) {
+        if (action == null) return false;
+        return action == SignalAction.PARTIAL_EXIT_LONG
+                || action == SignalAction.PARTIAL_EXIT_SHORT;
+    }
+
+    protected String ledgerKey(TradeSignal signal) {
+        String underlying = signal.underlyingSymbol();
+        return (underlying != null && !underlying.isBlank()) ? underlying : signal.tradingSymbol();
+    }
+
+    /**
+     * C3: places an order with response validation and entry-ledger tracking.
+     *
+     * <ul>
+     *   <li>Rejected/failed ENTRY → symbol is marked {@code ENTRY_UNCONFIRMED}; later EXITs for it
+     *       are suppressed (no naked reverse order at the broker).
+     *   <li>Confirmed ENTRY → symbol moves to the confirmed ledger and a best-effort protective
+     *       SL-M order is placed using the contract-scaled {@code brokerStopLossPrice} metadata.
+     *   <li>When the gateway supports order-status polling (Zerodha), the status is polled briefly
+     *       before the entry is considered confirmed.
+     * </ul>
+     */
+    protected OrderResponse placeOrderConfirmed(
+            TradeSignal signal, OrderRequest request, BrokerOrderGateway gateway) {
+        OrderResponse resp;
+        try {
+            resp = gateway.placeOrder(request);
+        } catch (Exception e) {
+            resp = OrderResponse.failure(request, e.getMessage());
+        }
+
+        boolean rejected = resp == null || !resp.success() || resp.status() == OrderStatus.REJECTED;
+        String key = ledgerKey(signal);
+
+        if (!rejected && isEntryAction(signal.action()) && orderIdOf(resp) != null) {
+            OrderStatus polled = pollOrderStatus(gateway, orderIdOf(resp));
+            if (polled == OrderStatus.REJECTED || polled == OrderStatus.CANCELLED) {
+                rejected = true;
+                log.error(
+                        "[CONSUMER:{}] Order {} later reported as {} for {}",
+                        consumerId,
+                        orderIdOf(resp),
+                        polled,
+                        key);
+            }
+        }
+
+        if (rejected) {
+            if (isEntryAction(signal.action())) {
+                unconfirmedEntries.add(key);
+                confirmedEntries.remove(key);
+                log.error(
+                        "[CONSUMER:{}] ENTRY_UNCONFIRMED for {} ({}): {}. Divergence between"
+                                + " paper and broker — subsequent EXITs for this symbol are"
+                                + " SUPPRESSED to prevent a naked reverse order.",
+                        consumerId,
+                        key,
+                        request.symbol(),
+                        resp != null ? resp.message() : "null response");
+            } else {
+                log.error(
+                        "[CONSUMER:{}] {} order FAILED/REJECTED for {} ({}): {}. Manual"
+                                + " intervention may be required.",
+                        consumerId,
+                        signal.action(),
+                        key,
+                        request.symbol(),
+                        resp != null ? resp.message() : "null response");
+            }
+            return resp;
+        }
+
+        if (isEntryAction(signal.action())) {
+            confirmedEntries.add(key);
+            unconfirmedEntries.remove(key);
+            placeBestEffortProtectiveStop(signal, request, gateway);
+        } else if (isPartialExitAction(signal.action())) {
+            // 1.2: On partial exit, cancel the 100% SL order and replace with a 50% runner SL order
+            // at Cost SL
+            cancelRestingProtectiveStop(gateway, key, "partial exit");
+
+            int remainingQty = request.quantity();
+            if (signal.metadata() != null && signal.metadata().get("remainingQuantity") != null) {
+                try {
+                    remainingQty =
+                            Integer.parseInt(
+                                    String.valueOf(signal.metadata().get("remainingQuantity")));
+                } catch (Exception ignore) {
+                    log.warn(
+                            "[CONSUMER:{}] Unparseable remainingQuantity metadata '{}' — using full quantity",
+                            consumerId,
+                            signal.metadata().get("remainingQuantity"),
+                            ignore);
+                }
+            }
+            if (remainingQty > 0) {
+                OrderRequest runnerEntryReq =
+                        new OrderRequest(
+                                request.symbol(),
+                                request.exchange(),
+                                request.transactionType() == TransactionType.BUY
+                                        ? TransactionType.SELL
+                                        : TransactionType
+                                                .BUY, // entry side was opposite of exit side
+                                OrderType.MKT,
+                                request.productType(),
+                                remainingQty,
+                                BigDecimal.ZERO,
+                                null,
+                                signal.signalId() + "-RUNNER");
+                placeBestEffortProtectiveStop(signal, runnerEntryReq, gateway);
+            }
+        } else if (isExitAction(signal.action())) {
+            confirmedEntries.remove(key);
+            cancelRestingProtectiveStop(gateway, key, "exit");
+        }
+
+        log.info(
+                "[CONSUMER:{}] Order confirmed: {} {} x {} ({} {})",
+                consumerId,
+                signal.action(),
+                request.symbol(),
+                request.quantity(),
+                resp != null ? resp.orderId() : "no-order-id",
+                resp != null ? resp.status() : "");
+        return resp;
+    }
+
+    /**
+     * Cancels and forgets the resting protective stop for {@code key}. Returns the cancelled order
+     * id, or {@code null} when there was nothing to cancel or the cancel failed (the broker keeps
+     * the stop in that case — callers log and continue).
+     */
+    private String cancelRestingProtectiveStop(
+            BrokerOrderGateway gateway, String key, String reason) {
+        String slOrderId = protectiveSlOrders.remove(key);
+        if (slOrderId == null || slOrderId.isBlank()) {
+            return null;
+        }
+        try {
+            gateway.cancelOrder(slOrderId);
+            log.info(
+                    "[CONSUMER:{}] Cancelled resting protective SL order {} for {} on {}.",
+                    consumerId,
+                    slOrderId,
+                    key,
+                    reason);
+            return slOrderId;
+        } catch (Exception e) {
+            log.warn(
+                    "[CONSUMER:{}] Failed to cancel protective SL order {} for {}: {}",
+                    consumerId,
+                    slOrderId,
+                    key,
+                    e.getMessage(),
+                    e);
+            return null;
+        }
+    }
+
+    /**
+     * D3: handles signals that must never produce a position order — stop maintenance only.
+     *
+     * <p>{@code UPDATE_STOP_LOSS} re-places the resting protective stop at {@link
+     * TradeSignal#stopLoss()} for {@code quantity} after cancelling the previous one. The position
+     * itself is untouched, so callers must skip normal order placement when this returns {@code
+     * true}.
+     *
+     * <p>The stop side is derived from the {@code positionSide} metadata (LONG/SHORT, defaulting to
+     * LONG because {@code UPDATE_STOP_LOSS} carries no direction of its own).
+     *
+     * @return {@code true} when the signal was fully handled
+     */
+    protected boolean handleStopMaintenance(
+            TradeSignal signal, int quantity, BrokerOrderGateway gateway) {
+        if (signal.action() != SignalAction.UPDATE_STOP_LOSS) {
+            return false;
+        }
+        String key = ledgerKey(signal);
+        cancelRestingProtectiveStop(gateway, key, "stop-loss update");
+
+        int qty = quantity > 0 ? quantity : signal.baseQuantity();
+        if (qty <= 0) {
+            log.warn(
+                    "[CONSUMER:{}] UPDATE_STOP_LOSS for {} has non-positive quantity {} — the"
+                            + " stop was cancelled but not re-placed.",
+                    consumerId,
+                    key,
+                    qty);
+            return true;
+        }
+
+        String exchange = "NFO";
+        if (signal.metadata() != null && signal.metadata().get("exchange") != null) {
+            exchange = String.valueOf(signal.metadata().get("exchange"));
+        }
+        boolean shortPosition =
+                signal.metadata() != null
+                        && "SHORT"
+                                .equalsIgnoreCase(
+                                        String.valueOf(signal.metadata().get("positionSide")));
+        // placeBestEffortProtectiveStop() flips the anchor side to get the stop side, so the
+        // anchor carries the ENTRY side: BUY for a long position, SELL for a short one.
+        OrderRequest anchor =
+                new OrderRequest(
+                        signal.tradingSymbol(),
+                        exchange,
+                        shortPosition ? TransactionType.SELL : TransactionType.BUY,
+                        OrderType.MKT,
+                        ProductType.MIS,
+                        qty,
+                        BigDecimal.ZERO,
+                        null,
+                        signal.signalId() + "-SL-UPDATE");
+        placeBestEffortProtectiveStop(signal, anchor, gateway);
+        return true;
+    }
+
+    /**
+     * C3: EXIT gate — an exit-family signal (EXIT_xxx or SQUARE_OFF) for a symbol whose ENTRY was
+     * never confirmed at the broker is suppressed (it would be a naked reverse order).
+     */
+    protected boolean guardExitAllowed(TradeSignal signal) {
+        if (!isExitAction(signal.action())) {
+            return true;
+        }
+        String key = ledgerKey(signal);
+        if (unconfirmedEntries.contains(key)) {
+            log.error(
+                    "[CONSUMER:{}] EXIT for {} SUPPRESSED — the ENTRY was never confirmed at the"
+                            + " broker (naked reverse order prevented).",
+                    consumerId,
+                    key);
+            return false;
+        }
+        return true;
+    }
+
+    /** C3: bounded order-status poll; returns {@code null} when polling is unsupported. */
+    protected OrderStatus pollOrderStatus(BrokerOrderGateway gateway, String orderId) {
+        if (!gateway.supportsOrderStatusPolling()) {
+            return null;
+        }
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            OrderStatus status;
+            try {
+                status = gateway.getOrderStatus(orderId);
+            } catch (Exception e) {
+                log.warn(
+                        "[CONSUMER:{}] Order status poll failed for {}: {}",
+                        consumerId,
+                        orderId,
+                        e.getMessage(),
+                        e);
+                return null;
+            }
+            if (status == OrderStatus.COMPLETE
+                    || status == OrderStatus.REJECTED
+                    || status == OrderStatus.CANCELLED) {
+                return status;
+            }
+            try {
+                Thread.sleep(400);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        log.warn(
+                "[CONSUMER:{}] Order {} still not terminal after bounded poll — treating place"
+                        + " response as authoritative.",
+                consumerId,
+                orderId);
+        return null;
+    }
+
+    /**
+     * C3: best-effort broker-side protective stop, using the contract-scaled {@code
+     * brokerStopLossPrice} from the signal metadata. When that metadata is absent the stop falls
+     * back to {@link TradeSignal#stopLoss()} for futures and for options (an option's stop is
+     * already denominated in premium, so it needs no contract scaling). Failure here leaves the
+     * position protected only by the strategy's own tick/candle exit management.
+     */
+    private void placeBestEffortProtectiveStop(
+            TradeSignal signal, OrderRequest entryRequest, BrokerOrderGateway gateway) {
+        if (signal.metadata() == null) {
+            return;
+        }
+        boolean isOption = isOptionSignal(signal, entryRequest.symbol());
+        BigDecimal slPrice = parseBigDecimal(signal.metadata().get("brokerStopLossPrice"));
+        if (slPrice == null || slPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            String instType = String.valueOf(signal.metadata().get("instrumentType"));
+            if ("FUTURES".equalsIgnoreCase(instType) || isOption) {
+                slPrice = signal.stopLoss();
+            }
+        }
+        if (slPrice == null || slPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            log.debug(
+                    "[CONSUMER:{}] No stop price available for {} — skipping protective order"
+                            + " (strategy-side exit management remains the safety net).",
+                    consumerId,
+                    entryRequest.symbol());
+            return;
+        }
+
+        TransactionType side =
+                entryRequest.transactionType() == TransactionType.BUY
+                        ? TransactionType.SELL
+                        : TransactionType.BUY;
+
+        OrderType orderType;
+        BigDecimal limitPrice;
+        if (isOption) {
+            // 1.3: Options require SL_LMT with limit price buffer (SL-M is blocked on options by
+            // NSE/BSE)
+            orderType = OrderType.SL_LMT;
+            if (side == TransactionType.SELL) {
+                // Long Option position SL exit: Sell when premium falls to slPrice. Limit buffer =
+                // 10% below slPrice
+                BigDecimal buffered = slPrice.multiply(BigDecimal.valueOf(0.90));
+                limitPrice = roundToTick(buffered).max(BigDecimal.valueOf(0.05));
+            } else {
+                // Short Option position SL exit: Buy when premium rises to slPrice. Limit buffer =
+                // 10% above slPrice
+                BigDecimal buffered = slPrice.multiply(BigDecimal.valueOf(1.10));
+                limitPrice = roundToTick(buffered);
+            }
+        } else {
+            orderType = OrderType.SL_MKT;
+            limitPrice = BigDecimal.ZERO;
+        }
+
+        OrderRequest slRequest =
+                new OrderRequest(
+                        entryRequest.symbol(),
+                        entryRequest.exchange(),
+                        side,
+                        orderType,
+                        entryRequest.productType(),
+                        entryRequest.quantity(),
+                        limitPrice,
+                        slPrice,
+                        signal.signalId() + "-SL");
+        try {
+            OrderResponse slResp = gateway.placeOrder(slRequest);
+            if (slResp != null && slResp.success()) {
+                String slOrderId = orderIdOf(slResp);
+                if (slOrderId != null && !slOrderId.isBlank()) {
+                    String key = ledgerKey(signal);
+                    protectiveSlOrders.put(key, slOrderId);
+                }
+                log.info(
+                        "[CONSUMER:{}] Protective SL placed for {} @ trigger {} (orderId={}).",
+                        consumerId,
+                        entryRequest.symbol(),
+                        slPrice,
+                        slResp.orderId());
+            } else {
+                log.warn(
+                        "[CONSUMER:{}] Best-effort protective SL FAILED for {} @ trigger {}"
+                                + " ({}). Stop remains unmanaged at the broker — strategy-side"
+                                + " exit management is now the only protection.",
+                        consumerId,
+                        entryRequest.symbol(),
+                        slPrice,
+                        slResp != null ? slResp.message() : "null response");
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[CONSUMER:{}] Protective SL threw for {}: {}",
+                    consumerId,
+                    entryRequest.symbol(),
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    /**
+     * Returns {@code true} when the signal targets a listed option: either the {@code
+     * instrumentType} metadata says OPTION/OPTIONS, or the trading symbol carries a CE/PE suffix.
+     *
+     * @param symbol the contract to classify; falls back to {@link TradeSignal#tradingSymbol()}
+     */
+    protected static boolean isOptionSignal(TradeSignal signal, String symbol) {
+        if (signal != null && signal.metadata() != null) {
+            String instType = String.valueOf(signal.metadata().get("instrumentType"));
+            if ("OPTION".equalsIgnoreCase(instType) || "OPTIONS".equalsIgnoreCase(instType)) {
+                return true;
+            }
+        }
+        String sym = symbol != null ? symbol : (signal != null ? signal.tradingSymbol() : null);
+        return sym != null
+                && (sym.endsWith("CE")
+                        || sym.endsWith("PE")
+                        || sym.contains(" CE")
+                        || sym.contains(" PE"));
+    }
+
+    /** Convenience overload classifying {@link TradeSignal#tradingSymbol()}. */
+    protected static boolean isOptionSignal(TradeSignal signal) {
+        return isOptionSignal(signal, null);
+    }
+
+    protected static BigDecimal parseBigDecimal(Object value) {
+        if (value == null) return null;
+        if (value instanceof BigDecimal bd) return bd;
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    protected static String orderIdOf(OrderResponse resp) {
+        return resp != null ? resp.orderId() : null;
+    }
+
+    private static BigDecimal roundToTick(BigDecimal price) {
+        if (price == null) return BigDecimal.ZERO;
+        return price.divide(BigDecimal.valueOf(0.05), 0, java.math.RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(0.05))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /** C3: symbols with a broker-confirmed entry (used for drift reconciliation). */
+    public java.util.Set<String> getConfirmedEntrySymbols() {
+        return java.util.Collections.unmodifiableSet(confirmedEntries);
     }
 
     protected abstract void handleLiveExecution(TradeSignal signal, int quantity);

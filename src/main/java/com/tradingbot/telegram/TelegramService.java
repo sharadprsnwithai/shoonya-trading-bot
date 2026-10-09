@@ -755,6 +755,7 @@ public class TelegramService {
         CompletableFuture.runAsync(
                 () -> {
                     try {
+                        if (config == null || !config.isTelegramEnabled()) return;
                         String token = config.getTelegramBotToken().trim();
                         String chatId = config.getTelegramChatId().trim();
                         if (token.isBlank() || chatId.isBlank()) return;
@@ -824,7 +825,9 @@ public class TelegramService {
                         }
                     } catch (Exception e) {
                         log.error(
-                                "[TELEGRAM] Interactive alert dispatch error: {}", e.getMessage());
+                                "[TELEGRAM] Interactive alert dispatch error: {}",
+                                e.getMessage(),
+                                e);
                     }
                 },
                 asyncExecutor);
@@ -844,7 +847,7 @@ public class TelegramService {
         CompletableFuture.runAsync(
                 () -> {
                     try {
-                        if (config == null) return;
+                        if (config == null || !config.isTelegramEnabled()) return;
                         String token =
                                 config.getTelegramBotToken() != null
                                         ? config.getTelegramBotToken().trim()
@@ -911,7 +914,7 @@ public class TelegramService {
                                     response.body());
                         }
                     } catch (Exception e) {
-                        log.error("[TELEGRAM] Alert dispatch error: {}", e.getMessage());
+                        log.error("[TELEGRAM] Alert dispatch error: {}", e.getMessage(), e);
                     }
                 },
                 asyncExecutor);
@@ -923,7 +926,7 @@ public class TelegramService {
             asyncExecutor.shutdownNow();
             log.info("[TELEGRAM] Telegram async executor shutdown complete.");
         } catch (Exception e) {
-            log.debug("[TELEGRAM] Error shutting down async executor: {}", e.getMessage());
+            log.debug("[TELEGRAM] Error shutting down async executor: {}", e.getMessage(), e);
         }
     }
 }

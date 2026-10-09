@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.test.context.ActiveProfiles("test")
 public class HistoricalOhlcControllerTest {
 
     @Autowired private MockMvc mockMvc;

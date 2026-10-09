@@ -83,13 +83,80 @@ class TelegramBotCommandListenerTest {
     @Test
     void testHandleResetCommand() {
         String resp = commandListener.processCommand("/reset");
-        verify(lvrService, times(1)).resetDaily();
+        verify(lvrService, times(1)).resetDaily(false);
         assertTrue(resp.contains("LVR daily session state reset"));
+    }
+
+    @Test
+    void testResetRefusedDuringTradingHours() {
+        when(lvrService.isWithinTradingHours()).thenReturn(true);
+        String resp = commandListener.processCommand("/reset");
+        assertTrue(resp.contains("refused"));
+        verify(lvrService, never()).resetDaily(anyBoolean());
+    }
+
+    @Test
+    void testResetForcedDuringTradingHours() {
+        when(lvrService.isWithinTradingHours()).thenReturn(true);
+        String resp = commandListener.processCommand("/reset force");
+        verify(lvrService, times(1)).resetDaily(true);
+        assertTrue(resp.contains("reset successfully"));
     }
 
     @Test
     void testHandleHelpCommand() {
         String resp = commandListener.processCommand("/help");
         assertTrue(resp.contains("Lowest Volume Reversal Bot Commands"));
+    }
+
+    @Test
+    void testHandleCarCommands() {
+        com.tradingbot.strategy.car.CarWeeklyGttService carService =
+                mock(com.tradingbot.strategy.car.CarWeeklyGttService.class);
+        com.tradingbot.strategy.car.model.CarPortfolioState pState =
+                new com.tradingbot.strategy.car.model.CarPortfolioState();
+        when(carService.getPortfolioState()).thenReturn(pState);
+
+        TelegramBotCommandListener listenerWithCar =
+                new TelegramBotCommandListener(
+                        lvrService,
+                        carService,
+                        telegramService,
+                        shoonyaConfig,
+                        objectMapper,
+                        httpClient);
+
+        String statusResp = listenerWithCar.processCommand("/car");
+        assertTrue(statusResp.contains("CAR Weekly GTT Strategy Status"));
+
+        String runResp = listenerWithCar.processCommand("/car_run");
+        assertTrue(runResp.contains("CAR Weekly GTT Routine executed"));
+        verify(carService, times(1)).runSundayWeeklyRoutine();
+    }
+
+    @Test
+    void testHandleMonthlyRangeCommand() {
+        com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyService =
+                mock(com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService.class);
+        var mockReport =
+                new com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport(
+                        java.time.Instant.now(), "2026-10", java.util.List.of(), "Success");
+        when(monthlyService.generateMonthlyReport()).thenReturn(mockReport);
+        when(monthlyService.formatTelegramMessage(mockReport))
+                .thenReturn("📊 MONTHLY OPTION RANGE FORECAST");
+
+        TelegramBotCommandListener listenerWithMonthly =
+                new TelegramBotCommandListener(
+                        lvrService,
+                        null,
+                        monthlyService,
+                        telegramService,
+                        shoonyaConfig,
+                        objectMapper,
+                        httpClient);
+
+        String response = listenerWithMonthly.processCommand("/monthlyrange");
+        assertNotNull(response);
+        assertTrue(response.contains("MONTHLY OPTION RANGE"));
     }
 }

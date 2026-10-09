@@ -25,10 +25,19 @@ public class ExecutionProperties {
         private String id;
         private String broker = "SHOONYA";
         private ExecutionMode mode = ExecutionMode.PAPER;
+        private Map<String, ExecutionMode> strategyModes = new java.util.HashMap<>();
         private double quantityMultiplier = 1.0;
         private boolean enabled = true;
         private long maxSignalAgeSeconds = 30;
         private Map<String, String> credentials;
+
+        public Map<String, ExecutionMode> getStrategyModes() {
+            return strategyModes;
+        }
+
+        public void setStrategyModes(Map<String, ExecutionMode> strategyModes) {
+            this.strategyModes = strategyModes;
+        }
 
         public String getId() {
             return id;

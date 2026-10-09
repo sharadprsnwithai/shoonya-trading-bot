@@ -116,16 +116,60 @@ public class ShoonyaAuthenticator {
                             .build();
 
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                log.debug("Shoonya session validation returned HTTP {}", resp.statusCode());
-                return false;
-            }
-            JsonNode root = objectMapper.readTree(resp.body());
+            JsonNode root = parseShoonyaResponse("UserDetails (session validation)", resp);
             return "Ok".equalsIgnoreCase(root.path("stat").asText());
         } catch (Exception e) {
-            log.warn("Shoonya session validation probe failed: {}", e.getMessage());
+            log.warn("Shoonya session validation probe failed: {}", e.getMessage(), e);
             return false;
         }
+    }
+
+    /**
+     * Parses a Shoonya API response body as JSON. Non-200 statuses and non-JSON bodies (e.g. nginx
+     * HTML error pages served during upstream outages) raise a descriptive error instead of a
+     * cryptic JSON parse failure.
+     */
+    private JsonNode parseShoonyaResponse(String step, HttpResponse<String> resp) {
+        int status = resp.statusCode();
+        String body = resp.body() == null ? "" : resp.body();
+        JsonNode node = null;
+        if (!body.isBlank()) {
+            try {
+                node = objectMapper.readTree(body);
+            } catch (Exception e) {
+                node = null;
+            }
+        }
+        if (status != 200 || node == null || node.isMissingNode()) {
+            throw new IllegalStateException(
+                    "Shoonya "
+                            + step
+                            + " failed: HTTP "
+                            + status
+                            + " ("
+                            + contentTypeOf(resp)
+                            + "); response: "
+                            + sanitizeBody(body));
+        }
+        return node;
+    }
+
+    /** Extracts the Content-Type header, tolerating responses without headers. */
+    private static String contentTypeOf(HttpResponse<String> resp) {
+        if (resp.headers() == null) {
+            return "unknown";
+        }
+        return resp.headers().firstValue("Content-Type").orElse("unknown");
+    }
+
+    /** Flattens, redacts token-like fields, and truncates a response body for safe logging. */
+    private static String sanitizeBody(String body) {
+        String flat = body.replaceAll("\\s+", " ").trim();
+        String redacted =
+                flat.replaceAll(
+                        "(\"(?:susertoken|access_token|jKey|pwd|apitoken|reqToken)\"\\s*:\\s*\")[^\"]*\"",
+                        "$1<redacted>\"");
+        return redacted.length() > 300 ? redacted.substring(0, 300) + "..." : redacted;
     }
 
     /** Executes the QuickAuth -> GenAcsTok OAuth flow. */
@@ -173,7 +217,7 @@ public class ShoonyaAuthenticator {
 
             HttpResponse<String> quickAuthResp =
                     httpClient.send(quickAuthReq, HttpResponse.BodyHandlers.ofString());
-            JsonNode quickAuthJson = objectMapper.readTree(quickAuthResp.body());
+            JsonNode quickAuthJson = parseShoonyaResponse("QuickAuth", quickAuthResp);
 
             if (!"Ok".equalsIgnoreCase(quickAuthJson.path("stat").asText())) {
                 String error = quickAuthJson.path("emsg").asText(quickAuthResp.body());
@@ -210,7 +254,7 @@ public class ShoonyaAuthenticator {
 
             HttpResponse<String> genAcsResp =
                     httpClient.send(genAcsReq, HttpResponse.BodyHandlers.ofString());
-            JsonNode genAcsJson = objectMapper.readTree(genAcsResp.body());
+            JsonNode genAcsJson = parseShoonyaResponse("GenAcsTok", genAcsResp);
 
             if (!"Ok".equalsIgnoreCase(genAcsJson.path("stat").asText())) {
                 String errorMsg = genAcsJson.path("emsg").asText(genAcsResp.body());
@@ -236,7 +280,7 @@ public class ShoonyaAuthenticator {
             return activeToken;
 
         } catch (Exception e) {
-            log.error("Shoonya login failed: {}", e.getMessage());
+            log.error("Shoonya login failed: {}", e.getMessage(), e);
             throw new RuntimeException("Shoonya authentication failure: " + e.getMessage(), e);
         }
     }
@@ -249,7 +293,7 @@ public class ShoonyaAuthenticator {
                 log.info("Invalidated and deleted Shoonya session file.");
             }
         } catch (Exception e) {
-            log.warn("Failed to delete Shoonya session file: {}", e.getMessage());
+            log.warn("Failed to delete Shoonya session file: {}", e.getMessage(), e);
         }
     }
 
@@ -273,7 +317,7 @@ public class ShoonyaAuthenticator {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to parse existing Shoonya session file: {}", e.getMessage());
+            log.warn("Failed to parse existing Shoonya session file: {}", e.getMessage(), e);
         }
         return null;
     }
@@ -290,7 +334,7 @@ public class ShoonyaAuthenticator {
             data.put("createdAt", Instant.now().toString());
             objectMapper.writeValue(SESSION_FILE, data);
         } catch (Exception e) {
-            log.warn("Failed to write Shoonya session cache file: {}", e.getMessage());
+            log.warn("Failed to write Shoonya session cache file: {}", e.getMessage(), e);
         }
     }
 }

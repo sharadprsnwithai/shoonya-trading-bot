@@ -40,6 +40,20 @@ class LowestVolumeReversalScannerTest {
     }
 
     @Test
+    @DisplayName("Should return NONE when market breadth is mixed / neutral")
+    void testNeutralMixedSentiment() {
+        List<StockQuoteSnapshot> quotes =
+                List.of(
+                        new StockQuoteSnapshot("TCS", 4100.0, 4000.0, 4050.0, 2.5),
+                        new StockQuoteSnapshot("INFY", 1900.0, 1850.0, 1860.0, 2.7),
+                        new StockQuoteSnapshot("RELIANCE", 2900.0, 2920.0, 2910.0, -1.0),
+                        new StockQuoteSnapshot("HDFCBANK", 1550.0, 1590.0, 1580.0, -2.5));
+        // 2 advances, 2 declines = 50% breadth (below 56% threshold)
+        LowestVolumeDirection dir = scanner.evaluateMarketSentiment(quotes, 56.0);
+        assertEquals(LowestVolumeDirection.NONE, dir);
+    }
+
+    @Test
     @DisplayName("Should rank sectors and select Top Loser sector during Bearish sentiment")
     void testRankSectorsBearish() {
         Map<String, List<StockQuoteSnapshot>> sectorData =
@@ -123,5 +137,134 @@ class LowestVolumeReversalScannerTest {
         assertEquals("CIPLA", candidates.get(1)); // 2.00%
         assertFalse(candidates.contains("RED_STOCK"));
         assertFalse(candidates.contains("EXHAUSTED_GAIN"));
+    }
+
+    @Test
+    @DisplayName("Should rank stocks by absolute OI % change descending and exclude indices")
+    void testScanOiSpurtsRankingAndFiltering() {
+        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
+
+        // Add candidate quotes: symbol, ltp, prevClose, open, pctChange, volume, vwap,
+        // openInterest, prevDayOpenInterest
+        quotes.put(
+                "MCDOWELL-N",
+                new StockQuoteSnapshot(
+                        "MCDOWELL-N",
+                        1200.0,
+                        1170.0,
+                        1175.0,
+                        2.5,
+                        50000,
+                        1195.0,
+                        110000,
+                        100000)); // +10.0%
+        quotes.put(
+                "RADICO",
+                new StockQuoteSnapshot(
+                        "RADICO", 1800.0, 1745.0, 1750.0, 3.1, 40000, 1790.0, 105500,
+                        100000)); // +5.5%
+        quotes.put(
+                "RVNL",
+                new StockQuoteSnapshot(
+                        "RVNL", 400.0, 406.0, 405.0, -1.5, 80000, 402.0, 104000, 100000)); // +4.0%
+        quotes.put(
+                "NIFTY 50",
+                new StockQuoteSnapshot(
+                        "NIFTY 50",
+                        25000.0,
+                        24875.0,
+                        24900.0,
+                        0.5,
+                        1000000,
+                        24980.0,
+                        5000000,
+                        4000000)); // +25.0% (Index - must be excluded)
+        quotes.put(
+                "TCS",
+                new StockQuoteSnapshot(
+                        "TCS", 4200.0, 4195.0, 4200.0, 0.1, 10000, 4205.0, 101000,
+                        100000)); // +1.0%
+
+        List<String> topStocks = scanner.scanOiSpurts(quotes, 3);
+
+        assertEquals(3, topStocks.size());
+        assertEquals("MCDOWELL-N", topStocks.get(0));
+        assertEquals("RADICO", topStocks.get(1));
+        assertEquals("RVNL", topStocks.get(2));
+        assertFalse(topStocks.contains("NIFTY 50"));
+    }
+
+    @Test
+    @DisplayName("Should rank stocks by directional OI buildup for LONG and SHORT sentiment")
+    void testScanOiSpurtsDirectionalBuildup() {
+        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
+
+        // Long Buildup: Price UP, OI UP
+        quotes.put(
+                "DIXON",
+                new StockQuoteSnapshot(
+                        "DIXON", 12000.0, 11800.0, 11850.0, 1.7, 50000, 11950.0, 115000,
+                        100000)); // +15% OI, +1.7% Prc
+        // Short Covering: Price UP, OI DOWN
+        quotes.put(
+                "POLYCAB",
+                new StockQuoteSnapshot(
+                        "POLYCAB", 6500.0, 6400.0, 6420.0, 1.5, 30000, 6450.0, 85000,
+                        100000)); // -15% OI, +1.5% Prc
+        // Short Buildup: Price DOWN, OI UP
+        quotes.put(
+                "BHEL",
+                new StockQuoteSnapshot(
+                        "BHEL", 280.0, 290.0, 288.0, -3.4, 80000, 285.0, 120000,
+                        100000)); // +20% OI, -3.4% Prc
+
+        List<String> longStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.LONG, 2);
+        assertEquals(2, longStocks.size());
+        assertEquals("DIXON", longStocks.get(0)); // Long buildup (+15% OI, +1.7% Prc)
+        assertEquals("POLYCAB", longStocks.get(1)); // Short covering (-15% OI, +1.5% Prc)
+        assertFalse(
+                longStocks.contains(
+                        "BHEL")); // BHEL is negative (-3.4%), must never be chosen for LONG
+
+        List<String> shortStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.SHORT, 2);
+        assertEquals(1, shortStocks.size());
+        assertEquals("BHEL", shortStocks.get(0)); // Short buildup (+20% OI, -3.4% Prc)
+        assertFalse(
+                shortStocks.contains(
+                        "DIXON")); // DIXON is positive (+1.7%), must never be chosen for SHORT
+    }
+
+    @Test
+    @DisplayName(
+            "Should return empty list when no stocks align with sentiment direction in scanOiSpurts")
+    void testScanOiSpurtsNoAlignmentWithSentiment() {
+        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
+        // All stocks are green (positive)
+        quotes.put(
+                "DIXON",
+                new StockQuoteSnapshot(
+                        "DIXON", 12000.0, 11800.0, 11850.0, 1.7, 50000, 11950.0, 115000, 100000));
+        quotes.put(
+                "POLYCAB",
+                new StockQuoteSnapshot(
+                        "POLYCAB", 6500.0, 6400.0, 6420.0, 1.5, 30000, 6450.0, 85000, 100000));
+
+        // When sentiment is SHORT, no positive stocks should be selected
+        List<String> shortStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.SHORT, 2);
+        assertTrue(shortStocks.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should handle null, empty and invalid OI inputs safely")
+    void testScanOiSpurtsEdgeCases() {
+        assertTrue(scanner.scanOiSpurts(null, 5).isEmpty());
+        assertTrue(scanner.scanOiSpurts(Map.of(), 5).isEmpty());
+
+        Map<String, StockQuoteSnapshot> quotes =
+                Map.of(
+                        "INVALID_OI",
+                        new StockQuoteSnapshot(
+                                "INVALID_OI", 100.0, 100.0, 100.0, 0.0, 100, 100.0, 0, 0));
+        assertTrue(scanner.scanOiSpurts(quotes, 5).isEmpty());
     }
 }

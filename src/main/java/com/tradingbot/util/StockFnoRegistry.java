@@ -22,6 +22,18 @@ public final class StockFnoRegistry {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
+    /** Injectable clock so expiry rolling is deterministic in tests (L3: mixed clocks). */
+    private static volatile java.time.Clock clock = java.time.Clock.system(IST);
+
+    public static java.time.Clock getClock() {
+        return clock;
+    }
+
+    /** Test hook: pin the clock used for "today" when resolving null expiries. */
+    public static void setClock(java.time.Clock newClock) {
+        clock = newClock != null ? newClock : java.time.Clock.system(IST);
+    }
+
     public record InstrumentInfo(
             String symbol,
             String token,
@@ -400,7 +412,7 @@ public final class StockFnoRegistry {
     public static LocalDate calculateWeeklyTargetExpiry(
             String symbol, LocalDate entryDate, int minDteThreshold) {
         if (entryDate == null) {
-            entryDate = LocalDate.now(IST);
+            entryDate = LocalDate.now(clock);
         }
         DayOfWeek expiryDay =
                 (symbol != null
@@ -429,7 +441,7 @@ public final class StockFnoRegistry {
     public static LocalDate calculateMonthlyTargetExpiry(
             String symbol, LocalDate entryDate, int minDteThreshold) {
         if (entryDate == null) {
-            entryDate = LocalDate.now(IST);
+            entryDate = LocalDate.now(clock);
         }
         DayOfWeek expiryDay =
                 (symbol != null
@@ -475,12 +487,12 @@ public final class StockFnoRegistry {
         return getLastDayOfWeekOfMonth(date, DayOfWeek.THURSDAY);
     }
 
-    public static LocalDate getMonthlyExpiry(LocalDate date) {
-        return getLastThursdayOfMonth(date != null ? date : LocalDate.now(IST));
-    }
-
     /**
      * Formats the official NSE / Shoonya / Zerodha Futures trading symbol (e.g. RELIANCE26MARFUT).
+     *
+     * <p>Contract: a non-null {@code expiryDate} is an <b>actual expiry</b> and is honored as-is
+     * (mirrors {@link #formatTradingSymbol}); {@code null} resolves the next monthly expiry from
+     * the current clock, rolling past expired contracts (H3).
      */
     public static String formatFuturesTradingSymbol(String symbol, LocalDate expiryDate) {
         String cleanUnderlying = symbol != null ? symbol.toUpperCase().replace(" ", "") : "NIFTY";
@@ -492,12 +504,13 @@ public final class StockFnoRegistry {
             cleanUnderlying = "SENSEX";
         }
 
-        if (expiryDate == null) {
-            expiryDate = getMonthlyExpiry(LocalDate.now(IST));
-        }
+        LocalDate resolvedExpiry =
+                (expiryDate != null)
+                        ? expiryDate
+                        : calculateTargetExpiry(cleanUnderlying, LocalDate.now(clock), false, 1);
 
-        String yearStr = String.valueOf(expiryDate.getYear()).substring(2);
-        String monthStr = expiryDate.getMonth().name().substring(0, 3).toUpperCase();
+        String yearStr = String.valueOf(resolvedExpiry.getYear()).substring(2);
+        String monthStr = resolvedExpiry.getMonth().name().substring(0, 3).toUpperCase();
         return String.format("%s%s%sFUT", cleanUnderlying, yearStr, monthStr);
     }
 
@@ -523,7 +536,7 @@ public final class StockFnoRegistry {
         }
 
         if (expiryDate == null) {
-            expiryDate = LocalDate.now(IST);
+            expiryDate = calculateTargetExpiry(cleanUnderlying, LocalDate.now(clock), isWeekly, 1);
         }
 
         String yearStr = String.valueOf(expiryDate.getYear()).substring(2);

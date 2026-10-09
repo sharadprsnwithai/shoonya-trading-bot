@@ -92,7 +92,7 @@ public class KiteAuthController {
                 }
             }
         } catch (Exception e) {
-            log.warn("[KITE-REST] Could not fetch Kite positions: {}", e.getMessage());
+            log.warn("[KITE-REST] Could not fetch Kite positions: {}", e.getMessage(), e);
         }
         return ResponseEntity.ok(list);
     }

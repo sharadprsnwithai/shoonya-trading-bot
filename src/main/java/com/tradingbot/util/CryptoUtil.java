@@ -87,7 +87,8 @@ public final class CryptoUtil {
         } catch (Exception e) {
             log.warn(
                     "Failed generating TOTP from secret, returning raw input fallback: {}",
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return cleanSecret;
         }
     }

@@ -394,6 +394,16 @@ public class ShoonyaOrderService {
                         "actid", config.getUserId()));
     }
 
+    /** Fetches current CNC equity delivery holdings from Shoonya Demat. */
+    public JsonNode getHoldings() {
+        return postShoonyaJson(
+                "/NorenWClientAPI/Holdings",
+                Map.of(
+                        "uid", config.getUserId(),
+                        "actid", config.getUserId(),
+                        "prd", "C"));
+    }
+
     private JsonNode postShoonyaJson(String endpoint, Map<String, Object> payload) {
         if (!config.isEnabled()) {
             return objectMapper.createArrayNode();

@@ -88,4 +88,41 @@ public class ShoonyaBrokerGateway implements BrokerOrderGateway {
         }
         return positions;
     }
+
+    @Override
+    public List<BrokerPosition> getHoldings() {
+        List<BrokerPosition> holdings = new ArrayList<>();
+        try {
+            JsonNode root = orderService.getHoldings();
+            if (root != null && root.isArray()) {
+                for (JsonNode row : root) {
+                    long holdQty = row.path("holdqty").asLong(0L);
+                    if (holdQty <= 0L) {
+                        continue;
+                    }
+
+                    String tsym = row.path("tsym").asText("");
+                    String exch = row.path("exch").asText("NSE");
+                    double avgPrice = row.path("upldprc").asDouble(0.0);
+                    double lp = row.path("lp").asDouble(0.0);
+
+                    holdings.add(
+                            BrokerPosition.of(
+                                    "SHOONYA",
+                                    exch,
+                                    tsym,
+                                    tsym,
+                                    "CNC",
+                                    holdQty,
+                                    BigDecimal.valueOf(avgPrice),
+                                    BigDecimal.valueOf(lp),
+                                    BigDecimal.ZERO,
+                                    BigDecimal.ZERO));
+                }
+            }
+        } catch (Exception e) {
+            log.error("[SHOONYA-GATEWAY] Error fetching holdings: {}", e.getMessage(), e);
+        }
+        return holdings;
+    }
 }

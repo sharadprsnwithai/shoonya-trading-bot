@@ -67,7 +67,12 @@ public class ShoonyaConfig {
         this.secretKey = getProp("SHOONYA_SECRET_KEY", this.secretKey);
         this.vendorCode = getProp("SHOONYA_VENDOR_CODE", this.vendorCode);
         this.baseUrl = getProp("SHOONYA_BASE_URL", this.baseUrl);
-        this.publicIp = getProp("SHOONYA_PUBLIC_IP", this.publicIp);
+        // Presence-based: a set-but-blank SHOONYA_PUBLIC_IP means "resolve dynamically via ipify",
+        // while an absent key keeps the static default.
+        String ipOverride = getRawProp("SHOONYA_PUBLIC_IP");
+        if (ipOverride != null) {
+            this.publicIp = ipOverride.trim();
+        }
         this.accessToken = getProp("SHOONYA_ACCESS_TOKEN", this.accessToken);
 
         this.telegramEnabled =
@@ -83,7 +88,7 @@ public class ShoonyaConfig {
         try {
             this.executionMode = ExecutionMode.valueOf(modeStr.trim().toUpperCase());
         } catch (Exception e) {
-            log.warn("Invalid EXECUTION_MODE '{}' in .env, defaulting to PAPER", modeStr);
+            log.warn("Invalid EXECUTION_MODE '{}' in .env, defaulting to PAPER", modeStr, e);
             this.executionMode = ExecutionMode.PAPER;
         }
         log.info("Execution mode initialized from .env / system: {}", this.executionMode);
@@ -106,12 +111,14 @@ public class ShoonyaConfig {
             String ip = resp.body().trim();
             if (!ip.isBlank()) {
                 this.publicIp = ip;
+                log.info("Resolved public IP dynamically via ipify: {}", ip);
                 return ip;
             }
         } catch (Exception e) {
             log.debug(
                     "Dynamic public IP resolution from ipify failed ({}), using fallback.",
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
         }
         return "58.84.60.54";
     }
@@ -135,7 +142,7 @@ public class ShoonyaConfig {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to load .env file: {}", e.getMessage());
+            log.warn("Failed to load .env file: {}", e.getMessage(), e);
         }
     }
 
@@ -145,6 +152,15 @@ public class ShoonyaConfig {
             val = System.getenv(key);
         }
         return (val != null && !val.isBlank()) ? val.trim() : defaultValue;
+    }
+
+    /** Returns the raw property value (system property, else environment), or null if unset. */
+    private static String getRawProp(String key) {
+        String val = System.getProperty(key);
+        if (val == null) {
+            val = System.getenv(key);
+        }
+        return val;
     }
 
     // Getters and Setters

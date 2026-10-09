@@ -66,4 +66,27 @@ class KiteAuthServiceTest {
         String url = authService.loginUrl();
         assertTrue(url.contains("key123"));
     }
+
+    @Test
+    void testEnsureActiveSessionWhenAlreadyActive() {
+        kiteSession.update(new KiteSession.Session("active_tok_1", "USR001", "Sharad"));
+        ObjectNode profileNode = objectMapper.createObjectNode();
+        profileNode.putObject("data").put("user_id", "USR001");
+        when(mockRestClient.profile()).thenReturn(profileNode);
+
+        boolean active = authService.ensureActiveSession();
+        assertTrue(active);
+        assertEquals("active_tok_1", kiteSession.accessToken());
+    }
+
+    @Test
+    void testEnsureActiveSessionWhenInactiveAndNoCredentials() {
+        props.setUserId("");
+        props.setPassword("");
+        props.setTotpKey("");
+
+        boolean active = authService.ensureActiveSession();
+        assertFalse(active);
+        assertNull(kiteSession.accessToken());
+    }
 }

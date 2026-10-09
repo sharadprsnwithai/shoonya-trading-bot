@@ -72,6 +72,10 @@ public class KiteRestClient {
         return get("/portfolio/positions").path("data").path("net");
     }
 
+    public JsonNode holdings() {
+        return get("/portfolio/holdings").path("data");
+    }
+
     public List<JsonNode> orderHistory(String orderId) {
         if (orderId == null || orderId.isBlank()) {
             return List.of();
@@ -90,7 +94,8 @@ public class KiteRestClient {
             log.warn(
                     "[KITE-REST] Failed to fetch order history for {}: {}",
                     orderId,
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
             return List.of();
         }
     }
@@ -129,7 +134,7 @@ public class KiteRestClient {
                 }
             }
         } catch (Exception e) {
-            log.warn("[KITE-REST] Failed to read Kite positions: {}", e.getMessage());
+            log.warn("[KITE-REST] Failed to read Kite positions: {}", e.getMessage(), e);
         }
         return 0;
     }
@@ -148,7 +153,7 @@ public class KiteRestClient {
             log.info("[KITE-REST] Cancelled Kite order: {}", orderId);
             return true;
         } catch (Exception e) {
-            log.warn("[KITE-REST] Failed to cancel Kite order {}: {}", orderId, e.getMessage());
+            log.warn("[KITE-REST] Failed to cancel Kite order {}: {}", orderId, e.getMessage(), e);
             return false;
         }
     }
@@ -209,7 +214,8 @@ public class KiteRestClient {
                     "[KITE-REST] HTTP {} error on GET {}: {}",
                     e.getStatusCode(),
                     path,
-                    e.getResponseBodyAsString());
+                    e.getResponseBodyAsString(),
+                    e);
             throw new IllegalStateException(
                     "Kite GET " + path + " failed: " + e.getResponseBodyAsString(), e);
         }
@@ -220,42 +226,61 @@ public class KiteRestClient {
     }
 
     public JsonNode postForm(String path, Map<String, String> form, boolean authenticated) {
+        return submitForm(org.springframework.http.HttpMethod.POST, path, form, authenticated);
+    }
+
+    public JsonNode putForm(String path, Map<String, String> form) {
+        return submitForm(org.springframework.http.HttpMethod.PUT, path, form, true);
+    }
+
+    private JsonNode submitForm(
+            org.springframework.http.HttpMethod method,
+            String path,
+            Map<String, String> form,
+            boolean authenticated) {
         try {
-            String body =
-                    String.join(
-                            "&",
-                            form.entrySet().stream()
-                                    .map(
-                                            entry -> {
-                                                String k =
-                                                        java.net.URLEncoder.encode(
-                                                                entry.getKey(),
-                                                                StandardCharsets.UTF_8);
-                                                String v =
-                                                        java.net.URLEncoder.encode(
-                                                                entry.getValue() != null
-                                                                        ? entry.getValue()
-                                                                        : "",
-                                                                StandardCharsets.UTF_8);
-                                                return k + "=" + v;
-                                            })
-                                    .toList());
+            String body = encodeForm(form);
 
             var spec =
-                    restClient.post().uri(path).contentType(MediaType.APPLICATION_FORM_URLENCODED);
+                    restClient
+                            .method(method)
+                            .uri(path)
+                            .contentType(MediaType.APPLICATION_FORM_URLENCODED);
             if (authenticated) {
                 spec.header("Authorization", authorizationHeader());
             }
             return spec.body(body).retrieve().body(JsonNode.class);
         } catch (org.springframework.web.client.RestClientResponseException e) {
             log.error(
-                    "[KITE-REST] HTTP {} error on POST {}: {}",
+                    "[KITE-REST] HTTP {} error on {} {}: {}",
                     e.getStatusCode(),
+                    method,
                     path,
-                    e.getResponseBodyAsString());
+                    e.getResponseBodyAsString(),
+                    e);
             throw new IllegalStateException(
-                    "Kite POST " + path + " failed: " + e.getResponseBodyAsString(), e);
+                    "Kite " + method + " " + path + " failed: " + e.getResponseBodyAsString(), e);
         }
+    }
+
+    private String encodeForm(Map<String, String> form) {
+        return String.join(
+                "&",
+                form.entrySet().stream()
+                        .map(
+                                entry -> {
+                                    String k =
+                                            java.net.URLEncoder.encode(
+                                                    entry.getKey(), StandardCharsets.UTF_8);
+                                    String v =
+                                            java.net.URLEncoder.encode(
+                                                    entry.getValue() != null
+                                                            ? entry.getValue()
+                                                            : "",
+                                                    StandardCharsets.UTF_8);
+                                    return k + "=" + v;
+                                })
+                        .toList());
     }
 
     public String authorizationHeader() {
@@ -267,5 +292,137 @@ public class KiteRestClient {
             throw new IllegalStateException("Kite access token not available; authenticate first");
         }
         return "token " + kiteProperties.apiKey() + ":" + token;
+    }
+
+    public double getLtp(String exchange, String tradingSymbol) {
+        if (tradingSymbol == null || tradingSymbol.isBlank()) {
+            return 0.0;
+        }
+        String exch = (exchange != null && !exchange.isBlank()) ? exchange : "NSE";
+        String instrument = exch + ":" + tradingSymbol;
+        try {
+            JsonNode body =
+                    get(
+                            "/quote/ltp?i="
+                                    + java.net.URLEncoder.encode(
+                                            instrument, StandardCharsets.UTF_8));
+            JsonNode data = body.path("data");
+            if (data.has(instrument)) {
+                return data.path(instrument).path("last_price").asDouble(0.0);
+            }
+        } catch (Exception e) {
+            log.debug("[KITE-REST] Failed to fetch LTP for {}: {}", instrument, e.getMessage(), e);
+        }
+        return 0.0;
+    }
+
+    public boolean cancelGtt(String triggerId) {
+        if (triggerId == null || triggerId.isBlank()) {
+            return false;
+        }
+        try {
+            restClient
+                    .delete()
+                    .uri("/gtt/triggers/" + triggerId)
+                    .header("Authorization", authorizationHeader())
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("[KITE-REST] Cancelled Kite GTT trigger: {}", triggerId);
+            return true;
+        } catch (Exception e) {
+            log.warn(
+                    "[KITE-REST] Failed to cancel Kite GTT trigger {}: {}",
+                    triggerId,
+                    e.getMessage(),
+                    e);
+            return false;
+        }
+    }
+
+    public JsonNode getGttTriggers() {
+        try {
+            return get("/gtt/triggers").path("data");
+        } catch (Exception e) {
+            log.warn("[KITE-REST] Failed to fetch Kite GTT triggers: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Fetches a single GTT trigger by id.
+     *
+     * @return the trigger payload, or {@code null} when it cannot be read (missing, deleted, auth
+     *     failure)
+     */
+    public JsonNode getGttTrigger(String triggerId) {
+        if (triggerId == null || triggerId.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode data = get("/gtt/triggers/" + triggerId).path("data");
+            return data.isMissingNode() || data.isNull() ? null : data;
+        } catch (Exception e) {
+            log.warn(
+                    "[KITE-REST] Failed to fetch Kite GTT trigger {}: {}",
+                    triggerId,
+                    e.getMessage(),
+                    e);
+            return null;
+        }
+    }
+
+    /**
+     * Modifies an existing GTT trigger in place using {@code PUT /gtt/triggers/:id}.
+     *
+     * @return true when the broker accepted the modification
+     */
+    public boolean modifyGtt(String triggerId, Map<String, String> form) {
+        if (triggerId == null || triggerId.isBlank()) {
+            return false;
+        }
+        try {
+            JsonNode body = putForm("/gtt/triggers/" + triggerId, form);
+            String status = body.path("status").asText("");
+            if ("error".equalsIgnoreCase(status)) {
+                log.warn(
+                        "[KITE-REST] Kite rejected GTT modify for {}: {}",
+                        triggerId,
+                        body.path("message").asText("unknown"));
+                return false;
+            }
+            log.info("[KITE-REST] Modified Kite GTT trigger: {}", triggerId);
+            return true;
+        } catch (Exception e) {
+            log.warn(
+                    "[KITE-REST] Failed to modify Kite GTT trigger {}: {}",
+                    triggerId,
+                    e.getMessage(),
+                    e);
+            return false;
+        }
+    }
+
+    /**
+     * Reads the order ids that a triggered GTT created.
+     *
+     * @return order ids, or an empty list when the trigger payload carries none
+     */
+    public List<String> getGttOrderIds(String triggerId) {
+        JsonNode trigger = getGttTrigger(triggerId);
+        if (trigger == null) {
+            return List.of();
+        }
+        JsonNode orders = trigger.path("orders");
+        if (!orders.isArray()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        for (JsonNode order : orders) {
+            String orderId = order.path("order_id").asText("");
+            if (orderId != null && !orderId.isBlank()) {
+                ids.add(orderId);
+            }
+        }
+        return ids;
     }
 }
