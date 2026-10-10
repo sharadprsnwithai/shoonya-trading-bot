@@ -122,6 +122,18 @@ class LvrEntryGateTest {
     }
 
     @Test
+    @DisplayName("15-min range: missing values fail closed (gate 15M_RANGE)")
+    void testFifteenMinuteRangeUnavailableFailsClosed() {
+        EntryGateInput in = baseInput();
+        in.range15mEnabled = true;
+        in.first15mHigh = null;
+        in.first15mLow = null;
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
+        assertThat(d.gate()).isEqualTo("15M_RANGE");
+    }
+
+    @Test
     @DisplayName("PDH/PDL: missing values fail closed (gate PDH_PDL); inside range exhausts")
     void testPdhPdlGates() {
         EntryGateInput missing = baseInput();

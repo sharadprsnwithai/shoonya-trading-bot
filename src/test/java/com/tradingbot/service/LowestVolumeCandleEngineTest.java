@@ -559,4 +559,42 @@ class LowestVolumeCandleEngineTest {
         assertEquals(0, BigDecimal.valueOf(507.95).compareTo(setup.getStopLossPrice()));
         assertEquals(0, BigDecimal.valueOf(536.30).compareTo(setup.getTarget1Price()));
     }
+
+    @Test
+    @DisplayName("resetToScanning() must preserve session-wide first15MinHigh and first15MinLow")
+    void testResetToScanningPreservesOpeningRange() {
+        LowestVolumeSetup setup = new LowestVolumeSetup("MPHASIS", LowestVolumeDirection.LONG);
+        setup.setFirst15MinHigh(BigDecimal.valueOf(2392.20));
+        setup.setFirst15MinLow(BigDecimal.valueOf(2330.00));
+        setup.setPdh(BigDecimal.valueOf(2357.30));
+        setup.setPdl(BigDecimal.valueOf(2280.80));
+
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "MPHASIS",
+                        Instant.now(),
+                        BigDecimal.valueOf(2375.60),
+                        BigDecimal.valueOf(2375.60),
+                        BigDecimal.valueOf(2371.30),
+                        BigDecimal.valueOf(2374.00),
+                        2696),
+                BigDecimal.valueOf(2375.65),
+                BigDecimal.valueOf(2367.35),
+                BigDecimal.valueOf(2396.45));
+
+        assertEquals(LowestVolumeSetupState.TRIGGER_ARMED, setup.getState());
+        assertEquals(BigDecimal.valueOf(2375.65), setup.getTriggerPrice());
+
+        // Invalidate setup
+        setup.resetToScanning();
+
+        assertEquals(LowestVolumeSetupState.SCANNING, setup.getState());
+        assertNull(setup.getTriggerPrice());
+        assertNull(setup.getStopLossPrice());
+        // Session-wide metrics MUST be preserved
+        assertEquals(BigDecimal.valueOf(2392.20), setup.getFirst15MinHigh());
+        assertEquals(BigDecimal.valueOf(2330.00), setup.getFirst15MinLow());
+        assertEquals(BigDecimal.valueOf(2357.30), setup.getPdh());
+        assertEquals(BigDecimal.valueOf(2280.80), setup.getPdl());
+    }
 }

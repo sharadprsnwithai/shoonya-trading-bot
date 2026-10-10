@@ -2502,6 +2502,69 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("15m Opening Range filter rejects entry after setup was invalidated and re-armed")
+    void testOpening15mRangeFilterRejectsAfterResetToScanningAndReArming() {
+        service.setMaxSlippagePct(2.0);
+        service.setOpening15mRangeFilterEnabled(true);
+        service.setPdhPdlFilterEnabled(false);
+        service.setSectorMomentumFilterEnabled(false);
+        ObjectMapper mapper = new ObjectMapper();
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("MPHASIS", LowestVolumeDirection.LONG);
+        setup.setFirst15MinHigh(BigDecimal.valueOf(2392.20));
+        setup.setFirst15MinLow(BigDecimal.valueOf(2330.00));
+        setup.setLatestVwap(2370.00);
+
+        // 1. First armed setup (at 10:25)
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "MPHASIS",
+                        Instant.now(),
+                        BigDecimal.valueOf(2380),
+                        BigDecimal.valueOf(2381),
+                        BigDecimal.valueOf(2374),
+                        BigDecimal.valueOf(2375),
+                        2872),
+                BigDecimal.valueOf(2381.15),
+                BigDecimal.valueOf(2372.80),
+                BigDecimal.valueOf(2402.00));
+        service.getActiveSetups().put("MPHASIS", setup);
+
+        // Spot breaches proposed SL 2372.80 -> invalidates setup prior to entry
+        service.checkSpotTriggerBreach(
+                "MPHASIS",
+                setup,
+                mapper.createObjectNode().put("lp", "2372.70").put("ap", "2370.00"));
+
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(setup.getFirst15MinHigh()).isEqualTo(BigDecimal.valueOf(2392.20));
+
+        // 2. Re-arm setup (at 10:30)
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "MPHASIS",
+                        Instant.now(),
+                        BigDecimal.valueOf(2375),
+                        BigDecimal.valueOf(2375.60),
+                        BigDecimal.valueOf(2371.30),
+                        BigDecimal.valueOf(2374),
+                        2696),
+                BigDecimal.valueOf(2375.65),
+                BigDecimal.valueOf(2367.35),
+                BigDecimal.valueOf(2396.45));
+
+        // 3. Spot reaches 2377.50 (breaching trigger 2375.65, but INSIDE 15m range <= 2392.20)
+        service.checkSpotTriggerBreach(
+                "MPHASIS",
+                setup,
+                mapper.createObjectNode().put("lp", "2377.50").put("ap", "2370.00"));
+
+        assertThat(service.getOpenPositions()).doesNotContainKey("MPHASIS");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getExhaustedSymbols()).contains("MPHASIS");
+    }
+
+    @Test
     @DisplayName(
             "Should reject LONG trade when spot price is below or equal to PDH (trapped in range)")
     void testRejectLongTradeWhenInsidePdhPdlRange() {

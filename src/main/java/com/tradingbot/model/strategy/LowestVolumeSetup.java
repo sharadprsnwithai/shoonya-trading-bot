@@ -72,8 +72,6 @@ public class LowestVolumeSetup {
         this.armedCandlesElapsed = 0;
         this.rejectionReason = null;
         this.latestVwap = null;
-        this.first15MinHigh = null;
-        this.first15MinLow = null;
         this.setupPattern = null;
         this.sessionHighAtArming = null;
         this.sessionLowAtArming = null;

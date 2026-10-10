@@ -1190,6 +1190,14 @@ public class LowestVolumeReversalService {
                         evaluateCandleSequence(
                                 symbol, setup.getDirection(), candles, setup.getLastExitTime());
 
+                if (evaluated.getFirst15MinHigh() != null && evaluated.getFirst15MinLow() != null) {
+                    setup.setFirst15MinHigh(evaluated.getFirst15MinHigh());
+                    setup.setFirst15MinLow(evaluated.getFirst15MinLow());
+                }
+                if (evaluated.getDayLowestVolume() != Long.MAX_VALUE) {
+                    setup.setDayLowestVolume(evaluated.getDayLowestVolume());
+                }
+
                 if (taService != null && !candles.isEmpty()) {
                     double[] vwapSeries = taService.calculateVwapSeries(candles);
                     if (vwapSeries.length > 0 && !Double.isNaN(vwapSeries[vwapSeries.length - 1])) {
@@ -3583,29 +3591,34 @@ public class LowestVolumeReversalService {
             }
         }
 
-        // 3. Opening 15-minute range breakout.
-        if (Boolean.TRUE.equals(in.range15mEnabled)
-                && in.first15mHigh != null
-                && in.first15mLow != null
-                && in.decisionPrice != null
-                && in.direction != null) {
-            boolean confirmed;
-            if (in.direction == LowestVolumeDirection.LONG) {
-                confirmed = in.decisionPrice.compareTo(in.first15mHigh) > 0;
-            } else {
-                confirmed = in.decisionPrice.compareTo(in.first15mLow) < 0;
-            }
-            if (!confirmed) {
+        // 3. Opening 15-minute range breakout (unavailable → fail-closed retry; inside range →
+        // exhaust).
+        if (Boolean.TRUE.equals(in.range15mEnabled)) {
+            if (in.first15mHigh == null || in.first15mLow == null) {
                 return deny(
-                        EntryGateDisposition.EXHAUST,
+                        EntryGateDisposition.RETRY,
                         "15M_RANGE",
-                        String.format(
-                                Locale.US,
-                                "Spot %s inside 15-min range [%s - %s] for %s",
-                                in.decisionPrice,
-                                in.first15mLow,
-                                in.first15mHigh,
-                                in.direction));
+                        "Opening 15-minute range unavailable (fail-closed)");
+            }
+            if (in.decisionPrice != null && in.direction != null) {
+                boolean confirmed;
+                if (in.direction == LowestVolumeDirection.LONG) {
+                    confirmed = in.decisionPrice.compareTo(in.first15mHigh) > 0;
+                } else {
+                    confirmed = in.decisionPrice.compareTo(in.first15mLow) < 0;
+                }
+                if (!confirmed) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "15M_RANGE",
+                            String.format(
+                                    Locale.US,
+                                    "Spot %s inside 15-min range [%s - %s] for %s",
+                                    in.decisionPrice,
+                                    in.first15mLow,
+                                    in.first15mHigh,
+                                    in.direction));
+                }
             }
         }
 
