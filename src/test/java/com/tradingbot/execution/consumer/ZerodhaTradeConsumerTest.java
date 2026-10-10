@@ -118,10 +118,10 @@ class ZerodhaTradeConsumerTest {
                                 OrderResponse.success(
                                         "KITE_125", inv.getArgument(0), "Order placed"));
 
-        // Configure default mode as PAPER, but override BOLLINGER_HA_1M to LIVE and LVR to PAPER
+        // Configure default mode as PAPER, but override OPTION_BUYING_TEST to LIVE and LVR to PAPER
         java.util.Map<String, ExecutionMode> strategyModes =
                 java.util.Map.of(
-                        "BOLLINGER_HA_1M", ExecutionMode.LIVE,
+                        "OPTION_BUYING_TEST", ExecutionMode.LIVE,
                         "LOWEST_VOLUME_REVERSAL", ExecutionMode.PAPER);
 
         ZerodhaTradeConsumer consumer =
@@ -155,10 +155,10 @@ class ZerodhaTradeConsumerTest {
 
         verify(mockGateway, never()).placeOrder(any());
 
-        // 2. Emit BOLLINGER_HA_1M signal -> Must execute in LIVE (places order with mockGateway)
+        // 2. Emit OPTION_BUYING_TEST signal -> Must execute in LIVE (places order with mockGateway)
         TradeSignal bHaSignal =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT25950CE",
                         SignalAction.ENTRY_LONG,
@@ -166,7 +166,7 @@ class ZerodhaTradeConsumerTest {
                         BigDecimal.valueOf(135),
                         BigDecimal.valueOf(180),
                         130,
-                        "Bollinger HA Entry",
+                        "Sample Option Entry",
                         java.util.Map.of("instrumentType", "OPTION"));
         sink.tryEmitNext(bHaSignal);
         Thread.sleep(150);
@@ -214,7 +214,7 @@ class ZerodhaTradeConsumerTest {
 
         TradeSignal entry =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.ENTRY_LONG,
@@ -234,7 +234,7 @@ class ZerodhaTradeConsumerTest {
 
         TradeSignal exit =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.EXIT_LONG,
@@ -288,7 +288,7 @@ class ZerodhaTradeConsumerTest {
 
         TradeSignal entry =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.ENTRY_LONG,

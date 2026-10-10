@@ -620,7 +620,7 @@ class ShoonyaTradeConsumerTest {
 
         TradeSignal entry =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.ENTRY_LONG,
@@ -690,7 +690,7 @@ class ShoonyaTradeConsumerTest {
 
         TradeSignal entry =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.ENTRY_LONG,
@@ -711,7 +711,7 @@ class ShoonyaTradeConsumerTest {
         // Trail the stop up to cost (120.00) — position must be left untouched.
         TradeSignal trail =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.UPDATE_STOP_LOSS,
@@ -792,7 +792,7 @@ class ShoonyaTradeConsumerTest {
 
         TradeSignal entry =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.ENTRY_LONG,
@@ -807,7 +807,7 @@ class ShoonyaTradeConsumerTest {
 
         TradeSignal squareOff =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.SQUARE_OFF,
@@ -849,7 +849,7 @@ class ShoonyaTradeConsumerTest {
 
         TradeSignal entry =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.ENTRY_LONG,
@@ -864,7 +864,7 @@ class ShoonyaTradeConsumerTest {
 
         TradeSignal squareOff =
                 TradeSignal.of(
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.SQUARE_OFF,
@@ -893,7 +893,7 @@ class ShoonyaTradeConsumerTest {
         TradeSignal staleSquareOff =
                 new TradeSignal(
                         "SIG-SQ",
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.SQUARE_OFF,
@@ -907,7 +907,7 @@ class ShoonyaTradeConsumerTest {
         TradeSignal staleEntry =
                 new TradeSignal(
                         "SIG-EN",
-                        "BOLLINGER_HA_1M",
+                        "OPTION_BUYING_TEST",
                         "NIFTY",
                         "NIFTY26OCT24000CE",
                         SignalAction.ENTRY_LONG,
