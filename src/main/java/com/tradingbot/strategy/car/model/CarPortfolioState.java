@@ -3,8 +3,9 @@ package com.tradingbot.strategy.car.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class CarPortfolioState {
 
@@ -14,8 +15,8 @@ public class CarPortfolioState {
     private int numParts;
     private BigDecimal profitTargetPct;
     private java.time.LocalDate lastRunWeek;
-    private Map<String, CarHolding> holdings = new ConcurrentHashMap<>();
-    private Map<String, CarGttOrder> gttOrders = new ConcurrentHashMap<>();
+    private Map<String, CarHolding> holdings = new LinkedHashMap<>();
+    private Map<String, CarGttOrder> gttOrders = new LinkedHashMap<>();
 
     public CarPortfolioState() {
         this(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
@@ -158,20 +159,30 @@ public class CarPortfolioState {
         this.profitTargetPct = profitTargetPct;
     }
 
-    public Map<String, CarHolding> getHoldings() {
-        return holdings;
+    public synchronized Map<String, CarHolding> getHoldings() {
+        return Collections.unmodifiableMap(holdings);
     }
 
     public void setHoldings(Map<String, CarHolding> holdings) {
-        this.holdings = holdings;
+        this.holdings = holdings != null ? new LinkedHashMap<>(holdings) : new LinkedHashMap<>();
     }
 
-    public Map<String, CarGttOrder> getGttOrders() {
-        return gttOrders;
+    public synchronized Map<String, CarGttOrder> getGttOrders() {
+        return Collections.unmodifiableMap(gttOrders);
     }
 
     public void setGttOrders(Map<String, CarGttOrder> gttOrders) {
-        this.gttOrders = gttOrders;
+        this.gttOrders = gttOrders != null ? new LinkedHashMap<>(gttOrders) : new LinkedHashMap<>();
+    }
+
+    /** Adds or replaces the GTT order entry for {@code key} under the class lock. */
+    public synchronized void putGttOrder(String key, CarGttOrder order) {
+        gttOrders.put(key, order);
+    }
+
+    /** Removes the GTT order entry for {@code key} under the class lock. */
+    public synchronized void removeGttOrder(String key) {
+        gttOrders.remove(key);
     }
 
     /** Monday of the last week the weekly routine completed, used to keep runs idempotent. */

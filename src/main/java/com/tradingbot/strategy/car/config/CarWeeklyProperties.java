@@ -21,6 +21,10 @@ public class CarWeeklyProperties {
     private boolean syncDematHoldings = false;
     private String executionBroker = "ZERODHA";
     private List<String> accumulationOnlySymbols = new ArrayList<>();
+    private List<String> watchlistSymbols = new ArrayList<>();
+    private boolean scanOnlyWatchlistAndHoldings = false;
+    private int maxUnitsPerStock = 3;
+    private double maxDrawdownPct = 30.0;
 
     public boolean isAccumulationOnly(String symbol) {
         if (symbol == null || symbol.isBlank()) {
@@ -143,5 +147,45 @@ public class CarWeeklyProperties {
 
     public void setAccumulationOnlySymbols(List<String> accumulationOnlySymbols) {
         this.accumulationOnlySymbols = accumulationOnlySymbols;
+    }
+
+    public List<String> getWatchlistSymbols() {
+        return watchlistSymbols;
+    }
+
+    public void setWatchlistSymbols(List<String> watchlistSymbols) {
+        this.watchlistSymbols = watchlistSymbols != null ? watchlistSymbols : new ArrayList<>();
+    }
+
+    public boolean isScanOnlyWatchlistAndHoldings() {
+        return scanOnlyWatchlistAndHoldings;
+    }
+
+    public void setScanOnlyWatchlistAndHoldings(boolean scanOnlyWatchlistAndHoldings) {
+        this.scanOnlyWatchlistAndHoldings = scanOnlyWatchlistAndHoldings;
+    }
+
+    /**
+     * Maximum number of accumulated capital units per stock. Prevents a single symbol from
+     * consuming an unlimited share of the portfolio via repeated CAR-positive signals.
+     */
+    public int getMaxUnitsPerStock() {
+        return maxUnitsPerStock;
+    }
+
+    public void setMaxUnitsPerStock(int maxUnitsPerStock) {
+        this.maxUnitsPerStock = maxUnitsPerStock > 0 ? maxUnitsPerStock : 3;
+    }
+
+    /**
+     * Maximum allowed portfolio drawdown (as a percentage of initial capital) before new buy GTT
+     * placements are halted. Set to 0 to disable the circuit breaker.
+     */
+    public double getMaxDrawdownPct() {
+        return maxDrawdownPct;
+    }
+
+    public void setMaxDrawdownPct(double maxDrawdownPct) {
+        this.maxDrawdownPct = maxDrawdownPct;
     }
 }

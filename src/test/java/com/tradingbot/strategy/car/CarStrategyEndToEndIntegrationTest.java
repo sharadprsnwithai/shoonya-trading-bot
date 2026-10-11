@@ -83,4 +83,82 @@ class CarStrategyEndToEndIntegrationTest {
         assertTrue(state.getTotalCapital().compareTo(new BigDecimal("1000000.0")) > 0);
         assertTrue(state.getUnitSize().compareTo(new BigDecimal("25000.00")) > 0);
     }
+
+    @Test
+    void testVideoWorkedExamplesGailAndRelaxoSignals() {
+        java.time.Instant t0 = java.time.Instant.parse("2025-01-01T04:00:00Z");
+        java.time.LocalDate asOf = java.time.LocalDate.of(2025, 1, 26);
+
+        // 1. GAIL: 52W High of 234.34 at Day 0, then 15 days down, then 9 consecutive rising days
+        // (10 session tail)
+        java.util.List<com.tradingbot.model.Candle> gailCandles = new java.util.ArrayList<>();
+        gailCandles.add(
+                com.tradingbot.model.Candle.ofDaily(
+                        "GAIL",
+                        t0,
+                        new BigDecimal("180"),
+                        new BigDecimal("234.34"), // 52W High
+                        new BigDecimal("178"),
+                        new BigDecimal("185.00"),
+                        100000));
+        for (int i = 1; i <= 15; i++) {
+            BigDecimal c = BigDecimal.valueOf(185 - i * 2);
+            gailCandles.add(
+                    com.tradingbot.model.Candle.ofDaily(
+                            "GAIL",
+                            t0.plus(i, java.time.temporal.ChronoUnit.DAYS),
+                            c,
+                            c.add(BigDecimal.ONE),
+                            c.subtract(BigDecimal.ONE),
+                            c,
+                            50000));
+        }
+        for (int i = 16; i <= 24; i++) {
+            BigDecimal c = BigDecimal.valueOf(172 + (i - 15) * 2);
+            gailCandles.add(
+                    com.tradingbot.model.Candle.ofDaily(
+                            "GAIL",
+                            t0.plus(i, java.time.temporal.ChronoUnit.DAYS),
+                            c,
+                            c.add(BigDecimal.ONE),
+                            c.subtract(BigDecimal.ONE),
+                            c,
+                            60000));
+        }
+        com.tradingbot.strategy.car.model.CarAnalysisResult gailRes =
+                calculator.analyze("GAIL", gailCandles, asOf);
+        assertTrue(
+                gailRes.isCarPositive(), "GAIL with 9 consecutive increases must be CAR-positive");
+        assertEquals(new BigDecimal("234.34"), gailRes.fiftyTwoWeekAnchorHigh());
+
+        // 2. RELAXO: 52W High at Day 0, then continuous drop without reversal
+        java.util.List<com.tradingbot.model.Candle> relaxoCandles = new java.util.ArrayList<>();
+        relaxoCandles.add(
+                com.tradingbot.model.Candle.ofDaily(
+                        "RELAXO",
+                        t0,
+                        new BigDecimal("490"),
+                        new BigDecimal("500"), // 52W High
+                        new BigDecimal("485"),
+                        new BigDecimal("498.30"),
+                        100000));
+        for (int i = 1; i <= 20; i++) {
+            BigDecimal c = BigDecimal.valueOf(498.30 - i * 3);
+            relaxoCandles.add(
+                    com.tradingbot.model.Candle.ofDaily(
+                            "RELAXO",
+                            t0.plus(i, java.time.temporal.ChronoUnit.DAYS),
+                            c,
+                            c.add(BigDecimal.ONE),
+                            c.subtract(BigDecimal.ONE),
+                            c,
+                            50000));
+        }
+        com.tradingbot.strategy.car.model.CarAnalysisResult relaxoRes =
+                calculator.analyze("RELAXO", relaxoCandles, asOf);
+        assertFalse(
+                relaxoRes.isCarPositive(),
+                "RELAXO continuously falling must be AVOID/HOLD (not positive)");
+        assertEquals(0, relaxoRes.consecutivePositiveDays());
+    }
 }

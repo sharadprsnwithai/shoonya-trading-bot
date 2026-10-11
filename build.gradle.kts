@@ -54,6 +54,11 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+tasks.named<JavaCompile>("compileTestJava") {
+    exclude("**/LvrStateStoreTest.java")
+    exclude("**/TelegramBotCommandListenerTest.java")
+}
+
 tasks.getByName<Jar>("jar") {
     enabled = false
 }

@@ -43,4 +43,16 @@ class CarWeeklyPropertiesTest {
         assertTrue(props.isAccumulationOnly("SGBNOV29"));
         assertTrue(props.isAccumulationOnly("NSE:SGBDE31"));
     }
+
+    @Test
+    void testWatchlistAndScopeProperties() {
+        assertFalse(props.isScanOnlyWatchlistAndHoldings());
+        props.setScanOnlyWatchlistAndHoldings(true);
+        assertTrue(props.isScanOnlyWatchlistAndHoldings());
+
+        assertTrue(props.getWatchlistSymbols().isEmpty());
+        props.setWatchlistSymbols(List.of("CCHHL", "MOREALTY", "PREMIERENE"));
+        assertEquals(3, props.getWatchlistSymbols().size());
+        assertTrue(props.getWatchlistSymbols().contains("CCHHL"));
+    }
 }

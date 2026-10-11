@@ -11,7 +11,6 @@ import com.tradingbot.strategy.car.gtt.LiveGttTrigger;
 import com.tradingbot.strategy.car.model.*;
 import com.tradingbot.strategy.car.universe.Nifty100Registry;
 import com.tradingbot.telegram.TelegramService;
-import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -71,12 +70,13 @@ public class CarWeeklyGttService {
                         BigDecimal.valueOf(properties.getTotalCapital()),
                         properties.getNumParts(),
                         BigDecimal.valueOf(properties.getProfitTargetPct()));
-    }
-
-    @PostConstruct
-    public void init() {
+        // Load persisted state before any Spring lifecycle callbacks can fire the scheduler,
+        // so the scheduler never sees a freshly-constructed empty state.
         loadState();
     }
+
+    // @PostConstruct removed — loadState() is called in the constructor to prevent a race
+    // between the Spring scheduler (which can fire before @PostConstruct) and initialisation.
 
     /** Runs the weekly routine, skipping it when this trading week is already reconciled. */
     public synchronized void runSundayWeeklyRoutine() {
@@ -149,6 +149,7 @@ public class CarWeeklyGttService {
 
         portfolioState.setLastRunWeek(weekStart);
         saveState();
+        sendPortfolioMilestoneAlerts();
         sendSundayTelegramReport(scan.results());
     }
 
@@ -245,13 +246,12 @@ public class CarWeeklyGttService {
             String key = entry.getKey();
             CarGttOrder order = entry.getValue();
             if (order == null) {
-                orders.remove(key);
+                portfolioState.removeGttOrder(key);
                 continue;
             }
             if (order.gttId() == null || order.gttId().isBlank()) {
-                // Unusable entry (no id) - it only reserves capital and can never be reconciled.
                 log.warn("[CAR-WEEKLY] Dropping trigger state with no broker id for {}.", key);
-                orders.remove(key);
+                portfolioState.removeGttOrder(key);
                 continue;
             }
 
@@ -280,7 +280,7 @@ public class CarWeeklyGttService {
                         order.gttId(),
                         key,
                         status);
-                orders.remove(key);
+                portfolioState.removeGttOrder(key);
             }
         }
     }
@@ -340,7 +340,7 @@ public class CarWeeklyGttService {
                             "[CAR] Bought %d sh of %s @ ₹%.2f", quantity, order.symbol(), price));
         }
 
-        portfolioState.getGttOrders().remove(key);
+        portfolioState.removeGttOrder(key);
     }
 
     // ------------------------------------------------------------------ step 3: dedup
@@ -397,10 +397,8 @@ public class CarWeeklyGttService {
                         : null;
 
         if (ownedId == null) {
-            // State entry lost (state file deleted or rewritten) - re-adopt the newest usable
-            // trigger so we stop double-arming this symbol on the next placement.
-            ownedId = adoptUntrackedTrigger(gateway.getBrokerName(), sample, group, orders);
-            owned = orders.get(stateKey);
+            ownedId = adoptUntrackedTrigger(gateway.getBrokerName(), sample, group);
+            owned = portfolioState.getGttOrders().get(stateKey);
             if (ownedId == null) {
                 return;
             }
@@ -443,16 +441,13 @@ public class CarWeeklyGttService {
      * @return the adopted trigger id, or {@code null} when nothing usable could be adopted
      */
     private String adoptUntrackedTrigger(
-            String brokerName,
-            LiveGttTrigger sample,
-            List<LiveGttTrigger> group,
-            Map<String, CarGttOrder> orders) {
+            String brokerName, LiveGttTrigger sample, List<LiveGttTrigger> group) {
         if (group == null || group.isEmpty()) {
             return null;
         }
         boolean isSell = isSellType(sample.transactionType());
         String stateKey = isSell ? sample.symbol() + SELL_KEY_SUFFIX : sample.symbol();
-        CarGttOrder existing = orders.get(stateKey);
+        CarGttOrder existing = portfolioState.getGttOrders().get(stateKey);
         if (existing != null && existing.gttId() != null && !existing.gttId().isBlank()) {
             return existing.gttId();
         }
@@ -478,7 +473,7 @@ public class CarWeeklyGttService {
                 pick.symbol(),
                 pick.triggerValue(),
                 pick.quantity());
-        orders.put(
+        portfolioState.putGttOrder(
                 stateKey,
                 new CarGttOrder(
                         pick.triggerId(),
@@ -532,7 +527,20 @@ public class CarWeeklyGttService {
             Set<String> evaluatedSymbols) {}
 
     private ScanResult scanUniverse(Set<String> allHeldSymbols) {
-        Set<String> universe = Nifty100Registry.getUniverseWithHoldings(allHeldSymbols);
+        Set<String> universe = new LinkedHashSet<>();
+        if (properties.isScanOnlyWatchlistAndHoldings()) {
+            if (allHeldSymbols != null) {
+                universe.addAll(allHeldSymbols);
+            }
+            if (properties.getWatchlistSymbols() != null) {
+                universe.addAll(properties.getWatchlistSymbols());
+            }
+        } else {
+            universe.addAll(Nifty100Registry.getUniverseWithHoldings(allHeldSymbols));
+            if (properties.getWatchlistSymbols() != null) {
+                universe.addAll(properties.getWatchlistSymbols());
+            }
+        }
         List<CarAnalysisResult> positives = new ArrayList<>();
         Set<String> positiveSymbols = new HashSet<>();
         Set<String> evaluated = new HashSet<>();
@@ -562,6 +570,12 @@ public class CarWeeklyGttService {
                 "[CAR-WEEKLY] Evaluated {} universe stocks. Found {} CAR-Positive candidates.",
                 evaluated.size(),
                 positives.size());
+        // Rank: strongest streak first; among equal streaks, fresher anchors (smaller
+        // daysSinceAnchor) are preferred because they represent more recent breakouts.
+        positives.sort(
+                Comparator.comparingInt(CarAnalysisResult::consecutivePositiveDays)
+                        .reversed()
+                        .thenComparingInt(CarAnalysisResult::daysSinceAnchor));
         return new ScanResult(positives, positiveSymbols, evaluated);
     }
 
@@ -592,7 +606,7 @@ public class CarWeeklyGttService {
             if (order.gttId() != null && !order.gttId().isBlank()) {
                 gateway.cancelGtt(order.gttId());
             }
-            orders.remove(symbol);
+            portfolioState.removeGttOrder(symbol);
         }
     }
 
@@ -629,6 +643,9 @@ public class CarWeeklyGttService {
             GttExecutionGateway gateway, String sym, CarHolding holding, LocalDate weekStart) {
         String sellKey = sym + SELL_KEY_SUFFIX;
         BigDecimal target = holding.targetPrice();
+        // Sell limit is one NSE tick below the trigger so a sudden gap-up + reversal
+        // doesn't leave the limit order stranded above the market.
+        BigDecimal limitPrice = roundToNseTick(target.subtract(new BigDecimal("0.05")));
         int qty = (int) holding.totalQuantity();
 
         CarGttOrder existing = portfolioState.getGttOrders().get(sellKey);
@@ -639,14 +656,17 @@ public class CarWeeklyGttService {
                         && !existing.gttId().isBlank()
                         && existing.triggerPrice() != null
                         && existing.triggerPrice().compareTo(target) == 0
+                        && existing.limitPrice() != null
+                        && existing.limitPrice().compareTo(limitPrice) == 0
                         && existing.quantity() == qty;
         if (upToDate) {
             log.info(
                     "[CAR-WEEKLY] Active Sell Target GTT already exists for {} (ID: {}, Target:"
-                            + " ₹{}, Qty: {}). Skipping duplicate.",
+                            + " ₹{}, Limit: ₹{}, Qty: {}). Skipping duplicate.",
                     sym,
                     existing.gttId(),
                     target,
+                    limitPrice,
                     qty);
             return;
         }
@@ -658,7 +678,7 @@ public class CarWeeklyGttService {
                         sym,
                         GttOrderType.SELL_TARGET,
                         target,
-                        target,
+                        limitPrice,
                         qty,
                         GttStatus.PENDING,
                         weekStart,
@@ -688,13 +708,14 @@ public class CarWeeklyGttService {
             return;
         }
 
-        portfolioState.getGttOrders().put(sellKey, desired.withId(effectiveId));
+        portfolioState.putGttOrder(sellKey, desired.withId(effectiveId));
         log.info(
-                "[CAR-WEEKLY] Sell Target GTT for {} on {}: {} shares @ ₹{} (ID: {})",
+                "[CAR-WEEKLY] Sell Target GTT for {} on {}: {} shares @ trigger ₹{} limit ₹{} (ID: {})",
                 sym,
                 gateway.getBrokerName(),
                 qty,
                 target,
+                limitPrice,
                 effectiveId);
     }
 
@@ -705,6 +726,14 @@ public class CarWeeklyGttService {
             GttExecutionGateway gateway,
             LocalDate weekStart) {
         if (carPositiveStocks == null || carPositiveStocks.isEmpty()) {
+            return;
+        }
+
+        if (isDrawdownBreached()) {
+            log.warn(
+                    "[CAR-WEEKLY] Drawdown breached {:.1f}% threshold. Halting new buy placements.",
+                    properties.getMaxDrawdownPct());
+            alert("[CAR] ⚠️ Drawdown circuit breaker active — no new buys placed this week.");
             return;
         }
 
@@ -730,6 +759,17 @@ public class CarWeeklyGttService {
     private void reconcileBuyGttFor(
             CarAnalysisResult candidate, GttExecutionGateway gateway, LocalDate weekStart) {
         if (ohlcService == null) {
+            return;
+        }
+
+        // Per-symbol accumulation cap: skip new buy GTT if the holding already reached the limit.
+        CarHolding existingHolding = portfolioState.getHoldings().get(candidate.symbol());
+        if (existingHolding != null
+                && existingHolding.accumulatedUnits() >= properties.getMaxUnitsPerStock()) {
+            log.info(
+                    "[CAR-WEEKLY] {} already at max {} accumulated units. Skipping new buy GTT.",
+                    candidate.symbol(),
+                    properties.getMaxUnitsPerStock());
             return;
         }
         List<Candle> allCandles = ohlcService.getDailyCandles(candidate.symbol());
@@ -816,7 +856,7 @@ public class CarWeeklyGttService {
             }
         }
 
-        portfolioState.getGttOrders().put(candidate.symbol(), desired.withId(effectiveId));
+        portfolioState.putGttOrder(candidate.symbol(), desired.withId(effectiveId));
         log.info(
                 "[CAR-WEEKLY] Buy GTT for {} on {}: {} shares @ trigger ₹{} limit ₹{} (ID: {})",
                 candidate.symbol(),
@@ -839,7 +879,8 @@ public class CarWeeklyGttService {
                         portfolioState.getTotalCapital().doubleValue()));
         sb.append(
                 String.format(
-                        "• *UNIT Spend (1/40th):* `₹%.2f` (Available Units: %d/%d)\n",
+                        "• *UNIT Spend (1/%dth):* `₹%.2f` (Available Units: %d/%d)\n",
+                        properties.getNumParts(),
                         portfolioState.getUnitSize().doubleValue(),
                         portfolioState.getAvailableUnits(),
                         properties.getNumParts()));
@@ -850,15 +891,21 @@ public class CarWeeklyGttService {
 
         if (!carPositives.isEmpty()) {
             sb.append("🎯 *Top CAR-Positive Setups (Buy Above Last Week High):*\n");
-            for (int i = 0; i < Math.min(10, carPositives.size()); i++) {
+            int shown = Math.min(10, carPositives.size());
+            for (int i = 0; i < shown; i++) {
                 CarAnalysisResult c = carPositives.get(i);
                 boolean isExempt = properties.isAccumulationOnly(c.symbol());
                 BigDecimal lastWkHigh =
                         c.lastWeekHigh() != null && c.lastWeekHigh().compareTo(BigDecimal.ZERO) > 0
                                 ? c.lastWeekHigh()
                                 : c.latestClose();
-                int trigQty = 1;
-                if (portfolioState.getUnitSize().compareTo(BigDecimal.ZERO) > 0
+                // Use the quantity already stored in the placed order when available; fall back
+                // only to the re-derived estimate so the report matches what was actually placed.
+                int trigQty;
+                CarGttOrder placedOrder = portfolioState.getGttOrders().get(c.symbol());
+                if (placedOrder != null && placedOrder.quantity() > 0) {
+                    trigQty = placedOrder.quantity();
+                } else if (portfolioState.getUnitSize().compareTo(BigDecimal.ZERO) > 0
                         && lastWkHigh.compareTo(BigDecimal.ZERO) > 0) {
                     trigQty =
                             (int)
@@ -868,6 +915,8 @@ public class CarWeeklyGttService {
                                                     .divide(lastWkHigh, 4, RoundingMode.HALF_UP)
                                                     .doubleValue());
                     if (trigQty <= 0) trigQty = 1;
+                } else {
+                    trigQty = 1;
                 }
 
                 sb.append(
@@ -879,9 +928,44 @@ public class CarWeeklyGttService {
                                 lastWkHigh.doubleValue(),
                                 trigQty));
             }
+            if (carPositives.size() > shown) {
+                sb.append(
+                        String.format(
+                                "  _…and %d more candidates not shown_\n",
+                                carPositives.size() - shown));
+            }
         }
 
         telegramService.sendTextMessage(sb.toString());
+    }
+
+    /**
+     * Fires portfolio milestone alerts: fully-deployed notification and 10 %+ gain milestone.
+     * Called once per weekly run after state has been saved.
+     */
+    private void sendPortfolioMilestoneAlerts() {
+        if (!properties.isTelegramAlerts() || telegramService == null) return;
+        if (portfolioState.getAvailableUnits() == 0) {
+            alert(
+                    "[CAR] 📊 Portfolio fully deployed — all "
+                            + properties.getNumParts()
+                            + " units allocated.");
+        }
+        BigDecimal initial = portfolioState.getInitialCapital();
+        if (initial != null && initial.signum() > 0) {
+            BigDecimal gainPct =
+                    portfolioState
+                            .getTotalCapital()
+                            .subtract(initial)
+                            .divide(initial, 4, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(100));
+            if (gainPct.compareTo(BigDecimal.TEN) >= 0) {
+                alert(
+                        String.format(
+                                "[CAR] 🎉 Portfolio up %.1f%% from initial capital!",
+                                gainPct.doubleValue()));
+            }
+        }
     }
 
     private void alert(String message) {
@@ -891,6 +975,31 @@ public class CarWeeklyGttService {
         } catch (Exception e) {
             log.warn("[CAR-WEEKLY] Could not send alert: {}", e.getMessage(), e);
         }
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    /**
+     * Returns true when the portfolio has lost more than {@code maxDrawdownPct} percent of its
+     * initial capital. When breached, new buy GTT placements are halted for the week; existing
+     * holdings and their sell targets are never touched.
+     */
+    private boolean isDrawdownBreached() {
+        double threshold = properties.getMaxDrawdownPct();
+        if (threshold <= 0) return false; // 0 disables the circuit breaker
+        BigDecimal initial = portfolioState.getInitialCapital();
+        if (initial == null || initial.signum() <= 0) return false;
+        BigDecimal drawdownPct =
+                initial.subtract(portfolioState.getTotalCapital())
+                        .divide(initial, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+        return drawdownPct.compareTo(BigDecimal.valueOf(threshold)) > 0;
+    }
+
+    /** Rounds {@code val} to the nearest 0.05 NSE tick. */
+    private static BigDecimal roundToNseTick(BigDecimal val) {
+        double rounded = Math.round(val.doubleValue() / 0.05) * 0.05;
+        return BigDecimal.valueOf(rounded).setScale(2, RoundingMode.HALF_UP);
     }
 
     // ------------------------------------------------------------------ persistence

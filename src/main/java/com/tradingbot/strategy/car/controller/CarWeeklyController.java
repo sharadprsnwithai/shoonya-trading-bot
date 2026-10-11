@@ -44,4 +44,21 @@ public class CarWeeklyController {
     public ResponseEntity<Map<String, CarHolding>> getHoldings() {
         return ResponseEntity.ok(carService.getPortfolioState().getHoldings());
     }
+
+    /**
+     * Lightweight health check — returns strategy state in a single call so operators can
+     * sanity-check the bot without reading the full performance endpoint.
+     */
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> health() {
+        CarPortfolioState s = carService.getPortfolioState();
+        return ResponseEntity.ok(
+                Map.of(
+                        "status", "ok",
+                        "lastRunWeek", String.valueOf(s.getLastRunWeek()),
+                        "availableUnits", s.getAvailableUnits(),
+                        "totalParts", s.getNumParts(),
+                        "capital", s.getTotalCapital(),
+                        "gatewayBroker", String.valueOf(carService.resolveGatewayBrokerName())));
+    }
 }

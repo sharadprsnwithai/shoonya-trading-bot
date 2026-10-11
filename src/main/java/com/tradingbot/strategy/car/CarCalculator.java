@@ -50,19 +50,39 @@ public class CarCalculator {
     public CarAnalysisResult analyze(String symbol, List<Candle> dailyCandles, LocalDate asOf) {
         if (dailyCandles == null || dailyCandles.isEmpty()) {
             return new CarAnalysisResult(
-                    symbol, false, 0, BigDecimal.ZERO, null, BigDecimal.ZERO, BigDecimal.ZERO, 0);
+                    symbol,
+                    false,
+                    0,
+                    BigDecimal.ZERO,
+                    null,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    0,
+                    BigDecimal.ZERO,
+                    Math.max(1, requiredPositiveDays - 1));
         }
 
+        LocalDate cutoffDate = asOf != null ? asOf.minusDays(364) : null;
         int startIdx = Math.max(0, dailyCandles.size() - lookbackDays);
+        if (cutoffDate != null) {
+            for (int i = 0; i < dailyCandles.size(); i++) {
+                LocalDate d = LocalDate.ofInstant(dailyCandles.get(i).timestamp(), IST);
+                if (!d.isBefore(cutoffDate)) {
+                    startIdx = i;
+                    break;
+                }
+            }
+        }
         List<Candle> window = dailyCandles.subList(startIdx, dailyCandles.size());
 
-        // 1. Find 52-Week Highest Close Anchor
+        // 1. Find 52-Week Highest High Anchor (mirrors Google Finance high52 / SORT on "high")
         int anchorIdx = 0;
-        BigDecimal highestClose = BigDecimal.ZERO;
+        BigDecimal highestHigh = BigDecimal.ZERO;
         for (int i = 0; i < window.size(); i++) {
-            BigDecimal c = window.get(i).close();
-            if (c != null && c.compareTo(highestClose) > 0) {
-                highestClose = c;
+            Candle c = window.get(i);
+            BigDecimal h = c != null ? c.high() : null;
+            if (h != null && h.compareTo(highestHigh) > 0) {
+                highestHigh = h;
                 anchorIdx = i;
             }
         }
@@ -84,9 +104,13 @@ public class CarCalculator {
             }
         }
 
-        boolean isCarPositive = streak >= requiredPositiveDays;
+        // Mahesh Kaushik CAR rule: an N-session window requires (N - 1) day-to-day transitions
+        // e.g., 10-session window requires 9 consecutive positive increments (SUMPRODUCT = 9)
+        int requiredIncreases = Math.max(1, requiredPositiveDays - 1);
+        boolean isCarPositive = streak >= requiredIncreases;
         BigDecimal latestClose = closes.get(closes.size() - 1);
-        BigDecimal latestCumAvg = cumAverages.get(cumAverages.size() - 1);
+        BigDecimal latestCumAvg =
+                cumAverages.get(cumAverages.size() - 1).setScale(2, RoundingMode.HALF_UP);
 
         // 3. High of the last completed week (date-driven, so it stays correct on a 4-session
         //    holiday week and on weekday runs where trailing candles belong to the running week)
@@ -109,15 +133,20 @@ public class CarCalculator {
                 symbol,
                 isCarPositive,
                 streak,
-                highestClose,
+                highestHigh,
                 anchorDate,
                 latestClose,
                 latestCumAvg,
                 postAnchorCandles.size(),
-                lastWeekHigh);
+                lastWeekHigh,
+                requiredIncreases);
     }
 
     public List<BigDecimal> calculateCumulativeAverages(List<BigDecimal> closes) {
+        return calculateCumulativeAverages(closes, 4);
+    }
+
+    public List<BigDecimal> calculateCumulativeAverages(List<BigDecimal> closes, int scale) {
         List<BigDecimal> result = new ArrayList<>();
         if (closes == null || closes.isEmpty()) {
             return result;
@@ -127,7 +156,7 @@ public class CarCalculator {
         for (int i = 0; i < closes.size(); i++) {
             runningSum = runningSum.add(closes.get(i));
             BigDecimal count = BigDecimal.valueOf(i + 1);
-            BigDecimal avg = runningSum.divide(count, 2, RoundingMode.HALF_UP);
+            BigDecimal avg = runningSum.divide(count, scale, RoundingMode.HALF_UP);
             result.add(avg);
         }
         return result;

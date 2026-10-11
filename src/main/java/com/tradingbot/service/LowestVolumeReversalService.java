@@ -1474,7 +1474,8 @@ public class LowestVolumeReversalService {
             } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
                 if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
                     triggered = true;
-                } else if (quoteNode.has("h") && setup.getSessionHighAtArming() != null
+                } else if (quoteNode.has("h")
+                        && setup.getSessionHighAtArming() != null
                         && spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
                     // Fresh wick guard (C2): only trigger if spot is within 0.05% of trigger.
                     // If price has dropped significantly below trigger (>0.10% below), remain

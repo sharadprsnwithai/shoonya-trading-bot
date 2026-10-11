@@ -162,10 +162,8 @@ class CarGttReconciliationTest {
     @Test
     void testTriggeredBuyCreatesHoldingAndReleasesItsReservation() {
         var state = service.getPortfolioState();
-        state.getGttOrders()
-                .put(
-                        "RELIANCE",
-                        order("100", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
+        state.putGttOrder(
+                "RELIANCE", order("100", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
         // Pending buy reserves 10 x 2500.10 = 25,001 -> 2 units of the 40.
         assertEquals(38, state.getAvailableUnits());
 
@@ -199,10 +197,8 @@ class CarGttReconciliationTest {
     @Test
     void testCancelledTriggerReleasesItsReservedUnits() {
         CarPortfolioState state = service.getPortfolioState();
-        state.getGttOrders()
-                .put(
-                        "RELIANCE",
-                        order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
+        state.putGttOrder(
+                "RELIANCE", order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
         int withReservation = state.getAvailableUnits();
         assertTrue(withReservation < 40);
 
@@ -216,10 +212,8 @@ class CarGttReconciliationTest {
     @Test
     void testUnknownStatusNeverDestroysState() {
         CarPortfolioState state = service.getPortfolioState();
-        state.getGttOrders()
-                .put(
-                        "RELIANCE",
-                        order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
+        state.putGttOrder(
+                "RELIANCE", order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
         when(gateway.getGttStatus("GTT_1")).thenReturn(null);
 
         service.runSundayWeeklyRoutine(true);
@@ -233,10 +227,8 @@ class CarGttReconciliationTest {
     void testBuyTriggerIsCancelledWhenSymbolIsNoLongerCarPositive() {
         CarPortfolioState state = service.getPortfolioState();
         state.addFill("RELIANCE", 50, new BigDecimal("2500.00")); // guarantees universe membership
-        state.getGttOrders()
-                .put(
-                        "RELIANCE",
-                        order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
+        state.putGttOrder(
+                "RELIANCE", order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
 
         // Flat closes -> cumulative average never rises -> not CAR-positive, but evaluated.
         when(ohlcService.getDailyCandles(any())).thenReturn(flatCandles("RELIANCE"));
@@ -251,10 +243,8 @@ class CarGttReconciliationTest {
     void testBuyTriggerSurvivesWhenSymbolCannotBeEvaluated() {
         CarPortfolioState state = service.getPortfolioState();
         state.addFill("RELIANCE", 50, new BigDecimal("2500.00"));
-        state.getGttOrders()
-                .put(
-                        "RELIANCE",
-                        order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
+        state.putGttOrder(
+                "RELIANCE", order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
 
         // Data outage: no candles for any symbol -> nothing may be cancelled.
         when(ohlcService.getDailyCandles(any())).thenReturn(null);
@@ -269,10 +259,8 @@ class CarGttReconciliationTest {
     void testBuyTriggerIsKeptWhileSymbolStaysCarPositive() {
         CarPortfolioState state = service.getPortfolioState();
         state.addFill("RELIANCE", 50, new BigDecimal("2500.00"));
-        state.getGttOrders()
-                .put(
-                        "RELIANCE",
-                        order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
+        state.putGttOrder(
+                "RELIANCE", order("GTT_1", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
 
         when(ohlcService.getDailyCandles(any())).thenReturn(risingCandles("RELIANCE"));
 
@@ -287,20 +275,11 @@ class CarGttReconciliationTest {
     private CarPortfolioStateFixture holdingWithBothTriggers() {
         var state = service.getPortfolioState();
         state.addFill("RELIANCE", 50, new BigDecimal("2500.00"));
-        state.getGttOrders()
-                .put(
-                        "RELIANCE",
-                        order("100", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
-        state.getGttOrders()
-                .put(
-                        "RELIANCE:SELL_TARGET",
-                        order(
-                                "200",
-                                "RELIANCE",
-                                GttOrderType.SELL_TARGET,
-                                "2657.00",
-                                "2657.00",
-                                50));
+        state.putGttOrder(
+                "RELIANCE", order("100", "RELIANCE", GttOrderType.BUY, "2500.00", "2500.10", 10));
+        state.putGttOrder(
+                "RELIANCE:SELL_TARGET",
+                order("200", "RELIANCE", GttOrderType.SELL_TARGET, "2657.00", "2657.00", 50));
         return new CarPortfolioStateFixture(state);
     }
 

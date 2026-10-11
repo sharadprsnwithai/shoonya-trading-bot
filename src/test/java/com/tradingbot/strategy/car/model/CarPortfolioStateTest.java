@@ -78,20 +78,19 @@ class CarPortfolioStateTest {
         CarPortfolioState state =
                 new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
         state.addFill("RELIANCE", 50, new BigDecimal("500.0"));
-        state.getGttOrders()
-                .put(
+        state.putGttOrder(
+                "RELIANCE",
+                new CarGttOrder(
+                        "GTT_123",
+                        "ZERODHA",
                         "RELIANCE",
-                        new CarGttOrder(
-                                "GTT_123",
-                                "ZERODHA",
-                                "RELIANCE",
-                                GttOrderType.BUY,
-                                BigDecimal.valueOf(500.0),
-                                BigDecimal.valueOf(500.10),
-                                50,
-                                GttStatus.PENDING,
-                                java.time.LocalDate.now(),
-                                java.time.Instant.now()));
+                        GttOrderType.BUY,
+                        BigDecimal.valueOf(500.0),
+                        BigDecimal.valueOf(500.10),
+                        50,
+                        GttStatus.PENDING,
+                        java.time.LocalDate.now(),
+                        java.time.Instant.now()));
 
         // Serialize to file
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(tempFile.toFile(), state);
@@ -125,23 +124,22 @@ class CarPortfolioStateTest {
                 new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
 
         // 10 shares x 2500.10 = 25,001 -> 2 units reserved.
-        state.getGttOrders()
-                .put(
+        state.putGttOrder(
+                "RELIANCE",
+                new CarGttOrder(
+                        "GTT_1",
+                        "ZERODHA",
                         "RELIANCE",
-                        new CarGttOrder(
-                                "GTT_1",
-                                "ZERODHA",
-                                "RELIANCE",
-                                GttOrderType.BUY,
-                                BigDecimal.valueOf(2500.00),
-                                BigDecimal.valueOf(2500.10),
-                                10,
-                                GttStatus.PENDING,
-                                java.time.LocalDate.now(),
-                                java.time.Instant.now()));
+                        GttOrderType.BUY,
+                        BigDecimal.valueOf(2500.00),
+                        BigDecimal.valueOf(2500.10),
+                        10,
+                        GttStatus.PENDING,
+                        java.time.LocalDate.now(),
+                        java.time.Instant.now()));
         assertEquals(38, state.getAvailableUnits());
 
-        state.getGttOrders().remove("RELIANCE");
+        state.removeGttOrder("RELIANCE");
         assertEquals(40, state.getAvailableUnits());
     }
 
@@ -151,20 +149,19 @@ class CarPortfolioStateTest {
                 new CarPortfolioState(new BigDecimal("1000000.0"), 40, new BigDecimal("6.28"));
 
         // Legacy placeholder entries (no trigger, no quantity) must never eat a capital unit.
-        state.getGttOrders()
-                .put(
+        state.putGttOrder(
+                "TCS",
+                new CarGttOrder(
+                        "GTT_2",
+                        "ZERODHA",
                         "TCS",
-                        new CarGttOrder(
-                                "GTT_2",
-                                "ZERODHA",
-                                "TCS",
-                                GttOrderType.BUY,
-                                BigDecimal.ZERO,
-                                BigDecimal.ZERO,
-                                0,
-                                GttStatus.PENDING,
-                                java.time.LocalDate.now(),
-                                java.time.Instant.now()));
+                        GttOrderType.BUY,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        0,
+                        GttStatus.PENDING,
+                        java.time.LocalDate.now(),
+                        java.time.Instant.now()));
 
         assertEquals(40, state.getAvailableUnits());
     }

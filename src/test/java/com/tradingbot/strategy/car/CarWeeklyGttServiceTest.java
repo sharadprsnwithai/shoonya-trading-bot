@@ -171,4 +171,20 @@ class CarWeeklyGttServiceTest {
         verify(gttGateway, never()).listActiveGtts();
         assertNull(service.getPortfolioState().getLastRunWeek());
     }
+
+    @Test
+    void testScanOnlyWatchlistAndHoldingsRestrictsUniverse() {
+        props.setScanOnlyWatchlistAndHoldings(true);
+        props.setWatchlistSymbols(List.of("CUSTOM_STOCK_1"));
+        service.getPortfolioState().addFill("HELD_STOCK_2", 10, BigDecimal.valueOf(100.0));
+
+        service.runSundayWeeklyRoutine(true);
+
+        // Verify only CUSTOM_STOCK_1 and HELD_STOCK_2 were queried
+        verify(ohlcService, times(1)).getDailyCandles("CUSTOM_STOCK_1");
+        verify(ohlcService, times(1)).getDailyCandles("HELD_STOCK_2");
+        // Regular Nifty 100 stocks like TCS, INFY should NOT be queried
+        verify(ohlcService, never()).getDailyCandles("TCS");
+        verify(ohlcService, never()).getDailyCandles("INFY");
+    }
 }
