@@ -82,6 +82,7 @@ class TelegramBotCommandListenerTest {
 
     @Test
     void testHandleResetCommand() {
+        when(lvrService.resetDaily(false)).thenReturn(true);
         String resp = commandListener.processCommand("/reset");
         verify(lvrService, times(1)).resetDaily(false);
         assertTrue(resp.contains("LVR daily session state reset"));
@@ -98,9 +99,19 @@ class TelegramBotCommandListenerTest {
     @Test
     void testResetForcedDuringTradingHours() {
         when(lvrService.isWithinTradingHours()).thenReturn(true);
+        when(lvrService.resetDaily(true)).thenReturn(true);
         String resp = commandListener.processCommand("/reset force");
         verify(lvrService, times(1)).resetDaily(true);
         assertTrue(resp.contains("reset successfully"));
+    }
+
+    @Test
+    void testResetRefusedWhileCycleRunning() {
+        // H8: the engine refused the reset (a cycle is executing) — never report success.
+        when(lvrService.resetDaily(anyBoolean())).thenReturn(false);
+        String resp = commandListener.processCommand("/reset");
+        assertTrue(resp.contains("refused"));
+        verify(lvrService, times(1)).resetDaily(false);
     }
 
     @Test

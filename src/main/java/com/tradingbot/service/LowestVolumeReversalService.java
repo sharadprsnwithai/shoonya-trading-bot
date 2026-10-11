@@ -1371,6 +1371,17 @@ public class LowestVolumeReversalService {
                 return;
             }
 
+            // M4: timeout consistency — if setup has been armed for setupTimeoutCandles cycles,
+            // reset to scanning regardless of price action.
+            if (setupTimeoutCandles > 0 && setup.getArmedCandlesElapsed() >= setupTimeoutCandles) {
+                log.info(
+                        "[LVR] Setup for {} expired after {} armed 30s ticks. Resetting to SCANNING.",
+                        symbol,
+                        setup.getArmedCandlesElapsed());
+                setup.resetToScanning();
+                return;
+            }
+
             BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
 
             // Invalidate setup if live spot breaches the proposed stop loss before hitting the
@@ -1463,22 +1474,31 @@ public class LowestVolumeReversalService {
             } else if (setup.getDirection() == LowestVolumeDirection.LONG) {
                 if (spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
                     triggered = true;
-                } else if (quoteNode.has("h") && setup.getSessionHighAtArming() != null) {
-                    double sessionHigh = quoteNode.get("h").asDouble(0.0);
-                    double baselineHigh = setup.getSessionHighAtArming();
-                    // Fresh wick: session HIGH advanced past its arming baseline and reached
-                    // the trigger while LTP sits below it (pullback after the breach).
-                    if (sessionHigh > 0
-                            && sessionHigh > baselineHigh
-                            && sessionHigh >= setup.getTriggerPrice().doubleValue()) {
-                        triggered = true;
-                        log.info(
-                                "[LVR] Fresh session-high wick breach for {} (high {} advanced"
-                                        + " past arming baseline {} and reached trigger {}).",
-                                symbol,
-                                sessionHigh,
-                                baselineHigh,
-                                setup.getTriggerPrice());
+                } else if (quoteNode.has("h") && setup.getSessionHighAtArming() != null
+                        && spotPrice.compareTo(setup.getTriggerPrice()) >= 0) {
+                    // Fresh wick guard (C2): only trigger if spot is within 0.05% of trigger.
+                    // If price has dropped significantly below trigger (>0.10% below), remain
+                    // TRIGGER_ARMED and do not execute entry at a retreating price.
+                    double triggerAsDouble = setup.getTriggerPrice().doubleValue();
+                    double spotAsDouble = spotPrice.doubleValue();
+                    // spotPrice >= triggerPrice * 0.9995 → within 0.05% touch window
+                    if (spotAsDouble >= triggerAsDouble * 0.9995d) {
+                        double sessionHigh = quoteNode.get("h").asDouble(0.0);
+                        double baselineHigh = setup.getSessionHighAtArming();
+                        // Fresh wick: session HIGH advanced past its arming baseline and reached
+                        // the trigger while LTP sits near trigger (pullback after the breach).
+                        if (sessionHigh > 0
+                                && sessionHigh > baselineHigh
+                                && sessionHigh >= triggerAsDouble) {
+                            triggered = true;
+                            log.info(
+                                    "[LVR] Fresh session-high wick breach for {} (high {} advanced"
+                                            + " past arming baseline {} and reached trigger {}).",
+                                    symbol,
+                                    sessionHigh,
+                                    baselineHigh,
+                                    setup.getTriggerPrice());
+                        }
                     }
                 }
             }
