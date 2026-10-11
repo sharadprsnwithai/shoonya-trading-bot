@@ -142,7 +142,7 @@ class TelegramBotCommandListenerTest {
 
         String runResp = listenerWithCar.processCommand("/car_run");
         assertTrue(runResp.contains("CAR Weekly GTT Routine executed"));
-        verify(carService, times(1)).runSundayWeeklyRoutine();
+        verify(carService, times(1)).runSundayWeeklyRoutine(true);
     }
 
     @Test

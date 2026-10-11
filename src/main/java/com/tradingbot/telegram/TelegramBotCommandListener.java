@@ -334,8 +334,8 @@ public class TelegramBotCommandListener {
             case "/car_run":
             case "/car_weekly":
                 if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
-                carWeeklyService.runSundayWeeklyRoutine();
-                return "🚀 CAR Weekly GTT Routine executed! GTT orders placed on Kite.\n\n"
+                carWeeklyService.runSundayWeeklyRoutine(true);
+                return "🚀 CAR Weekly GTT Routine executed (forced)! GTT orders placed on Kite.\n\n"
                         + processCommand("/car");
 
             case "/monthlyrange":
