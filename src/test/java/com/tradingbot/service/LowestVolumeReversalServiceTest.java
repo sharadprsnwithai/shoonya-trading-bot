@@ -2772,10 +2772,10 @@ class LowestVolumeReversalServiceTest {
                         .put("h", "1874.00")
                         .put("l", "1866.00");
         // Tick 3: session high ADVANCED past baseline (1880 ≥ trigger) while LTP pulled back
-        // below the trigger — a genuine fresh wick breach.
+        // below the trigger — a genuine fresh wick breach (LTP 1874.90 is within 0.05% of trigger 1875.05).
         var freshTick =
                 mapper.createObjectNode()
-                        .put("lp", "1872.00")
+                        .put("lp", "1874.90")
                         .put("ap", "1870.00")
                         .put("h", "1880.00")
                         .put("l", "1866.00");
