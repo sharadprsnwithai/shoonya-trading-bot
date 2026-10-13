@@ -60,9 +60,13 @@ tasks.withType<Test> {
         }
     }
     // Forward audit tuning knobs into the test JVM.
-    listOf("liveTests", "lvr.audit.maxSymbols").forEach { key ->
-        System.getProperty(key)?.let { systemProperty(key, it) }
-    }
+    listOf(
+            "liveTests",
+            "lvr.audit.maxSymbols",
+            "lvr.audit.workers",
+            "lvr.audit.sessionDate",
+        )
+        .forEach { key -> System.getProperty(key)?.let { systemProperty(key, it) } }
 }
 
 tasks.named<JavaCompile>("compileTestJava") {

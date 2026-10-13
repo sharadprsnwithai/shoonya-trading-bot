@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ForkJoinPool;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
@@ -83,6 +84,15 @@ class LvrTodayGateReplayAuditTest {
     private static final String SUBRULE = "-".repeat(118);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
+    /** Replay workers per pass; the bottleneck is serial HTTP round-trips, not CPU. */
+    private static final int WORKERS = Integer.getInteger("lvr.audit.workers", 4);
+
+    /** Set to an ISO date (yyyy-MM-dd) to replay a specific session instead of the latest one. */
+    private static final String SESSION_OVERRIDE = System.getProperty("lvr.audit.sessionDate");
+
+    /** The session the replay ended up using; resolved from the data, not from the wall clock. */
+    private LocalDate resolvedSessionDate;
+
     /** Matches the EXHAUST line emitted by {@code replaySession} when a gate kills the symbol. */
     private static final Pattern DISCARD =
             Pattern.compile("discarded for the day: \\[([^]]+)] (.*)");
@@ -129,21 +139,27 @@ class LvrTodayGateReplayAuditTest {
         }
 
         System.out.println(RULE);
-        System.out.println(" LVR GATE AUDIT — REPLAY OF REAL TODAY CANDLES");
+        System.out.println(" LVR GATE AUDIT — REPLAY OF REAL SESSION CANDLES");
         System.out.println(RULE);
-
-        LocalDate sessionDate = LocalDate.now(IST);
-        System.out.printf(Locale.US, "%-28s: %s%n", "Session date (IST)", sessionDate);
         System.out.printf(Locale.US, "%-28s: %d symbols%n", "Universe", universe.size());
 
-        Map<String, List<Candle>> candles = fetchSessionCandles(universe, sessionDate);
+        Map<String, List<Candle>> candles = fetchSessionCandles(universe);
+        LocalDate sessionDate = resolvedSessionDate;
+        System.out.printf(Locale.US, "%-28s: %s%n", "Session date (IST)", sessionDate);
+        if (!sessionDate.equals(LocalDate.now(IST))) {
+            System.out.printf(
+                    Locale.US,
+                    "%-28s: no candles for %s yet — replaying the last session that has data%n",
+                    "Note",
+                    LocalDate.now(IST));
+        }
         System.out.printf(
                 Locale.US,
                 "%-28s: %d symbols have >=4 candles%n",
                 "Fetched for session",
                 candles.size());
-        assumeTrue(
-                !candles.isEmpty(), "No 5-min candles for " + sessionDate + " — nothing to replay");
+        System.out.printf(Locale.US, "%-28s: %d%n", "Replay workers per pass", WORKERS);
+        assumeTrue(!candles.isEmpty(), "No 5-min candles found — nothing to replay");
 
         PassResult passNew = runPass("A. NEW gate (PCR band 0.85-1.15 + S&R)", candles, true, true);
         PassResult passNoPcr = runPass("B. PCR gate OFF (S&R still on)", candles, false, true);
@@ -177,12 +193,6 @@ class LvrTodayGateReplayAuditTest {
             Map<String, List<Candle>> candles,
             boolean pcrEnabled,
             boolean optionSrEnabled) {
-        LowestVolumeReversalService service = newService();
-        service.setPcrFilterEnabled(pcrEnabled);
-        service.setOptionSrFilterEnabled(optionSrEnabled);
-        service.setPcrNeutralMin(0.85);
-        service.setPcrNeutralMax(1.15);
-
         PassResult result = new PassResult(label, pcrEnabled, optionSrEnabled);
 
         Recorder recorder = new Recorder();
@@ -193,32 +203,34 @@ class LvrTodayGateReplayAuditTest {
         logger.setLevel(Level.DEBUG);
         logger.addAppender(recorder);
         recorder.start();
+
+        // Every symbol costs a handful of serial HTTP round-trips (daily candles for PDH/PDL, an
+        // option-chain read plus one quote per strike for each armed setup), so the loop is run
+        // concurrently. Each worker owns its OWN service instance, which keeps the replay's
+        // per-symbol state — armed setups, exhausted symbols, trade history — fully isolated.
+        int workers = Math.max(1, Math.min(WORKERS, candles.size()));
+        List<Map.Entry<String, List<Candle>>> entries =
+                new ArrayList<>(new TreeMap<>(candles).entrySet());
+        ForkJoinPool pool = new ForkJoinPool(workers);
         try {
-            for (Map.Entry<String, List<Candle>> entry : new TreeMap<>(candles).entrySet()) {
-                result.symbolsReplayed++;
-                for (LowestVolumeDirection direction :
-                        List.of(LowestVolumeDirection.LONG, LowestVolumeDirection.SHORT)) {
-                    try {
-                        for (LowestVolumePaperPosition pos :
-                                service.replaySession(
-                                        entry.getKey(), direction, entry.getValue())) {
-                            result.add(pos);
-                        }
-                    } catch (RuntimeException ex) {
-                        // Keep the audit running across the whole universe; the failure is still
-                        // reported so a broken symbol cannot silently shrink the sample.
-                        result.errors.add(
-                                entry.getKey()
-                                        + " "
-                                        + direction
-                                        + ": "
-                                        + ex.getClass().getSimpleName()
-                                        + " "
-                                        + ex.getMessage());
-                    }
-                }
-            }
+            pool.submit(
+                            () ->
+                                    entries.parallelStream()
+                                            .forEach(
+                                                    entry ->
+                                                            replaySymbol(
+                                                                    entry,
+                                                                    result,
+                                                                    pcrEnabled,
+                                                                    optionSrEnabled)))
+                    .get();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("LVR replay interrupted", ex);
+        } catch (java.util.concurrent.ExecutionException ex) {
+            throw new IllegalStateException("LVR replay failed", ex.getCause());
         } finally {
+            pool.shutdown();
             recorder.stop();
             logger.detachAppender(recorder);
             logger.setLevel(oldLevel);
@@ -251,6 +263,50 @@ class LvrTodayGateReplayAuditTest {
 
         printPass(result);
         return result;
+    }
+
+    /**
+     * Replays one symbol in both directions through its own service instance, folding the outcome
+     * into the shared result. Called from several workers at once, so every mutation of {@code
+     * result} is synchronised.
+     *
+     * @param entry the symbol and its session candles
+     * @param result shared accumulator for this pass
+     * @param pcrEnabled whether the PCR filter participates in the entry gate
+     * @param optionSrEnabled whether the Option S&amp;R filter participates
+     */
+    private void replaySymbol(
+            Map.Entry<String, List<Candle>> entry,
+            PassResult result,
+            boolean pcrEnabled,
+            boolean optionSrEnabled) {
+        LowestVolumeReversalService service = newService();
+        service.setPcrFilterEnabled(pcrEnabled);
+        service.setOptionSrFilterEnabled(optionSrEnabled);
+        service.setPcrNeutralMin(0.85);
+        service.setPcrNeutralMax(1.15);
+
+        result.markSymbolReplayed();
+        for (LowestVolumeDirection direction :
+                List.of(LowestVolumeDirection.LONG, LowestVolumeDirection.SHORT)) {
+            try {
+                for (LowestVolumePaperPosition pos :
+                        service.replaySession(entry.getKey(), direction, entry.getValue())) {
+                    result.add(pos);
+                }
+            } catch (RuntimeException ex) {
+                // Keep the audit running across the whole universe; the failure is still reported
+                // so a broken symbol cannot silently shrink the sample.
+                result.addError(
+                        entry.getKey()
+                                + " "
+                                + direction
+                                + ": "
+                                + ex.getClass().getSimpleName()
+                                + " "
+                                + ex.getMessage());
+            }
+        }
     }
 
     /**
@@ -551,15 +607,19 @@ class LvrTodayGateReplayAuditTest {
     }
 
     /**
-     * Fetches the 5-minute candles belonging to one trading session.
+     * Fetches 5-minute candles and resolves which session to replay.
+     *
+     * <p>The session is taken from the data, not from the wall clock: the run may happen after
+     * midnight, on a weekend or on a holiday, when "today" has no candles at all. The session is
+     * the one the majority of the universe last traded on — always the latest completed session.
+     * {@code lvr.audit.sessionDate} overrides it for a deliberate back-date.
      *
      * @param symbols universe to fetch
-     * @param sessionDate the session to keep
      * @return session candles per symbol, only for symbols with at least four candles
      */
-    private Map<String, List<Candle>> fetchSessionCandles(
-            List<String> symbols, LocalDate sessionDate) {
-        Map<String, List<Candle>> map = new LinkedHashMap<>();
+    private Map<String, List<Candle>> fetchSessionCandles(List<String> symbols) {
+        Map<String, List<Candle>> rawBySymbol = new LinkedHashMap<>();
+        Map<LocalDate, Integer> votes = new TreeMap<>();
         int failures = 0;
         for (String symbol : symbols) {
             try {
@@ -567,16 +627,11 @@ class LvrTodayGateReplayAuditTest {
                 if (raw == null || raw.isEmpty()) {
                     continue;
                 }
-                List<Candle> session =
-                        raw.stream()
-                                .filter(
-                                        c ->
-                                                sessionDate.equals(
-                                                        LocalDate.ofInstant(c.timestamp(), IST)))
-                                .toList();
-                if (session.size() >= 4) {
-                    map.put(symbol, session);
-                }
+                rawBySymbol.put(symbol, raw);
+                votes.merge(
+                        LocalDate.ofInstant(raw.get(raw.size() - 1).timestamp(), IST),
+                        1,
+                        Integer::sum);
             } catch (Exception e) {
                 failures++;
             }
@@ -585,7 +640,46 @@ class LvrTodayGateReplayAuditTest {
             System.out.printf(
                     Locale.US, "%-28s: %d symbols failed to fetch%n", "Fetch failures", failures);
         }
+
+        LocalDate sessionDate = resolveSessionDate(votes);
+        this.resolvedSessionDate = sessionDate;
+
+        Map<String, List<Candle>> map = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Candle>> entry : rawBySymbol.entrySet()) {
+            List<Candle> session =
+                    entry.getValue().stream()
+                            .filter(
+                                    c ->
+                                            sessionDate.equals(
+                                                    LocalDate.ofInstant(c.timestamp(), IST)))
+                            .toList();
+            if (session.size() >= 4) {
+                map.put(entry.getKey(), session);
+            }
+        }
         return map;
+    }
+
+    /**
+     * Picks the session to replay from the per-symbol "latest date" votes.
+     *
+     * @param votes how many symbols last traded on each date
+     * @return the most commonly voted date, breaking ties towards the newest, or today when there
+     *     is no data at all
+     */
+    private static LocalDate resolveSessionDate(Map<LocalDate, Integer> votes) {
+        if (SESSION_OVERRIDE != null && !SESSION_OVERRIDE.isBlank()) {
+            return LocalDate.parse(SESSION_OVERRIDE);
+        }
+        return votes.entrySet().stream()
+                .sorted(
+                        (a, b) ->
+                                a.getValue().equals(b.getValue())
+                                        ? b.getKey().compareTo(a.getKey())
+                                        : b.getValue() - a.getValue())
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(LocalDate.now(IST));
     }
 
     // ---------------------------------------------------------------- value types
@@ -666,7 +760,7 @@ class LvrTodayGateReplayAuditTest {
          *
          * @param pos the completed position
          */
-        private void add(LowestVolumePaperPosition pos) {
+        private synchronized void add(LowestVolumePaperPosition pos) {
             TradeRow row = new TradeRow(pos);
             trades.add(row);
             netPnl += row.pnl;
@@ -676,6 +770,20 @@ class LvrTodayGateReplayAuditTest {
             } else if (row.pnl < 0) {
                 losses++;
             }
+        }
+
+        /** Increments the count of symbols that entered the replay. */
+        private synchronized void markSymbolReplayed() {
+            symbolsReplayed++;
+        }
+
+        /**
+         * Records a replay failure for one symbol/direction pair.
+         *
+         * @param message the failure description
+         */
+        private synchronized void addError(String message) {
+            errors.add(message);
         }
 
         /**
