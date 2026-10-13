@@ -51,7 +51,18 @@ dependencies {
 }
 
 tasks.withType<Test> {
-    useJUnitPlatform()
+    // Network-backed probes are tagged "live" and are opt-in so a normal build stays offline:
+    //   gradlew test -DliveTests=true
+    val liveTests = System.getProperty("liveTests") == "true"
+    useJUnitPlatform {
+        if (!liveTests) {
+            excludeTags("live")
+        }
+    }
+    // Forward audit tuning knobs into the test JVM.
+    listOf("liveTests", "lvr.audit.maxSymbols").forEach { key ->
+        System.getProperty(key)?.let { systemProperty(key, it) }
+    }
 }
 
 tasks.named<JavaCompile>("compileTestJava") {

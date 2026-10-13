@@ -49,7 +49,7 @@ public final class Nifty100Registry {
                     "TECHM",
                     "ADANIPOWER",
                     "HINDALCO",
-                    "LTIM",
+                    "LTM",
                     "VEDL",
                     "INDUSINDBK",
                     "DLF",

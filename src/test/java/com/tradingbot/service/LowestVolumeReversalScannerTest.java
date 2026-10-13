@@ -139,132 +139,132 @@ class LowestVolumeReversalScannerTest {
         assertFalse(candidates.contains("EXHAUSTED_GAIN"));
     }
 
-    @Test
-    @DisplayName("Should rank stocks by absolute OI % change descending and exclude indices")
-    void testScanOiSpurtsRankingAndFiltering() {
-        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
+    // ------------------------------------------------------------------
+    // selectOiSpurtCandidates (09:25 IST NSE OI spurts phase-2 selection)
+    // ------------------------------------------------------------------
 
-        // Add candidate quotes: symbol, ltp, prevClose, open, pctChange, volume, vwap,
-        // openInterest, prevDayOpenInterest
-        quotes.put(
-                "MCDOWELL-N",
-                new StockQuoteSnapshot(
-                        "MCDOWELL-N",
-                        1200.0,
-                        1170.0,
-                        1175.0,
-                        2.5,
-                        50000,
-                        1195.0,
-                        110000,
-                        100000)); // +10.0%
-        quotes.put(
-                "RADICO",
-                new StockQuoteSnapshot(
-                        "RADICO", 1800.0, 1745.0, 1750.0, 3.1, 40000, 1790.0, 105500,
-                        100000)); // +5.5%
-        quotes.put(
-                "RVNL",
-                new StockQuoteSnapshot(
-                        "RVNL", 400.0, 406.0, 405.0, -1.5, 80000, 402.0, 104000, 100000)); // +4.0%
-        quotes.put(
-                "NIFTY 50",
-                new StockQuoteSnapshot(
-                        "NIFTY 50",
-                        25000.0,
-                        24875.0,
-                        24900.0,
-                        0.5,
-                        1000000,
-                        24980.0,
-                        5000000,
-                        4000000)); // +25.0% (Index - must be excluded)
-        quotes.put(
-                "TCS",
-                new StockQuoteSnapshot(
-                        "TCS", 4200.0, 4195.0, 4200.0, 0.1, 10000, 4205.0, 101000,
-                        100000)); // +1.0%
-
-        List<String> topStocks = scanner.scanOiSpurts(quotes, 3);
-
-        assertEquals(3, topStocks.size());
-        assertEquals("MCDOWELL-N", topStocks.get(0));
-        assertEquals("RADICO", topStocks.get(1));
-        assertEquals("RVNL", topStocks.get(2));
-        assertFalse(topStocks.contains("NIFTY 50"));
+    /** Builds a ranked NSE OI spurt item for the given symbol. */
+    private com.tradingbot.model.NseOiSpurtItem oi(String symbol, double avgInOi) {
+        return new com.tradingbot.model.NseOiSpurtItem(symbol, 1000L, 900L, 100L, avgInOi, 100.0);
     }
 
-    @Test
-    @DisplayName("Should rank stocks by directional OI buildup for LONG and SHORT sentiment")
-    void testScanOiSpurtsDirectionalBuildup() {
-        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
-
-        // Long Buildup: Price UP, OI UP
-        quotes.put(
-                "DIXON",
-                new StockQuoteSnapshot(
-                        "DIXON", 12000.0, 11800.0, 11850.0, 1.7, 50000, 11950.0, 115000,
-                        100000)); // +15% OI, +1.7% Prc
-        // Short Covering: Price UP, OI DOWN
-        quotes.put(
-                "POLYCAB",
-                new StockQuoteSnapshot(
-                        "POLYCAB", 6500.0, 6400.0, 6420.0, 1.5, 30000, 6450.0, 85000,
-                        100000)); // -15% OI, +1.5% Prc
-        // Short Buildup: Price DOWN, OI UP
-        quotes.put(
-                "BHEL",
-                new StockQuoteSnapshot(
-                        "BHEL", 280.0, 290.0, 288.0, -3.4, 80000, 285.0, 120000,
-                        100000)); // +20% OI, -3.4% Prc
-
-        List<String> longStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.LONG, 2);
-        assertEquals(2, longStocks.size());
-        assertEquals("DIXON", longStocks.get(0)); // Long buildup (+15% OI, +1.7% Prc)
-        assertEquals("POLYCAB", longStocks.get(1)); // Short covering (-15% OI, +1.5% Prc)
-        assertFalse(
-                longStocks.contains(
-                        "BHEL")); // BHEL is negative (-3.4%), must never be chosen for LONG
-
-        List<String> shortStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.SHORT, 2);
-        assertEquals(1, shortStocks.size());
-        assertEquals("BHEL", shortStocks.get(0)); // Short buildup (+20% OI, -3.4% Prc)
-        assertFalse(
-                shortStocks.contains(
-                        "DIXON")); // DIXON is positive (+1.7%), must never be chosen for SHORT
+    /** Builds a quote snapshot whose pctChange is the given value. */
+    private StockQuoteSnapshot quote(String symbol, double pctChange) {
+        return new StockQuoteSnapshot(
+                symbol, 100.0 * (1 + pctChange / 100), 100.0, 100.5, pctChange);
     }
 
     @Test
     @DisplayName(
-            "Should return empty list when no stocks align with sentiment direction in scanOiSpurts")
-    void testScanOiSpurtsNoAlignmentWithSentiment() {
-        Map<String, StockQuoteSnapshot> quotes = new java.util.HashMap<>();
-        // All stocks are green (positive)
-        quotes.put(
-                "DIXON",
-                new StockQuoteSnapshot(
-                        "DIXON", 12000.0, 11800.0, 11850.0, 1.7, 50000, 11950.0, 115000, 100000));
-        quotes.put(
-                "POLYCAB",
-                new StockQuoteSnapshot(
-                        "POLYCAB", 6500.0, 6400.0, 6420.0, 1.5, 30000, 6450.0, 85000, 100000));
+            "selectOiSpurtCandidates picks top-N in-band candidates ranked by OI, others excluded")
+    void testSelectOiSpurtCandidatesAppliesSentimentBand() {
+        var items = List.of(oi("AAA", 48.7), oi("BBB", 25.0), oi("CCC", 20.0), oi("DDD", 15.0));
+        var quotes =
+                Map.of(
+                        "AAA",
+                        quote("AAA", 2.0), // in band (0,5]
+                        "BBB",
+                        quote("BBB", -1.0), // wrong side
+                        "CCC",
+                        quote("CCC", 7.0), // outside 5% cap
+                        "DDD",
+                        quote("DDD", 3.0)); // in band
 
-        // When sentiment is SHORT, no positive stocks should be selected
-        List<String> shortStocks = scanner.scanOiSpurts(quotes, LowestVolumeDirection.SHORT, 2);
-        assertTrue(shortStocks.isEmpty());
+        List<String> selected =
+                scanner.selectOiSpurtCandidates(
+                        items, quotes, LowestVolumeDirection.LONG, 2, java.util.Set.of());
+
+        assertEquals(List.of("AAA", "DDD"), selected);
     }
 
     @Test
-    @DisplayName("Should handle null, empty and invalid OI inputs safely")
-    void testScanOiSpurtsEdgeCases() {
-        assertTrue(scanner.scanOiSpurts(null, 5).isEmpty());
-        assertTrue(scanner.scanOiSpurts(Map.of(), 5).isEmpty());
-
-        Map<String, StockQuoteSnapshot> quotes =
+    @DisplayName("selectOiSpurtCandidates relaxes the band to always fill topN slots")
+    void testSelectOiSpurtCandidatesRelaxedFillReachesTopN() {
+        var items = List.of(oi("AAA", 48.7), oi("BBB", 25.0), oi("CCC", 20.0), oi("DDD", 15.0));
+        var quotes =
                 Map.of(
-                        "INVALID_OI",
-                        new StockQuoteSnapshot(
-                                "INVALID_OI", 100.0, 100.0, 100.0, 0.0, 100, 100.0, 0, 0));
-        assertTrue(scanner.scanOiSpurts(quotes, 5).isEmpty());
+                        "AAA",
+                        quote("AAA", 2.0), // only in-band candidate
+                        "BBB",
+                        quote("BBB", -1.0),
+                        "CCC",
+                        quote("CCC", 7.0),
+                        "DDD",
+                        quote("DDD", -3.0));
+
+        List<String> selected =
+                scanner.selectOiSpurtCandidates(
+                        items, quotes, LowestVolumeDirection.LONG, 3, java.util.Set.of());
+
+        // AAA in-band, then top-ranked unfiltered BBB + CCC (D is last in rank order).
+        assertEquals(List.of("AAA", "BBB", "CCC"), selected);
+    }
+
+    @Test
+    @DisplayName("selectOiSpurtCandidates skips candidates without quotes and excluded symbols")
+    void testSelectOiSpurtCandidatesSkipsUnquotedAndExcluded() {
+        var items = List.of(oi("AAA", 48.7), oi("BBB", 25.0), oi("CCC", 20.0), oi("DDD", 15.0));
+        // BBB has no quote; DDD is excluded (already active/exhausted).
+        var quotes =
+                Map.of(
+                        "AAA",
+                        quote("AAA", 2.0),
+                        "CCC",
+                        quote("CCC", -1.5),
+                        "DDD",
+                        quote("DDD", -3.0));
+
+        List<String> selected =
+                scanner.selectOiSpurtCandidates(
+                        items, quotes, LowestVolumeDirection.SHORT, 3, java.util.Set.of("DDD"));
+
+        // CCC is the only SHORT-aligned eligible pick; AAA fills the relaxed slot
+        // (BBB has no quote, DDD is excluded).
+        assertEquals(List.of("CCC", "AAA"), selected);
+    }
+
+    @Test
+    @DisplayName("selectOiSpurtCandidates returns empty for null/empty inputs or non-positive topN")
+    void testSelectOiSpurtCandidatesEdgeCases() {
+        var items = List.of(oi("AAA", 48.7));
+        var quotes = Map.of("AAA", quote("AAA", 2.0));
+
+        assertTrue(
+                scanner.selectOiSpurtCandidates(null, quotes, LowestVolumeDirection.LONG, 3, null)
+                        .isEmpty());
+        assertTrue(
+                scanner.selectOiSpurtCandidates(
+                                List.of(), quotes, LowestVolumeDirection.LONG, 3, null)
+                        .isEmpty());
+        assertTrue(
+                scanner.selectOiSpurtCandidates(items, null, LowestVolumeDirection.LONG, 3, null)
+                        .isEmpty());
+        assertTrue(
+                scanner.selectOiSpurtCandidates(
+                                items, Map.of(), LowestVolumeDirection.LONG, 3, null)
+                        .isEmpty());
+        assertTrue(
+                scanner.selectOiSpurtCandidates(items, quotes, LowestVolumeDirection.LONG, 0, null)
+                        .isEmpty());
+    }
+
+    @Test
+    @DisplayName("selectOiSpurtCandidates with NONE sentiment selects pure rank order")
+    void testSelectOiSpurtCandidatesNoneSentimentUsesAbsoluteRanking() {
+        var items = List.of(oi("AAA", 48.7), oi("BBB", 25.0), oi("CCC", 20.0));
+        var quotes =
+                Map.of(
+                        "AAA",
+                        quote("AAA", -2.0),
+                        "BBB",
+                        quote("BBB", 4.5),
+                        "CCC",
+                        quote("CCC", 9.0));
+
+        List<String> selected =
+                scanner.selectOiSpurtCandidates(
+                        items, quotes, LowestVolumeDirection.NONE, 2, java.util.Set.of());
+
+        assertEquals(List.of("AAA", "BBB"), selected);
     }
 }

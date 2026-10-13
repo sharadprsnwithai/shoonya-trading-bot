@@ -2,6 +2,7 @@ package com.tradingbot.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -12,15 +13,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
 import com.tradingbot.marketdata.HistoricalOhlcCacheService;
+import com.tradingbot.marketdata.NseOiSpurtClient;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
+import com.tradingbot.model.NseOiSpurtItem;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.LowestVolumeSetupState;
 import com.tradingbot.model.strategy.LvrExitMode;
 import com.tradingbot.model.strategy.LvrInstrumentType;
-import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -2086,9 +2088,9 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("StockFnoRegistry contains LTIM token resolution")
-    void testStockFnoRegistryContainsLtim() {
-        var info = com.tradingbot.util.StockFnoRegistry.get("LTIM");
+    @DisplayName("StockFnoRegistry contains LTM token resolution")
+    void testStockFnoRegistryContainsLtm() {
+        var info = com.tradingbot.util.StockFnoRegistry.get("LTM");
         assertThat(info).isNotNull();
         assertThat(info.token()).isEqualTo("17818");
         assertThat(info.lotSize()).isEqualTo(150);
@@ -2401,7 +2403,7 @@ class LowestVolumeReversalServiceTest {
     @DisplayName("Live sector alignment blocks LONG entry when parent sector turns negative")
     void testLiveSectorAlignmentBlocksLongWhenSectorNegative() {
         ObjectMapper mapper = new ObjectMapper();
-        // COFORGE belongs to NIFTY IT. Constituents: TCS, INFY, WIPRO, COFORGE, LTIM, PERSISTENT,
+        // COFORGE belongs to NIFTY IT. Constituents: TCS, INFY, WIPRO, COFORGE, LTM, PERSISTENT,
         // etc.
         // Mock quotes to simulate NIFTY IT constituents being negative (lp < c)
         when(marketDataService.fetchQuote(any(), any()))
@@ -2772,7 +2774,8 @@ class LowestVolumeReversalServiceTest {
                         .put("h", "1874.00")
                         .put("l", "1866.00");
         // Tick 3: session high ADVANCED past baseline (1880 ≥ trigger) while LTP pulled back
-        // below the trigger — a genuine fresh wick breach (LTP 1874.90 is within 0.05% of trigger 1875.05).
+        // below the trigger — a genuine fresh wick breach (LTP 1874.90 is within 0.05% of trigger
+        // 1875.05).
         var freshTick =
                 mapper.createObjectNode()
                         .put("lp", "1874.90")
@@ -2796,8 +2799,8 @@ class LowestVolumeReversalServiceTest {
 
     @Test
     @DisplayName(
-            "N2 Fix: OI_SPURTS scan fails loudly when no quote carries OI — no silent fallback")
-    void testOiSpurtsScanFailsLoudlyWhenOiMissing() {
+            "OI_SPURTS scan completes sector-only without any quote OI — selection happens in phase 2 (NSE feed)")
+    void testOiSpurtsScanCompletesWithoutQuoteOi() {
         service.setScannerMode("OI_SPURTS");
         when(marketDataService.resolveToken(any())).thenReturn("1234");
         when(marketDataService.fetchQuote(any(), any()))
@@ -2806,76 +2809,32 @@ class LowestVolumeReversalServiceTest {
 
         service.runMorningUniverseScan();
 
-        assertThat(service.isUniverseScanCompletedToday()).isFalse();
-        assertThat(service.getActiveSetups()).isEmpty();
-        assertThat(service.getCandidateReservoir()).isEmpty();
+        // Quote-level OI is neither required nor read anymore: the scan selects the sector
+        // phase-1 watchlist and the 09:25 NSE OI job merges spurts in phase 2.
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).isNotEmpty();
+        assertThat(service.getCandidateReservoir()).isNotEmpty();
+        assertThat(service.getActiveSetups().values())
+                .allSatisfy(s -> assertThat(s.getOiChangePct()).isNull());
     }
 
     @Test
     @DisplayName(
-            "OI Spurts Fix: fetchMorningQuotesUnified enriches F&O stocks with near-month futures OI when NSE cash quote has no OI")
-    void testFetchMorningQuotesUnifiedEnrichesFuturesOi() {
-        when(marketDataService.resolveToken(any())).thenReturn("1234");
-        ObjectMapper mapper = new ObjectMapper();
-
-        // NSE cash quote has no OI (typical of real live cash market quotes)
-        when(marketDataService.fetchQuote(org.mockito.ArgumentMatchers.eq("NSE"), any()))
-                .thenReturn(
-                        mapper.createObjectNode()
-                                .put("lp", "102.0")
-                                .put("c", "100.0")
-                                .put("o", "100.5")
-                                .put("v", 50000L)
-                                .put("ap", "101.5"));
-
-        // Near-month futures contract on NFO returns real OI and POI
-        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
-        when(marketDataService.fetchQuote(
-                        org.mockito.ArgumentMatchers.eq("NFO"),
-                        org.mockito.ArgumentMatchers.eq("556677")))
-                .thenReturn(
-                        mapper.createObjectNode()
-                                .put("lp", "102.5")
-                                .put("oi", 120000L)
-                                .put("poi", 100000L));
-
-        Map<String, StockQuoteSnapshot> quotes = service.fetchMorningQuotesUnified();
-
-        assertThat(quotes).isNotEmpty();
-        StockQuoteSnapshot rel = quotes.get("RELIANCE");
-        assertThat(rel).isNotNull();
-        assertThat(rel.ltp()).isEqualTo(102.0); // spot LTP preserved
-        assertThat(rel.openInterest()).isEqualTo(120000L);
-        assertThat(rel.prevDayOpenInterest()).isEqualTo(100000L);
-        assertThat(rel.oiPctChange()).isCloseTo(20.0, org.assertj.core.data.Offset.offset(0.01));
-    }
-
-    @Test
-    @DisplayName(
-            "OI Spurts Fix: runMorningUniverseScan in HYBRID mode includes candidates selected via futures OI enrichment")
-    void testHybridMorningScanSelectsCandidatesEnrichedFromFuturesOi() {
+            "HYBRID scan phase-1 sets up sector candidates only — OI change never comes from quotes")
+    void testHybridMorningScanPhaseOneCarriesNoQuoteOi() {
         service.setScannerMode("HYBRID");
         when(marketDataService.resolveToken(any())).thenReturn("1234");
-        ObjectMapper mapper = new ObjectMapper();
-
-        // Spot quotes on NSE: all stocks up +2% (Bullish sentiment)
-        when(marketDataService.fetchQuote(org.mockito.ArgumentMatchers.eq("NSE"), any()))
+        when(marketDataService.fetchQuote(any(), any()))
                 .thenReturn(
-                        mapper.createObjectNode()
+                        new ObjectMapper()
+                                .createObjectNode()
                                 .put("lp", "102.0")
                                 .put("c", "100.0")
                                 .put("o", "100.5")
                                 .put("v", 50000L)
-                                .put("ap", "101.5"));
-
-        // Futures quote on NFO: +15% OI change for F&O stocks
-        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
-        when(marketDataService.fetchQuote(
-                        org.mockito.ArgumentMatchers.eq("NFO"),
-                        org.mockito.ArgumentMatchers.eq("556677")))
-                .thenReturn(
-                        mapper.createObjectNode()
-                                .put("lp", "102.5")
+                                .put("ap", "101.5")
+                                // Quote OI is ignored by the scan; OI change arrives only from
+                                // the phase-2 NSE OI spurts merge.
                                 .put("oi", 115000L)
                                 .put("poi", 100000L));
 
@@ -2883,17 +2842,13 @@ class LowestVolumeReversalServiceTest {
 
         assertThat(service.isUniverseScanCompletedToday()).isTrue();
         assertThat(service.getActiveSetups()).isNotEmpty();
-        // Active setups must have oiChangePct populated
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(3);
         assertThat(service.getActiveSetups().values())
-                .anySatisfy(
-                        s -> {
-                            assertThat(s.getOiChangePct()).isNotNull();
-                            assertThat(s.getOiChangePct()).isGreaterThan(0.0);
-                        });
+                .allSatisfy(s -> assertThat(s.getOiChangePct()).isNull());
     }
 
     @Test
-    @DisplayName("Hybrid scan in BEARISH/SHORT market selects both sector and short OI candidates")
+    @DisplayName("Phase-1 scan in BEARISH/SHORT market selects short sector candidates")
     void testHybridMorningScanSelectsShortCandidatesWhenMarketBearish() {
         service.setScannerMode("HYBRID");
         when(marketDataService.resolveToken(any())).thenReturn("1234");
@@ -2909,17 +2864,6 @@ class LowestVolumeReversalServiceTest {
                                 .put("v", 50000L)
                                 .put("ap", "98.5"));
 
-        // Futures quote on NFO: +15% OI buildup for F&O stocks
-        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
-        when(marketDataService.fetchQuote(
-                        org.mockito.ArgumentMatchers.eq("NFO"),
-                        org.mockito.ArgumentMatchers.eq("556677")))
-                .thenReturn(
-                        mapper.createObjectNode()
-                                .put("lp", "98.0")
-                                .put("oi", 115000L)
-                                .put("poi", 100000L));
-
         service.runMorningUniverseScan();
 
         assertThat(service.isUniverseScanCompletedToday()).isTrue();
@@ -2929,77 +2873,8 @@ class LowestVolumeReversalServiceTest {
                         s -> {
                             assertThat(s.getDirection()).isEqualTo(LowestVolumeDirection.SHORT);
                         });
-        // In HYBRID mode: up to 3 sector + up to 3 OI spurts = up to 6 total
-        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(6);
-    }
-
-    @Test
-    @DisplayName(
-            "OI Spurts Fix: runMorningUniverseScan in OI_SPURTS mode completes and selects candidates via futures OI enrichment")
-    void testOiSpurtsMorningScanSelectsCandidatesEnrichedFromFuturesOi() {
-        service.setScannerMode("OI_SPURTS");
-        when(marketDataService.resolveToken(any())).thenReturn("1234");
-        ObjectMapper mapper = new ObjectMapper();
-
-        // Spot quotes on NSE: all stocks up +2%
-        when(marketDataService.fetchQuote(org.mockito.ArgumentMatchers.eq("NSE"), any()))
-                .thenReturn(
-                        mapper.createObjectNode()
-                                .put("lp", "102.0")
-                                .put("c", "100.0")
-                                .put("o", "100.5")
-                                .put("v", 50000L)
-                                .put("ap", "101.5"));
-
-        // Futures quote on NFO: +25% OI change
-        when(marketDataService.resolveFuturesToken(any())).thenReturn("556677");
-        when(marketDataService.fetchQuote(
-                        org.mockito.ArgumentMatchers.eq("NFO"),
-                        org.mockito.ArgumentMatchers.eq("556677")))
-                .thenReturn(
-                        mapper.createObjectNode()
-                                .put("lp", "102.5")
-                                .put("oi", 125000L)
-                                .put("poi", 100000L));
-
-        service.runMorningUniverseScan();
-
-        assertThat(service.isUniverseScanCompletedToday()).isTrue();
-        assertThat(service.getActiveSetups()).hasSize(5);
-        assertThat(service.getActiveSetups().values())
-                .allSatisfy(
-                        s -> {
-                            assertThat(s.getOiChangePct()).isNotNull();
-                            assertThat(s.getOiChangePct())
-                                    .isCloseTo(25.0, org.assertj.core.data.Offset.offset(0.01));
-                        });
-    }
-
-    @Test
-    @DisplayName("N2 Fix: OI_SPURTS scan selects top candidates when quotes carry real oi/poi")
-    void testOiSpurtsScanSelectsCandidatesWithOiData() {
-        service.setScannerMode("OI_SPURTS");
-        when(marketDataService.resolveToken(any())).thenReturn("1234");
-        when(marketDataService.fetchQuote(any(), any()))
-                .thenReturn(
-                        new ObjectMapper()
-                                .createObjectNode()
-                                .put("lp", "102.0")
-                                .put("c", "100.0")
-                                .put("oi", 110000)
-                                .put("poi", 100000));
-
-        service.runMorningUniverseScan();
-
-        assertThat(service.isUniverseScanCompletedToday()).isTrue();
-        assertThat(service.getActiveSetups()).hasSize(5);
-        assertThat(service.getActiveSetups().values())
-                .allSatisfy(
-                        s -> {
-                            assertThat(s.getOiChangePct()).isNotNull();
-                            assertThat(s.getOiChangePct())
-                                    .isCloseTo(10.0, org.assertj.core.data.Offset.offset(0.01));
-                        });
+        // Phase 1 builds the sector watchlist (max 3); NSE OI additions arrive in phase 2.
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(3);
     }
 
     @Test
@@ -3557,24 +3432,370 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Hybrid Morning Scan combines top sector candidates and top OI spurt candidates")
-    void testHybridMorningScanCombinesSectorAndOiSpurts() {
+    @DisplayName("Synthetic chain never sets PCR — stale levels cleared so the gate fails closed")
+    void testResolveLiveOptionChainLevelsClearsSyntheticChain() {
+        com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService =
+                mock(com.tradingbot.marketdata.ShoonyaOptionChainService.class);
+        ShoonyaConfig mockConfig = mock(ShoonyaConfig.class);
+        LowestVolumeReversalService lvr =
+                new LowestVolumeReversalService(
+                        marketDataService,
+                        taService,
+                        null,
+                        mockConfig,
+                        optionChainService,
+                        null,
+                        null,
+                        null);
+        lvr.setPcrFilterEnabled(true);
+
+        // The broker fallback mirrors call OI against put OI, so PCR always lands on exactly 1.00.
+        com.tradingbot.model.OptionChainResponse synthetic =
+                new com.tradingbot.model.OptionChainResponse(
+                        "PNB",
+                        BigDecimal.valueOf(113.20),
+                        BigDecimal.valueOf(115.00),
+                        "PNB",
+                        9,
+                        1_000_000L,
+                        1_000_000L,
+                        1.00,
+                        List.of(),
+                        true);
+        when(optionChainService.getOptionChain(
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        org.mockito.ArgumentMatchers.eq(
+                                com.tradingbot.marketdata.ShoonyaOptionChainService
+                                        .PCR_STRIKE_WINDOW),
+                        org.mockito.ArgumentMatchers.eq(true)))
+                .thenReturn(synthetic);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("PNB", LowestVolumeDirection.LONG);
+        setup.setPcr(1.40); // stale reading from an earlier successful fetch
+        setup.setOptionResistanceStrike(BigDecimal.valueOf(130));
+        setup.setOptionSupportStrike(BigDecimal.valueOf(100));
+
+        lvr.resolveLiveOptionChainLevels(setup, BigDecimal.valueOf(113.20));
+
+        assertThat(setup.getPcr()).isNull();
+        assertThat(setup.getOptionResistanceStrike()).isNull();
+        assertThat(setup.getOptionSupportStrike()).isNull();
+    }
+
+    @Test
+    @DisplayName("Hybrid phase-1 morning scan: sector watchlist builds before the NSE OI merge")
+    void testHybridMorningScanPhaseOne() {
         service.setScannerMode("HYBRID");
         when(marketDataService.resolveToken(any())).thenReturn("1234");
-        // Advances >= 56% across Nifty 50
         when(marketDataService.fetchQuote(any(), any()))
                 .thenReturn(
-                        new ObjectMapper()
-                                .createObjectNode()
-                                .put("lp", "102.0")
-                                .put("c", "100.0")
-                                .put("oi", 115000)
-                                .put("poi", 100000));
+                        new ObjectMapper().createObjectNode().put("lp", "102.0").put("c", "100.0"));
 
         service.runMorningUniverseScan();
 
         assertThat(service.isUniverseScanCompletedToday()).isTrue();
         assertThat(service.isStandDownToday()).isFalse();
         assertThat(service.getActiveSetups().size()).isGreaterThanOrEqualTo(2);
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(3);
+    }
+
+    // ------------------------------------------------------------------
+    // 09:25 NSE OI spurts augmentation (two-phase candidate selection)
+    // ------------------------------------------------------------------
+
+    /** Builds a ranked NSE OI spurt item for the given symbol. */
+    private static NseOiSpurtItem oiItem(String symbol, double avgInOi) {
+        return new NseOiSpurtItem(symbol, 1000L, 900L, 100L, avgInOi, 100.0);
+    }
+
+    /** Mocks universe quotes as uniform +5% movers (all advance → LONG, in 0-5% band). */
+    private void mockUniverseScanQuotes() {
+        when(marketDataService.resolveToken(any())).thenReturn("1234");
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(
+                        new ObjectMapper()
+                                .createObjectNode()
+                                .put("lp", "105.0")
+                                .put("c", "100.0")
+                                .put("o", "101.0"));
+    }
+
+    /** Builds a mock NSE OI client pre-loaded with the given ranked items and wires it in. */
+    private NseOiSpurtClient mockOiClient(NseOiSpurtItem... items) {
+        NseOiSpurtClient client = mock(NseOiSpurtClient.class);
+        when(client.fetchTopUnderlyings(anyInt())).thenReturn(List.of(items));
+        service.setNseOiSpurtClient(client);
+        return client;
+    }
+
+    @Test
+    @DisplayName("Augmentation merges immediately when the morning scan already completed")
+    void testAugmentationMergesImmediatelyWhenScanComplete() {
+        mockUniverseScanQuotes();
+        service.runMorningUniverseScan();
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+
+        mockOiClient(oiItem("AAAA", 48.7), oiItem("BBBB", 25.0), oiItem("CCCC", 21.7));
+        service.runNseOiSpurtAugmentation();
+
+        assertThat(service.hasPendingOiItems()).isFalse();
+        assertThat(service.isNseOiAppliedToday()).isTrue();
+        assertThat(service.getActiveSetups()).containsKeys("AAAA", "BBBB", "CCCC");
+        assertThat(service.getActiveSetups()).hasSize(6); // 3 sector + 3 OI = HYBRID cap
+        LowestVolumeSetup oiSetup = service.getActiveSetups().get("AAAA");
+        assertThat(oiSetup.getDirection()).isEqualTo(LowestVolumeDirection.LONG);
+        assertThat(oiSetup.getOiChangePct()).isEqualTo(48.7);
+        assertThat(service.getSectorState().candidateSymbols()).contains("AAAA", "BBBB", "CCCC");
+    }
+
+    @Test
+    @DisplayName("Augmentation is a no-op when disabled, and runs only once per day")
+    void testAugmentationDisabledAndIdempotentPerDay() {
+        // Disabled: the NSE client is never called.
+        NseOiSpurtClient disabled = mock(NseOiSpurtClient.class);
+        service.setNseOiSpurtClient(disabled);
+        service.setNseOiEnabled(false);
+        service.runNseOiSpurtAugmentation();
+        verify(disabled, never()).fetchTopUnderlyings(anyInt());
+        assertThat(service.hasPendingOiItems()).isFalse();
+        service.setNseOiEnabled(true);
+
+        // Idempotent: after a successful merge the second invocation never re-fetches.
+        mockUniverseScanQuotes();
+        service.runMorningUniverseScan();
+        NseOiSpurtClient client =
+                mockOiClient(oiItem("AAAA", 48.7), oiItem("BBBB", 25.0), oiItem("CCCC", 21.7));
+        service.runNseOiSpurtAugmentation();
+        service.runNseOiSpurtAugmentation();
+        verify(client, times(1)).fetchTopUnderlyings(anyInt());
+        assertThat(service.getActiveSetups()).hasSize(6);
+    }
+
+    @Test
+    @DisplayName("Failed NSE fetch degrades to sector-only and never fails the scan")
+    void testFetchFailureKeepsSectorOnlyAndScanCompletes() {
+        NseOiSpurtClient client = mock(NseOiSpurtClient.class);
+        when(client.fetchTopUnderlyings(anyInt())).thenReturn(List.of());
+        service.setNseOiSpurtClient(client);
+
+        // 09:25:00 fetch fails: nothing staged, day continues.
+        service.runNseOiSpurtAugmentation();
+        assertThat(service.hasPendingOiItems()).isFalse();
+
+        // The scan still runs and completes with sector picks only.
+        mockUniverseScanQuotes();
+        service.runMorningUniverseScan();
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).isNotEmpty();
+        assertThat(service.getActiveSetups()).doesNotContainKeys("AAAA", "BBBB", "CCCC");
+        assertThat(service.isNseOiAppliedToday()).isFalse();
+    }
+
+    @Test
+    @DisplayName("New-day reset drops staged NSE OI items from the previous session")
+    void testNewDayResetClearsStagedOiItems() {
+        mockOiClient(oiItem("AAAA", 48.7));
+        service.runNseOiSpurtAugmentation();
+        assertThat(service.hasPendingOiItems()).isTrue();
+
+        service.setClock(Clock.fixed(Instant.parse("2026-09-19T04:00:00Z"), IST));
+        service.resetDaily();
+
+        assertThat(service.hasPendingOiItems()).isFalse();
+        assertThat(service.isNseOiAppliedToday()).isFalse();
+    }
+
+    @Test
+    @DisplayName("New-day reset clears the NSE OI applied latch so tomorrow's job can run")
+    void testNewDayResetClearsAppliedLatch() {
+        mockUniverseScanQuotes();
+        service.runMorningUniverseScan();
+        mockOiClient(oiItem("AAAA", 48.7), oiItem("BBBB", 25.0), oiItem("CCCC", 21.7));
+        service.runNseOiSpurtAugmentation();
+        assertThat(service.isNseOiAppliedToday()).isTrue();
+
+        service.setClock(Clock.fixed(Instant.parse("2026-09-19T04:00:00Z"), IST));
+        service.resetDaily();
+
+        assertThat(service.isNseOiAppliedToday()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Same-day reset preserves staged NSE OI items (they are day-stamped today)")
+    void testSameDayResetPreservesStagedOiItems() {
+        mockOiClient(oiItem("AAAA", 48.7));
+        service.runNseOiSpurtAugmentation();
+        assertThat(service.hasPendingOiItems()).isTrue();
+
+        service.resetDaily();
+
+        assertThat(service.hasPendingOiItems()).isTrue();
+    }
+
+    @Test
+    @DisplayName(
+            "Two-phase flow: 09:25 job stages OI items, scan completion consumes and merges them")
+    void testTwoPhaseStagesThenMergesOnScanCompletion() {
+        mockUniverseScanQuotes();
+        mockOiClient(oiItem("AAAA", 48.7), oiItem("BBBB", 25.0), oiItem("CCCC", 21.7));
+
+        // Phase-2 fetch fires at 09:25:00, before the 09:25:20 scan: items are staged only.
+        service.runNseOiSpurtAugmentation();
+        assertThat(service.hasPendingOiItems()).isTrue();
+        assertThat(service.getActiveSetups()).isEmpty();
+        assertThat(service.isUniverseScanCompletedToday()).isFalse();
+
+        // Scan completion consumes the staged items and merges them into the watchlist.
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.hasPendingOiItems()).isFalse();
+        assertThat(service.isNseOiAppliedToday()).isTrue();
+        assertThat(service.getActiveSetups()).containsKeys("AAAA", "BBBB", "CCCC");
+        assertThat(service.getActiveSetups()).hasSize(6); // 3 sector + 3 OI = HYBRID cap
+        LowestVolumeSetup oiSetup = service.getActiveSetups().get("AAAA");
+        assertThat(oiSetup.getDirection()).isEqualTo(LowestVolumeDirection.LONG);
+        assertThat(oiSetup.getOiChangePct()).isEqualTo(48.7);
+        assertThat(service.getSectorState().candidateSymbols()).contains("AAAA", "BBBB", "CCCC");
+    }
+
+    @Test
+    @DisplayName(
+            "NSE OI merge always reaches topN via relaxed fill when the band filters everything")
+    void testNseOiMergeReachesTopNWhenBandFiltersEverything() {
+        // Universe quotes are +2% (LONG, in band); the OI pseudo-symbols quote +9% (out of the
+        // 0-5% band), so every ranked item is filtered out and the relaxed fill must take over.
+        java.util.Set<String> oiSymbols = java.util.Set.of("AAAA", "BBBB", "CCCC", "DDDD");
+        when(marketDataService.resolveToken(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenAnswer(
+                        inv -> {
+                            String token = inv.getArgument(1);
+                            double pct = oiSymbols.contains(token) ? 9.0 : 2.0;
+                            return new ObjectMapper()
+                                    .createObjectNode()
+                                    .put("lp", 100.0 * (1 + pct / 100))
+                                    .put("c", 100.0)
+                                    .put("o", 100.5);
+                        });
+
+        service.runMorningUniverseScan();
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+
+        mockOiClient(
+                oiItem("AAAA", 48.7),
+                oiItem("BBBB", 25.0),
+                oiItem("CCCC", 21.7),
+                oiItem("DDDD", 15.0));
+        service.runNseOiSpurtAugmentation();
+
+        assertThat(service.getActiveSetups()).containsKeys("AAAA", "BBBB", "CCCC");
+        assertThat(service.getActiveSetups()).doesNotContainKey("DDDD"); // topN=3 respected
+        assertThat(service.getActiveSetups()).hasSize(6);
+    }
+
+    @Test
+    @DisplayName("NSE OI merge skips active/exhausted symbols and respects topN")
+    void testNseOiMergeExcludesActiveAndExhaustedSymbols() {
+        mockUniverseScanQuotes();
+        service.runMorningUniverseScan();
+        assertThat(service.getActiveSetups()).isNotEmpty();
+
+        String activeSym = service.getActiveSetups().keySet().iterator().next();
+        LowestVolumeSetup activeBefore = service.getActiveSetups().get(activeSym);
+        service.getExhaustedSymbols().add("EXH1");
+
+        mockOiClient(
+                oiItem(activeSym, 48.7), // already active — must be skipped
+                oiItem("EXH1", 40.0), // exhausted — must be skipped
+                oiItem("EEEE", 30.0),
+                oiItem("FFFF", 25.0),
+                oiItem("GGGG", 21.0),
+                oiItem("HHHH", 15.0));
+        service.runNseOiSpurtAugmentation();
+
+        assertThat(service.getActiveSetups().get(activeSym)).isSameAs(activeBefore);
+        assertThat(service.getActiveSetups()).containsKeys("EEEE", "FFFF", "GGGG");
+        assertThat(service.getActiveSetups()).doesNotContainKey("HHHH"); // topN=3 respected
+        assertThat(service.getActiveSetups()).hasSize(6); // 3 sector + 3 OI
+    }
+
+    @Test
+    @DisplayName(
+            "OI_SPURTS mode: merge demotes sector picks to reservoir and directions follow each stock's own move")
+    void testOiSpurtsModeDemotesSectorPicksAndUsesOwnDirection() {
+        service.setScannerMode("OI_SPURTS");
+        // Universe quotes +2% (scan picks sector leaders as phase-1 watchlist). OI symbols:
+        // IIII quotes -2% (own move → SHORT), JJJJ/KKKK quote +2% (→ LONG).
+        java.util.Set<String> shortSymbols = java.util.Set.of("IIII");
+        java.util.Set<String> oiSymbols = java.util.Set.of("IIII", "JJJJ", "KKKK");
+        when(marketDataService.resolveToken(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenAnswer(
+                        inv -> {
+                            String token = inv.getArgument(1);
+                            double pct;
+                            if (shortSymbols.contains(token)) {
+                                pct = -2.0;
+                            } else if (oiSymbols.contains(token)) {
+                                pct = 2.0;
+                            } else {
+                                pct = 2.0;
+                            }
+                            return new ObjectMapper()
+                                    .createObjectNode()
+                                    .put("lp", 100.0 * (1 + pct / 100))
+                                    .put("c", 100.0)
+                                    .put("o", 100.5);
+                        });
+
+        // Phase 1: sector rotation watchlist (no OI required at scan time anymore).
+        service.runMorningUniverseScan();
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.getActiveSetups()).isNotEmpty();
+        List<String> sectorPicks = List.copyOf(service.getActiveSetups().keySet());
+        assertThat(service.getCandidateReservoir()).isNotEmpty();
+
+        // Phase 2: OI_SPURTS topN = oiSpurtsTopN (5); sector picks are demoted to reservoir.
+        mockOiClient(oiItem("IIII", 48.7), oiItem("JJJJ", 25.0), oiItem("KKKK", 21.7));
+        service.runNseOiSpurtAugmentation();
+
+        assertThat(service.getActiveSetups()).containsOnlyKeys("IIII", "JJJJ", "KKKK");
+        assertThat(service.getActiveSetups().get("IIII").getDirection())
+                .isEqualTo(LowestVolumeDirection.SHORT); // own price move, not sentiment
+        assertThat(service.getActiveSetups().get("JJJJ").getDirection())
+                .isEqualTo(LowestVolumeDirection.LONG);
+        assertThat(service.getCandidateReservoir()).containsAll(sectorPicks);
+        assertThat(service.getSectorState().candidateSymbols()).contains("IIII", "JJJJ", "KKKK");
+    }
+
+    @Test
+    @DisplayName(
+            "Mid-morning refresh tops up the reservoir from the NSE OI feed without touching active setups")
+    void testMidMorningRefreshTopsUpReservoirFromNseOiFeed() {
+        mockUniverseScanQuotes();
+        service.runMorningUniverseScan();
+        List<String> activeBefore = List.copyOf(service.getActiveSetups().keySet());
+
+        NseOiSpurtClient client = mock(NseOiSpurtClient.class);
+        when(client.fetchTopUnderlyings(anyInt()))
+                .thenReturn(List.of(oiItem("MMMM", 45.0), oiItem("NNNN", 30.0)));
+        service.setNseOiSpurtClient(client);
+
+        service.runMidMorningUniverseRefresh(LocalTime.of(10, 35));
+
+        verify(client).fetchTopUnderlyings(anyInt());
+        assertThat(service.getCandidateReservoir()).contains("MMMM", "NNNN");
+        // Reservoir-only: the active watchlist is never mutated by the mid-morning top-up.
+        assertThat(service.getActiveSetups().keySet())
+                .containsExactlyInAnyOrderElementsOf(activeBefore);
+
+        // Disabled flag: no further NSE fetch happens.
+        service.setNseOiMidMorningRefreshEnabled(false);
+        service.runMidMorningUniverseRefresh(LocalTime.of(11, 5));
+        verify(client, times(1)).fetchTopUnderlyings(anyInt());
     }
 }

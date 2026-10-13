@@ -168,41 +168,88 @@ class LvrEntryGateTest {
     }
 
     @Test
-    @DisplayName("PCR gate for LONG: PCR below min threshold exhausts, above allows")
+    @DisplayName("PCR gate for LONG: only PCR above the neutral band allows (gate PCR)")
     void testPcrLongGate() {
-        EntryGateInput wrong = baseInput();
-        wrong.pcrEnabled = true;
-        wrong.pcrMinLong = 0.85;
-        wrong.pcr = 0.70; // Below 0.85 -> EXHAUST
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(wrong);
+        EntryGateInput inBand = baseInput();
+        inBand.pcrEnabled = true;
+        inBand.pcrNeutralMin = 0.85;
+        inBand.pcrNeutralMax = 1.15;
+        inBand.pcr = 1.10; // Inside neutral band -> EXHAUST
+        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(inBand);
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d1.gate()).isEqualTo("PCR");
 
+        EntryGateInput bearish = baseInput();
+        bearish.pcrEnabled = true;
+        bearish.pcrNeutralMin = 0.85;
+        bearish.pcrNeutralMax = 1.15;
+        bearish.pcr = 0.70; // Below band (bearish) -> EXHAUST
+        EntryGateDecision d2 = LowestVolumeReversalService.evaluateEntryGate(bearish);
+        assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d2.gate()).isEqualTo("PCR");
+
         EntryGateInput right = baseInput();
         right.pcrEnabled = true;
-        right.pcrMinLong = 0.85;
-        right.pcr = 1.10;
+        right.pcrNeutralMin = 0.85;
+        right.pcrNeutralMax = 1.15;
+        right.pcr = 1.30; // Above band (bullish) -> allowed
         assertThat(LowestVolumeReversalService.evaluateEntryGate(right).allowed()).isTrue();
     }
 
     @Test
-    @DisplayName("PCR gate for SHORT: PCR above max threshold exhausts, below allows")
+    @DisplayName("PCR gate for SHORT: only PCR below the neutral band allows (gate PCR)")
     void testPcrShortGate() {
-        EntryGateInput wrong = baseInput();
-        wrong.direction = LowestVolumeDirection.SHORT;
-        wrong.pcrEnabled = true;
-        wrong.pcrMaxShort = 1.15;
-        wrong.pcr = 1.40; // Above 1.15 -> EXHAUST
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(wrong);
+        EntryGateInput inBand = baseInput();
+        inBand.direction = LowestVolumeDirection.SHORT;
+        inBand.pcrEnabled = true;
+        inBand.pcrNeutralMin = 0.85;
+        inBand.pcrNeutralMax = 1.15;
+        inBand.pcr = 0.90; // Inside neutral band -> EXHAUST
+        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(inBand);
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d1.gate()).isEqualTo("PCR");
+
+        EntryGateInput bullish = baseInput();
+        bullish.direction = LowestVolumeDirection.SHORT;
+        bullish.pcrEnabled = true;
+        bullish.pcrNeutralMin = 0.85;
+        bullish.pcrNeutralMax = 1.15;
+        bullish.pcr = 1.40; // Above band (bullish) -> EXHAUST
+        EntryGateDecision d2 = LowestVolumeReversalService.evaluateEntryGate(bullish);
+        assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d2.gate()).isEqualTo("PCR");
 
         EntryGateInput right = baseInput();
         right.direction = LowestVolumeDirection.SHORT;
         right.pcrEnabled = true;
-        right.pcrMaxShort = 1.15;
-        right.pcr = 0.90;
+        right.pcrNeutralMin = 0.85;
+        right.pcrNeutralMax = 1.15;
+        right.pcr = 0.70; // Below band (bearish) -> allowed
         assertThat(LowestVolumeReversalService.evaluateEntryGate(right).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("PCR 0.85-1.15 neutral band blocks BOTH directions (no trade)")
+    void testNeutralPcrBandBlocksBothDirections() {
+        for (double pcr : new double[] {0.85, 1.00, 1.15}) {
+            for (LowestVolumeDirection dir :
+                    new LowestVolumeDirection[] {
+                        LowestVolumeDirection.LONG, LowestVolumeDirection.SHORT
+                    }) {
+                EntryGateInput in = baseInput();
+                in.direction = dir;
+                in.pcrEnabled = true;
+                in.pcrNeutralMin = 0.85;
+                in.pcrNeutralMax = 1.15;
+                in.pcr = pcr;
+
+                EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+                assertThat(d.disposition())
+                        .as("PCR %.2f / %s must be blocked", pcr, dir)
+                        .isEqualTo(EntryGateDisposition.EXHAUST);
+                assertThat(d.gate()).isEqualTo("PCR");
+            }
+        }
     }
 
     @Test

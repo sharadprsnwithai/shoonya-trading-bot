@@ -57,6 +57,31 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
+     * 09:25:00 IST phase-2 candidate fetch: pulls NSE's live OI spurts feed and stages the ranked
+     * underlyings BEFORE the 09:25:20 candle cycle runs the morning universe scan — the scan then
+     * merges them into the watchlist (two-phase selection). Fetch failures log a WARN and the day
+     * continues sector-only; the job never throws.
+     */
+    @Scheduled(
+            cron = "${trading-bot.strategy.lowest-volume.nse-oi.cron:0 25 9 ? * MON-FRI}",
+            zone = "Asia/Kolkata")
+    public void scheduledNseOiSpurtAugmentation() {
+        if (!schedulerEnabled) {
+            log.debug("[LVR-SCHEDULER] Scheduler is disabled in configuration.");
+            return;
+        }
+        try {
+            log.info("[LVR-SCHEDULER] Triggering 09:25 NSE OI spurts augmentation...");
+            strategyService.runNseOiSpurtAugmentation();
+        } catch (Exception e) {
+            log.error(
+                    "[LVR-SCHEDULER] Exception during NSE OI spurts augmentation: {}",
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    /**
      * Runs every 5 minutes from 09:25:20 to 15:15:20 IST on trading weekdays. (20s offset for
      * broker candle aggregation latency). Automatically runs morning universe scan on first 09:25
      * cycle.

@@ -54,6 +54,34 @@ class ShoonyaOptionChainServiceTest {
                 .isEqualTo(ShoonyaOptionChainService.DEFAULT_NIFTY_FUT_TOKEN);
     }
 
+    @Test
+    void getOptionChain_WhenDisabled_FlagsChainSyntheticWithPcrExactlyOne() {
+        ShoonyaConfig config = new ShoonyaConfig();
+        config.setEnabled(false);
+        ShoonyaOptionChainService service =
+                new ShoonyaOptionChainService(
+                        config,
+                        mock(ShoonyaAuthenticator.class),
+                        mock(ShoonyaMarketDataService.class),
+                        new ObjectMapper(),
+                        HttpClient.newHttpClient());
+
+        for (int count : new int[] {4, 5}) {
+            OptionChainResponse chain =
+                    service.getOptionChain("TCS", "TCS", "", new BigDecimal("2240"), count, true);
+
+            assertThat(chain.isSynthetic())
+                    .as("fallback chain must be flagged synthetic (count=%d)", count)
+                    .isTrue();
+            assertThat(chain.totalCallOi())
+                    .as("mirrored OI ladders are always equal (count=%d)", count)
+                    .isEqualTo(chain.totalPutOi());
+            assertThat(chain.pcr())
+                    .as("fabricated PCR is always exactly 1.00 (count=%d)", count)
+                    .isEqualTo(1.00);
+        }
+    }
+
     private static CapturingOptionChainService capturingService(
             ShoonyaMarketDataService marketDataService) {
         return new CapturingOptionChainService(

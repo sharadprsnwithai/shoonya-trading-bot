@@ -29,6 +29,17 @@ public class ShoonyaCommodityQuoteFeed implements CommodityQuoteFeed {
         this.marketDataService = marketDataService;
     }
 
+    /**
+     * Fetches the option chain used for the daily PCR bias.
+     *
+     * <p>The window is ATM ± {@link ShoonyaOptionChainService#PCR_STRIKE_WINDOW} so commodities
+     * read the same strike window as the LVR equity gate. The chain may come back {@code synthetic}
+     * when the exchange has no listed contract for the symbol — callers must treat that as
+     * unavailable rather than as a neutral PCR.
+     *
+     * @param symbol the MCX underlying (e.g. {@code SILVER})
+     * @return the live chain, or {@code null} when no contract resolves
+     */
     @Override
     public OptionChainResponse optionChain(String symbol) {
         if (optionChainService == null || symbol == null) return null;
@@ -38,9 +49,22 @@ public class ShoonyaCommodityQuoteFeed implements CommodityQuoteFeed {
                     marketDataService != null
                             ? marketDataService.resolveFuturesContract(clean)
                             : null;
-            String futTsym = fut != null ? fut.tsym() : clean;
-            String futToken = fut != null ? fut.token() : "";
-            return optionChainService.getOptionChain(clean, futTsym, futToken, null, 5, true);
+            if (fut == null || fut.tsym() == null || fut.tsym().isBlank()) {
+                log.warn(
+                        "[COMMODITY-FEED] No F&O contract resolved for {} on MCX — option chain "
+                                + "unavailable, PCR cannot be computed.",
+                        clean);
+                return null;
+            }
+            String futTsym = fut.tsym();
+            String futToken = fut.token() != null ? fut.token() : "";
+            return optionChainService.getOptionChain(
+                    clean,
+                    futTsym,
+                    futToken,
+                    null,
+                    ShoonyaOptionChainService.PCR_STRIKE_WINDOW,
+                    true);
         } catch (Exception e) {
             log.error(
                     "[COMMODITY-FEED] Error fetching option chain for {}: {}",

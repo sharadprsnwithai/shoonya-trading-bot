@@ -274,12 +274,12 @@ class ShoonyaMarketDataServiceTest {
         ShoonyaMarketDataService service =
                 serviceWithSearches(
                         arr(
-                                fut("LTIM27OCT26F", "555555", "FUTSTK"),
+                                fut("LTM27OCT26F", "555555", "FUTSTK"),
                                 fut("LTTS27OCT26F", "666666", "FUTSTK"),
                                 fut("LT27OCT26F", "444444", "FUTSTK")),
                         searches);
 
-        // A search for "LT" must never resolve LIM/LTIM/LTTS contracts.
+        // A search for "LT" must never resolve LIM/LTM/LTTS contracts.
         ShoonyaMarketDataService.FuturesContract contract = service.resolveFuturesContract("LT");
 
         assertThat(contract).isNotNull();

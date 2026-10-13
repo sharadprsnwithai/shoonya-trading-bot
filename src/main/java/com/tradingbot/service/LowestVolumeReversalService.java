@@ -133,11 +133,11 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.pcr-filter-enabled:true}")
     private volatile boolean pcrFilterEnabled = true;
 
-    @Value("${trading-bot.strategy.lowest-volume.pcr-min-long:0.85}")
-    private volatile double pcrMinLong = 0.85;
+    @Value("${trading-bot.strategy.lowest-volume.pcr-neutral-min:0.85}")
+    private volatile double pcrNeutralMin = 0.85;
 
-    @Value("${trading-bot.strategy.lowest-volume.pcr-max-short:1.15}")
-    private volatile double pcrMaxShort = 1.15;
+    @Value("${trading-bot.strategy.lowest-volume.pcr-neutral-max:1.15}")
+    private volatile double pcrNeutralMax = 1.15;
 
     @Value("${trading-bot.strategy.lowest-volume.option-sr-filter-enabled:true}")
     private volatile boolean optionSrFilterEnabled = true;
@@ -150,6 +150,15 @@ public class LowestVolumeReversalService {
 
     @Value("${trading-bot.strategy.lowest-volume.pdh-pdl-filter-enabled:true}")
     private volatile boolean pdhPdlFilterEnabled = true;
+
+    /**
+     * Maximum allowed gap between the entry price and PDH (for LONG) or PDL (for SHORT), expressed
+     * as a percentage of PDH/PDL. When the stock is already too far extended above PDH, the
+     * "pullback" that fires the SL is often a genuine mean-reversion, not a brief dip. 0 or
+     * negative = disabled (no upper cap). Default: 3.0%.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.max-pdh-extension-pct:3.0}")
+    private volatile double maxPdhExtensionPct = 3.0;
 
     @Value("${trading-bot.strategy.lowest-volume.scanner-mode:HYBRID}")
     private volatile String scannerMode = "HYBRID";
@@ -202,6 +211,35 @@ public class LowestVolumeReversalService {
     private volatile LocalDate lastScanDate = null;
     private final java.util.concurrent.atomic.AtomicBoolean isCycleRunning =
             new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    // ---- 09:25 IST NSE OI spurts (phase-2 candidate selection) ----
+
+    /** Ranked NSE OI spurts staged by the 09:25 fetch, consumed at morning-scan completion. */
+    private final java.util.concurrent.atomic.AtomicReference<
+                    List<com.tradingbot.model.NseOiSpurtItem>>
+            pendingOiItems = new java.util.concurrent.atomic.AtomicReference<>(null);
+
+    /** Trading-day stamp of {@link #pendingOiItems}; a previous day's staging is dropped. */
+    private volatile LocalDate pendingOiFetchedDate = null;
+
+    /** True once the daily NSE OI merge has completed (idempotency guard per trading day). */
+    private volatile boolean nseOiAppliedToday = false;
+
+    /** Re-entrancy guard for {@link #runNseOiSpurtAugmentation()}. */
+    private final java.util.concurrent.atomic.AtomicBoolean isNseOiAugmenting =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** NSE OI spurts HTTP client; optional (tests inject a mock via the setter). */
+    private volatile com.tradingbot.marketdata.NseOiSpurtClient nseOiSpurtClient;
+
+    @Value("${trading-bot.strategy.lowest-volume.nse-oi.enabled:true}")
+    private volatile boolean nseOiEnabled = true;
+
+    @Value("${trading-bot.strategy.lowest-volume.nse-oi.top-n:3}")
+    private volatile int nseOiTopN = 3;
+
+    @Value("${trading-bot.strategy.lowest-volume.nse-oi.mid-morning-refresh-enabled:true}")
+    private volatile boolean nseOiMidMorningRefreshEnabled = true;
 
     private final List<String> currentTopGainers =
             new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -536,6 +574,254 @@ public class LowestVolumeReversalService {
     }
 
     /**
+     * 09:25 IST phase 2 of candidate selection: fetches NSE's live OI spurts feed and stages the
+     * ranked stock underlyings for merging into the morning watchlist.
+     *
+     * <p>Normal flow: the scheduler fires this at 09:25:00, before the 09:25:20 morning scan —
+     * items are staged in {@link #pendingOiItems} and consumed by {@link #runMorningUniverseScan()}
+     * when the scan completes. If the scan already completed (manual or out-of-order execution),
+     * the merge runs immediately instead. A failed/empty fetch logs a WARN (plus a Telegram notice)
+     * and the day proceeds sector-only — it never fails the day. Idempotent per trading day and
+     * re-entrancy guarded.
+     */
+    public void runNseOiSpurtAugmentation() {
+        if (!enabled || !nseOiEnabled) {
+            log.debug("[LVR] [NSE-OI] Disabled — skipping NSE OI spurt fetch.");
+            return;
+        }
+        if (standDownToday) {
+            log.debug("[LVR] [NSE-OI] Standing down today — skipping NSE OI spurt fetch.");
+            return;
+        }
+        if (nseOiAppliedToday) {
+            log.debug("[LVR] [NSE-OI] OI spurts already applied today — skipping.");
+            return;
+        }
+        if (nseOiSpurtClient == null) {
+            log.debug("[LVR] [NSE-OI] No NSE OI spurts client wired — sector-only selection.");
+            return;
+        }
+        if (!isNseOiAugmenting.compareAndSet(false, true)) {
+            log.warn("[LVR] [NSE-OI] Augmentation already in progress. Skipping concurrent run.");
+            return;
+        }
+        try {
+            int topN = "OI_SPURTS".equalsIgnoreCase(scannerMode) ? oiSpurtsTopN : nseOiTopN;
+            // Fetch deeper than topN so band/exclusion filtering still has room to select.
+            int depth = Math.max(topN * 4, topN);
+            List<com.tradingbot.model.NseOiSpurtItem> items =
+                    nseOiSpurtClient.fetchTopUnderlyings(depth);
+            if (items == null || items.isEmpty()) {
+                log.warn(
+                        "[LVR] [NSE-OI] NSE OI spurts fetch failed/empty — continuing with"
+                                + " sector-only candidate selection today.");
+                if (telegramAlerts && telegramService != null) {
+                    telegramService.sendTextMessage(
+                            "ℹ️ *LVR NSE OI Spurts unavailable*\n• Reason: NSE OI spurts fetch"
+                                    + " failed\n• Status: *Continuing sector-only selection today*");
+                }
+                return;
+            }
+            if (universeScanCompletedToday) {
+                mergeOiCandidates(items);
+                return;
+            }
+            // Normal 09:25:00 path: stage until the morning scan completes and consumes them.
+            pendingOiItems.set(items);
+            pendingOiFetchedDate = LocalDate.now(clock);
+            log.info(
+                    "[LVR] [NSE-OI] Staged {} NSE OI spurt candidates pending morning-scan"
+                            + " completion.",
+                    items.size());
+            if (universeScanCompletedToday) {
+                // The scan completed while we were staging — consume rather than strand them.
+                List<com.tradingbot.model.NseOiSpurtItem> staged = pendingOiItems.getAndSet(null);
+                if (staged != null && !staged.isEmpty()) {
+                    mergeOiCandidates(staged);
+                }
+            }
+        } catch (RuntimeException e) {
+            log.error(
+                    "[LVR] [NSE-OI] Augmentation failed (continuing sector-only): {}",
+                    e.getMessage(),
+                    e);
+        } finally {
+            isNseOiAugmenting.set(false);
+        }
+    }
+
+    /**
+     * Merges ranked NSE OI spurt candidates into the morning watchlist: selects up to {@code top-n}
+     * eligible symbols (sentiment price-alignment band with relaxed fill), creates their setups,
+     * and appends them to the sector watchlist. In OI_SPURTS scanner mode the sector picks are
+     * demoted to the reservoir first, so the hybrid cap (3 sector + 3 OI, 6 total) still holds.
+     * Called at most once per day, guarded by {@link #nseOiAppliedToday}.
+     *
+     * @param items NSE OI spurts ranked by % OI change descending
+     */
+    private void mergeOiCandidates(List<com.tradingbot.model.NseOiSpurtItem> items) {
+        if (items == null || items.isEmpty() || nseOiAppliedToday) {
+            return;
+        }
+        LowestVolumeDirection sentiment =
+                sectorState != null ? sectorState.sentiment() : LowestVolumeDirection.NONE;
+        if (sentiment == null || sentiment == LowestVolumeDirection.NONE) {
+            log.warn(
+                    "[LVR] [NSE-OI] No directional sentiment available (scan incomplete?) —"
+                            + " dropping {} staged OI spurts.",
+                    items.size());
+            return;
+        }
+        boolean oiSpurtsMode = "OI_SPURTS".equalsIgnoreCase(scannerMode);
+        int topN = oiSpurtsMode ? oiSpurtsTopN : nseOiTopN;
+
+        List<String> rankedSymbols =
+                items.stream()
+                        .map(com.tradingbot.model.NseOiSpurtItem::symbol)
+                        .filter(s -> s != null && !s.isBlank())
+                        .distinct()
+                        .toList();
+        Map<String, StockQuoteSnapshot> quotes = fetchSnapshotsFor(rankedSymbols);
+        Set<String> exclude = new java.util.HashSet<>(activeSetups.keySet());
+        exclude.addAll(exhaustedSymbols);
+        List<String> selected =
+                scanner.selectOiSpurtCandidates(items, quotes, sentiment, topN, exclude);
+        if (selected.isEmpty()) {
+            log.warn(
+                    "[LVR] [NSE-OI] No eligible OI-spurt candidates after quote/band/exclusion"
+                            + " filtering — watchlist stays sector-only.");
+            nseOiAppliedToday = true;
+            return;
+        }
+
+        Map<String, com.tradingbot.model.NseOiSpurtItem> bySymbol = new java.util.HashMap<>();
+        for (com.tradingbot.model.NseOiSpurtItem item : items) {
+            if (item.symbol() != null) {
+                bySymbol.putIfAbsent(item.symbol(), item);
+            }
+        }
+
+        if (oiSpurtsMode) {
+            // Hybrid cap: demote sector picks to the reservoir so 3 sector + 3 OI still holds.
+            for (String sym : activeSetups.keySet()) {
+                if (!exhaustedSymbols.contains(sym) && !candidateReservoir.contains(sym)) {
+                    candidateReservoir.add(sym);
+                }
+            }
+            activeSetups.clear();
+        }
+
+        int added = 0;
+        for (String sym : selected) {
+            if (activeSetups.containsKey(sym) || exhaustedSymbols.contains(sym)) {
+                continue;
+            }
+            StockQuoteSnapshot quote = quotes.get(sym);
+            LowestVolumeDirection dir;
+            if (oiSpurtsMode) {
+                // OI_SPURTS mode: direction follows the stock's own price move, not sentiment.
+                dir =
+                        (quote != null && quote.pctChange() < 0)
+                                ? LowestVolumeDirection.SHORT
+                                : LowestVolumeDirection.LONG;
+            } else {
+                dir = sentiment;
+            }
+            LowestVolumeSetup setup = new LowestVolumeSetup(sym, dir);
+            com.tradingbot.model.NseOiSpurtItem item = bySymbol.get(sym);
+            if (item != null) {
+                setup.setOiChangePct(item.avgInOi());
+            }
+            initPdhPdlForSetup(setup);
+            activeSetups.put(sym, setup);
+            added++;
+        }
+
+        // Selected symbols that did not become active (already present/exhausted) replenish the
+        // standby reservoir instead.
+        for (String sym : selected) {
+            if (!activeSetups.containsKey(sym)
+                    && !exhaustedSymbols.contains(sym)
+                    && !candidateReservoir.contains(sym)) {
+                candidateReservoir.add(sym);
+            }
+        }
+
+        // Rebuild the sector state watchlist with the combined sector + OI symbols.
+        List<String> combined = new java.util.ArrayList<>(sectorState.candidateSymbols());
+        for (String sym : activeSetups.keySet()) {
+            if (!combined.contains(sym)) {
+                combined.add(sym);
+            }
+        }
+        sectorState =
+                new LowestVolumeSectorState(
+                        sectorState.advances(),
+                        sectorState.declines(),
+                        sentiment,
+                        sectorState.topSector(),
+                        sectorState.sectorPctChange(),
+                        combined);
+        nseOiAppliedToday = true;
+
+        log.info(
+                "[LVR] NSE OI Spurt merge complete: added {} of {} selected (active watchlist:"
+                        + " {})",
+                added,
+                selected,
+                activeSetups.keySet());
+        if (telegramAlerts && telegramService != null) {
+            telegramService.sendTextMessage(
+                    "⚡ *LVR NSE OI Spurts*\n• Selected: "
+                            + String.join(", ", selected)
+                            + "\n• Added: "
+                            + added
+                            + " | Active watchlist: "
+                            + activeSetups.size());
+        }
+    }
+
+    /**
+     * Fetches live quotes for the given symbols in a single pass, used to evaluate the OI-spurt
+     * price-alignment band. Symbols that fail to quote are simply absent from the result (the
+     * selection step skips them).
+     *
+     * @param symbols underlying symbols to quote
+     * @return snapshots keyed by symbol
+     */
+    private Map<String, StockQuoteSnapshot> fetchSnapshotsFor(List<String> symbols) {
+        Map<String, StockQuoteSnapshot> out = new java.util.HashMap<>();
+        if (marketDataService == null || symbols == null) {
+            return out;
+        }
+        for (String symbol : symbols) {
+            try {
+                var info = StockFnoRegistry.get(symbol);
+                String token =
+                        (info != null && info.token() != null)
+                                ? info.token()
+                                : marketDataService.resolveToken(symbol);
+                if (token == null || token.isBlank()) continue;
+                String exchange =
+                        (info != null && info.exchange() != null) ? info.exchange() : "NSE";
+                JsonNode quote = marketDataService.fetchQuote(exchange, token);
+                if (quote == null || !quote.has("lp") || !quote.has("c")) continue;
+                double lp = quote.get("lp").asDouble(0.0);
+                double c = quote.get("c").asDouble(0.0);
+                if (lp <= 0 || c <= 0) continue;
+                double o = quote.has("o") ? quote.get("o").asDouble(lp) : lp;
+                long v = quote.has("v") ? quote.get("v").asLong(0L) : 0L;
+                double ap = quote.has("ap") ? quote.get("ap").asDouble(0.0) : 0.0;
+                double pctChange = (lp - c) / c * 100.0;
+                out.put(symbol, new StockQuoteSnapshot(symbol, lp, c, o, pctChange, v, ap, 0L, 0L));
+            } catch (Exception e) {
+                log.warn("[LVR] [NSE-OI] Quote fetch failed for {}: {}", symbol, e.getMessage());
+            }
+        }
+        return out;
+    }
+
+    /**
      * 09:25 AM Morning Scan: 1. Evaluates NIFTY 50 Adv/Dec sentiment. 2. Ranks 11 NSE Sectors by %
      * change. 3. Selects top winning sector and filters clean F&O candidate stocks.
      */
@@ -568,80 +854,10 @@ public class LowestVolumeReversalService {
                 return;
             }
 
-            // If OI_SPURTS mode is active, select top institutional F&O stocks directly
-            if ("OI_SPURTS".equalsIgnoreCase(scannerMode) && scanner != null) {
-                long oiCount =
-                        universeQuotes.values().stream()
-                                .filter(q -> q.openInterest() > 0 || q.prevDayOpenInterest() > 0)
-                                .count();
-                log.info(
-                        "[LVR] OI_SPURTS morning scan input: {} universe quotes, {} carry OI.",
-                        universeQuotes.size(),
-                        oiCount);
-                boolean oiDataAvailable = oiCount > 0;
-                if (!oiDataAvailable) {
-                    // H8: OI data missing entirely — fail the scan loudly instead of silently
-                    // running a different selection mode than the operator configured.
-                    log.error(
-                            "[LVR] OI_SPURTS mode active but no quote carried open interest"
-                                    + " ({}/{} quotes have oi>0). Scan failed; will retry next"
-                                    + " cycle. Sector Rotation fallback disabled.",
-                            oiCount,
-                            universeQuotes.size());
-                    this.universeScanCompletedToday = false;
-                    if (telegramAlerts && telegramService != null) {
-                        telegramService.sendTextMessage(
-                                "🔴 *LVR OI_SPURTS Scan Failed*\n"
-                                        + "• Reason: No open-interest data in GetQuotes response\n"
-                                        + "• Status: *Retrying next cycle (fallback disabled)*");
-                    }
-                    return;
-                }
-                List<String> oiCandidates = scanner.scanOiSpurts(universeQuotes, oiSpurtsTopN);
-                if (!oiCandidates.isEmpty()) {
-                    activeSetups.clear();
-                    for (String sym : oiCandidates) {
-                        StockQuoteSnapshot snap = universeQuotes.get(sym);
-                        LowestVolumeDirection symDir =
-                                (snap != null && snap.pctChange() < 0)
-                                        ? LowestVolumeDirection.SHORT
-                                        : LowestVolumeDirection.LONG;
-                        LowestVolumeSetup s = new LowestVolumeSetup(sym, symDir);
-                        if (snap != null) {
-                            s.setOiChangePct(snap.oiPctChange());
-                        }
-                        initPdhPdlForSetup(s);
-                        activeSetups.put(sym, s);
-                    }
-
-                    this.universeScanCompletedToday = true;
-                    this.lastScanDate = LocalDate.now(clock);
-
-                    log.info(
-                            "[LVR] Morning OI Spurts Scan complete. Top {} candidates: {}",
-                            oiCandidates.size(),
-                            oiCandidates);
-
-                    if (telegramAlerts && telegramService != null) {
-                        telegramService.sendTextMessage(
-                                String.format(
-                                        "📊 *LVR 09:25 AM OI Spurts Morning Scan*\n"
-                                                + "• Candidates (%d): `%s`\n"
-                                                + "• Setup Mode: *5m LVR & Vande Bharat*",
-                                        oiCandidates.size(), String.join(", ", oiCandidates)));
-                    }
-                    return;
-                } else {
-                    log.warn(
-                            "[LVR] OI Spurts returned 0 candidates (OI data present). Falling back to Sector Rotation scan.");
-                    if (telegramAlerts && telegramService != null) {
-                        telegramService.sendTextMessage(
-                                "ℹ️ *LVR OI Spurts: no qualifying spurt*\n"
-                                        + "• OI data present but no symbol crossed the threshold\n"
-                                        + "• Falling back to *Sector Rotation* selection this cycle");
-                    }
-                }
-            }
+            // All scanner modes (HYBRID/OI_SPURTS) run the sector rotation scan here. NSE OI
+            // spurts feed the watchlist in phase 2 — the 09:25:00 job stages them and this scan
+            // merges them on completion (see the consume step below). Quote-level OI is no
+            // longer part of morning selection.
 
             // 2. Evaluate NIFTY 50 Sentiment
             List<StockQuoteSnapshot> niftyQuotes = new ArrayList<>();
@@ -749,58 +965,10 @@ public class LowestVolumeReversalService {
             }
 
             List<String> finalActiveList = new ArrayList<>();
-            List<String> oiCandidates = Collections.emptyList();
-
-            if ("HYBRID".equalsIgnoreCase(scannerMode) && scanner != null) {
-                long hybridQuotesWithOi =
-                        universeQuotes.values().stream()
-                                .filter(
-                                        q ->
-                                                q != null
-                                                        && (q.openInterest() > 0
-                                                                || q.prevDayOpenInterest() > 0))
-                                .count();
-                log.info(
-                        "[LVR] Hybrid OI-spurts scan input: {} universe quotes, {} carry OI,"
-                                + " sentiment={}.",
-                        universeQuotes.size(),
-                        hybridQuotesWithOi,
-                        sentiment);
-                try {
-                    oiCandidates = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
-                    log.info(
-                            "[LVR] Hybrid OI-spurts scan returned {} candidates: {}",
-                            oiCandidates.size(),
-                            oiCandidates);
-                } catch (Exception e) {
-                    log.warn(
-                            "[LVR] OI Spurts scan failed during Hybrid scan: {}",
-                            e.getMessage(),
-                            e);
-                }
-
-                // 1. Add top 3 sector candidates
-                int sectorTake = Math.min(3, candidateStocks.size());
-                for (int k = 0; k < sectorTake; k++) {
-                    finalActiveList.add(candidateStocks.get(k));
-                }
-
-                // 2. Add top 3 OI spurt candidates (if not already included)
-                for (String oiSym : oiCandidates) {
-                    if (!finalActiveList.contains(oiSym) && finalActiveList.size() < 6) {
-                        finalActiveList.add(oiSym);
-                    }
-                }
-
-                // 3. If OI spurts yielded < 3 stocks, fill remaining slots from sector candidates
-                for (String secSym : candidateStocks) {
-                    if (!finalActiveList.contains(secSym) && finalActiveList.size() < 3) {
-                        finalActiveList.add(secSym);
-                    }
-                }
-            } else {
-                finalActiveList.addAll(candidateStocks);
-            }
+            // Phase-1 watchlist: top sector candidates for every scanner mode. Phase-2 NSE OI
+            // spurts are merged after this scan completes (consume step below), so the HYBRID
+            // cap of 3 sector + 3 OI (6 total) is enforced at merge time.
+            finalActiveList.addAll(candidateStocks);
 
             this.sectorState =
                     new LowestVolumeSectorState(
@@ -812,23 +980,20 @@ public class LowestVolumeReversalService {
                             finalActiveList);
 
             log.info(
-                    "[LVR] Morning Scan Result (Mode={}): Sentiment={}, Winning Sector={} ({}%), Sector Candidates={}, OI Candidates={}, Final Active={}",
+                    "[LVR] Morning Scan Result (Mode={}): Sentiment={}, Winning Sector={} ({}%), Sector Candidates={}, Final Active={}",
                     scannerMode,
                     sentiment,
                     winningSector.sectorName(),
                     winningSector.pctChange(),
                     candidateStocks,
-                    oiCandidates,
                     finalActiveList);
 
             // Populate active setups
             activeSetups.clear();
             for (String symbol : finalActiveList) {
                 LowestVolumeSetup setup = new LowestVolumeSetup(symbol, sentiment);
-                StockQuoteSnapshot snap = universeQuotes.get(symbol);
-                if (snap != null) {
-                    setup.setOiChangePct(snap.oiPctChange());
-                }
+                // OI change is not available from quotes anymore — phase-2 NSE OI spurts set it
+                // on merged setups (mergeOiCandidates); sector setups carry none.
                 initPdhPdlForSetup(setup);
                 activeSetups.put(symbol, setup);
             }
@@ -854,15 +1019,9 @@ public class LowestVolumeReversalService {
                                 .toList());
             }
 
-            // Populate Candidate Reservoir from remaining OI spurts and reserve leading sectors
+            // Populate Candidate Reservoir from reserve leading sectors (OI additions may also
+            // land here during the phase-2 merge)
             candidateReservoir.clear();
-            for (String oiSym : oiCandidates) {
-                if (!activeSetups.containsKey(oiSym)
-                        && !exhaustedSymbols.contains(oiSym)
-                        && !candidateReservoir.contains(oiSym)) {
-                    candidateReservoir.add(oiSym);
-                }
-            }
             for (LowestVolumeReversalScanner.SectorRankResult sector : rankedSectors) {
                 if (winningSector != null
                         && sector.sectorName().equals(winningSector.sectorName())) {
@@ -887,42 +1046,31 @@ public class LowestVolumeReversalService {
             this.universeScanCompletedToday = true;
             this.lastScanDate = LocalDate.now(clock);
 
+            // Phase 2: consume NSE OI items staged by the 09:25:00 job. mergeOiCandidates() is
+            // itself idempotent per day; nothing staged (fetch failed or job disabled) means the
+            // watchlist simply stays sector-only.
+            List<com.tradingbot.model.NseOiSpurtItem> stagedOiItems =
+                    pendingOiItems.getAndSet(null);
+            if (stagedOiItems != null && !stagedOiItems.isEmpty()) {
+                pendingOiFetchedDate = null;
+                mergeOiCandidates(stagedOiItems);
+            }
+
             if (telegramAlerts && telegramService != null) {
-                if ("HYBRID".equalsIgnoreCase(scannerMode) && !oiCandidates.isEmpty()) {
-                    List<String> sectorLeaders = candidateStocks.stream().limit(3).toList();
-                    telegramService.sendTextMessage(
-                            String.format(
-                                    "📊 *LVR 09:25 AM Morning Scan (Hybrid Mode)*\n"
-                                            + "• Sentiment: *%s*\n"
-                                            + "• Winning Sector: *%s* (%+.2f%%)\n"
-                                            + "• Sector Leaders (%d): `%s`\n"
-                                            + "• OI Spurt Leaders (%d): `%s`\n"
-                                            + "• Active Watchlist (%d): `%s`\n"
-                                            + "• Standby Reservoir: %d stocks",
-                                    sentiment,
-                                    winningSector.sectorName(),
-                                    winningSector.pctChange(),
-                                    sectorLeaders.size(),
-                                    String.join(", ", sectorLeaders),
-                                    oiCandidates.size(),
-                                    String.join(", ", oiCandidates),
-                                    finalActiveList.size(),
-                                    String.join(", ", finalActiveList),
-                                    candidateReservoir.size()));
-                } else {
-                    telegramService.sendTextMessage(
-                            String.format(
-                                    "📊 *LVR 09:25 AM Morning Scan*\n"
-                                            + "• Sentiment: *%s*\n"
-                                            + "• Winning Sector: *%s* (%.2f%%)\n"
-                                            + "• Candidates (%d): `%s`\n"
-                                            + "• Setup Mode: *5m Lowest Volume Pullback*",
-                                    sentiment,
-                                    winningSector.sectorName(),
-                                    winningSector.pctChange(),
-                                    candidateStocks.size(),
-                                    String.join(", ", candidateStocks)));
-                }
+                telegramService.sendTextMessage(
+                        String.format(
+                                "📊 *LVR 09:25 AM Morning Scan*\n"
+                                        + "• Sentiment: *%s*\n"
+                                        + "• Winning Sector: *%s* (%.2f%%)\n"
+                                        + "• Active Watchlist (%d): `%s`\n"
+                                        + "• Standby Reservoir: %d stocks\n"
+                                        + "• Setup Mode: *5m Lowest Volume Pullback*",
+                                sentiment,
+                                winningSector.sectorName(),
+                                winningSector.pctChange(),
+                                finalActiveList.size(),
+                                String.join(", ", finalActiveList),
+                                candidateReservoir.size()));
             }
         } catch (Exception e) {
             log.error("[LVR] Error during morning universe scan: {}", e.getMessage(), e);
@@ -1552,10 +1700,11 @@ public class LowestVolumeReversalService {
                 gateInput.pdhPdlEnabled = pdhPdlFilterEnabled;
                 gateInput.pdh = setup.getPdh();
                 gateInput.pdl = setup.getPdl();
+                gateInput.maxPdhExtensionPct = maxPdhExtensionPct;
                 gateInput.pcrEnabled = pcrFilterEnabled;
                 gateInput.pcr = setup.getPcr();
-                gateInput.pcrMinLong = pcrMinLong;
-                gateInput.pcrMaxShort = pcrMaxShort;
+                gateInput.pcrNeutralMin = pcrNeutralMin;
+                gateInput.pcrNeutralMax = pcrNeutralMax;
                 gateInput.optionSrFilterEnabled = optionSrFilterEnabled;
                 gateInput.optionResistanceStrike = setup.getOptionResistanceStrike();
                 gateInput.optionSupportStrike = setup.getOptionSupportStrike();
@@ -2726,6 +2875,18 @@ public class LowestVolumeReversalService {
         // H10: the stand-down decision may only be cleared here (explicit reset).
         this.standDownToday = false;
 
+        // 09:25 NSE OI state: staged fetches are day-stamped — keep today's staging through any
+        // same-day reset (the next scan will consume it), drop it only when it belongs to a
+        // previous session. The applied-latch survives soft same-day resets but clears on a new
+        // day (or force) so tomorrow's 09:25 job can run again.
+        if (pendingOiFetchedDate != null && !pendingOiFetchedDate.equals(today)) {
+            pendingOiItems.set(null);
+            pendingOiFetchedDate = null;
+        }
+        if (!sameDaySoftReset) {
+            nseOiAppliedToday = false;
+        }
+
         if (sameDaySoftReset) {
             log.info(
                     "[LVR] Same-day SOFT reset: {} closed trade(s) and breaker latch PRESERVED;"
@@ -2897,40 +3058,39 @@ public class LowestVolumeReversalService {
             List<LowestVolumeReversalScanner.SectorRankResult> rankedSectors =
                     scanner.rankSectors(sectorQuotes, sentiment);
 
-            if ("HYBRID".equalsIgnoreCase(scannerMode)
-                    || "OI_SPURTS".equalsIgnoreCase(scannerMode)) {
-                long middayQuotesWithOi =
-                        universeQuotes.values().stream()
-                                .filter(
-                                        q ->
-                                                q != null
-                                                        && (q.openInterest() > 0
-                                                                || q.prevDayOpenInterest() > 0))
-                                .count();
-                log.info(
-                        "[LVR] Midday OI-spurts rescan input: {} universe quotes, {} carry OI,"
-                                + " sentiment={}.",
-                        universeQuotes.size(),
-                        middayQuotesWithOi,
-                        sentiment);
+            // Mid-morning NSE reservoir top-up (nse-oi.mid-morning-refresh-enabled): re-rank the
+            // OI spurts feed and add fresh picks to the STANDBY RESERVOIR only — activeSetups and
+            // the in-flight watchlist are never mutated here. Failures degrade to the sector
+            // reserves populated below.
+            if (nseOiMidMorningRefreshEnabled && nseOiSpurtClient != null) {
+                final int reservoirTopN = 6; // top 6 by % OI change
                 try {
-                    List<String> midOi = scanner.scanOiSpurts(universeQuotes, sentiment, 3);
-                    log.info(
-                            "[LVR] Midday OI-spurts rescan returned {} reservoir candidates: {}",
-                            midOi.size(),
-                            midOi);
-                    for (String oiSym : midOi) {
-                        if (!activeSetups.containsKey(oiSym)
-                                && !exhaustedSymbols.contains(oiSym)
-                                && !candidateReservoir.contains(oiSym)) {
-                            candidateReservoir.add(oiSym);
+                    List<com.tradingbot.model.NseOiSpurtItem> fresh =
+                            nseOiSpurtClient.fetchTopUnderlyings(reservoirTopN);
+                    int nseAdded = 0;
+                    for (com.tradingbot.model.NseOiSpurtItem item : fresh) {
+                        String sym = item.symbol();
+                        if (sym == null
+                                || sym.isBlank()
+                                || activeSetups.containsKey(sym)
+                                || exhaustedSymbols.contains(sym)
+                                || candidateReservoir.contains(sym)) {
+                            continue;
                         }
+                        candidateReservoir.add(sym);
+                        nseAdded++;
                     }
-                } catch (Exception ignored) {
+                    log.info(
+                            "[LVR] Mid-morning NSE OI reservoir top-up: {} new of {} fetched"
+                                    + " (reservoir now {}).",
+                            nseAdded,
+                            fresh.size(),
+                            candidateReservoir.size());
+                } catch (Exception e) {
                     log.warn(
-                            "[LVR] OI-spurts scan failed — continuing without it: {}",
-                            ignored.getMessage(),
-                            ignored);
+                            "[LVR] Mid-morning NSE OI top-up failed — continuing with sector"
+                                    + " reserves: {}",
+                            e.getMessage());
                 }
             }
 
@@ -3069,8 +3229,16 @@ public class LowestVolumeReversalService {
     }
 
     /**
-     * Resolves Option Chain data (PCR across ATM ± 4 strikes, Max Call OI Resistance strike, Max
-     * Put OI Support strike) using ShoonyaOptionChainService.
+     * Resolves Option Chain data (PCR across ATM ± {@link
+     * com.tradingbot.marketdata.ShoonyaOptionChainService#PCR_STRIKE_WINDOW} strikes, Max Call OI
+     * Resistance strike, Max Put OI Support strike) using ShoonyaOptionChainService.
+     *
+     * <p>The near-month F&O contract is resolved first so the exchange is asked for a real trading
+     * symbol rather than the cash symbol. A synthetic (fabricated) chain is never applied: it
+     * always reports PCR 1.00, so the levels are cleared instead and the entry gate fails closed.
+     *
+     * @param setup the setup whose PCR / option S&amp;R levels are refreshed
+     * @param spotPrice the spot price used to anchor the ATM strike
      */
     public void resolveLiveOptionChainLevels(LowestVolumeSetup setup, BigDecimal spotPrice) {
         if (setup == null || spotPrice == null) return;
@@ -3084,31 +3252,74 @@ public class LowestVolumeReversalService {
                             ? fno.strikeStep()
                             : BigDecimal.valueOf(10);
             BigDecimal atm = resolveAtmStrike(spotPrice, step);
-            com.tradingbot.model.OptionChainResponse chain =
-                    optionChainService.getOptionChain(sym, sym, "", atm, 4, true);
-            if (chain != null) {
-                if (chain.totalCallOi() > 0) {
-                    double pcrVal = chain.pcr();
-                    setup.setPcr(pcrVal);
+
+            // Ask for the real near-month F&O tsym; passing the cash symbol is rejected by the
+            // exchange ("Invalid Trading Symbol") and silently falls back to a synthetic chain.
+            String futTsym = sym;
+            String futToken = "";
+            if (marketDataService != null) {
+                try {
+                    ShoonyaMarketDataService.FuturesContract contract =
+                            marketDataService.resolveFuturesContract(sym);
+                    if (contract != null && contract.tsym() != null && !contract.tsym().isBlank()) {
+                        futTsym = contract.tsym();
+                        futToken = contract.token() != null ? contract.token() : "";
+                    } else {
+                        log.warn(
+                                "[LVR] No F&O futures contract resolved for {} — option-chain "
+                                        + "levels will be unavailable until the contract lists.",
+                                sym);
+                    }
+                } catch (Exception e) {
+                    log.warn(
+                            "[LVR] Could not resolve F&O contract for {}: {}", sym, e.getMessage());
                 }
-                BigDecimal resStrike = chain.maxCallOiStrike();
-                BigDecimal supStrike = chain.maxPutOiStrike();
-                if (resStrike != null) {
-                    setup.setOptionResistanceStrike(resStrike);
-                }
-                if (supStrike != null) {
-                    setup.setOptionSupportStrike(supStrike);
-                }
-                log.info(
-                        "[LVR] Option Chain levels for {} (ATM={}): PCR={}, MaxCallOI Resistance={}, MaxPutOI Support={}",
-                        sym,
-                        atm,
-                        setup.getPcr() != null
-                                ? String.format(java.util.Locale.ROOT, "%.2f", setup.getPcr())
-                                : "n/a",
-                        setup.getOptionResistanceStrike(),
-                        setup.getOptionSupportStrike());
             }
+
+            com.tradingbot.model.OptionChainResponse chain =
+                    optionChainService.getOptionChain(
+                            sym,
+                            futTsym,
+                            futToken,
+                            atm,
+                            com.tradingbot.marketdata.ShoonyaOptionChainService.PCR_STRIKE_WINDOW,
+                            true);
+
+            if (chain == null) {
+                clearOptionChainLevels(setup, "no chain returned");
+                return;
+            }
+            if (chain.isSynthetic()) {
+                clearOptionChainLevels(setup, "synthetic chain (fabricated PCR 1.00)");
+                return;
+            }
+            if (chain.totalCallOi() <= 0 && chain.totalPutOi() <= 0) {
+                clearOptionChainLevels(setup, "empty chain (no open interest)");
+                return;
+            }
+            if (chain.totalCallOi() <= 0) {
+                clearOptionChainLevels(setup, "no call open interest to ratio against");
+                return;
+            }
+
+            setup.setPcr(chain.pcr());
+            BigDecimal resStrike = chain.maxCallOiStrike();
+            BigDecimal supStrike = chain.maxPutOiStrike();
+            if (resStrike != null) {
+                setup.setOptionResistanceStrike(resStrike);
+            }
+            if (supStrike != null) {
+                setup.setOptionSupportStrike(supStrike);
+            }
+            log.info(
+                    "[LVR] Option Chain levels for {} (ATM={}, tsym={}): PCR={}, "
+                            + "MaxCallOI Resistance={}, MaxPutOI Support={}",
+                    sym,
+                    atm,
+                    futTsym,
+                    String.format(java.util.Locale.ROOT, "%.2f", setup.getPcr()),
+                    setup.getOptionResistanceStrike(),
+                    setup.getOptionSupportStrike());
         } catch (Exception e) {
             log.warn(
                     "[LVR] Could not resolve Option Chain levels for {}: {}",
@@ -3116,6 +3327,28 @@ public class LowestVolumeReversalService {
                     e.getMessage(),
                     e);
         }
+    }
+
+    /**
+     * Drops any previously stored PCR and option S&amp;R levels so the entry gate sees no value and
+     * fails closed rather than trading on a stale or fabricated reading.
+     *
+     * @param setup the setup to clear
+     * @param reason why the levels are unusable (logged for diagnosis)
+     */
+    private void clearOptionChainLevels(LowestVolumeSetup setup, String reason) {
+        boolean hadData =
+                setup.getPcr() != null
+                        || setup.getOptionResistanceStrike() != null
+                        || setup.getOptionSupportStrike() != null;
+        setup.setPcr(null);
+        setup.setOptionResistanceStrike(null);
+        setup.setOptionSupportStrike(null);
+        log.warn(
+                "[LVR] Option Chain levels for {} unavailable ({}). Cleared PCR/levels{}.",
+                setup.getSymbol(),
+                reason,
+                hadData ? " — previous values discarded as stale" : "");
     }
 
     /** Backwards-compatible resolveLivePcr helper. */
@@ -3262,9 +3495,6 @@ public class LowestVolumeReversalService {
                 morningScanDelayMs);
 
         int count = 0;
-        int cashOiQuotes = 0;
-        int futuresEnrichedQuotes = 0;
-        int futuresEnrichMisses = 0;
         for (String sym : allSymbols) {
             count++;
             try {
@@ -3283,55 +3513,14 @@ public class LowestVolumeReversalService {
                     double o = quote.has("o") ? quote.get("o").asDouble(lp) : lp;
                     long v = quote.has("v") ? quote.get("v").asLong(0L) : 0L;
                     double ap = quote.has("ap") ? quote.get("ap").asDouble(0.0) : 0.0;
-                    long oi = quote.path("oi").asLong(0L);
-                    // H8/N2: official Shoonya/Noren fields are `oi` (current OI) and `poi`
-                    // (previous-day closing OI). The earlier `oio`/`oipct` names do not exist in
-                    // GetQuotes, which silently zeroed the OI_SPURTS mode.
-                    long prevOi = quote.path("poi").asLong(0L);
-                    if (oi > 0L || prevOi > 0L) {
-                        cashOiQuotes++;
-                    }
-
-                    // If quote is from cash equities segment (oi == 0) and symbol is an F&O
-                    // underlying,
-                    // enrich with open interest from its near-month futures contract on NFO.
-                    if (oi == 0L
-                            && prevOi == 0L
-                            && (info != null
-                                    || StockFnoRegistry.getAllInstruments().containsKey(sym)
-                                    || !StockFnoRegistry.isIndex(sym))) {
-                        boolean enriched = false;
-                        try {
-                            String futToken = marketDataService.resolveFuturesToken(sym);
-                            if (futToken != null && !futToken.isBlank()) {
-                                String futExch = StockFnoRegistry.getSegment(sym);
-                                if (futExch == null || futExch.isBlank()) futExch = "NFO";
-                                JsonNode futQuote = marketDataService.fetchQuote(futExch, futToken);
-                                if (futQuote != null) {
-                                    oi = futQuote.path("oi").asLong(0L);
-                                    prevOi = futQuote.path("poi").asLong(0L);
-                                    enriched = oi > 0L || prevOi > 0L;
-                                }
-                            }
-                        } catch (Exception fex) {
-                            log.debug(
-                                    "[LVR] Unable to fetch futures OI for {}: {}",
-                                    sym,
-                                    fex.getMessage(),
-                                    fex);
-                        }
-                        if (enriched) {
-                            futuresEnrichedQuotes++;
-                        } else {
-                            futuresEnrichMisses++;
-                        }
-                    }
 
                     if (c > 0) {
                         double pct = (lp - c) / c * 100.0;
-                        // 9-arg constructor computes oiPctChange from oi vs prevOi.
+                        // OI is no longer sourced from GetQuotes (the `oi`/`poi` cash fields and
+                        // the NFO futures enrichment are gone): the 09:25 NSE OI spurts feed
+                        // (NseOiSpurtClient) supplies avgInOi at phase-2 merge time instead.
                         quoteMap.put(
-                                sym, new StockQuoteSnapshot(sym, lp, c, o, pct, v, ap, oi, prevOi));
+                                sym, new StockQuoteSnapshot(sym, lp, c, o, pct, v, ap, 0L, 0L));
                     }
                 }
 
@@ -3351,24 +3540,6 @@ public class LowestVolumeReversalService {
                 "[LVR] Morning quote fetch completed. Successfully fetched {} / {} symbols.",
                 quoteMap.size(),
                 allSymbols.size());
-        long quotesWithOi =
-                quoteMap.values().stream()
-                        .filter(q -> q.openInterest() > 0 || q.prevDayOpenInterest() > 0)
-                        .count();
-        log.info(
-                "[LVR] Morning quote OI coverage: {}/{} quotes carry open interest ({} from cash"
-                        + " segment, {} enriched from NFO futures, {} futures-OI lookups missed).",
-                quotesWithOi,
-                quoteMap.size(),
-                cashOiQuotes,
-                futuresEnrichedQuotes,
-                futuresEnrichMisses);
-        if (!quoteMap.isEmpty() && quotesWithOi == 0) {
-            log.warn(
-                    "[LVR] OI coverage is ZERO across the fetched universe — OI-spurt scans will"
-                            + " return no candidates. Check GetQuotes `oi`/`poi` fields and NFO futures"
-                            + " enrichment.");
-        }
         return quoteMap;
     }
 
@@ -3512,10 +3683,14 @@ public class LowestVolumeReversalService {
         public Boolean pdhPdlEnabled;
         public BigDecimal pdh;
         public BigDecimal pdl;
+
+        /** Max % entry is allowed to be above PDH (LONG) or below PDL (SHORT). <=0 = disabled. */
+        public double maxPdhExtensionPct = 0;
+
         public Boolean pcrEnabled;
         public Double pcr;
-        public Double pcrMinLong;
-        public Double pcrMaxShort;
+        public Double pcrNeutralMin;
+        public Double pcrNeutralMax;
         public Boolean optionSrFilterEnabled;
         public BigDecimal optionResistanceStrike;
         public BigDecimal optionSupportStrike;
@@ -3668,10 +3843,58 @@ public class LowestVolumeReversalService {
                                     in.pdh,
                                     in.direction));
                 }
+
+                // 4b. PDH extension cap: reject entries that are already too far extended
+                // beyond PDH/PDL, since the "pullback" that hits the SL is likely a genuine
+                // mean-reversion (e.g. +5.9% above PDH as seen with HCLTECH on Oct 13).
+                if (in.maxPdhExtensionPct > 0) {
+                    if (in.direction == LowestVolumeDirection.LONG) {
+                        double extensionPct =
+                                in.decisionPrice
+                                        .subtract(in.pdh)
+                                        .divide(in.pdh, 6, java.math.RoundingMode.HALF_UP)
+                                        .multiply(BigDecimal.valueOf(100))
+                                        .doubleValue();
+                        if (extensionPct > in.maxPdhExtensionPct) {
+                            return deny(
+                                    EntryGateDisposition.EXHAUST,
+                                    "PDH_EXTENSION",
+                                    String.format(
+                                            Locale.US,
+                                            "Spot %s is %.2f%% above PDH %s (max allowed: %.1f%%) — entry too extended, skipping",
+                                            in.decisionPrice,
+                                            extensionPct,
+                                            in.pdh,
+                                            in.maxPdhExtensionPct));
+                        }
+                    } else {
+                        double extensionPct =
+                                in.pdl
+                                        .subtract(in.decisionPrice)
+                                        .divide(in.pdl, 6, java.math.RoundingMode.HALF_UP)
+                                        .multiply(BigDecimal.valueOf(100))
+                                        .doubleValue();
+                        if (extensionPct > in.maxPdhExtensionPct) {
+                            return deny(
+                                    EntryGateDisposition.EXHAUST,
+                                    "PDH_EXTENSION",
+                                    String.format(
+                                            Locale.US,
+                                            "Spot %s is %.2f%% below PDL %s (max allowed: %.1f%%) — entry too extended, skipping",
+                                            in.decisionPrice,
+                                            extensionPct,
+                                            in.pdl,
+                                            in.maxPdhExtensionPct));
+                        }
+                    }
+                }
             }
         }
 
-        // 5. PCR (Put-Call Ratio ATM ± 4 strikes) Confirmation Gate
+        // 5. PCR (Put-Call Ratio, ATM ± PCR_STRIKE_WINDOW) Neutral No-Trade Gate.
+        //    The band [neutralMin, neutralMax] (default 0.85–1.15) is a NO-TRADE zone that blocks
+        //    BOTH directions: LONG needs PCR above the band (bullish), SHORT needs PCR below it
+        //    (bearish). Anything inside the band is indecision and never triggers an entry.
         if (Boolean.TRUE.equals(in.pcrEnabled)) {
             if (in.pcr == null || in.pcr <= 0.0) {
                 return deny(
@@ -3679,30 +3902,40 @@ public class LowestVolumeReversalService {
                         "PCR",
                         "PCR filter enabled but no valid PCR (ATM ± 4) available (fail-closed)");
             }
-            if (in.direction == LowestVolumeDirection.LONG) {
-                double minLong = in.pcrMinLong != null ? in.pcrMinLong : 0.85;
-                if (in.pcr < minLong) {
-                    return deny(
-                            EntryGateDisposition.EXHAUST,
-                            "PCR",
-                            String.format(
-                                    Locale.US,
-                                    "PCR %.2f (ATM ± 4) below minimum threshold %.2f for LONG",
-                                    in.pcr,
-                                    minLong));
-                }
-            } else if (in.direction == LowestVolumeDirection.SHORT) {
-                double maxShort = in.pcrMaxShort != null ? in.pcrMaxShort : 1.15;
-                if (in.pcr > maxShort) {
-                    return deny(
-                            EntryGateDisposition.EXHAUST,
-                            "PCR",
-                            String.format(
-                                    Locale.US,
-                                    "PCR %.2f (ATM ± 4) above maximum threshold %.2f for SHORT",
-                                    in.pcr,
-                                    maxShort));
-                }
+            double neutralMin = in.pcrNeutralMin != null ? in.pcrNeutralMin : 0.85;
+            double neutralMax = in.pcrNeutralMax != null ? in.pcrNeutralMax : 1.15;
+
+            if (in.pcr >= neutralMin && in.pcr <= neutralMax) {
+                return deny(
+                        EntryGateDisposition.EXHAUST,
+                        "PCR",
+                        String.format(
+                                Locale.US,
+                                "PCR %.2f (ATM ± 4) is inside the neutral no-trade band "
+                                        + "[%.2f, %.2f] — indecision, no entry",
+                                in.pcr,
+                                neutralMin,
+                                neutralMax));
+            }
+            if (in.direction == LowestVolumeDirection.LONG && in.pcr < neutralMin) {
+                return deny(
+                        EntryGateDisposition.EXHAUST,
+                        "PCR",
+                        String.format(
+                                Locale.US,
+                                "PCR %.2f (ATM ± 4) is below %.2f — bearish, not confirmed for LONG",
+                                in.pcr,
+                                neutralMin));
+            }
+            if (in.direction == LowestVolumeDirection.SHORT && in.pcr > neutralMax) {
+                return deny(
+                        EntryGateDisposition.EXHAUST,
+                        "PCR",
+                        String.format(
+                                Locale.US,
+                                "PCR %.2f (ATM ± 4) is above %.2f — bullish, not confirmed for SHORT",
+                                in.pcr,
+                                neutralMax));
             }
         }
 
@@ -4009,20 +4242,20 @@ public class LowestVolumeReversalService {
         this.pcrFilterEnabled = pcrFilterEnabled;
     }
 
-    public double getPcrMinLong() {
-        return pcrMinLong;
+    public double getPcrNeutralMin() {
+        return pcrNeutralMin;
     }
 
-    public void setPcrMinLong(double pcrMinLong) {
-        this.pcrMinLong = pcrMinLong;
+    public void setPcrNeutralMin(double pcrNeutralMin) {
+        this.pcrNeutralMin = pcrNeutralMin;
     }
 
-    public double getPcrMaxShort() {
-        return pcrMaxShort;
+    public double getPcrNeutralMax() {
+        return pcrNeutralMax;
     }
 
-    public void setPcrMaxShort(double pcrMaxShort) {
-        this.pcrMaxShort = pcrMaxShort;
+    public void setPcrNeutralMax(double pcrNeutralMax) {
+        this.pcrNeutralMax = pcrNeutralMax;
     }
 
     public boolean isOpening15mRangeFilterEnabled() {
@@ -4055,6 +4288,77 @@ public class LowestVolumeReversalService {
 
     public void setOiSpurtsTopN(int oiSpurtsTopN) {
         this.oiSpurtsTopN = oiSpurtsTopN;
+    }
+
+    /**
+     * Injects the NSE OI spurts client. Spring wires this via {@code @Autowired(required=false)} so
+     * a missing bean leaves the 09:25 augmentation gracefully disabled (sector-only); tests inject
+     * a mock here.
+     *
+     * @param nseOiSpurtClient client used for the 09:25 NSE OI spurts fetch
+     */
+    @Autowired(required = false)
+    public void setNseOiSpurtClient(com.tradingbot.marketdata.NseOiSpurtClient nseOiSpurtClient) {
+        this.nseOiSpurtClient = nseOiSpurtClient;
+    }
+
+    /**
+     * @return whether the 09:25 NSE OI spurts fetch/merge is enabled
+     */
+    public boolean isNseOiEnabled() {
+        return nseOiEnabled;
+    }
+
+    /**
+     * Enables/disables the 09:25 NSE OI spurts fetch (tuning/test hook).
+     *
+     * @param nseOiEnabled true to enable
+     */
+    public void setNseOiEnabled(boolean nseOiEnabled) {
+        this.nseOiEnabled = nseOiEnabled;
+    }
+
+    /**
+     * @return HYBRID-mode count of OI-spurt additions merged at 09:25 (default 3)
+     */
+    public int getNseOiTopN() {
+        return nseOiTopN;
+    }
+
+    /**
+     * @param nseOiTopN HYBRID-mode count of OI-spurt additions merged at 09:25
+     */
+    public void setNseOiTopN(int nseOiTopN) {
+        this.nseOiTopN = nseOiTopN;
+    }
+
+    /**
+     * @return whether the mid-morning NSE reservoir refresh may top up the reservoir
+     */
+    public boolean isNseOiMidMorningRefreshEnabled() {
+        return nseOiMidMorningRefreshEnabled;
+    }
+
+    /**
+     * @param nseOiMidMorningRefreshEnabled true to enable the mid-morning NSE top-up
+     */
+    public void setNseOiMidMorningRefreshEnabled(boolean nseOiMidMorningRefreshEnabled) {
+        this.nseOiMidMorningRefreshEnabled = nseOiMidMorningRefreshEnabled;
+    }
+
+    /**
+     * @return true once the daily NSE OI merge (or a successful no-op selection) has completed
+     */
+    public boolean isNseOiAppliedToday() {
+        return nseOiAppliedToday;
+    }
+
+    /**
+     * @return true when the 09:25 fetch staged OI items awaiting morning-scan completion
+     */
+    public boolean hasPendingOiItems() {
+        List<com.tradingbot.model.NseOiSpurtItem> pending = pendingOiItems.get();
+        return pending != null && !pending.isEmpty();
     }
 
     public void initPdhPdlForSetup(LowestVolumeSetup setup) {
@@ -4666,10 +4970,11 @@ public class LowestVolumeReversalService {
                     gateInput.pdhPdlEnabled = pdhPdlFilterEnabled;
                     gateInput.pdh = activeSetup.getPdh();
                     gateInput.pdl = activeSetup.getPdl();
+                    gateInput.maxPdhExtensionPct = maxPdhExtensionPct;
                     gateInput.pcrEnabled = pcrFilterEnabled;
                     gateInput.pcr = activeSetup.getPcr();
-                    gateInput.pcrMinLong = pcrMinLong;
-                    gateInput.pcrMaxShort = pcrMaxShort;
+                    gateInput.pcrNeutralMin = pcrNeutralMin;
+                    gateInput.pcrNeutralMax = pcrNeutralMax;
                     gateInput.optionSrFilterEnabled = optionSrFilterEnabled;
                     gateInput.optionResistanceStrike = activeSetup.getOptionResistanceStrike();
                     gateInput.optionSupportStrike = activeSetup.getOptionSupportStrike();

@@ -373,7 +373,7 @@ public class ShoonyaMarketDataService {
     /**
      * Picks the nearest non-expired futures contract for {@code underlying} from SearchScrip
      * results. Only FUTSTK/FUTIDX entries whose tsym starts with the exact underlying are
-     * considered (anchored pattern), so e.g. a search for "LT" never matches "LTIM..." contracts.
+     * considered (anchored pattern), so e.g. a search for "LT" never matches "LTM..." contracts.
      * Contracts with an unparseable expiry are accepted as a last resort (first match wins).
      */
     private FuturesContract selectNearestFuturesContract(String underlying, JsonNode values) {

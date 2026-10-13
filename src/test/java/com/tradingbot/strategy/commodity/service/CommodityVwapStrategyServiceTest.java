@@ -105,6 +105,22 @@ class CommodityVwapStrategyServiceTest {
     }
 
     @Test
+    @DisplayName(
+            "Synthetic option chain (fabricated PCR 1.00) must default to NEUTRAL, never trade")
+    void testSyntheticChainDefaultsToNeutral() {
+        // The broker fallback always mirrors call OI against put OI, so PCR is exactly 1.00 no
+        // matter what the market is doing. That must be treated as "no data", not as indecision.
+        OptionChainResponse synthetic = createMockChain("CRUDEOIL", 13000, 10000, true);
+        when(quoteFeed.optionChain("CRUDEOIL")).thenReturn(synthetic);
+
+        service.evaluateDailyBias();
+
+        CommoditySetup setup = service.getSetup("CRUDEOIL");
+        assertThat(setup.getBias()).isEqualTo(CommodityBias.NEUTRAL);
+        assertThat(setup.getState()).isEqualTo(CommoditySetupState.SKIPPED);
+    }
+
+    @Test
     @DisplayName("Should arm ARMED_LONG when Bullish and 15m candle crosses above VWAP")
     void testBullishVwapCrossover() {
         CommoditySetup setup = service.getSetup("CRUDEOIL");
@@ -705,6 +721,11 @@ class CommodityVwapStrategyServiceTest {
     }
 
     private OptionChainResponse createMockChain(String underlying, long putOi, long callOi) {
+        return createMockChain(underlying, putOi, callOi, false);
+    }
+
+    private OptionChainResponse createMockChain(
+            String underlying, long putOi, long callOi, boolean synthetic) {
         double pcr = callOi > 0 ? (double) putOi / callOi : 0.0;
         double roundedPcr = Math.round(pcr * 100.0) / 100.0;
         return new OptionChainResponse(
@@ -716,7 +737,8 @@ class CommodityVwapStrategyServiceTest {
                 callOi,
                 putOi,
                 roundedPcr,
-                Collections.emptyList());
+                Collections.emptyList(),
+                synthetic);
     }
 
     private Candle createCandle(

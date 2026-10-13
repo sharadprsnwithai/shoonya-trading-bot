@@ -154,7 +154,14 @@ public class CommodityVwapStrategyService {
 
                 OptionChainResponse chain = quoteFeed != null ? quoteFeed.optionChain(clean) : null;
 
-                if (chain != null && (chain.totalCallOi() > 0 || chain.totalPutOi() > 0)) {
+                // A synthetic chain always reports PCR 1.00 — it must never be read as a genuine
+                // neutral reading, so it takes the same fail-safe NEUTRAL path as a missing chain.
+                boolean usable =
+                        chain != null
+                                && !chain.isSynthetic()
+                                && (chain.totalCallOi() > 0 || chain.totalPutOi() > 0);
+
+                if (usable) {
                     double pcr = chain.pcr();
                     CommodityBias bias =
                             CommodityBias.fromPcr(
@@ -187,11 +194,14 @@ public class CommodityVwapStrategyService {
                     log.info("[COMMODITY-VWAP] {} PCR: {} -> Bias: {}{}", clean, pcr, bias, zNote);
                 } else {
                     setup.updateBias(CommodityBias.NEUTRAL, 0.0);
-                    telegramMsg.append(
-                            String.format("⚪ *%s*: Option chain unavailable ➔ *NEUTRAL*\n", clean));
-                    log.warn(
-                            "[COMMODITY-VWAP] Option chain unavailable for {}. Defaulted to NEUTRAL.",
-                            clean);
+                    String why =
+                            chain == null
+                                    ? "Option chain unavailable"
+                                    : chain.isSynthetic()
+                                            ? "Option chain is synthetic (fabricated PCR 1.00)"
+                                            : "No open interest to ratio";
+                    telegramMsg.append(String.format("⚪ *%s*: %s ➔ *NEUTRAL*\n", clean, why));
+                    log.warn("[COMMODITY-VWAP] {} for {}. Defaulted to NEUTRAL.", why, clean);
                 }
             } catch (Exception e) {
                 setup.updateBias(CommodityBias.NEUTRAL, 0.0);

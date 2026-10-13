@@ -45,6 +45,13 @@ public class ShoonyaOptionChainService {
 
     public static final String DEFAULT_NIFTY_FUT_TOKEN = "68407";
 
+    /**
+     * Number of strikes either side of ATM aggregated into every Put-Call Ratio calculation. Kept
+     * at 4 (a 9-strike window) so the LVR equity gate and the MCX commodity bias read the same
+     * window.
+     */
+    public static final int PCR_STRIKE_WINDOW = 4;
+
     private final ShoonyaConfig config;
     private final ShoonyaAuthenticator authenticator;
     private final ShoonyaMarketDataService marketDataService;
@@ -172,9 +179,11 @@ public class ShoonyaOptionChainService {
             return mockOptionChain(
                     cleanUnderlying,
                     explicitStrike != null ? explicitStrike : defaultSpotPrice(cleanUnderlying),
-                    count);
+                    count,
+                    "Shoonya disabled (SHOONYA_ENABLED=false)");
         }
 
+        String lastFailure = "no data returned by GetOptionChain";
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
                 String sessionToken = authenticator.getOrAuthenticateToken();
@@ -252,7 +261,7 @@ public class ShoonyaOptionChainService {
 
                 if (resp.statusCode() != 200) {
                     if (respBody != null && respBody.contains("Invalid Trading Symbol")) {
-                        log.debug(
+                        log.warn(
                                 "Option chain not directly available for underlying {} (HTTP {}): {}",
                                 futSymbol,
                                 resp.statusCode(),
@@ -264,17 +273,26 @@ public class ShoonyaOptionChainService {
                                 futSymbol,
                                 respBody);
                     }
-                    return mockOptionChain(cleanUnderlying, atmStrike, count);
+                    return mockOptionChain(
+                            cleanUnderlying,
+                            atmStrike,
+                            count,
+                            String.format(
+                                    "GetOptionChain HTTP %d for tsym=%s",
+                                    resp.statusCode(), futSymbol));
                 }
 
                 JsonNode root = objectMapper.readTree(respBody);
 
                 if (!"Ok".equalsIgnoreCase(root.path("stat").asText())) {
-                    log.warn(
-                            "GetOptionChain API returned non-Ok for {}: {}",
-                            futSymbol,
-                            root.path("emsg").asText(resp.body()));
-                    return mockOptionChain(cleanUnderlying, atmStrike, count);
+                    String emsg = root.path("emsg").asText(respBody);
+                    log.warn("GetOptionChain API returned non-Ok for {}: {}", futSymbol, emsg);
+                    return mockOptionChain(
+                            cleanUnderlying,
+                            atmStrike,
+                            count,
+                            String.format(
+                                    "GetOptionChain non-Ok for tsym=%s: %s", futSymbol, emsg));
                 }
 
                 JsonNode values = root.path("values");
@@ -459,6 +477,10 @@ public class ShoonyaOptionChainService {
                         strikeList);
 
             } catch (Exception e) {
+                lastFailure =
+                        String.format(
+                                "attempt %d failed for tsym=%s: %s",
+                                attempt, futSymbol, e.getMessage());
                 log.warn(
                         "Option chain fetch attempt {} failed for {}: {}",
                         attempt,
@@ -475,14 +497,16 @@ public class ShoonyaOptionChainService {
                             explicitStrike != null
                                     ? explicitStrike
                                     : defaultSpotPrice(cleanUnderlying),
-                            count);
+                            count,
+                            lastFailure);
                 }
             }
         }
         return mockOptionChain(
                 cleanUnderlying,
                 explicitStrike != null ? explicitStrike : defaultSpotPrice(cleanUnderlying),
-                count);
+                count,
+                lastFailure);
     }
 
     private JsonNode fetchQuote(String sessionToken, String exchange, String token) {
@@ -531,8 +555,29 @@ public class ShoonyaOptionChainService {
                 || body.contains("INVALID_SESSION");
     }
 
+    /**
+     * Fabricated fallback chain used when the live fetch cannot be satisfied.
+     *
+     * <p>The generated call/put OI ladders are exact mirror images of each other, so the resulting
+     * Put-Call Ratio is always exactly {@code 1.00}. The payload is therefore flagged {@code
+     * synthetic} and logged at WARN so callers can fail closed instead of reading a fabricated 1.00
+     * as a genuine neutral signal.
+     *
+     * @param underlying the underlying symbol
+     * @param atmStrike the strike the synthetic ladder is centred on
+     * @param count number of strikes either side of ATM
+     * @param reason why the live fetch was abandoned
+     * @return a synthetic chain response
+     */
     private OptionChainResponse mockOptionChain(
-            String underlying, BigDecimal atmStrike, int count) {
+            String underlying, BigDecimal atmStrike, int count, String reason) {
+        log.warn(
+                "[OPTION-CHAIN] SYNTHETIC chain returned for {} (ATM={}, ±{}): {}. "
+                        + "PCR is fabricated and always 1.00 — downstream gates must fail closed.",
+                underlying,
+                atmStrike,
+                count,
+                reason);
         List<OptionStrike> list = new ArrayList<>();
         BigDecimal strikeStep = StockFnoRegistry.getStrikeStep(underlying, atmStrike);
         long totalCallOi = 0;
@@ -607,7 +652,8 @@ public class ShoonyaOptionChainService {
                 totalCallOi,
                 totalPutOi,
                 Math.round(pcr * 100.0) / 100.0,
-                list);
+                list,
+                true);
     }
 
     private BigDecimal defaultSpotPrice(String underlying) {

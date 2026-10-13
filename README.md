@@ -47,7 +47,7 @@ The bot runs automated strategies on the NIFTY 50 index and high-liquidity F&O e
 
 Intraday stock futures and options momentum reversal on 5‑minute candles (`NSE` equities):
 
-1. **Morning Universe Scan (09:25:10 IST):** Fixes the daily watchlist from the F&O universe (Top Gainers and Top Losers) based on sectoral breadth.
+1. **Morning Universe Scan (09:25 IST, two-phase):** the 09:25:00 job fetches NSE's live OI spurts feed (`LVR_NSE_OI_*` keys); the 09:25:20 scan fixes the sector watchlist (top 3 of the winning sectoral index), then merges the top 3 OI-spurt stocks at scan completion — a 6-stock `HYBRID` watchlist (`OI_SPURTS` mode leads with OI picks and demotes sector picks to the reservoir). NSE fetch failures degrade to sector-only selection.
 2. **Direction & Lowest Volume Candle (≥ 09:30 IST):** Strategy direction is determined by the 1st 5-minute candle (Green → LONG, Red → SHORT). Evaluates completed 5m candles after 09:30 AM to find the lowest volume opposite-color candle as the trigger.
 3. **Entry Cutoff:** Hard cutoff at **11:00 AM / 11:30 AM IST** — no new setups or armed triggers after cutoff; open trades continue to target / stop-loss / trailing exit.
 4. **Execution:** Futures or ATM options bought via decoupled execution consumers with 1:2 risk-reward, cost floor, and 10 EMA trailing.
@@ -142,6 +142,12 @@ cp .env.example .env
 | `CAR_WEEKLY_SUNDAY_CRON` | `0 0 10 ? * SUN` | CAR Weekly GTT evaluation schedule. |
 | `LVR_ENABLED` | `true` | Enable/disable Lowest Volume Reversal strategy. |
 | `LVR_CRON` | `20 */5 9-15 ? * MON-FRI` | LVR 5m candle evaluation schedule. |
+| `LVR_SCANNER_MODE` | `HYBRID` | `HYBRID` (sector picks + NSE OI spurts) or `OI_SPURTS` (OI-led watchlist, sector picks demoted to reservoir). |
+| `LVR_NSE_OI_ENABLED` | `true` | Fetch NSE's live OI spurts feed at 09:25 for phase-2 watchlist augmentation. |
+| `LVR_NSE_OI_TOP_N` | `3` | How many NSE OI-spurt stocks are merged into the HYBRID watchlist at 09:25. |
+| `LVR_NSE_OI_ATTEMPTS` | `3` | HTTP retry attempts against the NSE OI spurts endpoint before degrading to sector-only selection. |
+| `LVR_NSE_OI_CRON` | `0 25 9 ? * MON-FRI` | Schedule of the NSE OI spurts fetch (fires before the 09:25:20 morning scan). |
+| `LVR_NSE_OI_MIDMORNING_REFRESH` | `true` | Top up the standby reservoir from the NSE OI feed during the mid-morning refresh. |
 
 ---
 

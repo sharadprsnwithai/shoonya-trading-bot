@@ -81,7 +81,7 @@ public final class NiftySectorRegistry {
                         "TECHM",
                         "HCLTECH",
                         "COFORGE",
-                        "LTIM",
+                        "LTM",
                         "PERSISTENT",
                         "MPHASIS",
                         "LTTS"));
