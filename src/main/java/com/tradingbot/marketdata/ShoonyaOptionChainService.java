@@ -60,6 +60,16 @@ public class ShoonyaOptionChainService {
     private final HttpClient httpClient;
     private final ExecutorService executor = Executors.newFixedThreadPool(8);
 
+    // GetQuotes degrades silently under burst: responses keep stat=Ok but drop fields (oi above
+    // all), which the window-completeness guard then rejects — measured at 11-14 of 18 covered
+    // under a concurrent burst versus 18 of 18 when paced near 8 req/s. Every quote request this
+    // service makes therefore queues on a single shared slot machine capped below the broker's
+    // ~10 req/s data limit, so concurrent chain reads throttle themselves instead of tripping
+    // the broker's field-drop.
+    private static final long QUOTE_MIN_INTERVAL_NANOS = 125_000_000L; // 8 req/s aggregate
+    private final Object quoteSlotLock = new Object();
+    private long nextQuoteSlotNanos = 0L;
+
     @Autowired
     public ShoonyaOptionChainService(
             ShoonyaConfig config,
@@ -402,96 +412,24 @@ public class ShoonyaOptionChainService {
                     }
                 }
 
-                // 4. Fetch quotes for the window's option contracts concurrently.
+                // 4. Fetch quotes for the window's option contracts. The batch is drained through
+                //    the shared quote slot machine (see fetchQuote), and whatever still comes back
+                //    without usable data gets one paced retry before the window is declared
+                //    unusable — a single throttled row must not silently narrow the sample the
+                //    ratio is computed from, but a transient hiccup also must not fabricate one.
                 AtomicInteger quotesSucceeded = new AtomicInteger();
                 if (fetchQuotes) {
-                    List<CompletableFuture<Void>> futures =
-                            allContracts.stream()
-                                    .map(
-                                            draft ->
-                                                    CompletableFuture.runAsync(
-                                                            () -> {
-                                                                try {
-                                                                    JsonNode q =
-                                                                            fetchQuote(
-                                                                                    sessionToken,
-                                                                                    segment,
-                                                                                    draft.token);
-                                                                    // A missing `stat` must fail
-                                                                    // rather than default to Ok:
-                                                                    // an empty or throttled payload
-                                                                    // used to read as success and
-                                                                    // land in the aggregate with
-                                                                    // oi=0.
-                                                                    String stat =
-                                                                            q == null
-                                                                                    ? ""
-                                                                                    : q.path("stat")
-                                                                                            .asText(
-                                                                                                    "");
-                                                                    if (!"Ok"
-                                                                            .equalsIgnoreCase(
-                                                                                    stat)) {
-                                                                        return;
-                                                                    }
-                                                                    // A row that parses but carries
-                                                                    // no oi cannot be
-                                                                    // told apart from a genuine
-                                                                    // zero, so reject it and
-                                                                    // let the coverage check below
-                                                                    // decide whether the
-                                                                    // window can still be trusted.
-                                                                    if (!q.has("oi")) {
-                                                                        return;
-                                                                    }
-                                                                    draft.ltp =
-                                                                            new BigDecimal(
-                                                                                    q.path("lp")
-                                                                                            .asText(
-                                                                                                    "0"));
-                                                                    draft.openInterest =
-                                                                            q.path("oi").asLong(0);
-                                                                    draft.volume =
-                                                                            q.path("v").asLong(0);
-                                                                    draft.bidPrice =
-                                                                            new BigDecimal(
-                                                                                    q.path("bp1")
-                                                                                            .asText(
-                                                                                                    "0"));
-                                                                    draft.askPrice =
-                                                                            new BigDecimal(
-                                                                                    q.path("sp1")
-                                                                                            .asText(
-                                                                                                    "0"));
-                                                                    draft.previousClose =
-                                                                            new BigDecimal(
-                                                                                    q.path("c")
-                                                                                            .asText(
-                                                                                                    "0"));
-                                                                    quotesSucceeded
-                                                                            .incrementAndGet();
-                                                                } catch (Exception e) {
-                                                                    log.debug(
-                                                                            "Quote fetch failed for token {}: {}",
-                                                                            draft.token,
-                                                                            e.getMessage(),
-                                                                            e);
-                                                                }
-                                                            },
-                                                            executor))
-                                    .toList();
+                    awaitQuoteBatch(allContracts, sessionToken, segment, quotesSucceeded);
 
-                    try {
-                        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                                .get(10, java.util.concurrent.TimeUnit.SECONDS);
-                    } catch (Exception e) {
-                        if (e instanceof InterruptedException) {
+                    List<OptionContractDraft> stragglers =
+                            allContracts.stream().filter(d -> !d.quoteReceived).toList();
+                    if (!stragglers.isEmpty()) {
+                        try {
+                            Thread.sleep(400);
+                        } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                         }
-                        log.warn(
-                                "Option chain quote batch fetch timed out or interrupted: {}",
-                                e.getMessage(),
-                                e);
+                        awaitQuoteBatch(stragglers, sessionToken, segment, quotesSucceeded);
                     }
 
                     // Fail closed. A window missing quotes is not a narrower window, it is a
@@ -615,8 +553,118 @@ public class ShoonyaOptionChainService {
                 lastFailure);
     }
 
+    /**
+     * Fetches {@code GetQuotes} for every contract in {@code contracts} through the shared quote
+     * slot machine and waits for the batch to settle (or until the timeout elapses — the coverage
+     * guard in the caller still decides usability either way).
+     *
+     * @param contracts the window drafts to quote
+     * @param sessionToken the authenticated session key
+     * @param segment the exchange segment, e.g. {@code NFO}
+     * @param quotesSucceeded counter of contracts filled with a usable quote, incremented in place
+     */
+    private void awaitQuoteBatch(
+            List<OptionContractDraft> contracts,
+            String sessionToken,
+            String segment,
+            AtomicInteger quotesSucceeded) {
+        List<CompletableFuture<Void>> futures =
+                contracts.stream()
+                        .map(
+                                draft ->
+                                        CompletableFuture.runAsync(
+                                                () ->
+                                                        fetchWindowQuote(
+                                                                draft,
+                                                                sessionToken,
+                                                                segment,
+                                                                quotesSucceeded),
+                                                executor))
+                        .toList();
+
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.warn(
+                    "Option chain quote batch fetch timed out or interrupted: {}",
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    /**
+     * Quotes one window contract and folds the response into its draft. A row is only accepted when
+     * {@code stat} is {@code Ok} and it carries {@code oi}: a missing {@code stat} must fail rather
+     * than default to Ok (an empty or throttled payload used to read as success and land in the
+     * aggregate with {@code oi=0}), and a row that parses but carries no {@code oi} cannot be told
+     * apart from a genuine zero, so it is rejected and the coverage guard decides whether the
+     * window can still be trusted.
+     *
+     * @param draft the contract draft to fill in place
+     * @param sessionToken the authenticated session key
+     * @param segment the exchange segment, e.g. {@code NFO}
+     * @param quotesSucceeded counter incremented when the draft is filled
+     */
+    private void fetchWindowQuote(
+            OptionContractDraft draft,
+            String sessionToken,
+            String segment,
+            AtomicInteger quotesSucceeded) {
+        try {
+            JsonNode q = fetchQuote(sessionToken, segment, draft.token);
+            String stat = q == null ? "" : q.path("stat").asText("");
+            if (!"Ok".equalsIgnoreCase(stat)) {
+                return;
+            }
+            if (!q.has("oi")) {
+                return;
+            }
+            draft.ltp = new BigDecimal(q.path("lp").asText("0"));
+            draft.openInterest = q.path("oi").asLong(0);
+            draft.volume = q.path("v").asLong(0);
+            draft.bidPrice = new BigDecimal(q.path("bp1").asText("0"));
+            draft.askPrice = new BigDecimal(q.path("sp1").asText("0"));
+            draft.previousClose = new BigDecimal(q.path("c").asText("0"));
+            draft.quoteReceived = true;
+            quotesSucceeded.incrementAndGet();
+        } catch (Exception e) {
+            log.debug("Quote fetch failed for token {}: {}", draft.token, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Reserves the next global slot for a GetQuotes request and parks the caller until its turn.
+     *
+     * <p>The slot machine is shared by every quote this service issues, so N concurrent chain reads
+     * present their requests at the capped aggregate rate instead of N times it — which is what
+     * keeps the broker from answering {@code stat=Ok} while silently dropping {@code oi}. The first
+     * caller proceeds immediately; an interrupted caller skips the wait and lets the coverage guard
+     * decide the outcome.
+     */
+    private void awaitQuoteSlot() {
+        long deadline;
+        synchronized (quoteSlotLock) {
+            long now = System.nanoTime();
+            long slot = Math.max(now, nextQuoteSlotNanos);
+            nextQuoteSlotNanos = slot + QUOTE_MIN_INTERVAL_NANOS;
+            deadline = slot;
+        }
+        while (!Thread.currentThread().isInterrupted()) {
+            long waitNanos = deadline - System.nanoTime();
+            if (waitNanos <= 0) {
+                return;
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(waitNanos);
+        }
+    }
+
     private JsonNode fetchQuote(String sessionToken, String exchange, String token) {
         try {
+            awaitQuoteSlot();
             Map<String, Object> payload =
                     Map.of(
                             "uid", config.getUserId(),
@@ -803,6 +851,9 @@ public class ShoonyaOptionChainService {
         BigDecimal bidPrice = BigDecimal.ZERO;
         BigDecimal askPrice = BigDecimal.ZERO;
         BigDecimal previousClose = BigDecimal.ZERO;
+
+        /** Set once this contract's quote came back with a usable (stat-Ok, oi-carrying) row. */
+        volatile boolean quoteReceived = false;
 
         OptionContractDraft callDraft;
         OptionContractDraft putDraft;
