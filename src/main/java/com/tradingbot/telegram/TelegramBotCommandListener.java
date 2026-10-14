@@ -242,7 +242,7 @@ public class TelegramBotCommandListener {
                                 + "• Active Setups: %d\n"
                                 + "• Open Positions: %d\n"
                                 + "• Closed Trades: %d\n"
-                                + "• Exit Mode: *1:2 RR + Cost Floor + 10 EMA Trail*",
+                                + "• Exit Mode: *%s RR + Cost Floor + 10 EMA Trail*",
                         sec.sentiment(),
                         sec.advances(),
                         sec.declines(),
@@ -256,7 +256,8 @@ public class TelegramBotCommandListener {
                                 : "None",
                         lvrService.getActiveSetups().size(),
                         lvrService.getOpenPositions().size(),
-                        lvrService.getTradeHistory().size());
+                        lvrService.getTradeHistory().size(),
+                        lvrService.rrLabel());
 
             case "/scan":
             case "/lvr_scan":

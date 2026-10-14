@@ -455,8 +455,10 @@ class LowestVolumeReversalServiceTest {
         assertThat(pos.getStockEntryPrice()).isEqualByComparingTo("1876.10");
         assertThat(pos.getEntryPremium()).isEqualByComparingTo("1876.10");
         // Trigger was 1876.05 with SL 1868.95. Live entry at 1876.10 (Risk = 7.15) -> Target =
-        // 1876.10 + 2 * 7.15 = 1890.40
-        assertThat(pos.getTarget1StockPrice()).isEqualByComparingTo("1890.40");
+        // 1876.10 + target-rr * 7.15 = 1876.10 + 2.5 * 7.15 = 1893.975 -> tick-rounded 1894.00.
+        // (target-rr default is 2.5; this assertion is the regression guard for the executed
+        // target silently hardcoding a ratio instead of reading the configured one.)
+        assertThat(pos.getTarget1StockPrice()).isEqualByComparingTo("1894.00");
         assertThat(service.getOpenPositions()).containsKey("SUNPHARMA");
     }
 
@@ -492,8 +494,22 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Target 1:2 dynamically recalculates from actual entry spot price under slippage")
+    @DisplayName(
+            "rrLabel mirrors the configured target-rr so alerts cannot drift from the executed target")
+    void testRrLabelFollowsConfiguredTargetRr() {
+        assertThat(service.rrLabel()).isEqualTo("1:2.5"); // application.properties default
+        service.setTargetRr(2.0);
+        assertThat(service.rrLabel()).isEqualTo("1:2");
+        service.setTargetRr(3.5);
+        assertThat(service.rrLabel()).isEqualTo("1:3.5");
+    }
+
+    @Test
+    @DisplayName("Target dynamically recalculates from actual entry spot using the configured RR")
     void testDynamicTargetCalculationOnSlippage() {
+        // Deliberately NOT the default (2.5) and NOT the old hardcode (2.0): if the executed
+        // target ever stops reading targetRr again, this assertion fails either way.
+        service.setTargetRr(3.0);
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
                 Candle.of5m(
@@ -510,13 +526,14 @@ class LowestVolumeReversalServiceTest {
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
 
         // Live entry happens at 101.05 (+1.00 slippage). Actual Risk = 101.05 - 98.05 = 3.00.
-        // Dynamic Target must be 101.05 + (2 * 3.00) = 107.05 (exact 1:2 RR).
+        // Target must be 101.05 + (3.0 * 3.00) = 110.05 — i.e. the configured target-rr, recomputed
+        // from the ACTUAL entry price (not the armed trigger) so slippage cannot distort the ratio.
         LowestVolumePaperPosition pos =
                 service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(101.05));
 
         assertThat(pos.getStockEntryPrice()).isEqualByComparingTo("101.05");
         assertThat(pos.getCurrentStockSl()).isEqualByComparingTo("98.05");
-        assertThat(pos.getTarget1StockPrice()).isEqualByComparingTo("107.05");
+        assertThat(pos.getTarget1StockPrice()).isEqualByComparingTo("110.05");
     }
 
     @Test
@@ -665,7 +682,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Futures LONG Position - 100% Full Exit at 1:2 Target in evaluateOpenPositions")
+    @DisplayName(
+            "Futures LONG Position - 100% Full Exit at the configured Target in evaluateOpenPositions")
     void testFuturesFullExitTarget14() {
         service.setInstrumentType(LvrInstrumentType.FUTURES);
         service.setExitMode(LvrExitMode.FULL_TARGET_1_2);
@@ -690,11 +708,12 @@ class LowestVolumeReversalServiceTest {
                 service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1875.00));
         assertThat(service.getOpenPositions()).hasSize(1);
 
-        // Mock spot price reaching 1:2 target (1882.00 >= 1881.05)
+        // Target = 1875.00 (entry) + 2.5 * (1875.00 - 1872.05) = 1882.375 -> tick-rounded 1882.40.
+        // Mock spot clearing that level (1883.00 >= 1882.40)
         com.fasterxml.jackson.databind.ObjectMapper mapper =
                 new com.fasterxml.jackson.databind.ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
-                .thenReturn(mapper.createObjectNode().put("lp", "1882.00"));
+                .thenReturn(mapper.createObjectNode().put("lp", "1883.00"));
 
         service.evaluateOpenPositions(LocalTime.of(10, 15));
 
@@ -789,8 +808,8 @@ class LowestVolumeReversalServiceTest {
         assertThat(position.getOptionType()).isEqualTo("PE");
         assertThat(position.getStockEntryPrice()).isEqualByComparingTo("96.90");
         assertThat(position.getCurrentStockSl()).isEqualByComparingTo("102.05");
-        // Actual Risk = 102.05 - 96.90 = 5.15. Target = 96.90 - (2 * 5.15) = 86.60
-        assertThat(position.getTarget1StockPrice()).isEqualByComparingTo("86.60");
+        // Actual Risk = 102.05 - 96.90 = 5.15. Target = 96.90 - (2.5 * 5.15) = 84.025 -> 84.05
+        assertThat(position.getTarget1StockPrice()).isEqualByComparingTo("84.05");
         assertThat(position.getExitMode()).isEqualTo(service.getExitMode());
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
         assertThat(setup.getTradeAttempts()).isEqualTo(1);
@@ -1399,7 +1418,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Futures LONG Position - 50% Profit Booked at 1:2 RR and SL moved to Cost")
+    @DisplayName(
+            "Futures LONG Position - 50% Profit Booked at the configured Target and SL moved to Cost")
     void testFuturesPartialExitTarget14AndTrailSl11() {
         service.setInstrumentType(LvrInstrumentType.FUTURES);
         service.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
@@ -1416,7 +1436,7 @@ class LowestVolumeReversalServiceTest {
                         5000),
                 BigDecimal.valueOf(1870.05),
                 BigDecimal.valueOf(1860.05), // Unit Risk = 10.00
-                BigDecimal.valueOf(1890.05)); // 1:2 Target = 1870.05 + 20 = 1890.05
+                BigDecimal.valueOf(1895.05)); // Armed at target-rr: 1870.05 + 25 = 1895.05
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
         service.getActiveSetups().put("SUNPHARMA", setup);
 
@@ -1424,11 +1444,12 @@ class LowestVolumeReversalServiceTest {
                 service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1870.00));
         assertThat(service.getOpenPositions()).hasSize(1);
 
-        // Mock spot reaching 1:2 target (1890.50 >= 1890.05)
+        // Executed Target = 1870.00 + 2.5 * (1870.00 - 1860.05) = 1894.875 -> 1894.90.
+        // Mock spot reaching it (1895.50 >= 1894.90)
         com.fasterxml.jackson.databind.ObjectMapper mapper =
                 new com.fasterxml.jackson.databind.ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
-                .thenReturn(mapper.createObjectNode().put("lp", "1890.50").put("ap", "1875.00"));
+                .thenReturn(mapper.createObjectNode().put("lp", "1895.50").put("ap", "1875.00"));
 
         service.evaluateOpenPositions(LocalTime.of(10, 30));
 
@@ -1456,7 +1477,8 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("Futures SHORT Position - 50% Profit Booked at 1:2 RR and SL moved to Cost")
+    @DisplayName(
+            "Futures SHORT Position - 50% Profit Booked at the configured Target and SL moved to Cost")
     void testFuturesShortPartialExitTarget14AndTrailSl11() {
         service.setInstrumentType(LvrInstrumentType.FUTURES);
         service.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
@@ -1473,7 +1495,7 @@ class LowestVolumeReversalServiceTest {
                         4000),
                 BigDecimal.valueOf(97.95),
                 BigDecimal.valueOf(102.05), // Unit risk = 4.10
-                BigDecimal.valueOf(89.75)); // 1:2 Target = 97.95 - 8.20 = 89.75
+                BigDecimal.valueOf(87.70)); // Armed at target-rr: 97.95 - 10.25 = 87.70
         setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
         service.getActiveSetups().put("PVRINOX", setup);
 
@@ -1481,11 +1503,12 @@ class LowestVolumeReversalServiceTest {
                 service.executePositionEntry("PVRINOX", setup, BigDecimal.valueOf(98.00));
         assertThat(service.getOpenPositions()).hasSize(1);
 
-        // Mock spot reaching 1:2 target (89.00 <= 89.75)
+        // Executed Target = 98.00 - 2.5 * (102.05 - 98.00) = 87.875 -> 87.90.
+        // Mock spot reaching it (87.50 <= 87.90)
         com.fasterxml.jackson.databind.ObjectMapper mapper =
                 new com.fasterxml.jackson.databind.ObjectMapper();
         when(marketDataService.fetchQuote(any(), any()))
-                .thenReturn(mapper.createObjectNode().put("lp", "89.00").put("ap", "90.00"));
+                .thenReturn(mapper.createObjectNode().put("lp", "87.50").put("ap", "90.00"));
 
         service.evaluateOpenPositions(LocalTime.of(10, 45));
 

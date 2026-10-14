@@ -44,8 +44,10 @@ import org.springframework.stereotype.Service;
  * Intraday Framework. 1. 09:25 IST: Market Sentiment (NIFTY 50 Adv/Dec) -> 11 NSE Sector ranking ->
  * F&O candidate stocks. 2. 09:30 - 13:00 IST: 5-minute candle engine. Ignored C1-C3 baseline,
  * opposite-color volume dry-up triggers. 3. Execution: Stock Futures Buying (LONG) and Selling
- * (SHORT). 4. Risk Management: 1:2 RR Target (50% partial profit booking), Cost SL floor on runner,
- * 5m 10 EMA dynamic trailing exit, 15:00 IST Hard EOD square-off.
+ * (SHORT). 4. Risk Management: Reward sized at the configured {@code target-rr} (default 1:2.5; the
+ * SAME ratio arms the setup, sizes the planned reward and sets the executed target), 50% partial
+ * profit booking, Cost SL floor on runner, 5m 10 EMA dynamic trailing exit, 15:00 IST Hard EOD
+ * square-off.
  */
 @Service
 public class LowestVolumeReversalService {
@@ -1419,7 +1421,7 @@ public class LowestVolumeReversalService {
                                                     + "• Symbol: *%s* (%s)\n"
                                                     + "• 5m Pullback Vol: `%d` (<= day lowest `%d`)\n"
                                                     + "• Trigger Price: `₹%.2f`\n"
-                                                    + "• Spot SL: `₹%.2f` | 1:2 Target: `₹%.2f`",
+                                                    + "• Spot SL: `₹%.2f` | %s Target: `₹%.2f`",
                                             symbol,
                                             setup.getDirection(),
                                             evaluated.getTriggerCandle() != null
@@ -1428,6 +1430,7 @@ public class LowestVolumeReversalService {
                                             evaluated.getDayLowestVolume(),
                                             setup.getTriggerPrice().doubleValue(),
                                             setup.getStopLossPrice().doubleValue(),
+                                            rrLabel(),
                                             setup.getTarget1Price().doubleValue()));
                         }
                     }
@@ -1445,7 +1448,7 @@ public class LowestVolumeReversalService {
     }
 
     /**
-     * 30-second live check: Monitors spot price breaches for Armed Triggers, SL, and 1:4 Target.
+     * 30-second live check: Monitors spot price breaches for Armed Triggers, SL, and the Target.
      */
     public void evaluateLivePriceActions() {
         if (marketDataService == null) return;
@@ -1480,7 +1483,7 @@ public class LowestVolumeReversalService {
             }
         }
 
-        // 2. Check Open Positions for Spot SL & 1:2 Target (Intra-candle check: isCandleClose =
+        // 2. Check Open Positions for Spot SL & Target (Intra-candle check: isCandleClose =
         // false)
         // Runs unconditionally even if enabled == false to protect open trades
         if (!openPositions.isEmpty()) {
@@ -1557,7 +1560,8 @@ public class LowestVolumeReversalService {
                 }
             }
 
-            // Invalidate setup if live spot already reached/passed 1:2 target before entry
+            // Invalidate setup if live spot already reached/passed the configured target before
+            // entry
             if (setup.getTarget1Price() != null) {
                 boolean targetPassed = false;
                 if (setup.getDirection() == LowestVolumeDirection.SHORT) {
@@ -1890,8 +1894,12 @@ public class LowestVolumeReversalService {
                     unitRisk.multiply(BigDecimal.valueOf(totalQty))
                             .setScale(2, RoundingMode.HALF_UP);
         }
+        // Reward is sized from the SAME configured ratio the setup armed with — a hardcoded
+        // multiple here would make the pre-trade budget/R:R preview disagree with the target
+        // actually sent to the broker.
         BigDecimal plannedReward =
-                unitRisk.multiply(BigDecimal.valueOf(2)).multiply(BigDecimal.valueOf(totalQty));
+                unitRisk.multiply(BigDecimal.valueOf(targetRr))
+                        .multiply(BigDecimal.valueOf(totalQty));
 
         // M2 pre-trade budget: don't open a position whose planned risk alone would breach the
         // daily loss budget (in addition to the tripped-breaker latch which uses live P&L).
@@ -1911,14 +1919,18 @@ public class LowestVolumeReversalService {
             }
         }
 
-        // Dynamically compute exact 1:2 Target from actual entry spot price to prevent RR
-        // distortion
+        // Dynamically compute the Target from the actual entry spot price (to prevent RR
+        // distortion under slippage) using the configured target-rr. Hardcoding a ratio here
+        // would silently bypass the headline tuning knob — the setup armed at targetRr, so the
+        // executed position must close the same ratio.
         BigDecimal actualTarget1;
         if (setup.getDirection() == LowestVolumeDirection.SHORT) {
             actualTarget1 =
-                    roundToTick(spotPrice.subtract(unitRisk.multiply(BigDecimal.valueOf(2))));
+                    roundToTick(
+                            spotPrice.subtract(unitRisk.multiply(BigDecimal.valueOf(targetRr))));
         } else {
-            actualTarget1 = roundToTick(spotPrice.add(unitRisk.multiply(BigDecimal.valueOf(2))));
+            actualTarget1 =
+                    roundToTick(spotPrice.add(unitRisk.multiply(BigDecimal.valueOf(targetRr))));
         }
 
         String tradeId = "LVR-" + tradeCounter.getAndIncrement();
@@ -2006,7 +2018,7 @@ public class LowestVolumeReversalService {
                                         + "• Contract: `%s`\n"
                                         + "• Entry Price: `₹%.2f` (%d lots / %d qty)\n"
                                         + "• Spot SL: `₹%.2f` (Risk: `₹%.2f` / `₹%.2f`)\n"
-                                        + "• 1:2 Target Price: `₹%.2f` (Reward: `₹%.2f` /"
+                                        + "• %s Target Price: `₹%.2f` (Reward: `₹%.2f` /"
                                         + " `+₹%.2f`)",
                                 symbol,
                                 setup.getDirection(),
@@ -2017,8 +2029,9 @@ public class LowestVolumeReversalService {
                                 setup.getStopLossPrice().doubleValue(),
                                 unitRisk.doubleValue(),
                                 plannedRisk.doubleValue(),
+                                rrLabel(),
                                 actualTarget1.doubleValue(),
-                                unitRisk.multiply(BigDecimal.valueOf(2)).doubleValue(),
+                                unitRisk.multiply(BigDecimal.valueOf(targetRr)).doubleValue(),
                                 plannedReward.doubleValue()));
             }
         } else {
@@ -2126,7 +2139,7 @@ public class LowestVolumeReversalService {
                                         + "• Contract: `%s`\n"
                                         + "• Option LTP: `₹%.2f` (%d lots / %d qty)\n"
                                         + "• Spot Entry: `₹%.2f` | Spot SL: `₹%.2f`\n"
-                                        + "• Spot Target 1 (1:2 RR): `₹%.2f`",
+                                        + "• Spot Target 1 (%s RR): `₹%.2f`",
                                 symbol,
                                 setup.getDirection(),
                                 optSymbol,
@@ -2135,6 +2148,7 @@ public class LowestVolumeReversalService {
                                 totalQty,
                                 spotPrice.doubleValue(),
                                 setup.getStopLossPrice().doubleValue(),
+                                rrLabel(),
                                 actualTarget1.doubleValue()));
             }
         }
@@ -2149,9 +2163,7 @@ public class LowestVolumeReversalService {
         return executePositionEntry(symbol, setup, spotPrice);
     }
 
-    /**
-     * Evaluates open positions for Spot SL, 1:2 Target Partial Exit, Cost SL, and 10 EMA Trailing.
-     */
+    /** Evaluates open positions for Spot SL, Target Partial Exit, Cost SL, and 10 EMA Trailing. */
     public void evaluateOpenPositions(LocalTime nowTime) {
         evaluateOpenPositions(nowTime, Collections.emptyMap(), true);
     }
@@ -2161,7 +2173,7 @@ public class LowestVolumeReversalService {
     }
 
     /**
-     * Evaluates open positions for Spot SL, 1:2 Target Partial Exit, Cost SL, and 10 EMA Trailing.
+     * Evaluates open positions for Spot SL, Target Partial Exit, Cost SL, and 10 EMA Trailing.
      *
      * <p>M7: quotes are gathered OUTSIDE the service lock (a slow fetch must not block entries or
      * hard exits), then evaluation + mutation run atomically inside the lock so state cannot change
@@ -2353,7 +2365,7 @@ public class LowestVolumeReversalService {
                     continue;
                 }
 
-                // 2. Check 1:2 Target on Spot
+                // 2. Check the configured Target on Spot
                 if (!pos.isPartialBooked() && !pos.isClosed()) {
                     boolean targetHit = false;
                     if (pos.getDirection() == LowestVolumeDirection.SHORT) {
@@ -2370,7 +2382,7 @@ public class LowestVolumeReversalService {
                         LvrExitMode currentExitMode =
                                 (pos.getExitMode() != null) ? pos.getExitMode() : exitMode;
                         if (currentExitMode == LvrExitMode.FULL_TARGET_1_2) {
-                            // 100% Full Exit at 1:2 Target
+                            // 100% Full Exit at the configured Target
                             int exitQty =
                                     pos.getRemainingQuantity() > 0
                                             ? pos.getRemainingQuantity()
@@ -2394,13 +2406,13 @@ public class LowestVolumeReversalService {
                             if (setup != null) {
                                 setup.transitionTo(
                                         LowestVolumeSetupState.CLOSED_TARGET,
-                                        "1:2 Target reached at spot " + spotPrice);
+                                        rrLabel() + " Target reached at spot " + spotPrice);
                                 exhaustedSymbols.add(symbol);
                             }
 
                             log.info(
-                                    "[LVR] 1:2 Target 100% Full Exit for {}: Closed at Spot={}, Realized PnL={}",
-                                    symbol, spotPrice, pos.getTotalRealizedPnl());
+                                    "[LVR] {} Target 100% Full Exit for {}: Closed at Spot={}, Realized PnL={}",
+                                    rrLabel(), symbol, spotPrice, pos.getTotalRealizedPnl());
 
                             publishSignal(
                                     symbol,
@@ -2426,16 +2438,18 @@ public class LowestVolumeReversalService {
                                                 : pos.getStockEntryPrice().subtract(spotPrice);
                                 telegramService.sendTextMessage(
                                         String.format(
-                                                "🎯 *LVR 1:2 Target Reached (100%% Full Exit)*\n"
+                                                "🎯 *LVR %s Target Reached (100%% Full Exit)*\n"
                                                         + "• Symbol: *%s* (%s)\n"
                                                         + "• Exit Price: `₹%.2f` (Target was `₹%.2f`)\n"
-                                                        + "• Points Captured: `+%.2f pts` (+2.00 R)\n"
+                                                        + "• Points Captured: `+%.2f pts` (+%.2f R)\n"
                                                         + "• Realized P&L: `+₹%.2f`",
+                                                rrLabel(),
                                                 symbol,
                                                 pos.getDirection(),
                                                 spotPrice.doubleValue(),
                                                 pos.getTarget1StockPrice().doubleValue(),
                                                 pts.doubleValue(),
+                                                targetRr,
                                                 pos.getTotalRealizedPnl().doubleValue()));
                             }
                             continue;
@@ -2454,12 +2468,12 @@ public class LowestVolumeReversalService {
                                 if (setup != null) {
                                     setup.transitionTo(
                                             LowestVolumeSetupState.CLOSED_TARGET,
-                                            "1:2 Target reached at spot " + spotPrice);
+                                            rrLabel() + " Target reached at spot " + spotPrice);
                                     exhaustedSymbols.add(symbol);
                                 }
                                 log.info(
-                                        "[LVR] 1:2 Target Full Exit (100% booked) for {}: Closed at Spot={}, Realized PnL={}",
-                                        symbol, spotPrice, pos.getTotalRealizedPnl());
+                                        "[LVR] {} Target Full Exit (100% booked) for {}: Closed at Spot={}, Realized PnL={}",
+                                        rrLabel(), symbol, spotPrice, pos.getTotalRealizedPnl());
 
                                 String brokerSymbol = resolveBrokerTradingSymbol(pos);
                                 int closedQty = pos.getTotalQuantity();
@@ -2488,10 +2502,11 @@ public class LowestVolumeReversalService {
                                                     : pos.getStockEntryPrice().subtract(spotPrice);
                                     telegramService.sendTextMessage(
                                             String.format(
-                                                    "🎯 *LVR 1:2 Target Reached (Full Exit)*\n"
+                                                    "🎯 *LVR %s Target Reached (Full Exit)*\n"
                                                             + "• Symbol: *%s* (%s)\n"
                                                             + "• Exit Price: `₹%.2f`\n"
                                                             + "• Realized P&L: `+₹%.2f`",
+                                                    rrLabel(),
                                                     symbol,
                                                     pos.getDirection(),
                                                     spotPrice.doubleValue(),
@@ -2503,12 +2518,12 @@ public class LowestVolumeReversalService {
                             if (setup != null) {
                                 setup.transitionTo(
                                         LowestVolumeSetupState.PARTIAL_BOOKED,
-                                        "1:2 RR reached at spot " + spotPrice);
+                                        rrLabel() + " RR reached at spot " + spotPrice);
                             }
 
                             log.info(
-                                    "[LVR] 1:2 Target Hit for {}: Booked 50% at ExitPrice={}, Cost SL Armed at Spot {}",
-                                    symbol, partialExitPrice, pos.getCurrentStockSl());
+                                    "[LVR] {} Target Hit for {}: Booked 50% at ExitPrice={}, Cost SL Armed at Spot {}",
+                                    rrLabel(), symbol, partialExitPrice, pos.getCurrentStockSl());
 
                             String brokerSymbol = resolveBrokerTradingSymbol(pos);
                             int partialBookQty =
@@ -2527,7 +2542,7 @@ public class LowestVolumeReversalService {
                                     pos.getCurrentStockSl(),
                                     pos.getTarget1StockPrice(),
                                     partialBookQty,
-                                    "1:2 RR Target 50% Booked",
+                                    rrLabel() + " RR Target 50% Booked",
                                     Map.of(
                                             "instrumentType",
                                             pos.getInstrumentType().name(),
@@ -2539,12 +2554,13 @@ public class LowestVolumeReversalService {
                             if (telegramAlerts && telegramService != null) {
                                 telegramService.sendTextMessage(
                                         String.format(
-                                                "🎯 *LVR 1:2 Target Reached (50%% Booked)*\n"
+                                                "🎯 *LVR %s Target Reached (50%% Booked)*\n"
                                                         + "• Symbol: *%s* (%s)\n"
                                                         + "• Booked Price: `₹%.2f` (Partial P&L: `₹%.2f`)\n"
                                                         + "• Spot: `₹%.2f` (Target: `₹%.2f`)\n"
                                                         + "• SL on remaining lots: `₹%.2f` (Cost / Breakeven)\n"
                                                         + "• Rest to be closed at: *15:00 IST*",
+                                                rrLabel(),
                                                 symbol,
                                                 pos.getDirection(),
                                                 partialExitPrice.doubleValue(),
@@ -4229,6 +4245,19 @@ public class LowestVolumeReversalService {
         this.targetRr = targetRr;
     }
 
+    /**
+     * Display form of the configured reward-to-risk ratio, e.g. {@code 1:2.5} for {@code
+     * target-rr=2.5} and {@code 1:2} for {@code target-rr=2.0}.
+     *
+     * <p>Alerts and logs use this instead of a literal {@code 1:2} so the ratio they announce can
+     * never drift from the ratio actually wired into the executed target.
+     *
+     * @return the R:R label for the current {@code target-rr}, never {@code null}
+     */
+    public String rrLabel() {
+        return "1:" + BigDecimal.valueOf(targetRr).stripTrailingZeros().toPlainString();
+    }
+
     public int getMaxDailyLosses() {
         return maxDailyLosses;
     }
@@ -4830,7 +4859,8 @@ public class LowestVolumeReversalService {
                         }
                         if (activeSetup != null) {
                             activeSetup.transitionTo(
-                                    LowestVolumeSetupState.PARTIAL_BOOKED, "1:2 RR partial booked");
+                                    LowestVolumeSetupState.PARTIAL_BOOKED,
+                                    rrLabel() + " RR partial booked");
                         }
                     }
                 } else if (openPos.isPartialBooked()
@@ -4972,11 +5002,12 @@ public class LowestVolumeReversalService {
                         actualTarget1 =
                                 roundToTick(
                                         triggerPrice.subtract(
-                                                unitRisk.multiply(BigDecimal.valueOf(2))));
+                                                unitRisk.multiply(BigDecimal.valueOf(targetRr))));
                     } else {
                         actualTarget1 =
                                 roundToTick(
-                                        triggerPrice.add(unitRisk.multiply(BigDecimal.valueOf(2))));
+                                        triggerPrice.add(
+                                                unitRisk.multiply(BigDecimal.valueOf(targetRr))));
                     }
 
                     // L6: evaluate the SAME shared entry gate the live trigger path uses —
