@@ -35,6 +35,7 @@ public class SnapshotOptionChainService extends ShoonyaOptionChainService {
 
     private final LongAdder snapshotHits = new LongAdder();
     private final LongAdder liveFetches = new LongAdder();
+    private final LongAdder syntheticLive = new LongAdder();
 
     /**
      * @ * @param config Shoonya config (also used by the live fallback path)
@@ -99,8 +100,13 @@ public class SnapshotOptionChainService extends ShoonyaOptionChainService {
             return snapshot;
         }
         liveFetches.increment();
-        return super.getOptionChain(
-                underlying, futSymbol, futToken, explicitStrike, count, fetchQuotes);
+        OptionChainResponse live =
+                super.getOptionChain(
+                        underlying, futSymbol, futToken, explicitStrike, count, fetchQuotes);
+        if (live != null && live.isSynthetic()) {
+            syntheticLive.increment();
+        }
+        return live;
     }
 
     /**
@@ -132,6 +138,14 @@ public class SnapshotOptionChainService extends ShoonyaOptionChainService {
     }
 
     /**
+     * @return how many live fallbacks came back {@code synthetic} — fail-closed fetch failures with
+     *     no usable PCR, which the replay defers (RETRY) instead of discarding
+     */
+    public long syntheticLiveReads() {
+        return syntheticLive.sum();
+    }
+
+    /**
      * @return total chain reads across every replay pass and worker
      */
     public long totalReads() {
@@ -142,5 +156,6 @@ public class SnapshotOptionChainService extends ShoonyaOptionChainService {
     public void resetCounters() {
         snapshotHits.reset();
         liveFetches.reset();
+        syntheticLive.reset();
     }
 }

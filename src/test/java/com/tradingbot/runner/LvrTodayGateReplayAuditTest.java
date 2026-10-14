@@ -151,6 +151,10 @@ class LvrTodayGateReplayAuditTest {
                         ohlcStateFile,
                         false);
         ohlcCacheService.init();
+        // The cache only self-heals EMPTY bundles, so a stale cache would silently feed days-old
+        // PDH/PDL into the replay. syncAll(false) skips everything when the cache is already
+        // fresh (costs nothing after the morning sync) and pulls what is missing otherwise.
+        ohlcCacheService.syncAll(false);
 
         // Snapshot-backed chain service: serves the 20:00 IST closing snapshot for the resolved
         // session and falls back to a live fetch on a miss (coverage is reported at the end).
@@ -601,9 +605,12 @@ class LvrTodayGateReplayAuditTest {
         System.out.printf(
                 Locale.US,
                 "  Option chain reads: %d from the 20:00 IST snapshot, %d live fallback"
-                        + " (misses = no snapshot for this session).%n",
+                        + " (misses = no snapshot for this session), %d of those live reads"
+                        + " synthetic (fail-closed, no usable PCR — the gate defers instead of"
+                        + " discarding).%n",
                 optionChainService.snapshotHits(),
-                optionChainService.liveFetches());
+                optionChainService.liveFetches(),
+                optionChainService.syntheticLiveReads());
         System.out.println(
                 "  CAVEAT: the chain is a CLOSING snapshot, so today's closing PCR / max-OI");
         System.out.println(
