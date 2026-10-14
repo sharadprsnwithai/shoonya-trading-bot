@@ -250,6 +250,53 @@ class ShoonyaOptionChainQualityTest {
                 .isEqualTo(new BigDecimal("22850"));
     }
 
+    @Test
+    @DisplayName("No ATM anchor fails closed rather than guessing a strike")
+    void missingUnderlyingPriceFailsClosed() throws Exception {
+        List<Map<String, String>> rows = new ArrayList<>();
+        for (int i = -5; i <= 4; i++) {
+            rows.add(strike(22850 + (i * 50), 1_000L, 2_000L));
+        }
+
+        // The underlying quote answers but carries no usable price, and no explicit strike is
+        // pinned. The service used to fall back to a hardcoded defaultSpotPrice() — 24000 for
+        // any unknown symbol — and build a fully-quoted, non-synthetic chain around that guess.
+        Map<String, String> quotes = noOverrides();
+        quotes.put("48704", "{\"stat\":\"Ok\",\"oi\":0,\"v\":1}");
+
+        OptionChainResponse chain =
+                service(rows, quotes)
+                        .getOptionChain("NIFTY", "NIFTY27OCT26F", "48704", null, 4, true);
+
+        assertThat(chain.isSynthetic())
+                .as("without an underlying price there is no ATM anchor, so there is no chain")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("An unpinned strike still resolves ATM from the underlying quote")
+    void underlyingQuoteResolvesAtmWhenNoStrikePinned() throws Exception {
+        List<Map<String, String>> rows = new ArrayList<>();
+        for (int i = -5; i <= 4; i++) {
+            rows.add(strike(22850 + (i * 50), 1_000L, 2_000L));
+        }
+
+        // Control for the test above: with a real underlying price of 22860 and no explicit
+        // strike, ATM must be derived from the quote (22860 / 50 rounded -> 22850) and the
+        // window must come back real and centred on it.
+        OptionChainResponse chain =
+                service(rows, noOverrides())
+                        .getOptionChain("NIFTY", "NIFTY27OCT26F", "48704", null, 4, true);
+
+        assertThat(chain.isSynthetic())
+                .as("a usable underlying price must yield a real chain")
+                .isFalse();
+        assertThat(chain.atmStrike())
+                .as("ATM is derived from the underlying quote, not a hardcoded default")
+                .isEqualByComparingTo(new BigDecimal("22850"));
+        assertThat(chain.strikes()).hasSize(9);
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     /** A quote for one side of a strike, carrying {@code oi} open interest. */

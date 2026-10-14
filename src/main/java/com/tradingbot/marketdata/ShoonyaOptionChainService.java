@@ -190,19 +190,32 @@ public class ShoonyaOptionChainService {
                 String sessionToken = authenticator.getOrAuthenticateToken();
 
                 // 1. Determine Underlying Price & ATM Strike
+                //
+                // When the caller does not pin the strike, this quote is the ONLY source of the
+                // underlying price. It used to fall back to defaultSpotPrice() when the quote
+                // failed or carried no usable price, so the chain was requested centred on a
+                // hardcoded guess — 24000 for any unknown symbol. Every quote in the resulting
+                // window could then answer cleanly and the chain came back as legitimate,
+                // non-synthetic data whose PCR described the wrong part of the strike ladder.
+                // A missing or malformed price is now recorded as missing rather than guessed.
                 BigDecimal underlyingPrice = BigDecimal.ZERO;
                 if (futToken != null && !futToken.isBlank()) {
                     JsonNode quote = fetchQuote(sessionToken, segment, futToken);
-                    if (quote != null) {
-                        underlyingPrice =
-                                new BigDecimal(
-                                        quote.path("lp")
-                                                .asText(
-                                                        quote.path("sptprc")
-                                                                .asText(
-                                                                        defaultSpotPrice(
-                                                                                        cleanUnderlying)
-                                                                                .toPlainString())));
+                    if (quote != null && "Ok".equalsIgnoreCase(quote.path("stat").asText(""))) {
+                        String lp = quote.path("lp").asText("");
+                        String spot = quote.path("sptprc").asText("");
+                        String raw = !lp.isBlank() ? lp : spot;
+                        if (!raw.isBlank()) {
+                            try {
+                                underlyingPrice = new BigDecimal(raw);
+                            } catch (NumberFormatException e) {
+                                log.debug(
+                                        "Underlying quote for token {} carried a non-numeric price"
+                                                + " '{}'",
+                                        futToken,
+                                        raw);
+                            }
+                        }
                     }
                 }
 
@@ -215,7 +228,17 @@ public class ShoonyaOptionChainService {
                     atmStrike =
                             underlyingPrice.divide(step, 0, RoundingMode.HALF_UP).multiply(step);
                 } else {
-                    atmStrike = defaultSpotPrice(cleanUnderlying);
+                    // No pinned strike and no usable underlying price — there is nothing to centre
+                    // the window on. Retry, then fail closed via the synthetic chain below rather
+                    // than invent an ATM.
+                    lastFailure =
+                            String.format(
+                                    "attempt %d: no ATM anchor for tsym=%s — the underlying quote"
+                                            + " did not yield a usable price and no explicit strike"
+                                            + " was supplied",
+                                    attempt, futSymbol);
+                    log.warn("[OPTION-CHAIN] {}", lastFailure);
+                    continue;
                 }
 
                 // 2. Call GetOptionChain API
