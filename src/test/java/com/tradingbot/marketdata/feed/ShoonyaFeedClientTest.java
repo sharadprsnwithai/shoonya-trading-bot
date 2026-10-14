@@ -1,0 +1,297 @@
+package com.tradingbot.marketdata.feed;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.tradingbot.auth.ShoonyaAuthenticator;
+import com.tradingbot.config.ShoonyaConfig;
+import com.tradingbot.config.ShoonyaFeedProperties;
+import com.tradingbot.model.strategy.StockQuoteSnapshot;
+import java.net.http.HttpClient;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Unit tests for the state machine of the streaming feed client.
+ *
+ * <p>The feed is constructed with the transport disabled, so no socket is opened and the tests
+ * drive the protocol through {@code handleRawText}. That is the same entry point the listener uses,
+ * so the tested path is the production path.
+ */
+class ShoonyaFeedClientTest {
+
+    private ShoonyaFeedProperties properties;
+    private ShoonyaFeedClient client;
+
+    @BeforeEach
+    void setUp() {
+        properties = new ShoonyaFeedProperties();
+        properties.setEnabled(false);
+        properties.setSnapshotMaxAgeMs(60000);
+        properties.setWarmupTimeoutMs(500);
+
+        ShoonyaConfig shoonyaConfig = new ShoonyaConfig();
+        shoonyaConfig.setEnabled(false);
+        shoonyaConfig.setUserId("AB1234");
+
+        client =
+                new ShoonyaFeedClient(
+                        properties,
+                        shoonyaConfig,
+                        new ShoonyaAuthenticator(shoonyaConfig),
+                        HttpClient.newHttpClient());
+    }
+
+    /**
+     * @param symbol the trading symbol
+     * @param token the instrument token
+     * @return a single-entry subscription map
+     */
+    private static Map<String, String> one(String symbol, String token) {
+        Map<String, String> map = new LinkedHashMap<>();
+        map.put(symbol, token);
+        return map;
+    }
+
+    @Test
+    @DisplayName("a disabled feed never reports itself up")
+    void testDisabledFeedStaysDown() {
+        client.start();
+
+        assertThat(client.isUp()).isFalse();
+        assertThat(client.subscribedCount()).isZero();
+
+        client.stop();
+    }
+
+    @Test
+    @DisplayName("authentication is established only by a successful connect acknowledgement")
+    void testAuthenticationAck() {
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Not_Ok\",\"e\":\"Invalid session\"}");
+        assertThat(client.isUp()).isFalse();
+
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+        assertThat(client.isUp()).isTrue();
+    }
+
+    @Test
+    @DisplayName("subscriptions are registered once and reported as new only the first time")
+    void testEnsureSubscribedIsIdempotent() {
+        assertThat(client.ensureSubscribed(one("DMART", "2885"))).containsExactly("NSE|2885");
+        assertThat(client.ensureSubscribed(one("DMART", "2885"))).isEmpty();
+        assertThat(client.subscribedCount()).isEqualTo(1);
+        assertThat(client.subscribedKeys()).containsExactly("NSE|2885");
+    }
+
+    @Test
+    @DisplayName("exchange prefixes on the symbol select the subscription exchange")
+    void testExchangePrefixHonoured() {
+        client.ensureSubscribed(one("MCX:SILVER", "495214"));
+        client.handleRawText("{\"t\":\"tk\",\"e\":\"MCX\",\"tk\":\"495214\",\"lp\":\"512.00\"}");
+
+        assertThat(client.subscribedKeys()).containsExactly("MCX|495214");
+        assertThat(client.tickFor("MCX:SILVER").exchange()).isEqualTo("MCX");
+        assertThat(client.snapshots(List.of("MCX:SILVER"), Duration.ofSeconds(5)))
+                .containsOnlyKeys("MCX:SILVER");
+    }
+
+    @Test
+    @DisplayName("symbols without a resolvable token are skipped instead of poisoning the feed")
+    void testBlankTokensSkipped() {
+        Map<String, String> map = new LinkedHashMap<>();
+        map.put("DMART", "2885");
+        map.put("BROKEN", " ");
+        map.put(null, "123");
+
+        client.ensureSubscribed(map);
+
+        assertThat(client.subscribedKeys()).containsExactly("NSE|2885");
+    }
+
+    @Test
+    @DisplayName("a snapshot frame populates a live snapshot keyed by symbol")
+    void testSnapshotRoundTrip() {
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\"}");
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\","
+                        + "\"o\":\"3310.00\",\"v\":\"125000\",\"ap\":\"3340.00\"}");
+
+        Map<String, StockQuoteSnapshot> out =
+                client.snapshots(List.of("DMART"), Duration.ofSeconds(5));
+
+        assertThat(out).containsOnlyKeys("DMART");
+        StockQuoteSnapshot snapshot = out.get("DMART");
+        assertThat(snapshot.ltp()).isEqualTo(3364.00);
+        assertThat(snapshot.prevClose()).isEqualTo(3300.00);
+        assertThat(snapshot.pctChange()).isEqualTo(1.9393939393939394);
+        assertThat(snapshot.volume()).isEqualTo(125000L);
+    }
+
+    @Test
+    @DisplayName("diff frames update the price without disturbing the previous close")
+    void testDiffUpdatesPriceOnly() {
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+        client.handleRawText("{\"t\":\"tf\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3390.00\"}");
+
+        StockQuoteSnapshot snapshot =
+                client.snapshots(List.of("DMART"), Duration.ofSeconds(5)).get("DMART");
+
+        assertThat(snapshot.ltp()).isEqualTo(3390.00);
+        assertThat(snapshot.prevClose()).isEqualTo(3300.00);
+    }
+
+    @Test
+    @DisplayName(
+            "a diff that arrives before any snapshot produces nothing rather than a hollow quote")
+    void testDiffBeforeSnapshotYieldsNoSnapshot() {
+        client.ensureSubscribed(one("DMART", "2885"));
+
+        client.handleRawText(
+                "{\"t\":\"tf\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3390.00\",\"c\":\"3300.00\"}");
+
+        assertThat(client.snapshots(List.of("DMART"), Duration.ofSeconds(5))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("unsubscribed symbols and unknown symbols yield nothing")
+    void testUnknownSymbolsYieldNothing() {
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+
+        assertThat(client.snapshots(List.of("HCLTECH"), Duration.ofSeconds(5))).isEmpty();
+        assertThat(client.tickFor("HCLTECH")).isNull();
+        assertThat(client.tickFor(null)).isNull();
+    }
+
+    @Test
+    @DisplayName("ticks older than the freshness budget are excluded so callers fall back to REST")
+    void testStaleTickExcluded() {
+        properties.setSnapshotMaxAgeMs(10);
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+        assertThat(client.snapshots(List.of("DMART"), client.maxAge())).hasSize(1);
+
+        sleep(30);
+
+        assertThat(client.snapshots(List.of("DMART"), client.maxAge())).isEmpty();
+        assertThat(client.coveragePct(List.of("DMART"), client.maxAge())).isZero();
+    }
+
+    @Test
+    @DisplayName("coverage reports the fraction of requested symbols carrying a fresh tick")
+    void testCoveragePct() {
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+
+        assertThat(client.coveragePct(List.of("DMART", "HCLTECH"), Duration.ofSeconds(5)))
+                .isEqualTo(50.0);
+        assertThat(client.coveragePct(List.of(), Duration.ofSeconds(5))).isZero();
+        assertThat(client.coveragePct(null, Duration.ofSeconds(5))).isZero();
+    }
+
+    @Test
+    @DisplayName("awaitCoverage returns immediately once the threshold is met")
+    void testAwaitCoverageMet() {
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+
+        assertThat(client.awaitCoverage(List.of("DMART"), 100.0, Duration.ofMillis(200))).isTrue();
+        assertThat(client.awaitCoverage(List.of(), 100.0, Duration.ofMillis(200))).isTrue();
+    }
+
+    @Test
+    @DisplayName("awaitCoverage gives up after the budget rather than blocking indefinitely")
+    void testAwaitCoverageTimesOut() {
+        assertThat(client.awaitCoverage(List.of("DMART"), 100.0, Duration.ofMillis(120))).isFalse();
+    }
+
+    @Test
+    @DisplayName("malformed and unrelated frames are ignored without raising")
+    void testMalformedFramesIgnored() {
+        client.ensureSubscribed(one("DMART", "2885"));
+
+        client.handleRawText("<html>502 Bad Gateway</html>");
+        client.handleRawText("");
+        client.handleRawText(null);
+        client.handleRawText("{\"t\":\"ck\"}");
+        client.handleRawText("{\"t\":\"ke\",\"e\":\"Invalid token\"}");
+        client.handleRawText("{\"t\":\"te\",\"e\":\"Not Connected\"}");
+        client.handleRawText("{\"t\":\"uk\"}");
+
+        assertThat(client.subscribedCount()).isEqualTo(1);
+        assertThat(client.snapshots(List.of("DMART"), Duration.ofSeconds(5))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("an error frame does not tear down already-established state")
+    void testErrorFramePreservesState() {
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\"}");
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+
+        client.handleRawText("{\"t\":\"te\",\"e\":\"Not Connected\"}");
+
+        assertThat(client.isUp()).isTrue();
+        assertThat(client.snapshots(List.of("DMART"), Duration.ofSeconds(5))).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a disconnect clears authentication so isUp stops reporting a dead feed")
+    void testMarkDisconnectedClearsAuth() {
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\"}");
+        assertThat(client.isUp()).isTrue();
+
+        client.markDisconnected();
+
+        assertThat(client.isUp()).isFalse();
+    }
+
+    @Test
+    @DisplayName("awaitUniverseCoverage applies the configured threshold and budget")
+    void testAwaitUniverseCoverage() {
+        properties.setMinWarmupCoveragePct(50.0);
+        properties.setWarmupTimeoutMs(120);
+
+        // Nothing subscribed: coverage is 0%, so this must give up rather than block.
+        assertThat(client.awaitUniverseCoverage(List.of("DMART"))).isFalse();
+
+        client.ensureSubscribed(one("DMART", "2885"));
+        client.handleRawText(
+                "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"2885\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+
+        assertThat(client.awaitUniverseCoverage(List.of("DMART", "HCLTECH"))).isTrue();
+        assertThat(client.awaitUniverseCoverage(List.of())).isTrue();
+    }
+
+    @Test
+    @DisplayName("empty subscription maps are a no-op")
+    void testEnsureSubscribedEmpty() {
+        assertThat(client.ensureSubscribed(Map.of())).isEmpty();
+        assertThat(client.ensureSubscribed(null)).isEmpty();
+        assertThat(client.snapshots(null, Duration.ofSeconds(5))).isEmpty();
+        assertThat(client.snapshots(List.of(), Duration.ofSeconds(5))).isEmpty();
+    }
+
+    /**
+     * @param millis how long to pause
+     */
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}

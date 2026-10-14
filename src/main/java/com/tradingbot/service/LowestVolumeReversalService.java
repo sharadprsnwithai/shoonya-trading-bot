@@ -79,6 +79,12 @@ public class LowestVolumeReversalService {
     private final com.tradingbot.bus.SignalPublisher signalPublisher;
     private volatile HistoricalOhlcCacheService ohlcCacheService;
 
+    /**
+     * Streaming market-data feed used in preference to the per-symbol GetQuotes loop. Optional:
+     * when absent or down, the REST path remains authoritative and behaviour is unchanged.
+     */
+    private final com.tradingbot.marketdata.feed.ShoonyaFeedClient feedClient;
+
     private java.time.Clock clock = java.time.Clock.system(IST);
 
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
@@ -322,7 +328,9 @@ public class LowestVolumeReversalService {
                     com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService,
             @Autowired(required = false) LowestVolumeReversalScanner scanner,
             @Autowired(required = false) com.tradingbot.bus.SignalPublisher signalPublisher,
-            @Autowired(required = false) HistoricalOhlcCacheService ohlcCacheService) {
+            @Autowired(required = false) HistoricalOhlcCacheService ohlcCacheService,
+            @Autowired(required = false)
+                    com.tradingbot.marketdata.feed.ShoonyaFeedClient feedClient) {
         this.marketDataService = marketDataService;
         this.taService = taService;
         this.telegramService = telegramService;
@@ -331,6 +339,7 @@ public class LowestVolumeReversalService {
         this.scanner = (scanner != null) ? scanner : new LowestVolumeReversalScanner();
         this.signalPublisher = signalPublisher;
         this.ohlcCacheService = ohlcCacheService;
+        this.feedClient = feedClient;
     }
 
     // --- M10: disk persistence ---
@@ -440,6 +449,31 @@ public class LowestVolumeReversalService {
         persistState();
     }
 
+    /**
+     * Convenience overload for callers that do not use the streaming market-data feed; REST remains
+     * the sole quote source for them.
+     */
+    public LowestVolumeReversalService(
+            ShoonyaMarketDataService marketDataService,
+            TechnicalAnalysisService taService,
+            TelegramService telegramService,
+            ShoonyaConfig config,
+            com.tradingbot.marketdata.ShoonyaOptionChainService optionChainService,
+            LowestVolumeReversalScanner scanner,
+            com.tradingbot.bus.SignalPublisher signalPublisher,
+            HistoricalOhlcCacheService ohlcCacheService) {
+        this(
+                marketDataService,
+                taService,
+                telegramService,
+                config,
+                optionChainService,
+                scanner,
+                signalPublisher,
+                ohlcCacheService,
+                null);
+    }
+
     public LowestVolumeReversalService(
             ShoonyaMarketDataService marketDataService,
             TechnicalAnalysisService taService,
@@ -456,6 +490,7 @@ public class LowestVolumeReversalService {
                 optionChainService,
                 scanner,
                 signalPublisher,
+                null,
                 null);
     }
 
@@ -465,7 +500,16 @@ public class LowestVolumeReversalService {
             TelegramService telegramService,
             ShoonyaConfig config,
             LowestVolumeReversalScanner scanner) {
-        this(marketDataService, taService, telegramService, config, null, scanner, null, null);
+        this(
+                marketDataService,
+                taService,
+                telegramService,
+                config,
+                null,
+                scanner,
+                null,
+                null,
+                null);
     }
 
     /**
@@ -3507,6 +3551,22 @@ public class LowestVolumeReversalService {
         return 0.0;
     }
 
+    /**
+     * Fetches a live quote for every symbol in the trading universe.
+     *
+     * <p>Sources are tried in order of cost. The streaming feed is preferred: it delivers the whole
+     * universe over one connection with per-tick timestamps, replacing what used to be one {@code
+     * GetQuotes} REST call per symbol with an 115&nbsp;ms sleep in between. Anything the feed did
+     * not deliver within its freshness budget is back-filled over REST, so the returned map is the
+     * same shape and coverage the strategy has always consumed.
+     *
+     * <p>Back-fill is deliberate rather than a fallback of last resort. A symbol the feed drops
+     * would otherwise silently vanish from the advance/decline breadth and from sector ranking, and
+     * because throttling hits a fixed point in the fetch order, such drops are biased rather than
+     * random.
+     *
+     * @return snapshots keyed by symbol, never null
+     */
     public Map<String, StockQuoteSnapshot> fetchMorningQuotesUnified() {
         if (marketDataService == null) return Collections.emptyMap();
         java.util.Set<String> allSymbols =
@@ -3515,22 +3575,122 @@ public class LowestVolumeReversalService {
             allSymbols.addAll(constituents);
         }
 
+        Map<String, String> tokenBySymbol = resolveUniverseTokens(allSymbols);
+
         Map<String, StockQuoteSnapshot> quoteMap = new ConcurrentHashMap<>();
+        quoteMap.putAll(fetchUniverseFromFeed(allSymbols, tokenBySymbol));
+
+        int fromFeed = quoteMap.size();
+        List<String> missing = allSymbols.stream().filter(s -> !quoteMap.containsKey(s)).toList();
+        if (!missing.isEmpty()) {
+            fetchUniverseFromRest(missing, tokenBySymbol, quoteMap);
+        }
+
         log.info(
-                "[LVR] Fetching morning quotes for {} unique universe symbols (delay: {}ms)...",
+                "[LVR] Morning quote fetch completed: {} / {} symbols from the streaming feed,"
+                        + " {} / {} total after REST back-fill of {}.",
+                fromFeed,
                 allSymbols.size(),
+                quoteMap.size(),
+                allSymbols.size(),
+                missing.size());
+        return quoteMap;
+    }
+
+    /**
+     * Resolves the instrument token for every universe symbol.
+     *
+     * <p>Most symbols resolve from the static registries with no network I/O; the SearchScrip
+     * fallback is itself cached by {@link ShoonyaMarketDataService#resolveToken(String)}. The map
+     * is shared by the feed and REST paths so a symbol is resolved exactly once per scan.
+     *
+     * @param allSymbols the trading universe
+     * @return tokens keyed by symbol, omitting symbols that could not be resolved
+     */
+    private Map<String, String> resolveUniverseTokens(java.util.Set<String> allSymbols) {
+        Map<String, String> tokenBySymbol = new java.util.LinkedHashMap<>();
+        for (String sym : allSymbols) {
+            var info = StockFnoRegistry.get(sym);
+            String token =
+                    (info != null && info.token() != null)
+                            ? info.token()
+                            : marketDataService.resolveToken(sym);
+            if (token != null && !token.isBlank()) {
+                tokenBySymbol.put(sym, token);
+            }
+        }
+        return tokenBySymbol;
+    }
+
+    /**
+     * Reads the universe from the streaming market-data feed.
+     *
+     * <p>Subscriptions are registered once and survive across scans, so only genuinely new symbols
+     * cost a frame. When the feed is disabled or not currently up this returns an empty map
+     * immediately, leaving REST as the sole source and preserving the previous behaviour exactly.
+     *
+     * @param allSymbols the trading universe
+     * @param tokenBySymbol tokens resolved for the universe
+     * @return snapshots the feed supplied within its freshness budget
+     */
+    private Map<String, StockQuoteSnapshot> fetchUniverseFromFeed(
+            java.util.Set<String> allSymbols, Map<String, String> tokenBySymbol) {
+        if (feedClient == null || allSymbols.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            feedClient.ensureSubscribed(tokenBySymbol);
+
+            if (!feedClient.isUp()) {
+                log.info(
+                        "[LVR] Streaming feed is not up; falling back entirely to REST for {} symbols.",
+                        allSymbols.size());
+                return Collections.emptyMap();
+            }
+
+            boolean covered = feedClient.awaitUniverseCoverage(allSymbols);
+            Map<String, StockQuoteSnapshot> fromFeed =
+                    feedClient.snapshots(allSymbols, feedClient.maxAge());
+            if (!covered) {
+                log.warn(
+                        "[LVR] Streaming feed warm-up did not reach the configured coverage; the"
+                                + " remaining symbols will be back-filled over REST.");
+            }
+            return fromFeed;
+        } catch (Exception e) {
+            log.warn(
+                    "[LVR] Streaming feed read failed; falling back entirely to REST: {}",
+                    e.getMessage(),
+                    e);
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Back-fills the given symbols over the {@code GetQuotes} REST path.
+     *
+     * <p>This is the original per-symbol loop, retained verbatim as the fallback. The pacing sleep
+     * is preserved because the broker throttles around ten market-data requests per second.
+     *
+     * @param symbols the symbols the feed did not supply
+     * @param quoteMap the map to populate in place
+     */
+    private void fetchUniverseFromRest(
+            List<String> symbols,
+            Map<String, String> tokenBySymbol,
+            Map<String, StockQuoteSnapshot> quoteMap) {
+        log.info(
+                "[LVR] Back-filling {} symbols over REST (delay: {}ms each)...",
+                symbols.size(),
                 morningScanDelayMs);
 
         int count = 0;
-        for (String sym : allSymbols) {
+        for (String sym : symbols) {
             count++;
             try {
-                var info = StockFnoRegistry.get(sym);
-                String token =
-                        (info != null && info.token() != null)
-                                ? info.token()
-                                : marketDataService.resolveToken(sym);
+                String token = tokenBySymbol.get(sym);
                 if (token == null || token.isBlank()) continue;
+                var info = StockFnoRegistry.get(sym);
                 String exchange =
                         (info != null && info.exchange() != null) ? info.exchange() : "NSE";
                 JsonNode quote = marketDataService.fetchQuote(exchange, token);
@@ -3551,7 +3711,7 @@ public class LowestVolumeReversalService {
                     }
                 }
 
-                if (morningScanDelayMs > 0 && count < allSymbols.size()) {
+                if (morningScanDelayMs > 0 && count < symbols.size()) {
                     try {
                         Thread.sleep(morningScanDelayMs);
                     } catch (InterruptedException ie) {
@@ -3563,11 +3723,6 @@ public class LowestVolumeReversalService {
                 log.debug("[LVR] Error fetching morning quote for {}: {}", sym, e.getMessage(), e);
             }
         }
-        log.info(
-                "[LVR] Morning quote fetch completed. Successfully fetched {} / {} symbols.",
-                quoteMap.size(),
-                allSymbols.size());
-        return quoteMap;
     }
 
     public long getMorningScanDelayMs() {
