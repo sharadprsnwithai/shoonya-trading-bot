@@ -315,6 +315,24 @@ public final class StockFnoRegistry {
         if (symbol != null) {
             InstrumentInfo info = INSTRUMENTS.get(symbol.toUpperCase().trim());
             if (info != null) {
+                // Check for Shoonya native segment mode via system property
+                String soProp = System.getProperty("shoonya.segment.mode");
+                if (soProp != null && soProp.equalsIgnoreCase("native")) {
+                    // In native mode, use Shoonya-native exchange mapping
+                    String upper = symbol.toUpperCase();
+                    // NIFTY/SENSEX indices still use NSE exchange
+                    if (upper.contains("NIFTY")
+                            || upper.contains("SENSEX")
+                            || upper.contains("BSESN")) {
+                        return "NSE";
+                    }
+                    // Metals and other commodities use MCX exchange
+                    if (upper.contains("MCX") || upper.contains("SILVER")) {
+                        return "MCX";
+                    }
+                    // Default to NSE for unknown symbols
+                    return "NSE";
+                }
                 return info.exchange();
             }
             if (symbol.toUpperCase().contains("SENSEX") || symbol.toUpperCase().contains("BSESN")) {
@@ -329,6 +347,24 @@ public final class StockFnoRegistry {
         if (symbol != null) {
             InstrumentInfo info = INSTRUMENTS.get(symbol.toUpperCase().trim());
             if (info != null) {
+                // Check for Shoonya native segment mode via system property
+                String soProp = System.getProperty("shoonya.segment.mode");
+                if (soProp != null && soProp.equalsIgnoreCase("native")) {
+                    // In native mode, use Shoonya-native segment mapping
+                    String upper = symbol.toUpperCase();
+                    // NIFTY/SENSEX indices use NFO segment even in native mode
+                    if (upper.contains("NIFTY")
+                            || upper.contains("SENSEX")
+                            || upper.contains("BSESN")) {
+                        return "NFO";
+                    }
+                    // Metals and other commodities use MCX segment
+                    if (upper.contains("MCX") || upper.contains("SILVER")) {
+                        return "MCX";
+                    }
+                    // Default to NFO for unknown symbols
+                    return "NFO";
+                }
                 return info.segment();
             }
             if (symbol.toUpperCase().contains("SENSEX") || symbol.toUpperCase().contains("BSESN")) {
