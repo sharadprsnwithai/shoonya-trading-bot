@@ -148,6 +148,24 @@ cp .env.example .env
 | `LVR_NSE_OI_ATTEMPTS` | `3` | HTTP retry attempts against the NSE OI spurts endpoint before degrading to sector-only selection. |
 | `LVR_NSE_OI_CRON` | `0 25 9 ? * MON-FRI` | Schedule of the NSE OI spurts fetch (fires before the 09:25:20 morning scan). |
 | `LVR_NSE_OI_MIDMORNING_REFRESH` | `true` | Top up the standby reservoir from the NSE OI feed during the mid-morning refresh. |
+| `LVR_PCR_NEUTRAL_MIN` | `0.85` | Lower edge of the PCR no-trade band: SHORT requires PCR below it. |
+| `LVR_PCR_NEUTRAL_MAX` | `1.15` | Upper edge of the PCR no-trade band: LONG requires PCR above it; in between blocks both directions. |
+| `POSTCLOSE_SCHEDULER_ENABLED` | `true` | Enable the 20:00 IST post-close data job (high/low sync + option-chain snapshots). |
+| `POSTCLOSE_CRON` | `0 0 20 ? * MON-FRI` | Schedule of the post-close data job. |
+
+### Scheduled Data Jobs
+
+| Time (IST) | Job | What it does |
+| :--- | :--- | :--- |
+| 08:00, Mon-Fri | Morning OHLC sync | Refreshes daily/weekly/monthly candles from Yahoo Finance before the open. |
+| 20:00, Mon-Fri | Post-close data job | Force-syncs today's **completed** daily high/low into SQLite (the normal freshness check would skip a day that just closed) and captures the closing **option chain** for every F&O universe symbol (`NiftySectorRegistry`, deduplicated) into the `option_chain_snapshots` table of `data/trading_bot.db`. Snapshots are stored under the trading session they reflect and pruned after 30 days. |
+| 23:00, daily | SQLite backup | Atomic defragmented backup of the active database. |
+
+The 20:00 snapshots exist for **offline replay audits only**: `LvrTodayGateReplayAuditTest` reads
+them (keyed by the replayed session, live fallback on a miss) so the gate audit can run after the
+close — even during the overnight broker maintenance window — without hitting the API. Live trading
+is untouched: LVR still fetches the option chain in real time for the armed symbol only, so no
+stale data can ever reach a live entry gate.
 
 ---
 

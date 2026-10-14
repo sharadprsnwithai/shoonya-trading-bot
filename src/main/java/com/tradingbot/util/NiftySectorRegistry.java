@@ -1,5 +1,6 @@
 package com.tradingbot.util;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -234,6 +235,27 @@ public final class NiftySectorRegistry {
 
     public static Map<String, List<String>> getSectorConstituents() {
         return Collections.unmodifiableMap(SECTORS);
+    }
+
+    /**
+     * Flattens every sector into one de-duplicated universe, preserving sector registration order.
+     *
+     * <p>This is the single shared definition of the F&O universe used by both the post-close
+     * option-chain snapshot job (20:00 IST) and the LVR gate replay audit, so the snapshots that
+     * get captured and the symbols that get replayed can never drift apart.
+     *
+     * @return every distinct sector constituent exactly once, in registry order
+     */
+    public static List<String> getFlattenedUniverse() {
+        List<String> symbols = new ArrayList<>();
+        for (List<String> sector : SECTORS.values()) {
+            for (String symbol : sector) {
+                if (!symbols.contains(symbol)) {
+                    symbols.add(symbol);
+                }
+            }
+        }
+        return Collections.unmodifiableList(symbols);
     }
 
     public static List<String> getStocksForSector(String sectorName) {

@@ -7,11 +7,17 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.indicator.TechnicalAnalysisService;
+import com.tradingbot.marketdata.HistoricalOhlcCacheService;
+import com.tradingbot.marketdata.OptionChainSnapshotService;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
-import com.tradingbot.marketdata.ShoonyaOptionChainService;
+import com.tradingbot.marketdata.SnapshotOptionChainService;
+import com.tradingbot.marketdata.YahooFinanceService;
+import com.tradingbot.marketdata.repository.SqliteHistoricalOhlcRepository;
+import com.tradingbot.marketdata.repository.SqliteOptionChainSnapshotRepository;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
@@ -65,11 +71,12 @@ import org.slf4j.LoggerFactory;
  * <p>Known limitations, stated openly because they bound the conclusion:
  *
  * <ul>
- *   <li>The option chain is read <b>once, live, after the close</b>, so every intraday decision is
- *       evaluated against today's closing PCR and closing max-OI strikes. Intraday PCR drift is not
- *       modelled.
- *   <li>PDH/PDL come from the daily feed rather than the live cache (the cache bean is not wired in
- *       this non-Spring harness).
+ *   <li>The option chain comes from the <b>closing snapshot captured by the 20:00 IST post-close
+ *       job</b> when one exists for the replayed session, and falls back to a live read otherwise;
+ *       either way every intraday decision is evaluated against the session's closing PCR and
+ *       closing max-OI strikes. Intraday PCR drift is not modelled.
+ *   <li>PDH/PDL are read from the SQLite OHLC cache (wired in this non-Spring harness), falling
+ *       back to the daily feed only for symbols missing from the cache.
  * </ul>
  *
  * <p>Needs a {@code .env} with working Shoonya credentials and a whitelisted public IP; without
@@ -106,9 +113,10 @@ class LvrTodayGateReplayAuditTest {
 
     private ShoonyaConfig config;
     private ShoonyaMarketDataService marketDataService;
-    private ShoonyaOptionChainService optionChainService;
+    private SnapshotOptionChainService optionChainService;
     private TechnicalAnalysisService taService;
     private TelegramService telegramService;
+    private HistoricalOhlcCacheService ohlcCacheService;
 
     /** Wires up the real (non-mocked) Shoonya stack from {@code .env}. */
     @BeforeEach
@@ -122,11 +130,55 @@ class LvrTodayGateReplayAuditTest {
 
         ShoonyaAuthenticator authenticator = new ShoonyaAuthenticator(config);
         marketDataService = new ShoonyaMarketDataService(config, authenticator);
-        optionChainService =
-                new ShoonyaOptionChainService(config, authenticator, marketDataService);
         taService = new TechnicalAnalysisService();
         // Stands in for the real bot so an unguarded send can never NPE the replay.
         telegramService = Mockito.mock(TelegramService.class);
+
+        // SQLite-backed OHLC cache so PDH/PDL come from the local database instead of one live
+        // daily-candle call per symbol — the reason an after-midnight run used to deny every
+        // symbol at PDH_PDL when the broker API timed out.
+        String dbPath = configValue("SQLITE_DB_PATH", "data/trading_bot.db");
+        String ohlcStateFile = configValue("OHLC_CACHE_FILE_PATH", "data/historical_ohlc.json");
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        SqliteHistoricalOhlcRepository ohlcRepository = new SqliteHistoricalOhlcRepository(dbPath);
+        ohlcRepository.init();
+        // jsonBackupEnabled=false: reads must not rewrite the 88 MB JSON backup; SQLite persists.
+        ohlcCacheService =
+                new HistoricalOhlcCacheService(
+                        new YahooFinanceService(mapper),
+                        mapper,
+                        ohlcRepository,
+                        ohlcStateFile,
+                        false);
+        ohlcCacheService.init();
+
+        // Snapshot-backed chain service: serves the 20:00 IST closing snapshot for the resolved
+        // session and falls back to a live fetch on a miss (coverage is reported at the end).
+        SqliteOptionChainSnapshotRepository snapshotRepository =
+                new SqliteOptionChainSnapshotRepository(dbPath);
+        snapshotRepository.init();
+        OptionChainSnapshotService snapshotService =
+                new OptionChainSnapshotService(snapshotRepository, mapper);
+        optionChainService =
+                new SnapshotOptionChainService(
+                        config, authenticator, marketDataService, snapshotService);
+    }
+
+    /**
+     * Resolves a configuration value the way Spring would: system property first, then environment
+     * variable, then the {@code application.properties} default.
+     *
+     * @param key the property/env name, e.g. {@code SQLITE_DB_PATH}
+     * @param defaultValue the fallback used when neither source carries the key
+     * @return the resolved non-null value
+     */
+    private static String configValue(String key, String defaultValue) {
+        String prop = System.getProperty(key);
+        if (prop != null && !prop.isBlank()) {
+            return prop;
+        }
+        String env = System.getenv(key);
+        return env != null && !env.isBlank() ? env : defaultValue;
     }
 
     @Test
@@ -145,6 +197,8 @@ class LvrTodayGateReplayAuditTest {
 
         Map<String, List<Candle>> candles = fetchSessionCandles(universe);
         LocalDate sessionDate = resolvedSessionDate;
+        // Pin the resolved session so chain reads hit the 20:00 IST snapshot for exactly this day.
+        optionChainService.setSessionDate(sessionDate);
         System.out.printf(Locale.US, "%-28s: %s%n", "Session date (IST)", sessionDate);
         if (!sessionDate.equals(LocalDate.now(IST))) {
             System.out.printf(
@@ -311,7 +365,8 @@ class LvrTodayGateReplayAuditTest {
 
     /**
      * Builds a service wired the way production is wired (FUTURES, PARTIAL exit, one attempt per
-     * symbol, telegram off), minus the Spring-managed scanner/cache beans.
+     * symbol, telegram off, SQLite-backed OHLC cache for PDH/PDL), minus the Spring-managed
+     * scanner/signal-publisher beans.
      *
      * @return a fresh, state-isolated service instance
      */
@@ -325,7 +380,7 @@ class LvrTodayGateReplayAuditTest {
                         optionChainService,
                         null,
                         null,
-                        null);
+                        ohlcCacheService);
         service.setInstrumentType(LvrInstrumentType.FUTURES);
         service.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
         service.setTelegramAlerts(false);
@@ -543,10 +598,16 @@ class LvrTodayGateReplayAuditTest {
                 a.netPnl - c.netPnl,
                 a.netR - c.netR);
         System.out.println();
+        System.out.printf(
+                Locale.US,
+                "  Option chain reads: %d from the 20:00 IST snapshot, %d live fallback"
+                        + " (misses = no snapshot for this session).%n",
+                optionChainService.snapshotHits(),
+                optionChainService.liveFetches());
         System.out.println(
-                "  CAVEAT: the option chain is sampled live AFTER the close, so today's");
+                "  CAVEAT: the chain is a CLOSING snapshot, so today's closing PCR / max-OI");
         System.out.println(
-                "  closing PCR / max-OI strikes are applied to every intraday decision.");
+                "  strikes are applied to every intraday decision. Intraday drift is not modelled.");
     }
 
     /**
@@ -592,18 +653,11 @@ class LvrTodayGateReplayAuditTest {
     // ---------------------------------------------------------------- data helpers
 
     /**
-     * @return the flattened, de-duplicated sector universe used by the production morning scan
+     * @return the flattened, de-duplicated sector universe shared with the 20:00 IST snapshot
+     *     capture — one definition so capture and replay can never drift apart
      */
     private static List<String> universe() {
-        List<String> symbols = new ArrayList<>();
-        for (List<String> sector : NiftySectorRegistry.getSectorConstituents().values()) {
-            for (String symbol : sector) {
-                if (!symbols.contains(symbol)) {
-                    symbols.add(symbol);
-                }
-            }
-        }
-        return symbols;
+        return NiftySectorRegistry.getFlattenedUniverse();
     }
 
     /**
