@@ -285,6 +285,40 @@ class LvrEntryGateTest {
     }
 
     @Test
+    @DisplayName("Option S&R: a missing level fails closed instead of skipping the filter")
+    void testOptionSrFailsClosedWhenLevelUnavailable() {
+        // A null level means the chain could not be read for that side. The filter used to be
+        // guarded by `strike != null`, so a missing level silently skipped the check and the
+        // entry went ahead with no resistance or support test at all.
+        EntryGateInput longIn = baseInput();
+        longIn.direction = LowestVolumeDirection.LONG;
+        longIn.optionSrFilterEnabled = true;
+        longIn.optionSupportStrike = bd(900); // the WRONG side is populated
+        longIn.decisionPrice = bd(950);
+        EntryGateDecision longDenied = LowestVolumeReversalService.evaluateEntryGate(longIn);
+        assertThat(longDenied.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(longDenied.gate()).isEqualTo("OPTION_SR");
+
+        EntryGateInput shortIn = baseInput();
+        shortIn.direction = LowestVolumeDirection.SHORT;
+        shortIn.optionSrFilterEnabled = true;
+        shortIn.optionResistanceStrike = bd(1100); // the WRONG side is populated
+        shortIn.decisionPrice = bd(1050);
+        EntryGateDecision shortDenied = LowestVolumeReversalService.evaluateEntryGate(shortIn);
+        assertThat(shortDenied.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(shortDenied.gate()).isEqualTo("OPTION_SR");
+
+        // Only the level for the direction being traded is required, so a populated level for
+        // this direction is enough even when the other side is absent.
+        EntryGateInput okIn = baseInput();
+        okIn.direction = LowestVolumeDirection.LONG;
+        okIn.optionSrFilterEnabled = true;
+        okIn.optionResistanceStrike = bd(1000);
+        okIn.decisionPrice = bd(950);
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(okIn).allowed()).isTrue();
+    }
+
+    @Test
     @DisplayName("Stand-down → RETRY (gate STAND_DOWN); breaker → RETRY (gate BREAKER)")
     void testStandDownAndBreaker() {
         EntryGateInput sd = baseInput();

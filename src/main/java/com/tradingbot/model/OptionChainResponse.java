@@ -68,11 +68,20 @@ public record OptionChainResponse(
         return synthetic;
     }
 
-    /** Returns the strike price with maximum Call Open Interest (Resistance level). */
+    /**
+     * Returns the strike price with maximum Call Open Interest (Resistance level).
+     *
+     * <p>Returns {@code null} when no strike carries any call open interest. The previous guard
+     * started {@code maxOi} at {@code -1}, so a window whose quotes had all failed — every OI zero
+     * — still produced a "resistance" strike, which is the lowest one in the list. That fabricated
+     * level then fed the OPTION_SR gate.
+     *
+     * @return the max-call-OI strike, or {@code null} if the window carries no call OI at all
+     */
     public BigDecimal maxCallOiStrike() {
         if (strikes == null || strikes.isEmpty()) return null;
         BigDecimal maxStrike = null;
-        long maxOi = -1;
+        long maxOi = 0;
         for (OptionStrike s : strikes) {
             if (s.call() != null && s.call().openInterest() > maxOi) {
                 maxOi = s.call().openInterest();
@@ -82,11 +91,18 @@ public record OptionChainResponse(
         return maxStrike;
     }
 
-    /** Returns the strike price with maximum Put Open Interest (Support level). */
+    /**
+     * Returns the strike price with maximum Put Open Interest (Support level).
+     *
+     * <p>Returns {@code null} when no strike carries any put open interest — see {@link
+     * #maxCallOiStrike()} for why the zero case must not yield a strike.
+     *
+     * @return the max-put-OI strike, or {@code null} if the window carries no put OI at all
+     */
     public BigDecimal maxPutOiStrike() {
         if (strikes == null || strikes.isEmpty()) return null;
         BigDecimal maxStrike = null;
-        long maxOi = -1;
+        long maxOi = 0;
         for (OptionStrike s : strikes) {
             if (s.put() != null && s.put().openInterest() > maxOi) {
                 maxOi = s.put().openInterest();

@@ -3293,6 +3293,9 @@ public class LowestVolumeReversalService {
                 clearOptionChainLevels(setup, "synthetic chain (fabricated PCR 1.00)");
                 return;
             }
+            // Every guard here fails closed: a chain with no usable open interest clears the
+            // stored PCR and S&R strikes so the entry gate sees no value at all, rather than
+            // inheriting a stale or fabricated one.
             if (chain.totalCallOi() <= 0 && chain.totalPutOi() <= 0) {
                 clearOptionChainLevels(setup, "empty chain (no open interest)");
                 return;
@@ -3301,16 +3304,24 @@ public class LowestVolumeReversalService {
                 clearOptionChainLevels(setup, "no call open interest to ratio against");
                 return;
             }
+            if (chain.totalPutOi() <= 0) {
+                // A zero put total drives PCR to 0.0, which the gate reads as "maximally
+                // bearish" and would let SHORT through on data that is really an absent reading.
+                clearOptionChainLevels(setup, "no put open interest to ratio against");
+                return;
+            }
 
+            // PCR and the S&R levels are independent deliverables: the ratio is computed from
+            // the aggregate open interest (already validated above), the levels from the
+            // individual strikes. Resolving one must not discard the other.
             setup.setPcr(chain.pcr());
-            BigDecimal resStrike = chain.maxCallOiStrike();
-            BigDecimal supStrike = chain.maxPutOiStrike();
-            if (resStrike != null) {
-                setup.setOptionResistanceStrike(resStrike);
-            }
-            if (supStrike != null) {
-                setup.setOptionSupportStrike(supStrike);
-            }
+
+            // Assigned unconditionally rather than only when non-null: maxCallOiStrike() and
+            // maxPutOiStrike() return null when their side carries no open interest, and a null
+            // here must clear a level stored from an earlier window instead of leaving it in
+            // place. A side that came back empty is handled fail-closed by the entry gate.
+            setup.setOptionResistanceStrike(chain.maxCallOiStrike());
+            setup.setOptionSupportStrike(chain.maxPutOiStrike());
             log.info(
                     "[LVR] Option Chain levels for {} (ATM={}, tsym={}): PCR={}, "
                             + "MaxCallOI Resistance={}, MaxPutOI Support={}",
@@ -3944,11 +3955,32 @@ public class LowestVolumeReversalService {
         if (Boolean.TRUE.equals(in.optionSrFilterEnabled)
                 && in.decisionPrice != null
                 && in.direction != null) {
-            if (in.direction == LowestVolumeDirection.LONG && in.optionResistanceStrike != null) {
+            // The level for this direction. It is null when the chain could not be read — no
+            // open interest on that side, a synthetic or empty chain, or a fetch that failed
+            // closed. The old checks were guarded by `strike != null`, so a missing level
+            // silently skipped the whole filter and the entry went ahead with no resistance or
+            // support test at all. Fail closed instead.
+            BigDecimal level =
+                    in.direction == LowestVolumeDirection.SHORT
+                            ? in.optionSupportStrike
+                            : in.optionResistanceStrike;
+            if (level == null) {
+                return deny(
+                        EntryGateDisposition.EXHAUST,
+                        "OPTION_SR",
+                        String.format(
+                                Locale.US,
+                                "Option %s strike unavailable (no usable open interest on that"
+                                        + " side) — refusing to enter without it",
+                                in.direction == LowestVolumeDirection.SHORT
+                                        ? "Support"
+                                        : "Resistance"));
+            }
+
+            if (in.direction == LowestVolumeDirection.LONG) {
                 double buffer = in.optionSrBufferPct != null ? in.optionSrBufferPct : 0.0;
                 BigDecimal effectiveResistance =
-                        in.optionResistanceStrike.multiply(
-                                BigDecimal.valueOf(1.0 - (buffer / 100.0)));
+                        level.multiply(BigDecimal.valueOf(1.0 - (buffer / 100.0)));
                 if (in.decisionPrice.compareTo(effectiveResistance) >= 0) {
                     return deny(
                             EntryGateDisposition.EXHAUST,
@@ -3957,13 +3989,12 @@ public class LowestVolumeReversalService {
                                     Locale.US,
                                     "Spot %s is at or above Option Resistance (Max Call OI Strike %s)",
                                     in.decisionPrice,
-                                    in.optionResistanceStrike));
+                                    level));
                 }
-            } else if (in.direction == LowestVolumeDirection.SHORT
-                    && in.optionSupportStrike != null) {
+            } else {
                 double buffer = in.optionSrBufferPct != null ? in.optionSrBufferPct : 0.0;
                 BigDecimal effectiveSupport =
-                        in.optionSupportStrike.multiply(BigDecimal.valueOf(1.0 + (buffer / 100.0)));
+                        level.multiply(BigDecimal.valueOf(1.0 + (buffer / 100.0)));
                 if (in.decisionPrice.compareTo(effectiveSupport) <= 0) {
                     return deny(
                             EntryGateDisposition.EXHAUST,
@@ -3972,7 +4003,7 @@ public class LowestVolumeReversalService {
                                     Locale.US,
                                     "Spot %s is at or below Option Support (Max Put OI Strike %s)",
                                     in.decisionPrice,
-                                    in.optionSupportStrike));
+                                    level));
                 }
             }
         }
@@ -4860,6 +4891,11 @@ public class LowestVolumeReversalService {
             }
 
             // 2. Setup Evaluation & Trigger Arming / Trailing
+            //
+            // Note: evaluateCandleSequence builds a FRESH setup on every call, so nothing resolved
+            // here survives to the next candle. The option-chain levels are therefore resolved at
+            // the trigger site below rather than here — which is also what live does (see the
+            // `if (triggered)` path), and it avoids one chain round-trip per armed candle.
             if (!discardedForDay
                     && candleTime.isBefore(entryCutoffTime)
                     && attempt < maxAttemptsPerSymbol) {
@@ -4869,11 +4905,6 @@ public class LowestVolumeReversalService {
                     activeSetup = evaluated;
                     if (activeSetup.getPdh() == null && pdhPdlFilterEnabled) {
                         initPdhPdlForSetup(activeSetup);
-                    }
-                    if ((pcrFilterEnabled || optionSrFilterEnabled)
-                            && (activeSetup.getPcr() == null
-                                    || activeSetup.getOptionResistanceStrike() == null)) {
-                        resolveLiveOptionChainLevels(activeSetup, activeSetup.getTriggerPrice());
                     }
                 }
             }
@@ -4971,6 +5002,17 @@ public class LowestVolumeReversalService {
                     gateInput.pdh = activeSetup.getPdh();
                     gateInput.pdl = activeSetup.getPdl();
                     gateInput.maxPdhExtensionPct = maxPdhExtensionPct;
+                    // Resolve the option-chain levels at first trigger touch, from the decision
+                    // price — mirroring live, which calls resolveLiveOptionChainLevels inside its
+                    // own `if (triggered)` block. Resolving at arming instead (the old replay
+                    // path) measured a stale reading live would never have used, and because a
+                    // neutral-band denial is EXHAUST, that single frozen value could discard the
+                    // symbol for the rest of the session.
+                    if ((pcrFilterEnabled || optionSrFilterEnabled)
+                            && (activeSetup.getPcr() == null
+                                    || activeSetup.getOptionResistanceStrike() == null)) {
+                        resolveLiveOptionChainLevels(activeSetup, gateInput.decisionPrice);
+                    }
                     gateInput.pcrEnabled = pcrFilterEnabled;
                     gateInput.pcr = activeSetup.getPcr();
                     gateInput.pcrNeutralMin = pcrNeutralMin;

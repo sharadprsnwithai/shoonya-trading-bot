@@ -20,14 +20,15 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -225,7 +226,11 @@ public class ShoonyaOptionChainService {
                         "tsym",
                         futSymbol != null && !futSymbol.isBlank() ? futSymbol : cleanUnderlying);
                 ocPayload.put("strprc", atmStrike.stripTrailingZeros().toPlainString());
-                ocPayload.put("cnt", String.valueOf(count));
+                // GetOptionChain centres its window one strike low: it honours `cnt` rows below
+                // ATM but only `cnt - 1` above it, so cnt=4 yields ATM-4..ATM+3 rather than the
+                // symmetric ATM±4 the parameter implies. Ask for one extra strike and re-centre
+                // the window in code (see below) so both sides carry the same count.
+                ocPayload.put("cnt", String.valueOf(count + 1));
 
                 String formBody =
                         ShoonyaMarketDataService.buildFormBody(
@@ -297,21 +302,27 @@ public class ShoonyaOptionChainService {
 
                 JsonNode values = root.path("values");
                 if (!values.isArray() || values.isEmpty()) {
-                    return new OptionChainResponse(
+                    // The request succeeded but returned nothing usable, so this is just as
+                    // unavailable as a failed fetch. Returning it via the live constructor left
+                    // synthetic=false with PCR 0.0 and an empty strike list, which served a
+                    // fabricated reading to the REST callers as if it were market data.
+                    return mockOptionChain(
                             cleanUnderlying,
-                            underlyingPrice,
                             atmStrike,
-                            futSymbol,
-                            0,
-                            0,
-                            0,
-                            0.0,
-                            List.of());
+                            count,
+                            String.format(
+                                    Locale.US,
+                                    "GetOptionChain returned no strikes for tsym=%s",
+                                    futSymbol));
                 }
 
-                // 3. Group by strike
-                Map<BigDecimal, OptionContractDraft> strikeMap = new HashMap<>();
-                List<OptionContractDraft> allContracts = new ArrayList<>();
+                // 3. Group by strike.
+                //
+                // A TreeMap orders BigDecimal by compareTo (numeric value). HashMap would use
+                // BigDecimal's equals/hashCode, which is scale-sensitive — "22850" and "22850.00"
+                // are different keys — so one strike's CE and PE could be split into two rows,
+                // leaving a call with no put beside a put with no call.
+                Map<BigDecimal, OptionContractDraft> strikeMap = new TreeMap<>();
 
                 for (JsonNode item : values) {
                     BigDecimal strikePrice = new BigDecimal(item.path("strprc").asText("0"));
@@ -321,7 +332,6 @@ public class ShoonyaOptionChainService {
 
                     OptionContractDraft draft =
                             new OptionContractDraft(tsym, token, optType, strikePrice);
-                    allContracts.add(draft);
 
                     OptionContractDraft existing = strikeMap.get(strikePrice);
                     if (existing == null) {
@@ -335,7 +345,42 @@ public class ShoonyaOptionChainService {
                     }
                 }
 
-                // 4. Optionally fetch quotes for all option contracts concurrently
+                // 3b. Re-centre onto a symmetric ATM ± count window.
+                //
+                // GetOptionChain honours `cnt` strikes below ATM but only `cnt - 1` above it, so
+                // the raw chain runs ATM-4..ATM+3 rather than ATM±4. The window is cut here rather
+                // than trusted from the API: without this the read carries an extra ITM call
+                // strike and drops an OTM one, and since ITM calls hold the heaviest OI the bias
+                // pushes call OI — and therefore PCR — systematically low, toward bearish.
+                List<BigDecimal> allStrikes = new ArrayList<>(strikeMap.keySet());
+                int atmIndex = 0;
+                for (int i = 0; i < allStrikes.size(); i++) {
+                    if (allStrikes.get(i).compareTo(atmStrike) <= 0) {
+                        atmIndex = i;
+                    } else {
+                        break;
+                    }
+                }
+                int windowFrom = Math.max(0, atmIndex - count);
+                int windowTo = Math.min(allStrikes.size() - 1, atmIndex + count);
+                List<BigDecimal> sortedStrikes =
+                        new ArrayList<>(allStrikes.subList(windowFrom, windowTo + 1));
+
+                // Only the window's contracts are quoted, so a wide chain costs no more than a
+                // narrow one.
+                List<OptionContractDraft> allContracts = new ArrayList<>();
+                for (BigDecimal sp : sortedStrikes) {
+                    OptionContractDraft draft = strikeMap.get(sp);
+                    if (draft.callDraft != null) {
+                        allContracts.add(draft.callDraft);
+                    }
+                    if (draft.putDraft != null) {
+                        allContracts.add(draft.putDraft);
+                    }
+                }
+
+                // 4. Fetch quotes for the window's option contracts concurrently.
+                AtomicInteger quotesSucceeded = new AtomicInteger();
                 if (fetchQuotes) {
                     List<CompletableFuture<Void>> futures =
                             allContracts.stream()
@@ -349,42 +394,59 @@ public class ShoonyaOptionChainService {
                                                                                     sessionToken,
                                                                                     segment,
                                                                                     draft.token);
-                                                                    if (q != null
-                                                                            && "Ok"
-                                                                                    .equalsIgnoreCase(
-                                                                                            q.path(
-                                                                                                            "stat")
-                                                                                                    .asText(
-                                                                                                            "Ok"))) {
-                                                                        draft.ltp =
-                                                                                new BigDecimal(
-                                                                                        q.path("lp")
-                                                                                                .asText(
-                                                                                                        "0"));
-                                                                        draft.openInterest =
-                                                                                q.path("oi")
-                                                                                        .asLong(0);
-                                                                        draft.volume =
-                                                                                q.path("v")
-                                                                                        .asLong(0);
-                                                                        draft.bidPrice =
-                                                                                new BigDecimal(
-                                                                                        q.path(
-                                                                                                        "bp1")
-                                                                                                .asText(
-                                                                                                        "0"));
-                                                                        draft.askPrice =
-                                                                                new BigDecimal(
-                                                                                        q.path(
-                                                                                                        "sp1")
-                                                                                                .asText(
-                                                                                                        "0"));
-                                                                        draft.previousClose =
-                                                                                new BigDecimal(
-                                                                                        q.path("c")
-                                                                                                .asText(
-                                                                                                        "0"));
+                                                                    // A missing `stat` must fail
+                                                                    // rather than default to Ok:
+                                                                    // an empty or throttled payload
+                                                                    // used to read as success and
+                                                                    // land in the aggregate with
+                                                                    // oi=0.
+                                                                    String stat =
+                                                                            q == null
+                                                                                    ? ""
+                                                                                    : q.path("stat")
+                                                                                            .asText(
+                                                                                                    "");
+                                                                    if (!"Ok"
+                                                                            .equalsIgnoreCase(
+                                                                                    stat)) {
+                                                                        return;
                                                                     }
+                                                                    // A row that parses but carries
+                                                                    // no oi cannot be
+                                                                    // told apart from a genuine
+                                                                    // zero, so reject it and
+                                                                    // let the coverage check below
+                                                                    // decide whether the
+                                                                    // window can still be trusted.
+                                                                    if (!q.has("oi")) {
+                                                                        return;
+                                                                    }
+                                                                    draft.ltp =
+                                                                            new BigDecimal(
+                                                                                    q.path("lp")
+                                                                                            .asText(
+                                                                                                    "0"));
+                                                                    draft.openInterest =
+                                                                            q.path("oi").asLong(0);
+                                                                    draft.volume =
+                                                                            q.path("v").asLong(0);
+                                                                    draft.bidPrice =
+                                                                            new BigDecimal(
+                                                                                    q.path("bp1")
+                                                                                            .asText(
+                                                                                                    "0"));
+                                                                    draft.askPrice =
+                                                                            new BigDecimal(
+                                                                                    q.path("sp1")
+                                                                                            .asText(
+                                                                                                    "0"));
+                                                                    draft.previousClose =
+                                                                            new BigDecimal(
+                                                                                    q.path("c")
+                                                                                            .asText(
+                                                                                                    "0"));
+                                                                    quotesSucceeded
+                                                                            .incrementAndGet();
                                                                 } catch (Exception e) {
                                                                     log.debug(
                                                                             "Quote fetch failed for token {}: {}",
@@ -408,11 +470,27 @@ public class ShoonyaOptionChainService {
                                 e.getMessage(),
                                 e);
                     }
+
+                    // Fail closed. A window missing quotes is not a narrower window, it is a
+                    // wrong ratio: the synthetic chain returned here is flagged, so every
+                    // downstream gate clears PCR and the S&R strikes rather than trading on a
+                    // Put-Call Ratio computed from a partial sample of open interest.
+                    int expectedQuotes = allContracts.size();
+                    if (quotesSucceeded.get() < expectedQuotes) {
+                        return mockOptionChain(
+                                cleanUnderlying,
+                                atmStrike,
+                                count,
+                                String.format(
+                                        Locale.US,
+                                        "only %d of %d window quotes returned open interest for tsym=%s",
+                                        quotesSucceeded.get(),
+                                        expectedQuotes,
+                                        futSymbol));
+                    }
                 }
 
                 // 5. Construct sorted OptionStrike list and calculate aggregate OI
-                List<BigDecimal> sortedStrikes = new ArrayList<>(strikeMap.keySet());
-                Collections.sort(sortedStrikes);
 
                 long totalCallOi = 0;
                 long totalPutOi = 0;
@@ -457,12 +535,17 @@ public class ShoonyaOptionChainService {
                         totalPutOi += p.openInterest;
                     }
 
-                    boolean isAtm =
-                            underlyingPrice.compareTo(BigDecimal.ZERO) > 0
-                                    && sp.compareTo(atmStrike) == 0;
+                    // Flag the ATM by comparing against the anchor strike directly. Gating this on
+                    // underlyingPrice>0 meant that when futures-contract resolution failed (and
+                    // so no quote was fetched), no strike was flagged ATM at all — even though
+                    // atmStrike is always resolved, via explicitStrike or the default fallback.
+                    boolean isAtm = sp.compareTo(atmStrike) == 0;
                     strikeList.add(new OptionStrike(sp, isAtm, call, put));
                 }
 
+                // Kept unrounded on purpose: the same field drives the entry gate, and rounding
+                // here made a true 0.845 read as 0.85 — inside the neutral band — purely for
+                // display reasons. Consumers that show the number round it themselves.
                 double pcr = totalCallOi > 0 ? (double) totalPutOi / totalCallOi : 0.0;
 
                 return new OptionChainResponse(
@@ -473,7 +556,7 @@ public class ShoonyaOptionChainService {
                         strikeList.size(),
                         totalCallOi,
                         totalPutOi,
-                        Math.round(pcr * 100.0) / 100.0,
+                        pcr,
                         strikeList);
 
             } catch (Exception e) {
