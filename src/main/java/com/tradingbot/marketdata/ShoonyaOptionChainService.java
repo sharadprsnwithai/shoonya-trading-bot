@@ -47,9 +47,8 @@ public class ShoonyaOptionChainService {
     public static final String DEFAULT_NIFTY_FUT_TOKEN = "68407";
 
     /**
-     * Number of strikes either side of ATM aggregated into every Put-Call Ratio calculation. Kept
-     * at 4 (a 9-strike window) so the LVR equity gate and the MCX commodity bias read the same
-     * window.
+     * Number of strikes either side of ATM aggregated into every Put-Call Ratio calculation — a
+     * symmetric 9-strike window (ATM±4).
      */
     public static final int PCR_STRIKE_WINDOW = 4;
 
@@ -823,7 +822,6 @@ public class ShoonyaOptionChainService {
         if ("POLYCAB".equalsIgnoreCase(underlying)) return new BigDecimal("7000");
         if ("ADANIENSOL".equalsIgnoreCase(underlying)) return new BigDecimal("980");
         if ("ADANIGREEN".equalsIgnoreCase(underlying)) return new BigDecimal("1250");
-        if ("MCX".equalsIgnoreCase(underlying)) return new BigDecimal("6200");
         if ("TORNTPHARM".equalsIgnoreCase(underlying)) return new BigDecimal("3400");
         if ("BHEL".equalsIgnoreCase(underlying)) return new BigDecimal("270");
         if ("HINDALCO".equalsIgnoreCase(underlying)) return new BigDecimal("680");

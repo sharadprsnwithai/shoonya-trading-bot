@@ -33,10 +33,6 @@ public class YahooFinanceServiceTest {
         assertEquals("MPHASIS.NS", service.toYahooTicker("MPASIS"));
         assertEquals("OBEROIRLTY.NS", service.toYahooTicker("OBERREALTY"));
         assertEquals("NIFTY_MIDCAP_100.NS", service.toYahooTicker("MIDCPNIFTY"));
-        assertEquals("CL=F", service.toYahooTicker("CRUDEOIL"));
-        assertEquals("GC=F", service.toYahooTicker("GOLD"));
-        assertEquals("SI=F", service.toYahooTicker("SILVER"));
-        assertEquals("HG=F", service.toYahooTicker("COPPER"));
         assertEquals("CL=F", service.toYahooTicker("CL=F"));
         assertEquals("GC=F", service.toYahooTicker("GC=F"));
         assertEquals("SI=F", service.toYahooTicker("SI=F"));

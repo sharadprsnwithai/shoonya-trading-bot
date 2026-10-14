@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.model.Candle;
-import com.tradingbot.util.CommodityRegistry;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -338,11 +337,6 @@ public class ShoonyaMarketDataService {
 
         String segment = StockFnoRegistry.getSegment(searchSymbol);
         String exch = (segment != null && !segment.isBlank()) ? segment : "NFO";
-        // MCX commodities are not in StockFnoRegistry (which defaults to NFO); route them
-        // explicitly so SearchScrip hits the commodity exchange and FUTCOM contracts match.
-        if (CommodityRegistry.isCommodity(searchSymbol)) {
-            exch = "MCX";
-        }
         try {
             JsonNode values = searchScrip(exch, searchSymbol);
             FuturesContract best = selectNearestFuturesContract(searchSymbol, values);
@@ -461,14 +455,6 @@ public class ShoonyaMarketDataService {
         return null;
     }
 
-    /**
-     * Public wrapper over {@link #parseFuturesExpiry} so quote feeds (e.g. the commodity VWAP
-     * strategy's DTE gate) can derive a contract's expiry date from its resolved trading symbol.
-     */
-    public java.time.LocalDate parseContractExpiry(String tsym, int underlyingLength) {
-        return parseFuturesExpiry(tsym, underlyingLength);
-    }
-
     /** Resolves the exchange for a given symbol (e.g. "NSE", "BSE", "MCX", "NFO"). */
     public String resolveExchange(String symbol) {
         if (symbol == null || symbol.isBlank()) {
@@ -480,11 +466,6 @@ public class ShoonyaMarketDataService {
         if (clean.startsWith("MCX:")) return "MCX";
         if (clean.startsWith("NFO:")) return "NFO";
         if (clean.startsWith("BFO:")) return "BFO";
-
-        if (com.tradingbot.util.CommodityRegistry.isCommodity(clean)) {
-            var meta = com.tradingbot.util.CommodityRegistry.getMetadata(clean);
-            return (meta != null && meta.exchange() != null) ? meta.exchange() : "MCX";
-        }
 
         // Derivative contract patterns (e.g. RELIANCE26OCTFUT, NIFTY26OCT25000CE,
         // SENSEX26OCT80000CE)

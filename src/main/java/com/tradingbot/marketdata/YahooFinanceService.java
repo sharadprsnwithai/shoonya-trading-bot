@@ -125,28 +125,6 @@ public class YahooFinanceService {
             return "%5EBSESN";
         }
 
-        if ("CRUDEOIL".equalsIgnoreCase(clean)
-                || "CRUDE".equalsIgnoreCase(clean)
-                || "CRUDE OIL".equalsIgnoreCase(clean)) {
-            return "CL=F";
-        }
-
-        if ("GOLD".equalsIgnoreCase(clean) || "GOLDM".equalsIgnoreCase(clean)) {
-            return "GC=F";
-        }
-
-        if ("SILVER".equalsIgnoreCase(clean) || "SILVERM".equalsIgnoreCase(clean)) {
-            return "SI=F";
-        }
-
-        if ("COPPER".equalsIgnoreCase(clean) || "COPPERM".equalsIgnoreCase(clean)) {
-            return "HG=F";
-        }
-
-        if ("NATURALGAS".equalsIgnoreCase(clean) || "NATGAS".equalsIgnoreCase(clean)) {
-            return "NG=F";
-        }
-
         if (clean.startsWith("^")) {
             return "%5E" + clean.substring(1);
         }
