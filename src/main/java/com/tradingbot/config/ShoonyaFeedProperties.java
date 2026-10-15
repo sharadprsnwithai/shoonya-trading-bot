@@ -73,6 +73,18 @@ public class ShoonyaFeedProperties {
      */
     private long keepAliveSeconds = 30;
 
+    /**
+     * How long a connection must survive before the reconnect backoff is allowed to reset.
+     *
+     * <p>Resetting on the connect acknowledgement instead - which is what this used to do - is
+     * unsafe, because a gateway that accepts the session and then drops the socket presents as
+     * permanently healthy. Each cycle would report a successful authentication, zero the counter,
+     * and retry after the initial delay forever: one observed session logged 15,085 reconnects that
+     * were all still at "attempt 1" three hours in. Resetting only after the socket has stayed up
+     * for this long means backoff reflects connection quality rather than the handshake.
+     */
+    private long stableConnectionSeconds = 30;
+
     // Getters and setters
 
     /**
@@ -241,5 +253,20 @@ public class ShoonyaFeedProperties {
      */
     public void setKeepAliveSeconds(long keepAliveSeconds) {
         this.keepAliveSeconds = keepAliveSeconds;
+    }
+
+    /**
+     * @return seconds a connection must stay up before the reconnect backoff resets
+     */
+    public long getStableConnectionSeconds() {
+        return stableConnectionSeconds;
+    }
+
+    /**
+     * @param stableConnectionSeconds seconds a connection must stay up before the reconnect backoff
+     *     resets
+     */
+    public void setStableConnectionSeconds(long stableConnectionSeconds) {
+        this.stableConnectionSeconds = stableConnectionSeconds;
     }
 }

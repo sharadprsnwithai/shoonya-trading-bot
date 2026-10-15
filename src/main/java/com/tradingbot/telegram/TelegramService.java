@@ -793,6 +793,7 @@ public class TelegramService {
                         String token = config.getTelegramBotToken().trim();
                         String chatId = config.getTelegramChatId().trim();
                         if (token.isBlank() || chatId.isBlank()) return;
+                        logOutgoing(chatId, text);
 
                         String keyboardJson =
                                 String.format(
@@ -872,6 +873,34 @@ public class TelegramService {
     }
 
     /**
+     * Records the exact payload handed to Telegram.
+     *
+     * <p>Telegram's response is not a substitute for this: the API reports only that a send
+     * succeeded, so once an alert has landed there is nothing left to compare against when it
+     * disagrees with the market, or when two runs of the bot send competing numbers seconds apart.
+     * That diagnosis had to be reconstructed from surrounding log lines instead of read directly.
+     *
+     * <p>Logged at INFO rather than DEBUG because these alerts are the program's primary output,
+     * there are only a handful a day, and the file is local and gitignored. Drop this logger to
+     * DEBUG with {@code logging.level.com.tradingbot.telegram.TelegramService=DEBUG} should the
+     * volume ever become a problem.
+     *
+     * <p>Package-private so it can be exercised directly: both send paths return while Telegram is
+     * still disabled, which is the only state a unit test can safely arrange, so reaching this
+     * through the caller would require either a live network call or testing nothing.
+     *
+     * @param chatId destination chat the message was addressed to
+     * @param text message body exactly as it is about to be delivered
+     */
+    void logOutgoing(String chatId, String text) {
+        log.info(
+                "[TELEGRAM] Outgoing message to chat {} ({} chars): {}",
+                chatId,
+                text.length(),
+                text);
+    }
+
+    /**
      * Sends a raw message asynchronously to default chat ID to avoid blocking execution threads.
      */
     public void sendAsync(String text) {
@@ -899,6 +928,7 @@ public class TelegramService {
                         if (token.isBlank() || chatId.isBlank() || text == null || text.isBlank()) {
                             return;
                         }
+                        logOutgoing(chatId, text);
 
                         String url = "https://api.telegram.org/bot" + token + "/sendMessage";
                         String formBody =

@@ -11,6 +11,8 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,9 +20,11 @@ import org.junit.jupiter.api.Test;
 /**
  * Unit tests for the state machine of the streaming feed client.
  *
- * <p>The feed is constructed with the transport disabled, so no socket is opened and the tests
- * drive the protocol through {@code handleRawText}. That is the same entry point the listener uses,
- * so the tested path is the production path.
+ * <p>The feed is constructed with the transport disabled, so no socket is opened. The tests drive
+ * the protocol through {@code handleRawText}, which is the listener's own entry point once it has
+ * attributed the frame to a connection, so the tested path is the production path. Naming that
+ * connection explicitly lets a test stand in for a socket which has been superseded - a state
+ * otherwise only reachable while a real gateway is draining one.
  */
 class ShoonyaFeedClientTest {
 
@@ -44,6 +48,36 @@ class ShoonyaFeedClientTest {
                         shoonyaConfig,
                         new ShoonyaAuthenticator(shoonyaConfig),
                         HttpClient.newHttpClient());
+    }
+
+    /**
+     * Releases the scheduler installed by {@link #armReconnect()} so no probe outlives the test.
+     */
+    @AfterEach
+    void tearDown() {
+        if (client.running) {
+            client.stop();
+        }
+    }
+
+    /**
+     * Arms the reconnection path without opening a socket.
+     *
+     * <p>{@link ShoonyaFeedClient#start()} would resolve a real session and dial the live gateway,
+     * so the test installs a scheduler and flips the running flag directly instead. The backoff is
+     * set well beyond the lifetime of the test, keeping the queued attempt from ever firing and
+     * reconnecting for real.
+     */
+    private void armReconnect() {
+        properties.setReconnectInitialBackoffSeconds(3600);
+        client.running = true;
+        client.scheduler =
+                Executors.newSingleThreadScheduledExecutor(
+                        runnable -> {
+                            Thread t = new Thread(runnable, "test-feed-reconnect");
+                            t.setDaemon(true);
+                            return t;
+                        });
     }
 
     /**
@@ -341,6 +375,82 @@ class ShoonyaFeedClientTest {
         assertThat(client.ensureSubscribed(null)).isEmpty();
         assertThat(client.snapshots(null, Duration.ofSeconds(5))).isEmpty();
         assertThat(client.snapshots(List.of(), Duration.ofSeconds(5))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("repeated closes for one connection queue a single reconnect")
+    void testDuplicateCloseQueuesSingleReconnect() {
+        armReconnect();
+
+        // Close and error callbacks arrive together for the same socket, and a rejected
+        // authentication schedules one before the gateway's own close schedules another. Unguarded,
+        // each of those becomes a second chain on the next cycle.
+        client.handleDisconnect(0L);
+        client.handleDisconnect(0L);
+        client.handleDisconnect(0L);
+
+        assertThat(client.scheduledReconnects()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a close from a superseded connection clears nothing and queues nothing")
+    void testSupersededCloseIgnored() {
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+        client.ensureSubscribed(one("DMART", "2885"));
+        assertThat(client.isUp()).isTrue();
+
+        armReconnect();
+        client.handleDisconnect(99L);
+
+        assertThat(client.isUp()).isTrue();
+        assertThat(client.scheduledReconnects()).isZero();
+        // Subscriptions belong to the live session; a socket nobody owns must not take them away.
+        assertThat(client.ensureSubscribed(one("DMART", "2885"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a frame from a superseded connection cannot authenticate the session")
+    void testSupersededFrameIgnored() {
+        client.handleRawText(99L, "{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+        assertThat(client.isUp()).isFalse();
+
+        client.handleRawText(0L, "{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+        assertThat(client.isUp()).isTrue();
+    }
+
+    @Test
+    @DisplayName("authentication does not reset the reconnect backoff")
+    void testBackoffSurvivesAuthentication() {
+        armReconnect();
+
+        assertThat(client.scheduleReconnect()).isTrue();
+        assertThat(client.scheduledReconnects()).isEqualTo(1);
+
+        // A gateway that acknowledges the session and then drops the socket looks healthy from the
+        // handshake alone. Clearing the counter here pinned one live run at "attempt 1" for 15,085
+        // consecutive reconnects.
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+
+        assertThat(client.isUp()).isTrue();
+        assertThat(client.scheduledReconnects()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the backoff resets once the connection has stayed up for the grace period")
+    void testBackoffResetsAfterStableConnection() {
+        properties.setStableConnectionSeconds(1);
+        armReconnect();
+
+        assertThat(client.scheduleReconnect()).isTrue();
+        assertThat(client.scheduledReconnects()).isEqualTo(1);
+
+        // Authenticating as connection 0 queues the stability probe; nothing resets immediately.
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+        assertThat(client.scheduledReconnects()).isEqualTo(1);
+
+        sleep(2000);
+
+        assertThat(client.scheduledReconnects()).isZero();
     }
 
     /**

@@ -45,6 +45,10 @@ dependencies {
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // Logback already ships on the test runtime classpath through the web starter, but only at
+    // runtime scope. Asserting on emitted log events needs its API to compile against, and the
+    // outbound Telegram payload is only observable that way.
+    testImplementation("ch.qos.logback:logback-classic")
 
     // SpotBugs / FindBugs Annotations
     compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.6")

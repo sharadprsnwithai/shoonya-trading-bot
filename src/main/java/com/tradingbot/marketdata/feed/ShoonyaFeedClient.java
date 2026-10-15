@@ -21,8 +21,11 @@ import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,14 +83,46 @@ public class ShoonyaFeedClient {
     private final StringBuilder inboundBuffer = new StringBuilder();
 
     private volatile WebSocket webSocket;
-    private volatile boolean running;
-    private volatile boolean authenticated;
     private volatile int reconnectAttempts;
+
+    /**
+     * Whether the feed has been started and not yet stopped.
+     *
+     * <p>Package-private rather than private so tests can drive the reconnection path without
+     * calling {@link #start()}, which resolves a real session and opens a socket against the live
+     * gateway. Production code outside this class never touches it.
+     */
+    volatile boolean running;
+
+    /**
+     * Scheduler behind reconnection, keepalive and the stability probe.
+     *
+     * <p>Package-private for the same reason as {@link #running}: a test installs its own and shuts
+     * it down, rather than starting the transport in order to obtain one.
+     */
+    ScheduledExecutorService scheduler;
+
+    private volatile boolean authenticated;
+
+    /**
+     * Holds at most one queued reconnect.
+     *
+     * <p>Without this the client stacks chains: a rejected authentication schedules a reconnect and
+     * then the gateway's own close schedules a second one for the same failure, and the two chains
+     * each spawn two more on the next cycle. A live session recorded 254 reconnects against 127
+     * failed authentications - exactly two per failure - with four independent attempts landing
+     * within fifty-five milliseconds of each other.
+     */
+    private final AtomicBoolean reconnectPending = new AtomicBoolean(false);
+
+    /** Source of connection ids. Bumped on every attempt so callbacks can name their socket. */
+    private final AtomicLong connectionIds = new AtomicLong();
+
+    /** Id of the connection that currently owns the socket and the session state. */
+    private volatile long currentConnectionId;
 
     /** Session token handed to the feed on connect, refreshed on every connection attempt. */
     private volatile String sessionToken = "";
-
-    private ScheduledExecutorService scheduler;
 
     /**
      * Builds the feed with its own HTTP client, following the convention used by the other Shoonya
@@ -189,6 +224,9 @@ public class ShoonyaFeedClient {
     public void stop() {
         this.running = false;
         this.authenticated = false;
+        // A pending reconnect cancelled by the shutdown below would otherwise leave the gate held,
+        // so a later start would find a slot no attempt could ever claim.
+        this.reconnectPending.set(false);
         WebSocket ws = this.webSocket;
         this.webSocket = null;
         if (ws != null) {
@@ -467,6 +505,14 @@ public class ShoonyaFeedClient {
         if (!running) {
             return;
         }
+        // Claim the new id before anything else: a socket handed over by an earlier attempt becomes
+        // stale from this moment, so its open, close and frame callbacks can be told apart from the
+        // connection that is about to take over.
+        long connectionId = connectionIds.incrementAndGet();
+        this.currentConnectionId = connectionId;
+        synchronized (inboundBuffer) {
+            inboundBuffer.setLength(0);
+        }
         try {
             // Resolved once here and reused by the listener; asking the authenticator twice could
             // trigger two headless logins on a cold session.
@@ -476,7 +522,7 @@ public class ShoonyaFeedClient {
                     .newWebSocketBuilder()
                     .connectTimeout(
                             Duration.ofSeconds(Math.max(1, properties.getConnectTimeoutSeconds())))
-                    .buildAsync(uri, new FeedListener())
+                    .buildAsync(uri, new FeedListener(connectionId))
                     .thenAccept(ws -> log.info("[FEED] Connected to {}", uri))
                     .exceptionally(
                             error -> {
@@ -509,19 +555,90 @@ public class ShoonyaFeedClient {
     }
 
     /**
-     * Schedules a reconnect with exponential backoff, capped at the configured maximum. The backoff
-     * resets as soon as the session authenticates, so a healthy feed does not accumulate delay.
+     * Queues a reconnect with exponential backoff, capped at the configured maximum.
+     *
+     * <p>At most one reconnect is ever outstanding. Failures tend to arrive in pairs - a rejected
+     * authentication schedules a retry and the gateway's own close schedules another for the same
+     * failure - and unguarded, two chains become four, then eight. Callers therefore need to know
+     * whether their request was the one that claimed the slot.
+     *
+     * <p>The backoff deliberately does <em>not</em> reset on the authentication acknowledgement. A
+     * gateway that accepts the session and then drops the socket looks permanently healthy from the
+     * handshake alone, so resetting there pins the delay at the initial value forever; one session
+     * logged 15,085 reconnects all still reported as "attempt 1". The counter is cleared by {@link
+     * #scheduleStabilityReset(long)} instead, once a connection has actually stayed up.
+     *
+     * @return true when this call queued the reconnect, false when it was declined
      */
-    private void scheduleReconnect() {
+    boolean scheduleReconnect() {
         if (!running || scheduler == null || scheduler.isShutdown()) {
-            return;
+            return false;
+        }
+        if (!reconnectPending.compareAndSet(false, true)) {
+            log.debug("[FEED] Reconnect already queued; not stacking another chain.");
+            return false;
         }
         int attempt = reconnectAttempts++;
         long cap = Math.max(1, properties.getReconnectMaxBackoffSeconds());
         long initial = Math.max(1, properties.getReconnectInitialBackoffSeconds());
         long delay = Math.min(cap, initial << Math.min(attempt, 10));
         log.warn("[FEED] Reconnecting in {}s (attempt {}).", delay, attempt + 1);
-        scheduler.schedule(this::connect, delay, TimeUnit.SECONDS);
+        try {
+            scheduler.schedule(
+                    () -> {
+                        // Released before connecting so an immediate failure can queue the next
+                        // attempt rather than finding the slot permanently held.
+                        reconnectPending.set(false);
+                        connect();
+                    },
+                    delay,
+                    TimeUnit.SECONDS);
+            return true;
+        } catch (RejectedExecutionException e) {
+            // Shutdown won the race. Releasing the slot keeps a later start from finding a stale
+            // gate that no reconnect could ever clear.
+            reconnectPending.set(false);
+            log.debug("[FEED] Reconnect declined; scheduler is shutting down.");
+            return false;
+        }
+    }
+
+    /**
+     * Clears the reconnect backoff once a connection has survived long enough to be trusted.
+     *
+     * <p>The check runs against the id of the connection that authenticated, so a socket which was
+     * superseded while the timer was pending cannot reset the counter on behalf of its successor.
+     *
+     * @param connectionId id of the connection being judged
+     */
+    private void scheduleStabilityReset(long connectionId) {
+        if (scheduler == null || scheduler.isShutdown()) {
+            return;
+        }
+        long grace = Math.max(1, properties.getStableConnectionSeconds());
+        try {
+            scheduler.schedule(
+                    () -> {
+                        if (running && connectionId == currentConnectionId && authenticated) {
+                            reconnectAttempts = 0;
+                            log.debug(
+                                    "[FEED] Connection {} stable for {}s; reconnect backoff reset.",
+                                    connectionId,
+                                    grace);
+                        }
+                    },
+                    grace,
+                    TimeUnit.SECONDS);
+        } catch (RejectedExecutionException e) {
+            log.debug("[FEED] Stability probe declined; scheduler is shutting down.");
+        }
+    }
+
+    /**
+     * @return how many reconnects have been queued since the backoff last reset
+     */
+    int scheduledReconnects() {
+        return reconnectAttempts;
     }
 
     /**
@@ -563,6 +680,27 @@ public class ShoonyaFeedClient {
      * @param text the raw frame
      */
     public void handleRawText(String text) {
+        handleRawText(currentConnectionId, text);
+    }
+
+    /**
+     * Handles one complete inbound frame.
+     *
+     * <p>Frames are attributed to the socket they arrived on. A connection that has been superseded
+     * by a newer attempt can still be draining, and letting it acknowledge an authentication or
+     * clear state would put the session back into the hands of a socket that no longer owns it.
+     *
+     * @param connectionId id of the socket the frame arrived on
+     * @param text raw frame
+     */
+    void handleRawText(long connectionId, String text) {
+        if (connectionId != currentConnectionId) {
+            log.debug(
+                    "[FEED] Ignoring frame from superseded connection {} (current {}).",
+                    connectionId,
+                    currentConnectionId);
+            return;
+        }
         JsonNode node = ShoonyaFeedProtocol.parse(text);
         if (node == null) {
             log.debug("[FEED] Ignoring non-JSON frame.");
@@ -572,8 +710,10 @@ public class ShoonyaFeedClient {
             case AUTH_ACK -> {
                 if (ShoonyaFeedProtocol.isAuthenticated(node)) {
                     this.authenticated = true;
-                    this.reconnectAttempts = 0;
                     log.info("[FEED] Feed session authenticated.");
+                    // A handshake alone proves nothing about the connection behind it, so the
+                    // backoff is only cleared once this socket has stayed up on its own.
+                    scheduleStabilityReset(connectionId);
                     // Subscriptions do not survive a reconnect, so everything previously requested
                     // is re-sent verbatim on every successful authentication.
                     if (!subscribedKeys.isEmpty()) {
@@ -640,6 +780,29 @@ public class ShoonyaFeedClient {
         this.subscribedKeys.clear();
     }
 
+    /**
+     * Reacts to a socket closing or failing, unless that socket has already been superseded.
+     *
+     * <p>Every reconnect creates a socket that can outlive its usefulness: an attempt replaced by a
+     * later one will still report its own close. Letting that report through would wipe the
+     * subscriptions of the connection currently in use and queue another reconnect on top of it, so
+     * the id decides whether this is a real disconnect or a late message from a socket nobody owns
+     * any more.
+     *
+     * @param connectionId id of the socket that closed or failed
+     */
+    void handleDisconnect(long connectionId) {
+        if (connectionId != currentConnectionId) {
+            log.debug(
+                    "[FEED] Ignoring close from superseded connection {} (current {}).",
+                    connectionId,
+                    currentConnectionId);
+            return;
+        }
+        markDisconnected();
+        scheduleReconnect();
+    }
+
     // ---------------------------------------------------------------------
     // WebSocket listener
     // ---------------------------------------------------------------------
@@ -651,11 +814,32 @@ public class ShoonyaFeedClient {
      * <p>The JDK client is demand-driven: unless the listener asks for more with {@code
      * request(1)}, no further messages are delivered. That demand is renewed after every completed
      * frame.
+     *
+     * <p>Each listener carries the id of the attempt that created it. Several attempts can overlap
+     * briefly - a replaced socket is still draining when its successor opens - and everything this
+     * listener reports is attributed through that id rather than trusted at face value.
      */
     private final class FeedListener implements WebSocket.Listener {
 
+        /** Id of the connect attempt this listener belongs to. */
+        private final long connectionId;
+
+        /**
+         * @param connectionId id of the connect attempt this listener belongs to
+         */
+        FeedListener(long connectionId) {
+            this.connectionId = connectionId;
+        }
+
         @Override
         public void onOpen(WebSocket webSocket) {
+            if (connectionId != currentConnectionId) {
+                // Adopting this socket would replace a connection that is already live, and leaving
+                // it open would hold a second session against a gateway that permits one.
+                log.debug("[FEED] Closing superseded connection {} on open.", connectionId);
+                webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "superseded");
+                return;
+            }
             ShoonyaFeedClient.this.webSocket = webSocket;
             // A missing token is logged rather than thrown: the reconnect backoff will retry, and a
             // hard failure here would take the whole application down over an optional
@@ -672,6 +856,12 @@ public class ShoonyaFeedClient {
 
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            // Dropped before buffering: a superseded socket's half-finished frame must not be
+            // joined with whatever the current connection writes next.
+            if (connectionId != currentConnectionId) {
+                webSocket.request(1);
+                return null;
+            }
             StringBuilder buffer;
             synchronized (inboundBuffer) {
                 inboundBuffer.append(data);
@@ -682,24 +872,26 @@ public class ShoonyaFeedClient {
                 buffer = new StringBuilder(inboundBuffer);
                 inboundBuffer.setLength(0);
             }
-            handleRawText(buffer.toString());
+            handleRawText(connectionId, buffer.toString());
             webSocket.request(1);
             return null;
         }
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-            log.warn("[FEED] Socket closed ({} {}); reconnecting.", statusCode, reason);
-            markDisconnected();
-            scheduleReconnect();
+            if (connectionId == currentConnectionId) {
+                log.warn("[FEED] Socket closed ({} {}); reconnecting.", statusCode, reason);
+            }
+            handleDisconnect(connectionId);
             return null;
         }
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
-            log.warn("[FEED] Socket error: {}", error.getMessage());
-            markDisconnected();
-            scheduleReconnect();
+            if (connectionId == currentConnectionId) {
+                log.warn("[FEED] Socket error: {}", error.getMessage());
+            }
+            handleDisconnect(connectionId);
         }
     }
 }

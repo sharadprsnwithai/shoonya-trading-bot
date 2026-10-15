@@ -1,13 +1,19 @@
 package com.tradingbot.telegram;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.tradingbot.config.ShoonyaConfig;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 class TelegramServiceTest {
 
@@ -93,5 +99,37 @@ class TelegramServiceTest {
         // Should gracefully handle target chatId when disabled
         telegramService.sendTextMessage("987654321", "Test custom chat alert");
         telegramService.sendAlert("987654321", "Test custom alert");
+    }
+
+    /**
+     * The payload is logged before it is handed to Telegram, because Telegram itself only confirms
+     * that a send succeeded. Without this line there is nothing to compare against when a received
+     * alert disagrees with the market or with a second run of the bot.
+     */
+    @Test
+    void testOutgoingMessageIsLoggedWithChatAndBody() {
+        Logger logger = (Logger) LoggerFactory.getLogger(TelegramService.class);
+        Level previous = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.setLevel(Level.INFO);
+        logger.addAppender(appender);
+        try {
+            telegramService.logOutgoing("785151098", "Setup ARMED for INFY: Trigger=1111.95");
+
+            assertThat(appender.list)
+                    .anySatisfy(
+                            event -> {
+                                String message = event.getFormattedMessage();
+                                assertThat(message)
+                                        .contains("785151098")
+                                        .contains("Setup ARMED for INFY: Trigger=1111.95")
+                                        .contains("chars");
+                            });
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+            logger.setLevel(previous);
+        }
     }
 }
