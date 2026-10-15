@@ -587,11 +587,18 @@ public class ShoonyaFeedClient {
     }
 
     /**
-     * Clears any authentication state, used when the socket drops so that {@link #isUp()} stops
-     * reporting a feed that can no longer deliver ticks.
+     * Clears session state when the socket drops so that {@link #isUp()} stops reporting a feed
+     * that can no longer deliver ticks.
+     *
+     * <p>Subscriptions are cleared here as well. They belong to the gateway session, not to this
+     * object, and a reconnected socket carries none. Leaving the keys in place would make {@link
+     * #ensureSubscribed(Map)} see them as already registered and skip the frames, so the feed would
+     * reconnect, authenticate, and then stream nothing while reporting itself healthy - a silent
+     * and permanent fallback to REST for the rest of the process.
      */
     void markDisconnected() {
         this.authenticated = false;
+        this.subscribedKeys.clear();
     }
 
     // ---------------------------------------------------------------------

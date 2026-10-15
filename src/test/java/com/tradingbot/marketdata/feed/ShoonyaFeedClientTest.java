@@ -88,6 +88,25 @@ class ShoonyaFeedClientTest {
     }
 
     @Test
+    @DisplayName("a dropped session re-announces its subscriptions on reconnect")
+    void testSubscriptionsReAnnouncedAfterDisconnect() {
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+        assertThat(client.ensureSubscribed(one("DMART", "2885"))).containsExactly("NSE|2885");
+
+        // The gateway forgets subscriptions with the session, so a reconnected socket carries
+        // none. If the local set survived the drop, ensureSubscribed would treat the symbol as
+        // already registered, send no frames, and the feed would reconnect healthy yet stream
+        // nothing for the rest of the process.
+        client.markDisconnected();
+        assertThat(client.subscribedKeys()).isEmpty();
+        assertThat(client.isUp()).isFalse();
+
+        client.handleRawText("{\"t\":\"ak\",\"s\":\"Ok\",\"uid\":\"AB1234\"}");
+        assertThat(client.ensureSubscribed(one("DMART", "2885"))).containsExactly("NSE|2885");
+        assertThat(client.subscribedCount()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("exchange prefixes on the symbol select the subscription exchange")
     void testExchangePrefixHonoured() {
         client.ensureSubscribed(one("MCX:SILVER", "495214"));
