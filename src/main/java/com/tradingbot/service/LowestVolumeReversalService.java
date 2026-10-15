@@ -611,7 +611,7 @@ public class LowestVolumeReversalService {
             }
 
             log.info("[LVR] Executing 5-min strategy cycle at {} IST...", nowTime);
-            processCandidateSetups(nowTime);
+            processCandidateSetups();
             // N4: no second evaluateOpenPositions here — positions were evaluated once above;
             // the 30s tick covers intra-cycle exits for any position opened this cycle.
         } finally {
@@ -1345,7 +1345,7 @@ public class LowestVolumeReversalService {
     }
 
     /** Processes 5-minute candles for all active watchlist candidate stocks. */
-    private void processCandidateSetups(LocalTime nowTime) {
+    private void processCandidateSetups() {
         if (marketDataService == null) return;
 
         for (Map.Entry<String, LowestVolumeSetup> entry : activeSetups.entrySet()) {
@@ -2246,11 +2246,11 @@ public class LowestVolumeReversalService {
                 }
             }
         }
-        evaluateOpenPositionsWithQuotes(nowTime, gathered, isCandleClose);
+        evaluateOpenPositionsWithQuotes(gathered, isCandleClose);
     }
 
     private synchronized void evaluateOpenPositionsWithQuotes(
-            LocalTime nowTime, Map<String, JsonNode> quoteCache, boolean isCandleClose) {
+            Map<String, JsonNode> quoteCache, boolean isCandleClose) {
         if (openPositions.isEmpty()) return;
 
         for (Map.Entry<String, LowestVolumePaperPosition> entry : openPositions.entrySet()) {
@@ -2549,11 +2549,13 @@ public class LowestVolumeReversalService {
                                                     "🎯 *LVR %s Target Reached (Full Exit)*\n"
                                                             + "• Symbol: *%s* (%s)\n"
                                                             + "• Exit Price: `₹%.2f`\n"
+                                                            + "• Points Captured: `%.2f pts`\n"
                                                             + "• Realized P&L: `+₹%.2f`",
                                                     rrLabel(),
                                                     symbol,
                                                     pos.getDirection(),
                                                     spotPrice.doubleValue(),
+                                                    pts.doubleValue(),
                                                     pos.getTotalRealizedPnl().doubleValue()));
                                 }
                                 continue;

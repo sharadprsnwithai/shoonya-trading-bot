@@ -54,7 +54,6 @@ public class HistoricalOhlcController {
             @RequestParam(name = "force", defaultValue = "false") boolean force,
             @RequestParam(name = "symbol", required = false) String symbol) {
         Map<String, Object> resp = new LinkedHashMap<>();
-        Instant start = Instant.now();
 
         if (symbol != null && !symbol.isBlank()) {
             boolean success = cacheService.syncSymbol(symbol, 2);
