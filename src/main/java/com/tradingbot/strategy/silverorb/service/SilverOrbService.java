@@ -11,6 +11,7 @@ import com.tradingbot.strategy.silverorb.model.SilverOrbState;
 import com.tradingbot.strategy.silverorb.model.SilverOrbTrade;
 import com.tradingbot.strategy.silverorb.persistence.SilverOrbStateStore;
 import com.tradingbot.telegram.TelegramService;
+import com.tradingbot.util.BotLocale;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -213,6 +214,7 @@ public class SilverOrbService {
                 t.entryPrice * props.getKgPerLot() * props.getLots() * props.getMarginPct() / 100.0;
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "\uD83E\uDDE9 *[SILVER-ORB] PAPER ENTRY* \uD83E\uDDEA\n"
                                 + "\uD83D\uDCC8 *Side:* `%s` (ORB bias %s IST)\n"
                                 + "\uD83C\uDFAF *Entry:* `%s` @ %s IST\n"
@@ -250,6 +252,7 @@ public class SilverOrbService {
         }
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "\uD83C\uDFC1 *[SILVER-ORB] PAPER EXIT* \uD83E\uDDEA\n"
                                 + "\uD83D\uDCC9 *%s* closed — *%s*\n"
                                 + "\uD83C\uDFAF %s (%s) → %s (%s)\n"
@@ -284,6 +287,7 @@ public class SilverOrbService {
         }
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "\uD83D\uDCCA *[SILVER-ORB] DAY P&L* \uD83D\uDCCA\n"
                                 + "\uD83D\uDCC5 %s · 1 trade · net ₹%,.0f (%+.2fR)\n"
                                 + "\uD83D\uDCBC *Month (%s → %s):* ₹%,.0f · %d trades · "
@@ -311,6 +315,7 @@ public class SilverOrbService {
         if (alertsOn()) {
             send(
                     String.format(
+                            BotLocale.INSTANCE,
                             "✅ *[SILVER-ORB] PAPER RUN COMPLETE*\n"
                                     + "\uD83D\uDCBC *Total:* ₹%,.0f · %d trades · WR %.1f%% · "
                                     + "%+.2fR\n"
@@ -337,6 +342,6 @@ public class SilverOrbService {
     }
 
     private static String fmt2(double v) {
-        return String.format("%.2f", v);
+        return String.format(BotLocale.INSTANCE, "%.2f", v);
     }
 }

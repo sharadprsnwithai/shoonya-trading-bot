@@ -547,7 +547,7 @@ public final class StockFnoRegistry {
 
         String yearStr = String.valueOf(resolvedExpiry.getYear()).substring(2);
         String monthStr = resolvedExpiry.getMonth().name().substring(0, 3).toUpperCase();
-        return String.format("%s%s%sFUT", cleanUnderlying, yearStr, monthStr);
+        return String.format(BotLocale.INSTANCE, "%s%s%sFUT", cleanUnderlying, yearStr, monthStr);
     }
 
     /**
@@ -583,10 +583,17 @@ public final class StockFnoRegistry {
         if (!isWeekly) {
             // Monthly contract format: <UNDERLYING><YY><MMM><STRIKE><CE/PE>
             return String.format(
-                    "%s%s%s%d%s", cleanUnderlying, yearStr, monthStr, strikeVal, typeStr);
+                    BotLocale.INSTANCE,
+                    "%s%s%s%d%s",
+                    cleanUnderlying,
+                    yearStr,
+                    monthStr,
+                    strikeVal,
+                    typeStr);
         } else {
             // Weekly contract format: <UNDERLYING><DD><MMM><YY><C/P><STRIKE>
             return String.format(
+                    BotLocale.INSTANCE,
                     "%s%02d%s%s%d%s",
                     cleanUnderlying,
                     expiryDate.getDayOfMonth(),

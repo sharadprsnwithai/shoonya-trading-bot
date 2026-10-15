@@ -11,6 +11,7 @@ import com.tradingbot.strategy.car.gtt.LiveGttTrigger;
 import com.tradingbot.strategy.car.model.*;
 import com.tradingbot.strategy.car.universe.Nifty100Registry;
 import com.tradingbot.telegram.TelegramService;
+import com.tradingbot.util.BotLocale;
 import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -325,8 +326,13 @@ public class CarWeeklyGttService {
                     portfolioState.getTotalCapital());
             alert(
                     String.format(
+                            BotLocale.INSTANCE,
                             "[CAR] Target hit for %s: %d sh @ ₹%.2f | PnL ₹%.2f | Capital ₹%.2f",
-                            symbol, quantity, price, pnl, portfolioState.getTotalCapital()));
+                            symbol,
+                            quantity,
+                            price,
+                            pnl,
+                            portfolioState.getTotalCapital()));
         } else {
             portfolioState.addFill(order.symbol(), quantity, price);
             log.info(
@@ -337,7 +343,11 @@ public class CarWeeklyGttService {
                     price);
             alert(
                     String.format(
-                            "[CAR] Bought %d sh of %s @ ₹%.2f", quantity, order.symbol(), price));
+                            BotLocale.INSTANCE,
+                            "[CAR] Bought %d sh of %s @ ₹%.2f",
+                            quantity,
+                            order.symbol(),
+                            price));
         }
 
         portfolioState.removeGttOrder(key);
@@ -875,10 +885,12 @@ public class CarWeeklyGttService {
         sb.append("📈 *CAR Weekly GTT Sunday Report*\n\n");
         sb.append(
                 String.format(
+                        BotLocale.INSTANCE,
                         "• *Total Capital:* `₹%.2f`\n",
                         portfolioState.getTotalCapital().doubleValue()));
         sb.append(
                 String.format(
+                        BotLocale.INSTANCE,
                         "• *UNIT Spend (1/%dth):* `₹%.2f` (Available Units: %d/%d)\n",
                         properties.getNumParts(),
                         portfolioState.getUnitSize().doubleValue(),
@@ -886,8 +898,10 @@ public class CarWeeklyGttService {
                         properties.getNumParts()));
         sb.append(
                 String.format(
+                        BotLocale.INSTANCE,
                         "• *Active Holdings:* `%d` | *CAR-Positive Stocks:* `%d`\n\n",
-                        portfolioState.getHoldings().size(), carPositives.size()));
+                        portfolioState.getHoldings().size(),
+                        carPositives.size()));
 
         if (!carPositives.isEmpty()) {
             sb.append("🎯 *Top CAR-Positive Setups (Buy Above Last Week High):*\n");
@@ -921,6 +935,7 @@ public class CarWeeklyGttService {
 
                 sb.append(
                         String.format(
+                                BotLocale.INSTANCE,
                                 " • *%s*%s (Streak: %d days | Last Week High: `₹%.2f` | Qty: `%d`)\n",
                                 c.symbol(),
                                 isExempt ? " 🛡️ _(Accumulate Only)_" : "",
@@ -931,6 +946,7 @@ public class CarWeeklyGttService {
             if (carPositives.size() > shown) {
                 sb.append(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "  _…and %d more candidates not shown_\n",
                                 carPositives.size() - shown));
             }
@@ -962,6 +978,7 @@ public class CarWeeklyGttService {
             if (gainPct.compareTo(BigDecimal.TEN) >= 0) {
                 alert(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "[CAR] 🎉 Portfolio up %.1f%% from initial capital!",
                                 gainPct.doubleValue()));
             }

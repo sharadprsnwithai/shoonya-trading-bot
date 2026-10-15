@@ -11,6 +11,7 @@ import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.model.Candle;
 import com.tradingbot.model.execution.BrokerPosition;
 import com.tradingbot.telegram.TelegramService;
+import com.tradingbot.util.BotLocale;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -253,12 +254,17 @@ public class StartupSyncRunner implements CommandLineRunner {
 
         if (telegramService != null) {
             StringBuilder sb = new StringBuilder();
-            sb.append(String.format("📊 *%s Active Positions on Login*\n\n", brokerName));
+            sb.append(
+                    String.format(
+                            BotLocale.INSTANCE,
+                            "📊 *%s Active Positions on Login*\n\n",
+                            brokerName));
             if (!cash.isEmpty()) {
                 sb.append("🔹 *Cash (Equity) Positions:*\n");
                 for (BrokerPosition p : cash) {
                     sb.append(
                             String.format(
+                                    BotLocale.INSTANCE,
                                     " • `%s` (Qty: %d | Avg: `₹%.2f` | P&L: `₹%.2f`)\n",
                                     p.tradingSymbol(),
                                     p.quantity(),
@@ -272,6 +278,7 @@ public class StartupSyncRunner implements CommandLineRunner {
                 for (BrokerPosition p : derives) {
                     sb.append(
                             String.format(
+                                    BotLocale.INSTANCE,
                                     " • `%s` (Qty: %d | Avg: `₹%.2f` | P&L: `₹%.2f`)\n",
                                     p.tradingSymbol(),
                                     p.quantity(),

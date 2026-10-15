@@ -2,6 +2,7 @@ package com.tradingbot.service;
 
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
+import com.tradingbot.util.BotLocale;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -165,9 +166,9 @@ public class LowestVolumeReversalScanner {
         log.info(
                 "[LVR-SCANNER] NIFTY 50 Market Sentiment: Advances={} ({}%), Declines={} ({}%), Total={}",
                 advances,
-                String.format(java.util.Locale.US, "%.1f", advPct),
+                String.format(BotLocale.INSTANCE, "%.1f", advPct),
                 declines,
-                String.format(java.util.Locale.US, "%.1f", decPct),
+                String.format(BotLocale.INSTANCE, "%.1f", decPct),
                 total);
 
         int minRequired = (int) Math.ceil(total * (minBreadthPct / 100.0));

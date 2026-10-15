@@ -7,6 +7,7 @@ import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionContract;
 import com.tradingbot.model.OptionStrike;
+import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.StockFnoRegistry;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
@@ -22,7 +23,6 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
@@ -242,10 +242,12 @@ public class ShoonyaOptionChainService {
                     // than invent an ATM.
                     lastFailure =
                             String.format(
+                                    BotLocale.INSTANCE,
                                     "attempt %d: no ATM anchor for tsym=%s — the underlying quote"
                                             + " did not yield a usable price and no explicit strike"
                                             + " was supplied",
-                                    attempt, futSymbol);
+                                    attempt,
+                                    futSymbol);
                     log.warn("[OPTION-CHAIN] {}", lastFailure);
                     continue;
                 }
@@ -315,8 +317,10 @@ public class ShoonyaOptionChainService {
                             atmStrike,
                             count,
                             String.format(
+                                    BotLocale.INSTANCE,
                                     "GetOptionChain HTTP %d for tsym=%s",
-                                    resp.statusCode(), futSymbol));
+                                    resp.statusCode(),
+                                    futSymbol));
                 }
 
                 JsonNode root = objectMapper.readTree(respBody);
@@ -329,7 +333,10 @@ public class ShoonyaOptionChainService {
                             atmStrike,
                             count,
                             String.format(
-                                    "GetOptionChain non-Ok for tsym=%s: %s", futSymbol, emsg));
+                                    BotLocale.INSTANCE,
+                                    "GetOptionChain non-Ok for tsym=%s: %s",
+                                    futSymbol,
+                                    emsg));
                 }
 
                 JsonNode values = root.path("values");
@@ -343,7 +350,7 @@ public class ShoonyaOptionChainService {
                             atmStrike,
                             count,
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "GetOptionChain returned no strikes for tsym=%s",
                                     futSymbol));
                 }
@@ -442,7 +449,7 @@ public class ShoonyaOptionChainService {
                                 atmStrike,
                                 count,
                                 String.format(
-                                        Locale.US,
+                                        BotLocale.INSTANCE,
                                         "only %d of %d window quotes returned open interest for tsym=%s",
                                         quotesSucceeded.get(),
                                         expectedQuotes,
@@ -522,8 +529,11 @@ public class ShoonyaOptionChainService {
             } catch (Exception e) {
                 lastFailure =
                         String.format(
+                                BotLocale.INSTANCE,
                                 "attempt %d failed for tsym=%s: %s",
-                                attempt, futSymbol, e.getMessage());
+                                attempt,
+                                futSymbol,
+                                e.getMessage());
                 log.warn(
                         "Option chain fetch attempt {} failed for {}: {}",
                         attempt,

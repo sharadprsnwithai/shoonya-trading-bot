@@ -7,6 +7,7 @@ import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LowestVolumePaperPosition;
 import com.tradingbot.model.strategy.LowestVolumeSetup;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
+import com.tradingbot.util.BotLocale;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -67,12 +68,16 @@ public class TelegramService {
         String hedgeDetails =
                 (pos.hedgeSymbol() != null && !pos.hedgeSymbol().isBlank())
                         ? String.format(
+                                BotLocale.INSTANCE,
                                 "🛡️ *BUY Leg (Hedge):* `%s`\n   • *Premium:* ₹%.2f\n   • *Quantity:* %d",
-                                pos.hedgeSymbol(), pos.hedgeEntryPremium(), pos.quantity())
+                                pos.hedgeSymbol(),
+                                pos.hedgeEntryPremium(),
+                                pos.quantity())
                         : "🛡️ *BUY Leg (Hedge):* None (Naked Sell)";
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "%s\n"
                                 + "📈 *Strategy:* %s\n"
                                 + "🎯 *Underlying:* %s\n\n"
@@ -120,6 +125,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "%s\n"
                                 + "📈 *Strategy:* %s\n"
                                 + "👉 *Trade ID:* `%s`\n\n"
@@ -173,7 +179,12 @@ public class TelegramService {
             extraInfo.forEach(
                     (k, v) -> {
                         if (v != null) {
-                            extraSb.append(String.format("   • *%s:* %s\n", formatKey(k), v));
+                            extraSb.append(
+                                    String.format(
+                                            BotLocale.INSTANCE,
+                                            "   • *%s:* %s\n",
+                                            formatKey(k),
+                                            v));
                         }
                     });
         }
@@ -182,6 +193,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "⚡ *[STRATEGY SIGNAL ALERT]* ⚡\n"
                                 + "📈 *Strategy:* %s\n"
                                 + "🎯 *Underlying:* %s\n"
@@ -236,6 +248,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "🏁 *[STRATEGY EXIT ALERT]* 🏁\n"
                                 + "📈 *Strategy:* %s\n"
                                 + "🎯 *Underlying:* %s\n"
@@ -298,6 +311,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "🏁 *[OPTION BUYING EXIT ALERT]* 🏁\n"
                                 + "📈 *Strategy:* %s\n"
                                 + "🎯 *Underlying:* %s\n"
@@ -355,6 +369,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "🔔 *[TELEGRAM NOTIFICATION TEST]* 🔔\n"
                                 + "📈 *Strategy:* %s\n"
                                 + "🤖 *Bot Status:* Online & Connected\n\n"
@@ -388,6 +403,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "🎯 *%s* 🎯\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal (5m)\n"
                                 + "🏷️ *Symbol:* `%s` — Buy ATM %s (Monthly)\n"
@@ -439,6 +455,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "%s\n\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal (5m)\n"
                                 + "⚡ *ACTION:* *%s*\n"
@@ -485,6 +502,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "💰 *[TARGET 1 HIT: 50%% PROFIT BOOKED]* 💰\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal (1:2 RR Achieved)\n"
                                 + "🏷️ *Trade ID:* `%s`\n"
@@ -537,6 +555,7 @@ public class TelegramService {
 
         String message =
                 String.format(
+                        BotLocale.INSTANCE,
                         "🏁 *[PAPER TRADE CLOSED]* 🏁\n"
                                 + "📈 *Strategy:* Lowest Volume Reversal & Continuation\n"
                                 + "🏷️ *Trade ID:* `%s`\n"
@@ -599,6 +618,7 @@ public class TelegramService {
                 .append(" IST*.\n\n");
         sb.append(
                 String.format(
+                        BotLocale.INSTANCE,
                         "🎯 *Active Setups Tracking:* `%d` | 💼 *Open Paper Trades:* 0 / 2\n",
                         activeSetupsCount));
         sb.append("🤖 *Automation:* 5-min candle polling active (09:26 - 15:00 IST)");
@@ -646,8 +666,13 @@ public class TelegramService {
                 StockQuoteSnapshot s = topGainers.get(i);
                 sb.append(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "%d. *%s* ➔ Spot: *₹%.2f* (+%.2f%%) | Open: ₹%.2f\n",
-                                (i + 1), s.symbol(), s.ltp(), s.pctChange(), s.open()));
+                                (i + 1),
+                                s.symbol(),
+                                s.ltp(),
+                                s.pctChange(),
+                                s.open()));
             }
         }
 
@@ -659,15 +684,22 @@ public class TelegramService {
                 StockQuoteSnapshot s = topLosers.get(i);
                 sb.append(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "%d. *%s* ➔ Spot: *₹%.2f* (%.2f%%) | Open: ₹%.2f\n",
-                                (i + 1), s.symbol(), s.ltp(), s.pctChange(), s.open()));
+                                (i + 1),
+                                s.symbol(),
+                                s.ltp(),
+                                s.pctChange(),
+                                s.open()));
             }
         }
 
         sb.append(
                 String.format(
+                        BotLocale.INSTANCE,
                         "\n🎯 *Tracked Setups Forming:* `%d` | 💼 *Open Paper Positions:* `%d` / 2\n",
-                        activeSetupsCount, openTradesCount));
+                        activeSetupsCount,
+                        openTradesCount));
         sb.append("🤖 *Automation:* 5-min candle polling active on this list (09:26 - 15:00 IST)");
 
         sendAsync(sb.toString());
@@ -712,8 +744,10 @@ public class TelegramService {
 
         sb.append(
                 String.format(
+                        BotLocale.INSTANCE,
                         "\n🎯 *Active Setups Tracking:* `%d` | 💼 *Open Paper Trades:* `%d` / 2\n",
-                        activeSetupsCount, openTradesCount));
+                        activeSetupsCount,
+                        openTradesCount));
         sb.append("🤖 *Automation:* 5-min candle polling active (09:26 - 15:00 IST)");
 
         sendAsync(sb.toString());
@@ -762,8 +796,12 @@ public class TelegramService {
 
                         String keyboardJson =
                                 String.format(
+                                        BotLocale.INSTANCE,
                                         "{\"inline_keyboard\":[[{\"text\":\"%s\",\"callback_data\":\"%s\"},{\"text\":\"%s\",\"callback_data\":\"%s\"}]]}",
-                                        approveLabel, approveData, rejectLabel, rejectData);
+                                        approveLabel,
+                                        approveData,
+                                        rejectLabel,
+                                        rejectData);
 
                         String url = "https://api.telegram.org/bot" + token + "/sendMessage";
                         String formBody =

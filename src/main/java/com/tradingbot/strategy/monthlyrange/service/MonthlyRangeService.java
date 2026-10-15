@@ -9,6 +9,7 @@ import com.tradingbot.strategy.monthlyrange.engine.MonthlyRangeCalculator;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeForecast;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport;
 import com.tradingbot.telegram.TelegramService;
+import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -89,8 +90,11 @@ public class MonthlyRangeService {
 
         String summary =
                 String.format(
+                        BotLocale.INSTANCE,
                         "Monthly range forecast completed for cycle %s (%d succeeded, %d failed).",
-                        cycle, successCount, failureCount);
+                        cycle,
+                        successCount,
+                        failureCount);
 
         MonthlyRangeReport report =
                 new MonthlyRangeReport(Instant.now(), cycle, forecasts, summary);
@@ -227,12 +231,12 @@ public class MonthlyRangeService {
             sb.append(" • 🎯 *FINAL SAFE PE STRIKE:* `₹")
                     .append(f.safePeStrike())
                     .append("` [ -")
-                    .append(String.format(java.util.Locale.US, "%.1f", peBuffer))
+                    .append(String.format(BotLocale.INSTANCE, "%.1f", peBuffer))
                     .append("% ]\n");
             sb.append(" • 🎯 *FINAL SAFE CE STRIKE:* `₹")
                     .append(f.safeCeStrike())
                     .append("` [ +")
-                    .append(String.format(java.util.Locale.US, "%.1f", ceBuffer))
+                    .append(String.format(BotLocale.INSTANCE, "%.1f", ceBuffer))
                     .append("% ]\n");
             sb.append(" • *ATR-22:* ₹")
                     .append(f.atr22())

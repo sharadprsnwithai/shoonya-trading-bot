@@ -15,6 +15,7 @@ import com.tradingbot.model.strategy.LvrExitMode;
 import com.tradingbot.model.strategy.LvrInstrumentType;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import com.tradingbot.telegram.TelegramService;
+import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NiftySectorRegistry;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
@@ -28,7 +29,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -943,10 +943,12 @@ public class LowestVolumeReversalService {
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
+                                    BotLocale.INSTANCE,
                                     "⚠️ *LVR Morning Scan: Market Sentiment Neutral/Mixed*\n"
                                             + "• NIFTY 50 Advance/Decline breadth did not meet the %.0f%% directional threshold (%d quotes analyzed).\n"
                                             + "• Status: *Standing down today* to avoid choppy false breakouts.",
-                                    minBreadthPct, niftyQuotes.size()));
+                                    minBreadthPct,
+                                    niftyQuotes.size()));
                 }
                 return;
             }
@@ -1105,6 +1107,7 @@ public class LowestVolumeReversalService {
             if (telegramAlerts && telegramService != null) {
                 telegramService.sendTextMessage(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "📊 *LVR 09:25 AM Morning Scan*\n"
                                         + "• Sentiment: *%s*\n"
                                         + "• Winning Sector: *%s* (%.2f%%)\n"
@@ -1460,7 +1463,7 @@ public class LowestVolumeReversalService {
                                 && newlyArmedOrTrailed) {
                             telegramService.sendTextMessage(
                                     String.format(
-                                            Locale.US,
+                                            BotLocale.INSTANCE,
                                             "⚡ *LVR Setup Armed / Order Trailed*\n"
                                                     + "• Symbol: *%s* (%s)\n"
                                                     + "• 5m Pullback Vol: `%d` (<= day lowest `%d`)\n"
@@ -1789,7 +1792,7 @@ public class LowestVolumeReversalService {
                             if (telegramAlerts && telegramService != null) {
                                 telegramService.sendTextMessage(
                                         String.format(
-                                                Locale.US,
+                                                BotLocale.INSTANCE,
                                                 "⚠️ *LVR Trade Discarded*\n• Symbol: *%s*\n"
                                                         + "• Reason: %s\n"
                                                         + "• Status: *Stock discarded for the day*",
@@ -1955,10 +1958,10 @@ public class LowestVolumeReversalService {
                         "[LVR] Entry for {} REJECTED: planned risk {} exceeds remaining daily"
                                 + " loss budget {} (limit {}, current P&L {}).",
                         symbol,
-                        String.format(Locale.US, "%.2f", plannedRisk.doubleValue()),
-                        String.format(Locale.US, "%.2f", Math.max(0.0, remainingBudget)),
-                        String.format(Locale.US, "%.2f", maxDailyLoss),
-                        String.format(Locale.US, "%.2f", totalRiskPnl));
+                        String.format(BotLocale.INSTANCE, "%.2f", plannedRisk.doubleValue()),
+                        String.format(BotLocale.INSTANCE, "%.2f", Math.max(0.0, remainingBudget)),
+                        String.format(BotLocale.INSTANCE, "%.2f", maxDailyLoss),
+                        String.format(BotLocale.INSTANCE, "%.2f", totalRiskPnl));
                 return null;
             }
         }
@@ -2057,6 +2060,7 @@ public class LowestVolumeReversalService {
             if (telegramAlerts && telegramService != null) {
                 telegramService.sendTextMessage(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "🚀 *LVR Futures Entry Triggered*\n"
                                         + "• Symbol: *%s* (%s)\n"
                                         + "• Contract: `%s`\n"
@@ -2178,6 +2182,7 @@ public class LowestVolumeReversalService {
             if (telegramAlerts && telegramService != null) {
                 telegramService.sendTextMessage(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "🚀 *LVR Option Entry Triggered*\n"
                                         + "• Symbol: *%s* (%s)\n"
                                         + "• Contract: `%s`\n"
@@ -2324,7 +2329,9 @@ public class LowestVolumeReversalService {
                             setup.transitionTo(
                                     LowestVolumeSetupState.CLOSED_SL,
                                     String.format(
-                                            "Max %d attempt(s) reached", maxAttemptsPerSymbol));
+                                            BotLocale.INSTANCE,
+                                            "Max %d attempt(s) reached",
+                                            maxAttemptsPerSymbol));
                             exhaustedSymbols.add(symbol);
                         }
                     }
@@ -2352,7 +2359,7 @@ public class LowestVolumeReversalService {
                         if (pos.isPartialBooked()) {
                             telegramService.sendTextMessage(
                                     String.format(
-                                            Locale.US,
+                                            BotLocale.INSTANCE,
                                             "🛡️ *LVR Cost Trailing Stop Hit (Remaining 50%%"
                                                     + " Closed)*\n"
                                                     + "• Symbol: *%s* (%s)\n"
@@ -2372,7 +2379,7 @@ public class LowestVolumeReversalService {
                                             : pos.getStockEntryPrice().subtract(spotPrice);
                             telegramService.sendTextMessage(
                                     String.format(
-                                            Locale.US,
+                                            BotLocale.INSTANCE,
                                             "🛑 *LVR Stop Loss Hit (100%% Exit)*\n"
                                                     + "• Symbol: *%s* (%s)\n"
                                                     + "• Exit Price: `₹%.2f` (SL was `₹%.2f`)\n"
@@ -2394,7 +2401,7 @@ public class LowestVolumeReversalService {
                         } else {
                             telegramService.sendTextMessage(
                                     String.format(
-                                            Locale.US,
+                                            BotLocale.INSTANCE,
                                             "🛑 *LVR Stop Loss Hit*\n"
                                                     + "• Symbol: *%s*\n"
                                                     + "• Exit Premium: `₹%.2f` (P&L: `₹%.2f`)\n"
@@ -2482,7 +2489,7 @@ public class LowestVolumeReversalService {
                                                 : pos.getStockEntryPrice().subtract(spotPrice);
                                 telegramService.sendTextMessage(
                                         String.format(
-                                                Locale.US,
+                                                BotLocale.INSTANCE,
                                                 "🎯 *LVR %s Target Reached (100%% Full Exit)*\n"
                                                         + "• Symbol: *%s* (%s)\n"
                                                         + "• Exit Price: `₹%.2f` (Target was `₹%.2f`)\n"
@@ -2547,7 +2554,7 @@ public class LowestVolumeReversalService {
                                                     : pos.getStockEntryPrice().subtract(spotPrice);
                                     telegramService.sendTextMessage(
                                             String.format(
-                                                    Locale.US,
+                                                    BotLocale.INSTANCE,
                                                     "🎯 *LVR %s Target Reached (Full Exit)*\n"
                                                             + "• Symbol: *%s* (%s)\n"
                                                             + "• Exit Price: `₹%.2f`\n"
@@ -2602,6 +2609,7 @@ public class LowestVolumeReversalService {
                             if (telegramAlerts && telegramService != null) {
                                 telegramService.sendTextMessage(
                                         String.format(
+                                                BotLocale.INSTANCE,
                                                 "🎯 *LVR %s Target Reached (50%% Booked)*\n"
                                                         + "• Symbol: *%s* (%s)\n"
                                                         + "• Booked Price: `₹%.2f` (Partial P&L: `₹%.2f`)\n"
@@ -2688,8 +2696,10 @@ public class LowestVolumeReversalService {
                                 setup.transitionTo(
                                         LowestVolumeSetupState.CLOSED_TRAIL_EXIT,
                                         String.format(
+                                                BotLocale.INSTANCE,
                                                 "10 EMA Trail Exit (Close=%.2f, EMA=%.2f)",
-                                                latestCandle.close().doubleValue(), ema10));
+                                                latestCandle.close().doubleValue(),
+                                                ema10));
                                 exhaustedSymbols.add(symbol);
                             }
 
@@ -2716,6 +2726,7 @@ public class LowestVolumeReversalService {
                             if (telegramAlerts && telegramService != null) {
                                 telegramService.sendTextMessage(
                                         String.format(
+                                                BotLocale.INSTANCE,
                                                 "🏃 *LVR 10 EMA Trailing Exit*\n"
                                                         + "• Symbol: *%s*\n"
                                                         + "• Runner Exit Price: `₹%.2f`\n"
@@ -2845,7 +2856,7 @@ public class LowestVolumeReversalService {
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "🏁 *LVR %s Hard EOD Exit*\n"
                                             + "• Symbol: *%s* (%s)\n"
                                             + "• Exit Price: `₹%.2f`\n"
@@ -2878,7 +2889,7 @@ public class LowestVolumeReversalService {
             if (telegramAlerts && telegramService != null) {
                 telegramService.sendTextMessage(
                         String.format(
-                                Locale.US,
+                                BotLocale.INSTANCE,
                                 "⚠️ *LVR EOD Exit Partially Complete*\n• Closed: `%d`\n"
                                         + "• Failed (retrying): `%d`\n• Failed symbols stay"
                                         + " managed until flattened.",
@@ -3036,6 +3047,7 @@ public class LowestVolumeReversalService {
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
+                                    BotLocale.INSTANCE,
                                     "🔄 *LVR Candidate Watchlist Replenished*\n"
                                             + "• Promoted Stocks (%d): `%s` (from reserve sectors)\n"
                                             + "• Direction: *%s*\n"
@@ -3999,24 +4011,24 @@ public class LowestVolumeReversalService {
                         in.triggerPrice.multiply(
                                 BigDecimal.valueOf(1.0 + (in.maxSlippagePct / 100.0)));
                 excessive = in.entryPrice.compareTo(maxAllowed) > 0;
-                band = "max " + String.format(Locale.US, "%.2f", maxAllowed);
+                band = "max " + String.format(BotLocale.INSTANCE, "%.2f", maxAllowed);
             } else {
                 BigDecimal minAllowed =
                         in.triggerPrice.multiply(
                                 BigDecimal.valueOf(1.0 - (in.maxSlippagePct / 100.0)));
                 excessive = in.entryPrice.compareTo(minAllowed) < 0;
-                band = "min " + String.format(Locale.US, "%.2f", minAllowed);
+                band = "min " + String.format(BotLocale.INSTANCE, "%.2f", minAllowed);
             }
             if (excessive) {
                 return deny(
                         EntryGateDisposition.RETRY_COOLDOWN,
                         "SLIPPAGE",
                         String.format(
-                                Locale.US,
+                                BotLocale.INSTANCE,
                                 "excessive slippage: entry price %s outside %s%% band from"
                                         + " trigger %s (%s)",
                                 in.entryPrice,
-                                String.format(Locale.US, "%.2f", in.maxSlippagePct),
+                                String.format(BotLocale.INSTANCE, "%.2f", in.maxSlippagePct),
                                 in.triggerPrice,
                                 band));
             }
@@ -4042,10 +4054,10 @@ public class LowestVolumeReversalService {
                             EntryGateDisposition.EXHAUST,
                             "VWAP",
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "Spot %s failed VWAP %s confirmation for %s direction",
                                     in.decisionPrice,
-                                    String.format(Locale.US, "%.2f", in.vwap),
+                                    String.format(BotLocale.INSTANCE, "%.2f", in.vwap),
                                     in.direction));
                 }
             }
@@ -4072,7 +4084,7 @@ public class LowestVolumeReversalService {
                             EntryGateDisposition.EXHAUST,
                             "15M_RANGE",
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "Spot %s inside 15-min range [%s - %s] for %s",
                                     in.decisionPrice,
                                     in.first15mLow,
@@ -4102,7 +4114,7 @@ public class LowestVolumeReversalService {
                             EntryGateDisposition.EXHAUST,
                             "PDH_PDL",
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "Spot %s inside PDH-PDL range [%s - %s] for %s",
                                     in.decisionPrice,
                                     in.pdl,
@@ -4126,7 +4138,7 @@ public class LowestVolumeReversalService {
                                     EntryGateDisposition.EXHAUST,
                                     "PDH_EXTENSION",
                                     String.format(
-                                            Locale.US,
+                                            BotLocale.INSTANCE,
                                             "Spot %s is %.2f%% above PDH %s (max allowed: %.1f%%) — entry too extended, skipping",
                                             in.decisionPrice,
                                             extensionPct,
@@ -4145,7 +4157,7 @@ public class LowestVolumeReversalService {
                                     EntryGateDisposition.EXHAUST,
                                     "PDH_EXTENSION",
                                     String.format(
-                                            Locale.US,
+                                            BotLocale.INSTANCE,
                                             "Spot %s is %.2f%% below PDL %s (max allowed: %.1f%%) — entry too extended, skipping",
                                             in.decisionPrice,
                                             extensionPct,
@@ -4176,7 +4188,7 @@ public class LowestVolumeReversalService {
                         EntryGateDisposition.EXHAUST,
                         "PCR",
                         String.format(
-                                Locale.US,
+                                BotLocale.INSTANCE,
                                 "PCR %.2f (ATM ± 4) is inside the neutral no-trade band "
                                         + "[%.2f, %.2f] — indecision, no entry",
                                 in.pcr,
@@ -4188,7 +4200,7 @@ public class LowestVolumeReversalService {
                         EntryGateDisposition.EXHAUST,
                         "PCR",
                         String.format(
-                                Locale.US,
+                                BotLocale.INSTANCE,
                                 "PCR %.2f (ATM ± 4) is below %.2f — bearish, not confirmed for LONG",
                                 in.pcr,
                                 neutralMin));
@@ -4198,7 +4210,7 @@ public class LowestVolumeReversalService {
                         EntryGateDisposition.EXHAUST,
                         "PCR",
                         String.format(
-                                Locale.US,
+                                BotLocale.INSTANCE,
                                 "PCR %.2f (ATM ± 4) is above %.2f — bullish, not confirmed for SHORT",
                                 in.pcr,
                                 neutralMax));
@@ -4224,7 +4236,7 @@ public class LowestVolumeReversalService {
                         EntryGateDisposition.EXHAUST,
                         "OPTION_SR",
                         String.format(
-                                Locale.US,
+                                BotLocale.INSTANCE,
                                 "Option %s strike unavailable (no usable open interest on that"
                                         + " side) — refusing to enter without it",
                                 in.direction == LowestVolumeDirection.SHORT
@@ -4241,7 +4253,7 @@ public class LowestVolumeReversalService {
                             EntryGateDisposition.EXHAUST,
                             "OPTION_SR",
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "Spot %s is at or above Option Resistance (Max Call OI Strike %s)",
                                     in.decisionPrice,
                                     level));
@@ -4255,7 +4267,7 @@ public class LowestVolumeReversalService {
                             EntryGateDisposition.EXHAUST,
                             "OPTION_SR",
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "Spot %s is at or below Option Support (Max Put OI Strike %s)",
                                     in.decisionPrice,
                                     level));
@@ -4320,10 +4332,13 @@ public class LowestVolumeReversalService {
                     EntryGateDisposition.RETRY,
                     "BUDGET",
                     String.format(
-                            Locale.US,
+                            BotLocale.INSTANCE,
                             "planned risk %s exceeds remaining daily loss budget %s",
-                            String.format(Locale.US, "%.2f", in.plannedRisk.doubleValue()),
-                            String.format(Locale.US, "%.2f", Math.max(0.0, in.remainingBudget))));
+                            String.format(BotLocale.INSTANCE, "%.2f", in.plannedRisk.doubleValue()),
+                            String.format(
+                                    BotLocale.INSTANCE,
+                                    "%.2f",
+                                    Math.max(0.0, in.remainingBudget))));
         }
 
         return new EntryGateDecision(EntryGateDisposition.ALLOWED, "OK", "all gates passed");
@@ -4425,7 +4440,7 @@ public class LowestVolumeReversalService {
                 "[LVR-SECTOR-CHECK] Rechecked {} sector '{}' at entry: AvgChange={}% (Advances={}, Declines={}, Total={}) | Gate={}",
                 symbol,
                 sectorName,
-                String.format(java.util.Locale.US, "%.2f", avgSectorPct),
+                String.format(BotLocale.INSTANCE, "%.2f", avgSectorPct),
                 advances,
                 declines,
                 count,
@@ -4438,7 +4453,7 @@ public class LowestVolumeReversalService {
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "⚠️ *LVR Entry Blocked (Sector Momentum Flipped)*\n"
                                             + "• Symbol: *%s* (Setup: *%s*)\n"
                                             + "• Parent Sector: *%s*\n"
@@ -4904,13 +4919,16 @@ public class LowestVolumeReversalService {
             if (telegramAlerts && telegramService != null) {
                 telegramService.sendTextMessage(
                         String.format(
+                                BotLocale.INSTANCE,
                                 "🔴 *LVR Quote Stall Alert*\n"
                                         + "• Symbol: `%s`\n"
                                         + "• Context: %s\n"
                                         + "• Consecutive failures: %d\n"
                                         + "• Impact: breach checks/exits for this symbol are"
                                         + " being skipped until quotes recover.",
-                                symbol, context, failures));
+                                symbol,
+                                context,
+                                failures));
             }
         }
     }
@@ -4937,12 +4955,12 @@ public class LowestVolumeReversalService {
             if (dailyCircuitBreakerAlertSent.compareAndSet(false, true)) {
                 log.warn(
                         "[LVR] Daily Max Loss Circuit Breaker tripped: Total risk loss (₹{}) reached limit (₹{}). Halting new entries.",
-                        String.format(Locale.US, "%.2f", Math.abs(totalRiskPnl)),
-                        String.format(Locale.US, "%.2f", maxDailyLoss));
+                        String.format(BotLocale.INSTANCE, "%.2f", Math.abs(totalRiskPnl)),
+                        String.format(BotLocale.INSTANCE, "%.2f", maxDailyLoss));
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
-                                    Locale.US,
+                                    BotLocale.INSTANCE,
                                     "🚨 *LVR Daily Circuit Breaker Activated*\n"
                                             + "• Today's Total Loss (Realized + Floating): `₹%.2f`\n"
                                             + "• Daily Loss Limit: `₹%.2f`\n"
@@ -5502,9 +5520,12 @@ public class LowestVolumeReversalService {
         if (telegramAlerts && telegramService != null) {
             telegramService.sendTextMessage(
                     String.format(
+                            BotLocale.INSTANCE,
                             "🔴 *LVR Entry Rolled Back*\n• Symbol: `%s`\n• TradeId: `%s`\n"
                                     + "• Reason: %s\n• Setup re-armed; retries after cooldown.",
-                            symbol, tradeId, reason));
+                            symbol,
+                            tradeId,
+                            reason));
         }
     }
 

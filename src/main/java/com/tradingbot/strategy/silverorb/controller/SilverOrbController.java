@@ -6,6 +6,7 @@ import com.tradingbot.strategy.silverorb.model.SilverOrbState;
 import com.tradingbot.strategy.silverorb.model.SilverOrbTrade;
 import com.tradingbot.strategy.silverorb.persistence.SilverOrbStateStore;
 import com.tradingbot.strategy.silverorb.service.SilverOrbService;
+import com.tradingbot.util.BotLocale;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -49,8 +50,11 @@ public class SilverOrbController {
         body.put(
                 "riskTarget",
                 String.format(
+                        BotLocale.INSTANCE,
                         "SL -%.0f%% / TGT +%.0f%% of margin @ %.0f%% margin",
-                        props.getRiskPct(), props.getTargetPct(), props.getMarginPct()));
+                        props.getRiskPct(),
+                        props.getTargetPct(),
+                        props.getMarginPct()));
         if (state == null) {
             body.put("state", "no state yet (no cycle has run)");
             return ResponseEntity.ok(body);

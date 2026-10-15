@@ -3,6 +3,7 @@ package com.tradingbot.marketdata;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.model.NseOiSpurtItem;
+import com.tradingbot.util.BotLocale;
 import java.io.IOException;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -18,7 +19,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,7 +67,7 @@ public class NseOiSpurtClient {
                     "NIFTY FIN SERVICE");
 
     private static final DateTimeFormatter TRADING_DATE_FMT =
-            DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.US);
+            DateTimeFormatter.ofPattern("dd-MMM-yyyy", BotLocale.INSTANCE);
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -178,7 +178,7 @@ public class NseOiSpurtClient {
                 if (symbol.isBlank()) {
                     continue;
                 }
-                String upper = symbol.trim().toUpperCase(Locale.US);
+                String upper = symbol.trim().toUpperCase(BotLocale.INSTANCE);
                 if (isExcludedIndex(upper)) {
                     continue;
                 }

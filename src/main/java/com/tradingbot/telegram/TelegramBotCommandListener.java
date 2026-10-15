@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.service.LowestVolumeReversalService;
+import com.tradingbot.util.BotLocale;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
@@ -163,8 +164,10 @@ public class TelegramBotCommandListener {
             String token = shoonyaConfig.getTelegramBotToken().trim();
             String url =
                     String.format(
+                            BotLocale.INSTANCE,
                             "https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=5",
-                            token, lastUpdateId + 1);
+                            token,
+                            lastUpdateId + 1);
 
             HttpRequest req =
                     HttpRequest.newBuilder()
@@ -235,6 +238,7 @@ public class TelegramBotCommandListener {
                 if (lvrService == null) return "⚠️ LVR Service not active.";
                 var sec = lvrService.getSectorState();
                 return String.format(
+                        BotLocale.INSTANCE,
                         "⚡ *Lowest Volume Reversal (LVR) Strategy Status*\n\n"
                                 + "• Market Sentiment: *%s* (%d Adv / %d Dec)\n"
                                 + "• Winning Sector: *%s* (%.2f%%)\n"
@@ -281,6 +285,7 @@ public class TelegramBotCommandListener {
                                                 ::accumulatedUnits)
                                 .sum();
                 return String.format(
+                        BotLocale.INSTANCE,
                         "📈 *CAR Weekly GTT Strategy Status*\n\n"
                                 + "• Total Capital: `₹%.2f`\n"
                                 + "• Unit Size (1/40th): `₹%.2f`\n"

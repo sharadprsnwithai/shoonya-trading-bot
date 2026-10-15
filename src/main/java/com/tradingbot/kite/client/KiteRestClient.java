@@ -3,10 +3,10 @@ package com.tradingbot.kite.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.tradingbot.kite.auth.KiteSession;
 import com.tradingbot.kite.config.KiteProperties;
+import com.tradingbot.util.BotLocale;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -175,11 +175,11 @@ public class KiteRestClient {
         form.put("validity", "DAY");
         if (!"MARKET".equalsIgnoreCase(orderType) && req.price() != null && req.price() > 0) {
             double tickRounded = Math.round(req.price() * 20.0) / 20.0;
-            form.put("price", String.format(Locale.US, "%.2f", tickRounded));
+            form.put("price", String.format(BotLocale.INSTANCE, "%.2f", tickRounded));
         }
         if (req.triggerPrice() != null && req.triggerPrice() > 0) {
             double tickRounded = Math.round(req.triggerPrice() * 20.0) / 20.0;
-            form.put("trigger_price", String.format(Locale.US, "%.2f", tickRounded));
+            form.put("trigger_price", String.format(BotLocale.INSTANCE, "%.2f", tickRounded));
         }
 
         JsonNode body = postForm("/orders/regular", form);

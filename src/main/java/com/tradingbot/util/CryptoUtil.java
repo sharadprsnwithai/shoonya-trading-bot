@@ -83,7 +83,7 @@ public final class CryptoUtil {
                             | (hash[offset + 3] & 0xFF);
 
             int otp = binary % 1000000;
-            return String.format("%06d", otp);
+            return String.format(BotLocale.INSTANCE, "%06d", otp);
         } catch (Exception e) {
             log.warn(
                     "Failed generating TOTP from secret, returning raw input fallback: {}",
