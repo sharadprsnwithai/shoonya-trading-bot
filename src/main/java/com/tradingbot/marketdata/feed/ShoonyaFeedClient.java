@@ -185,13 +185,33 @@ public class ShoonyaFeedClient {
      * nothing. Keys already subscribed are skipped, which makes this safe to call on every cycle.
      *
      * <p>Exchange is taken from a {@code NSE:}/{@code BSE:}/{@code MCX:}/{@code NFO:}/{@code BFO:}
-     * prefix on the symbol and defaults to {@code NSE}. That matches the cash-equity universe the
-     * LVR scanner consumes; derivative or commodity callers must qualify their symbols.
+     * prefix on the symbol and defaults to {@code NSE}. Callers whose symbol vocabulary is richer —
+     * derivatives such as {@code RELIANCE26OCTFUT}, for instance — must use {@link
+     * #ensureSubscribed(Map, Function)} with their own resolver.
      *
      * @param symbolToToken trading symbols mapped to their exchange tokens
      * @return the keys that were newly subscribed
      */
     public Set<String> ensureSubscribed(Map<String, String> symbolToToken) {
+        return ensureSubscribed(symbolToToken, ShoonyaFeedClient::resolveExchange);
+    }
+
+    /**
+     * Registers symbol-to-token mappings using a caller-supplied exchange resolver.
+     *
+     * <p>Tokens are unique per exchange but not globally, so subscribing a derivative token on the
+     * cash-equity exchange yields a dead subscription rather than a wrong price. Callers trading
+     * derivatives should supply the same resolver their REST path uses, so both sources agree on
+     * the exchange for a given symbol.
+     *
+     * @param symbolToToken trading symbols mapped to their exchange tokens
+     * @param exchangeOf resolves the exchange code for a symbol; a null or blank result falls back
+     *     to the prefix convention, then to {@code NSE}
+     * @return the keys that were newly subscribed
+     */
+    public Set<String> ensureSubscribed(
+            Map<String, String> symbolToToken,
+            java.util.function.Function<String, String> exchangeOf) {
         Set<String> newlyAdded = new LinkedHashSet<>();
         if (symbolToToken == null || symbolToToken.isEmpty()) {
             return newlyAdded;
@@ -203,7 +223,7 @@ public class ShoonyaFeedClient {
             if (symbol == null || symbol.isBlank() || token == null || token.isBlank()) {
                 continue;
             }
-            String exchange = resolveExchange(symbol);
+            String exchange = resolveExchangeFor(symbol, exchangeOf);
             String key = ShoonyaFeedProtocol.instrumentKey(exchange, token);
             if (key == null) {
                 continue;
@@ -220,6 +240,31 @@ public class ShoonyaFeedClient {
                             toSubscribe, properties.getMaxTokensPerFrame()));
         }
         return newlyAdded;
+    }
+
+    /**
+     * Resolves the exchange for a symbol, preferring the caller-supplied resolver.
+     *
+     * @param symbol the trading symbol
+     * @param exchangeOf the caller-supplied resolver, may be null
+     * @return the exchange code, never null
+     */
+    private static String resolveExchangeFor(
+            String symbol, java.util.function.Function<String, String> exchangeOf) {
+        if (exchangeOf != null) {
+            try {
+                String resolved = exchangeOf.apply(symbol);
+                if (resolved != null && !resolved.isBlank()) {
+                    return resolved.trim().toUpperCase();
+                }
+            } catch (Exception e) {
+                log.debug(
+                        "[FEED] Exchange resolver rejected {}; falling back to the prefix convention: {}",
+                        symbol,
+                        e.getMessage());
+            }
+        }
+        return resolveExchange(symbol);
     }
 
     /**

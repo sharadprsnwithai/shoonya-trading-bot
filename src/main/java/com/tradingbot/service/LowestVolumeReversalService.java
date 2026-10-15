@@ -3202,8 +3202,88 @@ public class LowestVolumeReversalService {
         return divided.multiply(strikeStep);
     }
 
+    /**
+     * Fetches a live quote for a symbol, preferring the streaming feed.
+     *
+     * <p>This is the single funnel for the 30-second breach loop, so routing the feed through it
+     * moves the entire live-check path off REST in one place: armed-trigger checks, spot
+     * stop-loss/target evaluation, the session-high/low arming snapshot, VWAP, and the unrealized
+     * P&amp;L that drives the daily circuit breaker all read the returned node.
+     *
+     * <p>The feed result is translated into the same field names the {@code GetQuotes} payload uses
+     * — {@code lp}, {@code ap}, {@code h}, {@code l}, {@code c} — so no downstream consumer needs
+     * to know which source produced it. A symbol the feed cannot serve within its freshness budget
+     * falls through to REST, which keeps a stale price from ever being acted on.
+     *
+     * @param symbol the trading symbol
+     * @return the quote node, or null when no source could produce one
+     */
     public JsonNode fetchLiveQuoteNode(String symbol) {
         if (marketDataService == null) return null;
+        JsonNode fromFeed = fetchLiveQuoteNodeFromFeed(symbol);
+        return fromFeed != null ? fromFeed : fetchLiveQuoteNodeFromRest(symbol);
+    }
+
+    /**
+     * Reads a live quote from the streaming feed.
+     *
+     * <p>Subscribing here is intentional rather than a missed optimisation: the live loop covers
+     * armed setups and open positions, a small and rotating set, and {@code ensureSubscribed} is
+     * idempotent so only a genuinely new symbol costs a frame.
+     *
+     * @param symbol the trading symbol
+     * @return a GetQuotes-shaped node, or null when the feed cannot serve it
+     */
+    private JsonNode fetchLiveQuoteNodeFromFeed(String symbol) {
+        if (feedClient == null || !feedClient.isUp()) {
+            return null;
+        }
+        try {
+            var info = StockFnoRegistry.get(symbol);
+            String token =
+                    (info != null && info.token() != null)
+                            ? info.token()
+                            : marketDataService.resolveToken(symbol);
+            if (token == null || token.isBlank()) return null;
+
+            // The same resolver the REST path uses, so a futures symbol subscribes on NFO rather
+            // than silently defaulting to cash equity.
+            feedClient.ensureSubscribed(Map.of(symbol, token), marketDataService::resolveExchange);
+
+            var tick = feedClient.tickFor(symbol);
+            if (tick == null || !tick.isFresh(feedClient.maxAge())) return null;
+            return feedQuoteNode(tick);
+        } catch (Exception e) {
+            log.debug("[LVR] Feed live-quote read failed for {}: {}", symbol, e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Translates a feed tick into the {@code GetQuotes} payload shape.
+     *
+     * @param tick the live tick
+     * @return the equivalent quote node
+     */
+    private static JsonNode feedQuoteNode(com.tradingbot.marketdata.feed.FeedTick tick) {
+        var node = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        node.put("lp", tick.lastPrice());
+        node.put("c", tick.prevClose());
+        node.put("o", tick.open() > 0.0 ? tick.open() : tick.lastPrice());
+        node.put("h", tick.high());
+        node.put("l", tick.low());
+        node.put("ap", tick.avgPrice());
+        node.put("v", tick.volume());
+        return node;
+    }
+
+    /**
+     * Fetches a live quote over the {@code GetQuotes} REST path.
+     *
+     * @param symbol the trading symbol
+     * @return the quote node, or null
+     */
+    private JsonNode fetchLiveQuoteNodeFromRest(String symbol) {
         var info = StockFnoRegistry.get(symbol);
         String token =
                 (info != null && info.token() != null)
@@ -3639,7 +3719,7 @@ public class LowestVolumeReversalService {
             return Collections.emptyMap();
         }
         try {
-            feedClient.ensureSubscribed(tokenBySymbol);
+            feedClient.ensureSubscribed(tokenBySymbol, marketDataService::resolveExchange);
 
             if (!feedClient.isUp()) {
                 log.info(

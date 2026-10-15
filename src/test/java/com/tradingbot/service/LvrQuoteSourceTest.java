@@ -76,18 +76,20 @@ class LvrQuoteSourceTest {
                         null,
                         feedClient);
         service.setMorningScanDelayMs(0);
-        return new ServiceUnderTest(service, marketDataService, feedClient);
+        return new ServiceUnderTest(service, marketDataService, feedClient, feedProperties);
     }
 
     /**
      * @param service the service under test
      * @param marketDataService the mocked market-data service
      * @param feedClient the feed client
+     * @param feedProperties the feed properties, mutable so tests can tighten the freshness budget
      */
     private record ServiceUnderTest(
             LowestVolumeReversalService service,
             ShoonyaMarketDataService marketDataService,
-            ShoonyaFeedClient feedClient) {}
+            ShoonyaFeedClient feedClient,
+            ShoonyaFeedProperties feedProperties) {}
 
     /**
      * The full trading universe, mirroring what {@code fetchMorningQuotesUnified} assembles.
@@ -209,5 +211,92 @@ class LvrQuoteSourceTest {
         assertThat(snapshot.open()).isEqualTo(3310.00);
         assertThat(snapshot.volume()).isEqualTo(125000L);
         assertThat(snapshot.vwap()).isEqualTo(3340.00);
+    }
+
+    @Test
+    @DisplayName("the live quote node is served from the feed and carries the breach-check fields")
+    void testLiveQuoteNodeFromFeed() {
+        ServiceUnderTest target = build();
+
+        target.feedClient().handleRawText("{\"t\":\"ak\",\"s\":\"Ok\"}");
+        target.feedClient().ensureSubscribed(Map.of("RELIANCE26OCTFUT", "1"));
+        target.feedClient()
+                .handleRawText(
+                        "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"1\",\"lp\":\"1449.00\",\"c\":\"1400.00\","
+                                + "\"o\":\"1410.00\",\"h\":\"1455.00\",\"l\":\"1405.00\",\"ap\":\"1430.00\","
+                                + "\"v\":\"250000\"}");
+
+        var node = target.service().fetchLiveQuoteNode("RELIANCE26OCTFUT");
+
+        // Every field the 30-second breach loop reads off the quote node.
+        assertThat(node.get("lp").asDouble()).isEqualTo(1449.00);
+        assertThat(node.get("h").asDouble()).isEqualTo(1455.00);
+        assertThat(node.get("l").asDouble()).isEqualTo(1405.00);
+        assertThat(node.get("ap").asDouble()).isEqualTo(1430.00);
+        assertThat(node.get("c").asDouble()).isEqualTo(1400.00);
+        assertThat(node.get("v").asLong()).isEqualTo(250000L);
+    }
+
+    @Test
+    @DisplayName("a down feed leaves the live quote node sourced from REST")
+    void testLiveQuoteNodeFallsBackToRest() {
+        ServiceUnderTest target = build();
+
+        var node = target.service().fetchLiveQuoteNode("RELIANCE");
+
+        assertThat(node).isNull();
+        verify(target.marketDataService(), atLeastOnce()).fetchQuote(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("a stale feed tick is not used for a live breach check")
+    void testLiveQuoteNodeRejectsStaleTick() {
+        ServiceUnderTest target = build();
+        // A REST quote carrying a deliberately different price, so the test can tell which source
+        // produced the result.
+        var restNode = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        restNode.put("lp", 999.0);
+        restNode.put("c", 950.0);
+        when(target.marketDataService().fetchQuote(anyString(), anyString())).thenReturn(restNode);
+
+        target.feedClient().handleRawText("{\"t\":\"ak\",\"s\":\"Ok\"}");
+        target.feedClient().ensureSubscribed(Map.of("DMART", "1"));
+        target.feedClient()
+                .handleRawText(
+                        "{\"t\":\"tk\",\"e\":\"NSE\",\"tk\":\"1\",\"lp\":\"3364.00\",\"c\":\"3300.00\"}");
+        assertThat(target.service().fetchLiveQuoteNode("DMART").get("lp").asDouble())
+                .isEqualTo(3364.00);
+
+        // Let the tick age out, then tighten the budget so it is too old to act on. Acting on a
+        // price the feed stopped updating is worse than the REST round trip.
+        target.feedProperties().setSnapshotMaxAgeMs(5);
+        sleep(20);
+
+        assertThat(target.service().fetchLiveQuoteNode("DMART").get("lp").asDouble())
+                .isEqualTo(999.0);
+    }
+
+    @Test
+    @DisplayName("an unsubscribed live symbol falls through to REST rather than returning nothing")
+    void testLiveQuoteNodeUnsubscribedGoesToRest() {
+        ServiceUnderTest target = build();
+
+        // The feed is up but has never been told about this symbol, so it cannot serve it.
+        target.feedClient().handleRawText("{\"t\":\"ak\",\"s\":\"Ok\"}");
+
+        target.service().fetchLiveQuoteNode("UNKNOWNSTOCK");
+
+        verify(target.marketDataService(), atLeastOnce()).fetchQuote(anyString(), anyString());
+    }
+
+    /**
+     * @param millis how long to pause
+     */
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

@@ -100,6 +100,46 @@ class ShoonyaFeedClientTest {
     }
 
     @Test
+    @DisplayName("a caller-supplied exchange resolver overrides the prefix convention")
+    void testCallerSuppliedExchangeResolver() {
+        // LVR trades futures: without this, a bare derivative symbol would default to NSE and the
+        // subscription would be dead.
+        client.ensureSubscribed(one("RELIANCE26OCTFUT", "123456"), s -> "NFO");
+        client.handleRawText("{\"t\":\"tk\",\"e\":\"NFO\",\"tk\":\"123456\",\"lp\":\"1449.00\"}");
+
+        assertThat(client.subscribedKeys()).containsExactly("NFO|123456");
+        assertThat(client.tickFor("RELIANCE26OCTFUT").exchange()).isEqualTo("NFO");
+        assertThat(client.snapshots(List.of("RELIANCE26OCTFUT"), Duration.ofSeconds(5)))
+                .containsOnlyKeys("RELIANCE26OCTFUT");
+    }
+
+    @Test
+    @DisplayName("a blank or failing exchange resolver falls back to the prefix convention")
+    void testExchangeResolverFallback() {
+        client.ensureSubscribed(one("A", "1"), s -> "  ");
+        client.ensureSubscribed(
+                one("B", "2"),
+                s -> {
+                    throw new IllegalStateException("boom");
+                });
+        client.ensureSubscribed(one("C", "3"), null);
+
+        assertThat(client.subscribedKeys()).containsExactlyInAnyOrder("NSE|1", "NSE|2", "NSE|3");
+    }
+
+    @Test
+    @DisplayName("the exchange resolver is applied to every symbol in the map")
+    void testExchangeResolverAppliedPerSymbol() {
+        Map<String, String> mixed = new LinkedHashMap<>();
+        mixed.put("NIFTY26OCT24000CE", "500");
+        mixed.put("DMART", "2885");
+
+        client.ensureSubscribed(mixed, s -> s.contains("CE") ? "NFO" : "NSE");
+
+        assertThat(client.subscribedKeys()).containsExactlyInAnyOrder("NFO|500", "NSE|2885");
+    }
+
+    @Test
     @DisplayName("symbols without a resolvable token are skipped instead of poisoning the feed")
     void testBlankTokensSkipped() {
         Map<String, String> map = new LinkedHashMap<>();
