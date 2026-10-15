@@ -66,6 +66,13 @@ public class ShoonyaFeedProperties {
     /** Milliseconds to poll between coverage checks while warming up. */
     private long warmupPollIntervalMs = 100;
 
+    /**
+     * Interval between session heartbeats, in seconds. The gateway reaps an idle session after
+     * roughly sixty seconds, so this must stay comfortably below that; values below 1 disable the
+     * heartbeat and accept the reconnect churn.
+     */
+    private long keepAliveSeconds = 30;
+
     // Getters and setters
 
     /**
@@ -220,5 +227,19 @@ public class ShoonyaFeedProperties {
      */
     public void setWarmupPollIntervalMs(long warmupPollIntervalMs) {
         this.warmupPollIntervalMs = warmupPollIntervalMs;
+    }
+
+    /**
+     * @return interval between session heartbeats, in seconds
+     */
+    public long getKeepAliveSeconds() {
+        return keepAliveSeconds;
+    }
+
+    /**
+     * @param keepAliveSeconds interval between session heartbeats, in seconds
+     */
+    public void setKeepAliveSeconds(long keepAliveSeconds) {
+        this.keepAliveSeconds = keepAliveSeconds;
     }
 }

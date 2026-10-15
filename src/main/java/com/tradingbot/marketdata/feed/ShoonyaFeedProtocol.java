@@ -88,6 +88,24 @@ public final class ShoonyaFeedProtocol {
     }
 
     /**
+     * Builds the session heartbeat frame.
+     *
+     * <p>The gateway reaps an idle session after roughly sixty seconds, closing it with status 1006
+     * and no close frame. A session with no subscriptions sends nothing after authenticating and is
+     * therefore reaped on that schedule, forcing a reconnect and a REST session validation every
+     * minute for the rest of the process. A periodic heartbeat keeps the session resident during
+     * those quiet windows - before the morning scan subscribes the universe, and at any point when
+     * the market produces no ticks for the subscribed set.
+     *
+     * @return the JSON heartbeat frame
+     */
+    public static String heartBeatFrame() {
+        ObjectNode frame = MAPPER.createObjectNode();
+        frame.put("t", "hc");
+        return frame.toString();
+    }
+
+    /**
      * Builds the subscribe frames for the given instrument keys.
      *
      * @param keys {@code EXCHANGE|TOKEN} identifiers, e.g. {@code NSE|26000}

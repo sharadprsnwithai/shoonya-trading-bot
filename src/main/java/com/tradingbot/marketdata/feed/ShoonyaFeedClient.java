@@ -142,7 +142,46 @@ public class ShoonyaFeedClient {
                             t.setDaemon(true);
                             return t;
                         });
+        scheduleKeepAlive();
         connect();
+    }
+
+    /**
+     * Schedules the periodic session heartbeat.
+     *
+     * <p>Deliberately on the same single-threaded scheduler as reconnection: both touch the same
+     * socket, and a separate pool would let a heartbeat race a reconnect onto a socket that is
+     * being replaced. Runs at half the gateway's idle reap interval so that a single lost heartbeat
+     * does not end the session.
+     */
+    private void scheduleKeepAlive() {
+        long interval = Math.max(1, properties.getKeepAliveSeconds());
+        scheduler.scheduleAtFixedRate(this::sendKeepAlive, interval, interval, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Sends one heartbeat so the gateway does not reap an idle session.
+     *
+     * <p>Two keepalives are sent. The WebSocket ping is handled by the gateway's protocol layer and
+     * satisfies RFC 6455, so it keeps any intermediate proxy or NAT mapping warm. The protocol
+     * heartbeat frame reaches the application layer, which is where the observed sixty-second reap
+     * appears to live. Either alone may be insufficient; together they cover both.
+     *
+     * <p>A quiet period is normal - before the morning scan subscribes the universe, or whenever
+     * the market produces no ticks for the subscribed set - so without this the feed reconnects
+     * every minute for as long as it stays idle, each cycle costing a REST session validation.
+     */
+    private void sendKeepAlive() {
+        WebSocket ws = this.webSocket;
+        if (ws == null || !running) {
+            return;
+        }
+        try {
+            ws.sendPing(java.nio.ByteBuffer.allocate(0));
+            sendFrames(List.of(ShoonyaFeedProtocol.heartBeatFrame()));
+        } catch (Exception e) {
+            log.debug("[FEED] Keepalive failed: {}", e.getMessage());
+        }
     }
 
     /** Closes the socket and stops the reconnect worker. */

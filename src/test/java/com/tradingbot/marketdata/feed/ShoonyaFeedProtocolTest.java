@@ -38,6 +38,18 @@ class ShoonyaFeedProtocolTest {
     }
 
     @Test
+    @DisplayName("heartbeat frame carries no fields and classifies as carrying no quote state")
+    void testHeartBeatFrame() {
+        JsonNode node = ShoonyaFeedProtocol.parse(ShoonyaFeedProtocol.heartBeatFrame());
+
+        assertThat(node.path("t").asText()).isEqualTo("hc");
+        assertThat(node.size()).isEqualTo(1);
+
+        // Must never be mistaken for a snapshot or a diff, or a heartbeat would blank the tick.
+        assertThat(ShoonyaFeedProtocol.classify(node)).isEqualTo(MessageKind.OTHER);
+    }
+
+    @Test
     @DisplayName("subscribe frame packs keys into one # delimited list")
     void testSubscribeFrameSingleFrame() {
         List<String> frames =
