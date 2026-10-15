@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="dead-code"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        Dead-code detection, restricted to the members that are provably safe to delete.
+
+        This ruleset deliberately covers PRIVATE members only. A broader "unused" analysis cannot be
+        made sound for this codebase: Spring invokes @Scheduled, @PostConstruct and @EventListener
+        methods reflectively, REST controllers are reached only through the servlet mapping, and
+        Jackson and Lombok call accessors by name. None of those have Java callers, so any tool that
+        treated caller-count as proof of dead code would delete the trading schedulers and the
+        controllers along with the genuinely dead code.
+
+        checkAll stays false on UnusedFormalParameter for the same reason: interface and override
+        implementations must keep their parameters regardless of whether the body reads them.
+    </description>
+
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateField"/>
+
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"/>
+
+    <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"/>
+
+    <rule ref="category/java/bestpractices.xml/UnusedFormalParameter">
+        <properties>
+            <!-- false = private methods and constructors only, which is the safe subset. -->
+            <property name="checkAll" value="false"/>
+        </properties>
+    </rule>
+
+</ruleset>

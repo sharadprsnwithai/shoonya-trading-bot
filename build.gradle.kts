@@ -4,6 +4,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.6"
     id("com.diffplug.spotless") version "7.0.2"
     id("com.github.spotbugs") version "6.0.26"
+    id("pmd")
 }
 
 group = "com.tradingbot"
@@ -109,5 +110,27 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.create("xml") {
         required.set(false)
     }
+}
+
+// ==============================================================================
+// PMD — dead-code detection (private members only)
+// ==============================================================================
+// Scope is deliberately narrower than PMD's default quickstart ruleset. See
+// config/pmd/pmd-ruleset.xml for why anything broader would flag Spring-invoked
+// @Scheduled and controller methods as dead code.
+pmd {
+    // Gradle's default tool version is used so the ruleset stays portable; the category/
+    // bestpractices rules referenced below exist in both PMD 6.36+ and PMD 7.
+    isIgnoreFailures = true
+    isConsoleOutput = false
+    incrementalAnalysis.set(true)
+    ruleSetFiles = files("config/pmd/pmd-ruleset.xml")
+    ruleSets = emptyList()
+}
+
+// Test sources are out of scope, matching the spotbugsMain analysis boundary. Unused
+// parameters in test helpers and fixtures are idiomatic, not dead code.
+tasks.named("pmdTest") {
+    enabled = false
 }
 
