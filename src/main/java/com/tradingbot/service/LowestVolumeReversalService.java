@@ -2482,6 +2482,7 @@ public class LowestVolumeReversalService {
                                                 : pos.getStockEntryPrice().subtract(spotPrice);
                                 telegramService.sendTextMessage(
                                         String.format(
+                                                Locale.US,
                                                 "🎯 *LVR %s Target Reached (100%% Full Exit)*\n"
                                                         + "• Symbol: *%s* (%s)\n"
                                                         + "• Exit Price: `₹%.2f` (Target was `₹%.2f`)\n"
@@ -2546,6 +2547,7 @@ public class LowestVolumeReversalService {
                                                     : pos.getStockEntryPrice().subtract(spotPrice);
                                     telegramService.sendTextMessage(
                                             String.format(
+                                                    Locale.US,
                                                     "🎯 *LVR %s Target Reached (Full Exit)*\n"
                                                             + "• Symbol: *%s* (%s)\n"
                                                             + "• Exit Price: `₹%.2f`\n"
