@@ -33,7 +33,19 @@ public final class LvrStateStore {
 
     private LvrStateStore() {}
 
-    /** The persisted slice of LVR state. Public fields for direct Jackson binding. */
+    /**
+     * The persisted slice of LVR state. Public fields for direct Jackson binding.
+     *
+     * <p>The session keys ({@code lastScanDate}, {@code universeScanCompletedToday}) belong here
+     * alongside the positions. Without them a restart looked like a day that had never been
+     * scanned: after 10:00 the very first cycle latched {@code standDownToday} and the strategy
+     * stood down for the rest of the day, and any subsequent reset was mistaken for a new day —
+     * archiving nothing and wiping today's realized P&amp;L, which re-opened the daily loss budget
+     * that the losses had already consumed.
+     *
+     * <p>Fields added after the first release are absent from older snapshot files; Jackson leaves
+     * them at their Java defaults, so an existing state file loads exactly as before.
+     */
     public static final class DailyState {
         public LocalDate date;
         public Instant savedAt;
@@ -44,6 +56,18 @@ public final class LvrStateStore {
         public LocalDate archiveDate;
         public boolean circuitBreakerTripped;
         public boolean standDownToday;
+
+        /** The trading day this snapshot describes, so a same-day restart stays same-day. */
+        public LocalDate lastScanDate;
+
+        /** Whether the morning universe scan already produced candidates today. */
+        public boolean universeScanCompletedToday;
+
+        /** Loss count against {@code maxDailyLosses}; a restart must not hand back two more. */
+        public int todayLossCount;
+
+        /** Monotonic trade-id source; restored so ids never collide with restored positions. */
+        public int tradeCounter;
     }
 
     /** Atomically writes {@code state} to {@code path}. Creates parent directories as needed. */

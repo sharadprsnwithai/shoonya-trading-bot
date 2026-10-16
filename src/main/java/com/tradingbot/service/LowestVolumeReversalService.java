@@ -70,6 +70,18 @@ public class LowestVolumeReversalService {
     /** H5: consecutive quote failures before a loud stall alert is emitted for a symbol. */
     private static final int QUOTE_STALL_ALERT_THRESHOLD = 3;
 
+    /**
+     * Consecutive unpriced exit evaluations before an open position is force-flattened.
+     *
+     * <p>Exit evaluation runs on the 30-second loop, so 10 misses is roughly five minutes with no
+     * usable price. Until now a quote failure simply skipped the pass — no stop check, no target
+     * check, no EMA check — so a position could sit with no stop enforcement at all for as long as
+     * the outage lasted, which is exactly when prices move fastest. Five minutes is long enough to
+     * ride out a normal broker hiccup and short enough to bound the damage; beyond it the position
+     * is flattened rather than left unmanaged.
+     */
+    private static final int UNPRICED_POSITION_FORCE_EXIT_AFTER = 10;
+
     private final ShoonyaMarketDataService marketDataService;
     private final TechnicalAnalysisService taService;
     private final TelegramService telegramService;
@@ -277,11 +289,28 @@ public class LowestVolumeReversalService {
     private final Set<String> quoteStallAlerted = ConcurrentHashMap.newKeySet();
 
     /**
+     * Open positions whose most recent valuation could not obtain a price.
+     *
+     * <p>Missing data must never be read as zero risk. A position whose quote fetch fails used to
+     * contribute exactly ₹0 to the unrealized P&amp;L, so the daily circuit breaker and the
+     * pre-trade budget both went blind precisely during a quote outage — when prices move fastest
+     * and floating losses are largest. While any open position is unpriced the budget gate fails
+     * closed and refuses new entries instead.
+     */
+    private final Set<String> unpricedPositions = ConcurrentHashMap.newKeySet();
+
+    /**
      * M1: per-symbol cooldown before a data-dependent gate (slippage/sector/premium) is retried.
      */
     private final Map<String, Instant> gateRetryNotBefore = new ConcurrentHashMap<>();
 
-    /** M1/M9: per-symbol consecutive no-data retries for the sector gate before exhaustion. */
+    /**
+     * M1/M9: per-symbol <em>consecutive</em> no-data retries for the sector gate before exhaustion.
+     *
+     * <p>Consecutive, not cumulative: the streak is cleared whenever the sector check produces a
+     * definitive verdict, and by {@link #resetDaily(boolean)}. Leaving it cumulative let six
+     * scattered outages — or a carry-over from yesterday — permanently reject a tradable symbol.
+     */
     private final Map<String, Integer> gateRetryCounts = new ConcurrentHashMap<>();
 
     /** M2: latched daily circuit breaker — once tripped it stays tripped until resetDaily(). */
@@ -361,6 +390,10 @@ public class LowestVolumeReversalService {
         state.archiveDate = archiveDate;
         state.circuitBreakerTripped = dailyCircuitBreakerTripped.get();
         state.standDownToday = standDownToday;
+        state.lastScanDate = lastScanDate;
+        state.universeScanCompletedToday = universeScanCompletedToday;
+        state.todayLossCount = todayLossCount.get();
+        state.tradeCounter = tradeCounter.get();
         return state;
     }
 
@@ -424,6 +457,17 @@ public class LowestVolumeReversalService {
                 dailyCircuitBreakerTripped.set(true);
             }
             standDownToday = state.standDownToday;
+
+            // Session keys. Restoring these is what makes a restart a continuation rather than a
+            // fresh, unscanned day. lastScanDate keeps a later reset recognising today as today,
+            // so realized losses are archived instead of discarded; the scan flag stops the 10:00
+            // fallback from latching standDownToday and abandoning the rest of the session.
+            lastScanDate = state.lastScanDate;
+            universeScanCompletedToday = state.universeScanCompletedToday;
+            todayLossCount.set(Math.max(0, state.todayLossCount));
+            // Never renumber below an id already in circulation — restored trades keep their ids,
+            // so a fresh LVR-1 must not collide with a restored LVR-1.
+            tradeCounter.set(Math.max(state.tradeCounter, highestRestoredTradeId() + 1));
             log.info(
                     "[LVR] Restored persisted state: {} open position(s), {} closed trade(s),"
                             + " breakerLatched={}, standDown={} (file: {}).",
@@ -439,6 +483,158 @@ public class LowestVolumeReversalService {
                     e.getMessage(),
                     e);
         }
+    }
+
+    /**
+     * Highest trade-id suffix in circulation among restored trades, used to resume {@link
+     * #tradeCounter} above them rather than renumbering from 1.
+     *
+     * @return the largest numeric suffix parsed, or 0 when no id parses
+     */
+    private int highestRestoredTradeId() {
+        int highest = 0;
+        for (LowestVolumePaperPosition p : openPositions.values()) {
+            highest = Math.max(highest, tradeIdSuffix(p));
+        }
+        for (LowestVolumePaperPosition p : tradeHistory) {
+            highest = Math.max(highest, tradeIdSuffix(p));
+        }
+        return highest;
+    }
+
+    /**
+     * Parses the numeric suffix of a {@code LVR-<n>} trade id.
+     *
+     * @param p position whose id to parse
+     * @return the suffix, or 0 when the id is null or does not end in a number
+     */
+    private static int tradeIdSuffix(LowestVolumePaperPosition p) {
+        String id = p.getTradeId();
+        if (id == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(id.substring(id.lastIndexOf('-') + 1));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Books an unmanaged position at its stop so it can never leave the ledger without a realized
+     * P&amp;L.
+     *
+     * <p>Called when a reset finds a position that {@link #executeHardExit(LocalTime)} could not
+     * price. Where it would actually have filled is unknown, so the stop is the defensible
+     * assumption: it is the level the position was already protected at, and it books the worst
+     * case rather than the convenient one. A zero-P&amp;L placeholder would quietly forgive a real
+     * loss and hand back exactly the daily loss budget that loss had consumed.
+     *
+     * @param pos the position to close
+     */
+    private void forceCloseAtStop(LowestVolumePaperPosition pos) {
+        try {
+            int qty =
+                    pos.getRemainingQuantity() > 0
+                            ? pos.getRemainingQuantity()
+                            : pos.getTotalQuantity();
+            BigDecimal plannedRisk = pos.getPlannedRisk();
+            BigDecimal stop = pos.getCurrentStockSl();
+            boolean options = pos.getInstrumentType() == LvrInstrumentType.OPTIONS;
+            BigDecimal entry = options ? pos.getEntryPremium() : pos.getStockEntryPrice();
+            if (entry == null || stop == null || plannedRisk == null || qty <= 0) {
+                log.error(
+                        "[LVR] Cannot force-close unpriced position {} for {}: missing"
+                                + " entry/stop/risk (entry={}, stop={}, risk={}, qty={})."
+                                + " It remains open — inspect manually.",
+                        pos.getTradeId(),
+                        pos.getSymbol(),
+                        entry,
+                        stop,
+                        plannedRisk,
+                        qty);
+                return;
+            }
+
+            // plannedRisk is the rupee loss if the stop is hit; invert it to the exit price that
+            // realizes exactly that, following each instrument's P&L sign convention.
+            BigDecimal perUnitRisk =
+                    plannedRisk.divide(BigDecimal.valueOf(qty), 6, java.math.RoundingMode.HALF_UP);
+            boolean longSide = options || pos.getDirection() == LowestVolumeDirection.LONG;
+            BigDecimal exit = longSide ? entry.subtract(perUnitRisk) : entry.add(perUnitRisk);
+
+            openPositions.remove(pos.getSymbol());
+            unpricedPositions.remove(pos.getSymbol());
+            pos.close(exit, "RESET_UNCLOSED_ASSUMED_STOP", Instant.now(clock));
+            tradeHistory.add(pos);
+            log.error(
+                    "[LVR] Position {} for {} was still open and unpriced at reset — booked at its"
+                            + " stop (assumed loss ₹{}) so the realized loss is not dropped from"
+                            + " the daily budget.",
+                    pos.getTradeId(),
+                    pos.getSymbol(),
+                    String.format(BotLocale.INSTANCE, "%.2f", plannedRisk.doubleValue()));
+        } catch (Exception e) {
+            log.error(
+                    "[LVR] Failed to force-close unpriced position {} for {}: {}",
+                    pos.getTradeId(),
+                    pos.getSymbol(),
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    /**
+     * Flattens a position that has gone unpriced for {@link #UNPRICED_POSITION_FORCE_EXIT_AFTER}
+     * consecutive evaluations.
+     *
+     * <p>Publishes a market exit so a live consumer flattens the broker leg immediately, then books
+     * the paper position at its stop via {@link #forceCloseAtStop(LowestVolumePaperPosition)}.
+     * Leaving it open would mean the position rides out the rest of the outage with no stop
+     * enforcement at all — which is exactly when prices move fastest. A fabricated fill is still
+     * not invented: the published price is {@code BigDecimal.ZERO} and the broker is told to take
+     * the market, matching how the EOD square-off handles an unquotable position.
+     *
+     * @param symbol the symbol that can no longer be priced
+     * @param pos the position to flatten
+     * @param failures the consecutive failure count that triggered the flatten, for the alert
+     */
+    private void forceUnpricedExit(String symbol, LowestVolumePaperPosition pos, int failures) {
+        try {
+            int exitQty =
+                    pos.getRemainingQuantity() > 0
+                            ? pos.getRemainingQuantity()
+                            : pos.getTotalQuantity();
+            String brokerSymbol = resolveBrokerTradingSymbol(pos);
+            publishSignal(
+                    symbol,
+                    brokerSymbol,
+                    pos.getDirection() == LowestVolumeDirection.LONG
+                            ? com.tradingbot.strategy.SignalAction.EXIT_LONG
+                            : com.tradingbot.strategy.SignalAction.EXIT_SHORT,
+                    BigDecimal.ZERO,
+                    pos.getCurrentStockSl(),
+                    null,
+                    exitQty,
+                    "QUOTE_STALL_FORCED_EXIT",
+                    Map.of(
+                            "instrumentType",
+                            pos.getInstrumentType().name(),
+                            "orderType",
+                            "MKT",
+                            "estimated",
+                            true,
+                            "quoteFailures",
+                            failures));
+            log.error(
+                    "[LVR] {} has been unquotable for {} consecutive checks — force-flattening at"
+                            + " the market. Broker leg notified; paper position booked at its stop.",
+                    symbol,
+                    failures);
+        } catch (Exception e) {
+            log.error("[LVR] Failed to publish force-exit for {}: {}", symbol, e.getMessage(), e);
+        }
+        forceCloseAtStop(pos);
     }
 
     /** M10: best-effort final snapshot on shutdown. */
@@ -1839,6 +2035,12 @@ public class LowestVolumeReversalService {
                         return;
                     }
                     if (sectorGate == SectorGate.MISALIGNED) {
+                        // A definitive verdict means the constituent quotes came back, so the
+                        // consecutive-failure streak ends here. Without this the counter was
+                        // cumulative: six NO_DATA outcomes scattered across a day — or carried
+                        // over from yesterday, since resetDaily never cleared the map either —
+                        // added up to a permanent rejection of a perfectly tradable symbol.
+                        gateRetryCounts.remove(symbol);
                         log.warn(
                                 "[LVR] Entry for {} BLOCKED: Parent sector has flipped or lost momentum opposite to {} direction. Deferring entry (cooldown retry).",
                                 symbol,
@@ -1847,6 +2049,8 @@ public class LowestVolumeReversalService {
                         gateRetryNotBefore.put(symbol, Instant.now(clock).plusSeconds(60));
                         return;
                     }
+                    // ALIGNED: the filter passed on real data — the streak is over.
+                    gateRetryCounts.remove(symbol);
                 }
 
                 executePositionEntry(symbol, setup, spotPrice);
@@ -1950,18 +2154,40 @@ public class LowestVolumeReversalService {
 
         // M2 pre-trade budget: don't open a position whose planned risk alone would breach the
         // daily loss budget (in addition to the tripped-breaker latch which uses live P&L).
+        //
+        // Two failure modes this deliberately avoids:
+        //  - Winners used to EXPAND the budget. `maxDailyLoss + realized + unrealized` meant a
+        //    +₹20k day on a ₹15k limit handed out ₹35k of fresh risk, so a loss budget stopped
+        //    being a budget once the day went well. A loss budget is bounded by what can be lost:
+        //    profits never widen it, only losses consume it.
+        //  - Risk was counted only for the NEW position, not for the open ones already at risk.
+        //    Four ₹4k positions were allowed under a ₹15k limit because each was checked alone.
+        //    Now the aggregate risk to the current stops of everything already open is charged too.
         if (maxDailyLoss > 0.0) {
-            double totalRiskPnl = calculateTodayRealizedPnl() + getCachedUnrealizedPnl();
-            double remainingBudget = maxDailyLoss + totalRiskPnl;
-            if (plannedRisk.doubleValue() > remainingBudget) {
+            if (hasUnpricedOpenPosition()) {
                 log.warn(
-                        "[LVR] Entry for {} REJECTED: planned risk {} exceeds remaining daily"
-                                + " loss budget {} (limit {}, current P&L {}).",
+                        "[LVR] Entry for {} REJECTED: {} open position(s) could not be valued on"
+                                + " their latest quote check. Refusing to add risk while open risk"
+                                + " is unmeasurable (fail closed).",
                         symbol,
+                        unpricedPositions.size());
+                return null;
+            }
+            double realized = calculateTodayRealizedPnl();
+            double lossBudget = maxDailyLoss + Math.min(0.0, realized);
+            double openRisk = aggregateOpenStopRisk();
+            double required = plannedRisk.doubleValue() + openRisk;
+            if (required > lossBudget) {
+                log.warn(
+                        "[LVR] Entry for {} REJECTED: total risk {} (new {} + open-stop {})"
+                                + " exceeds remaining daily loss budget {} (limit {}, realized {}).",
+                        symbol,
+                        String.format(BotLocale.INSTANCE, "%.2f", required),
                         String.format(BotLocale.INSTANCE, "%.2f", plannedRisk.doubleValue()),
-                        String.format(BotLocale.INSTANCE, "%.2f", Math.max(0.0, remainingBudget)),
+                        String.format(BotLocale.INSTANCE, "%.2f", openRisk),
+                        String.format(BotLocale.INSTANCE, "%.2f", Math.max(0.0, lossBudget)),
                         String.format(BotLocale.INSTANCE, "%.2f", maxDailyLoss),
-                        String.format(BotLocale.INSTANCE, "%.2f", totalRiskPnl));
+                        String.format(BotLocale.INSTANCE, "%.2f", realized));
                 return null;
             }
         }
@@ -2160,8 +2386,21 @@ public class LowestVolumeReversalService {
                                     entryPremium
                                             .subtract(unitRisk.multiply(BigDecimal.valueOf(0.50)))
                                             .setScale(2, RoundingMode.HALF_UP),
+                                    // Broker bracket must mirror the STRATEGY's ratio, not just
+                                    // its risk leg. With ATM delta ≈ 0.5 the premium moves ≈ 0.5x
+                                    // the spot, so 1R of spot risk is 0.5 x unitRisk of premium —
+                                    // hence the SL above. The target had been booked as a raw 1R
+                                    // of PREMIUM, which is 2R of spot: the bracket would have
+                                    // taken profit a full half-point of R early and left the
+                                    // strategy believing the position was still open. Scaling the
+                                    // target by the same 0.5 delta and the configured targetRr
+                                    // closes the gap.
                                     "brokerTargetPrice",
-                                    entryPremium.add(unitRisk).setScale(2, RoundingMode.HALF_UP)));
+                                    entryPremium
+                                            .add(
+                                                    unitRisk.multiply(BigDecimal.valueOf(0.50))
+                                                            .multiply(BigDecimal.valueOf(targetRr)))
+                                            .setScale(2, RoundingMode.HALF_UP)));
             if (!published) {
                 rollbackEntryAfterPublishFailure(
                         symbol, setup, tradeId, "signal bus rejected OPTION ENTRY");
@@ -2273,11 +2512,21 @@ public class LowestVolumeReversalService {
                                 ? quoteNode.get("lp").asDouble(0.0)
                                 : 0.0;
                 if (spotLtp <= 0) {
-                    // H5: never skip an exit evaluation silently.
-                    recordQuoteFailure(symbol, "open-position exit evaluation");
+                    // H5: a skipped pass is a pass with no stop. Previously this logged "never
+                    // skip an exit evaluation silently" and then skipped exactly that — no stop
+                    // check, no target check, no EMA check — for as long as the outage lasted.
+                    // Record the miss, mark the position unpriced so the budget gate fails closed,
+                    // and after a bounded number of passes flatten it rather than leave it
+                    // unmanaged through the rest of the outage.
+                    unpricedPositions.add(symbol);
+                    int failures = recordQuoteFailure(symbol, "open-position exit evaluation");
+                    if (failures >= UNPRICED_POSITION_FORCE_EXIT_AFTER) {
+                        forceUnpricedExit(symbol, pos, failures);
+                    }
                     continue;
                 }
                 recordQuoteSuccess(symbol);
+                unpricedPositions.remove(symbol);
 
                 BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
                 BigDecimal optionPremium = estimateOptionPremium(pos, spotPrice);
@@ -2296,13 +2545,18 @@ public class LowestVolumeReversalService {
 
                 if (slHit) {
                     if (pos.isClosed()) continue;
-                    openPositions.remove(symbol);
                     String slReason =
                             pos.isPartialBooked() ? "TRAILING_COST_SL_HIT" : "SPOT_SL_HIT";
                     int exitQty =
                             pos.getRemainingQuantity() > 0
                                     ? pos.getRemainingQuantity()
                                     : pos.getTotalQuantity();
+                    // Resolve everything that can throw BEFORE the position leaves openPositions.
+                    // Removing it first (as this did) meant a failure in broker-symbol resolution
+                    // dropped the position out of the live map while it was still unclosed: it
+                    // would never be evaluated again, no EXIT was ever published for the live leg,
+                    // and its P&L never reached tradeHistory — silently deleting the trade from
+                    // the day's accounting. Every other exit path already closes first.
                     String brokerSymbol = resolveBrokerTradingSymbol(pos);
                     BigDecimal exitPrc =
                             pos.getInstrumentType() == LvrInstrumentType.FUTURES
@@ -2310,6 +2564,8 @@ public class LowestVolumeReversalService {
                                     : optionPremium;
 
                     pos.close(exitPrc, slReason, Instant.now());
+                    openPositions.remove(symbol);
+                    unpricedPositions.remove(symbol);
                     tradeHistory.add(pos);
                     if (!pos.isPartialBooked()) {
                         todayLossCount.incrementAndGet();
@@ -2926,6 +3182,16 @@ public class LowestVolumeReversalService {
             executeHardExit(LocalTime.of(15, 0));
         }
 
+        // executeHardExit deliberately keeps a position open when it cannot price it, so anything
+        // still here is unmanaged. Dropping it into the clear below would delete the trade without
+        // ever booking it — no tradeHistory entry, so the realized loss never reaches the daily
+        // budget or the circuit breaker, and the next day would be risked as if the loss had not
+        // happened. Book it at its stop instead: an assumed stop-out overstates nothing (the
+        // position was unmanaged and unpriced) and keeps the ledger honest.
+        for (LowestVolumePaperPosition orphan : new ArrayList<>(openPositions.values())) {
+            forceCloseAtStop(orphan);
+        }
+
         // M10: snapshot to disk BEFORE clearing anything — nothing is ever silently lost.
         try {
             com.tradingbot.persistence.LvrStateStore.DailyState snapshot = buildState();
@@ -2940,6 +3206,15 @@ public class LowestVolumeReversalService {
         openPositions.clear();
         exhaustedSymbols.clear();
         candidateReservoir.clear();
+        // Day-scoped gate/alert state must not survive into the next session: gateRetryCounts is
+        // a consecutive-failure streak, and carrying it over made a symbol that had a rough Monday
+        // fail-closed on the first sector hiccup of Tuesday.
+        gateRetryCounts.clear();
+        gateRetryNotBefore.clear();
+        quoteFailureCounts.clear();
+        quoteStallAlerted.clear();
+        unpricedPositions.clear();
+        sectorRejectionAlertCooldown.clear();
         lastMidMorningRefreshTime = null;
         currentTopGainers.clear();
         currentTopLosers.clear();
@@ -3590,7 +3865,12 @@ public class LowestVolumeReversalService {
         if (optionChainService != null) {
             try {
                 var chain = optionChainService.getIndexOptionChain(symbol, strike, 2, true);
-                if (chain != null && chain.strikes() != null) {
+                // OptionChainResponse documents that consumers must treat a synthetic chain as
+                // UNAVAILABLE, not as a neutral-but-valid reading. Reading its Black-Scholes
+                // premium here would value an open position on a fabricated quote, and let the
+                // runner/target logic exit on a price that never existed on the exchange. Skip to
+                // the direct contract lookup below, which either returns a real quote or nothing.
+                if (chain != null && !chain.isSynthetic() && chain.strikes() != null) {
                     for (var s : chain.strikes()) {
                         if (s.strikePrice() != null && s.strikePrice().compareTo(strike) == 0) {
                             var contract = "PE".equalsIgnoreCase(optionType) ? s.put() : s.call();
@@ -4034,7 +4314,17 @@ public class LowestVolumeReversalService {
             }
         }
 
-        // 2. VWAP confirmation (unavailable → fail-closed retry; wrong side → exhaust).
+        // 2. VWAP confirmation (unavailable → fail-closed retry; wrong side → cooldown retry).
+        //
+        // Every price-relative check below deliberately denies with RETRY_COOLDOWN rather than
+        // EXHAUST. These conditions are functions of the live quote, and the gate is rebuilt from
+        // a fresh quote on every 30-second tick, so "wrong side of VWAP at this instant" is no
+        // more permanent than "VWAP unavailable". Returning EXHAUST here would discard the symbol
+        // for the rest of the day because it happened to be a few paise the wrong side of a
+        // moving average on the single tick its trigger fired — the armed setup, its correctly
+        // computed trigger, SL and target, and both of its attempts would all be thrown away.
+        // EXHAUST is reserved for conditions that genuinely cannot recover: a missing registry
+        // entry, and PDH/PDL that is still unavailable after the bounded N5 retries above.
         if (Boolean.TRUE.equals(in.vwapEnabled)) {
             if (in.vwap == null || in.vwap <= 0.0) {
                 return deny(
@@ -4051,11 +4341,12 @@ public class LowestVolumeReversalService {
                 }
                 if (!confirmed) {
                     return deny(
-                            EntryGateDisposition.EXHAUST,
+                            EntryGateDisposition.RETRY_COOLDOWN,
                             "VWAP",
                             String.format(
                                     BotLocale.INSTANCE,
-                                    "Spot %s failed VWAP %s confirmation for %s direction",
+                                    "Spot %s failed VWAP %s confirmation for %s direction"
+                                            + " (re-checking after cooldown)",
                                     in.decisionPrice,
                                     String.format(BotLocale.INSTANCE, "%.2f", in.vwap),
                                     in.direction));
@@ -4064,7 +4355,7 @@ public class LowestVolumeReversalService {
         }
 
         // 3. Opening 15-minute range breakout (unavailable → fail-closed retry; inside range →
-        // exhaust).
+        // cooldown retry).
         if (Boolean.TRUE.equals(in.range15mEnabled)) {
             if (in.first15mHigh == null || in.first15mLow == null) {
                 return deny(
@@ -4081,11 +4372,12 @@ public class LowestVolumeReversalService {
                 }
                 if (!confirmed) {
                     return deny(
-                            EntryGateDisposition.EXHAUST,
+                            EntryGateDisposition.RETRY_COOLDOWN,
                             "15M_RANGE",
                             String.format(
                                     BotLocale.INSTANCE,
-                                    "Spot %s inside 15-min range [%s - %s] for %s",
+                                    "Spot %s inside 15-min range [%s - %s] for %s"
+                                            + " (re-checking after cooldown)",
                                     in.decisionPrice,
                                     in.first15mLow,
                                     in.first15mHigh,
@@ -4095,12 +4387,17 @@ public class LowestVolumeReversalService {
         }
 
         // 4. PDH/PDL breakout (fail-closed when values are missing).
+        //
+        // Unlike the other price-relative checks this one stays EXHAUST, because the live path has
+        // already burned its bounded N5 lazy-fetch retries (initPdhPdlForSetup / MAX_PDH_FETCH_
+        // ATTEMPTS) before this gate ever sees a null. Reaching here means the daily candles are
+        // genuinely unavailable, not momentarily missing.
         if (Boolean.TRUE.equals(in.pdhPdlEnabled)) {
             if (in.pdh == null || in.pdl == null) {
                 return deny(
                         EntryGateDisposition.EXHAUST,
                         "PDH_PDL",
-                        "PDH/PDL unavailable (fail-closed)");
+                        "PDH/PDL unavailable after bounded fetch retries (fail-closed)");
             }
             if (in.decisionPrice != null && in.direction != null) {
                 boolean confirmed;
@@ -4111,11 +4408,12 @@ public class LowestVolumeReversalService {
                 }
                 if (!confirmed) {
                     return deny(
-                            EntryGateDisposition.EXHAUST,
+                            EntryGateDisposition.RETRY_COOLDOWN,
                             "PDH_PDL",
                             String.format(
                                     BotLocale.INSTANCE,
-                                    "Spot %s inside PDH-PDL range [%s - %s] for %s",
+                                    "Spot %s inside PDH-PDL range [%s - %s] for %s"
+                                            + " (re-checking after cooldown)",
                                     in.decisionPrice,
                                     in.pdl,
                                     in.pdh,
@@ -4135,11 +4433,11 @@ public class LowestVolumeReversalService {
                                         .doubleValue();
                         if (extensionPct > in.maxPdhExtensionPct) {
                             return deny(
-                                    EntryGateDisposition.EXHAUST,
+                                    EntryGateDisposition.RETRY_COOLDOWN,
                                     "PDH_EXTENSION",
                                     String.format(
                                             BotLocale.INSTANCE,
-                                            "Spot %s is %.2f%% above PDH %s (max allowed: %.1f%%) — entry too extended, skipping",
+                                            "Spot %s is %.2f%% above PDH %s (max allowed: %.1f%%) — entry too extended, re-checking after cooldown",
                                             in.decisionPrice,
                                             extensionPct,
                                             in.pdh,
@@ -4154,11 +4452,11 @@ public class LowestVolumeReversalService {
                                         .doubleValue();
                         if (extensionPct > in.maxPdhExtensionPct) {
                             return deny(
-                                    EntryGateDisposition.EXHAUST,
+                                    EntryGateDisposition.RETRY_COOLDOWN,
                                     "PDH_EXTENSION",
                                     String.format(
                                             BotLocale.INSTANCE,
-                                            "Spot %s is %.2f%% below PDL %s (max allowed: %.1f%%) — entry too extended, skipping",
+                                            "Spot %s is %.2f%% below PDL %s (max allowed: %.1f%%) — entry too extended, re-checking after cooldown",
                                             in.decisionPrice,
                                             extensionPct,
                                             in.pdl,
@@ -4185,33 +4483,35 @@ public class LowestVolumeReversalService {
 
             if (in.pcr >= neutralMin && in.pcr <= neutralMax) {
                 return deny(
-                        EntryGateDisposition.EXHAUST,
+                        EntryGateDisposition.RETRY_COOLDOWN,
                         "PCR",
                         String.format(
                                 BotLocale.INSTANCE,
                                 "PCR %.2f (ATM ± 4) is inside the neutral no-trade band "
-                                        + "[%.2f, %.2f] — indecision, no entry",
+                                        + "[%.2f, %.2f] — indecision, re-checking after cooldown",
                                 in.pcr,
                                 neutralMin,
                                 neutralMax));
             }
             if (in.direction == LowestVolumeDirection.LONG && in.pcr < neutralMin) {
                 return deny(
-                        EntryGateDisposition.EXHAUST,
+                        EntryGateDisposition.RETRY_COOLDOWN,
                         "PCR",
                         String.format(
                                 BotLocale.INSTANCE,
-                                "PCR %.2f (ATM ± 4) is below %.2f — bearish, not confirmed for LONG",
+                                "PCR %.2f (ATM ± 4) is below %.2f — bearish, not confirmed for"
+                                        + " LONG (re-checking after cooldown)",
                                 in.pcr,
                                 neutralMin));
             }
             if (in.direction == LowestVolumeDirection.SHORT && in.pcr > neutralMax) {
                 return deny(
-                        EntryGateDisposition.EXHAUST,
+                        EntryGateDisposition.RETRY_COOLDOWN,
                         "PCR",
                         String.format(
                                 BotLocale.INSTANCE,
-                                "PCR %.2f (ATM ± 4) is above %.2f — bullish, not confirmed for SHORT",
+                                "PCR %.2f (ATM ± 4) is above %.2f — bullish, not confirmed for"
+                                        + " SHORT (re-checking after cooldown)",
                                 in.pcr,
                                 neutralMax));
             }
@@ -4232,13 +4532,16 @@ public class LowestVolumeReversalService {
                             ? in.optionSupportStrike
                             : in.optionResistanceStrike;
             if (level == null) {
+                // The chain is re-read on every tick (resolveLiveOptionChainLevels), so an
+                // unavailable level recovers like any other missing input — retry, don't discard.
                 return deny(
-                        EntryGateDisposition.EXHAUST,
+                        EntryGateDisposition.RETRY,
                         "OPTION_SR",
                         String.format(
                                 BotLocale.INSTANCE,
                                 "Option %s strike unavailable (no usable open interest on that"
-                                        + " side) — refusing to enter without it",
+                                        + " side) — refusing to enter without it (fail-closed,"
+                                        + " retrying)",
                                 in.direction == LowestVolumeDirection.SHORT
                                         ? "Support"
                                         : "Resistance"));
@@ -4250,11 +4553,12 @@ public class LowestVolumeReversalService {
                         level.multiply(BigDecimal.valueOf(1.0 - (buffer / 100.0)));
                 if (in.decisionPrice.compareTo(effectiveResistance) >= 0) {
                     return deny(
-                            EntryGateDisposition.EXHAUST,
+                            EntryGateDisposition.RETRY_COOLDOWN,
                             "OPTION_SR",
                             String.format(
                                     BotLocale.INSTANCE,
-                                    "Spot %s is at or above Option Resistance (Max Call OI Strike %s)",
+                                    "Spot %s is at or above Option Resistance (Max Call OI Strike"
+                                            + " %s) — re-checking after cooldown",
                                     in.decisionPrice,
                                     level));
                 }
@@ -4264,11 +4568,12 @@ public class LowestVolumeReversalService {
                         level.multiply(BigDecimal.valueOf(1.0 + (buffer / 100.0)));
                 if (in.decisionPrice.compareTo(effectiveSupport) <= 0) {
                     return deny(
-                            EntryGateDisposition.EXHAUST,
+                            EntryGateDisposition.RETRY_COOLDOWN,
                             "OPTION_SR",
                             String.format(
                                     BotLocale.INSTANCE,
-                                    "Spot %s is at or below Option Support (Max Put OI Strike %s)",
+                                    "Spot %s is at or below Option Support (Max Put OI Strike %s)"
+                                            + " — re-checking after cooldown",
                                     in.decisionPrice,
                                     level));
                 }
@@ -4371,7 +4676,11 @@ public class LowestVolumeReversalService {
 
     /** M9: tri-state sector check — aligned, misaligned, or no usable data. */
     public SectorGate evaluateLiveSectorAlignment(String symbol, LowestVolumeDirection direction) {
-        if (marketDataService == null) return SectorGate.ALIGNED;
+        // Fail CLOSED on missing plumbing/data rather than defaulting to ALIGNED: the caller's
+        // NO_DATA branch has bounded retries and then a fail-closed exhaustion, whereas an
+        // ALIGNED here silently waives the filter entirely. A filter that passes whenever it has
+        // no data is not a filter.
+        if (marketDataService == null) return SectorGate.NO_DATA;
 
         String sectorName = NiftySectorRegistry.getSectorForSymbol(symbol);
         if (sectorName == null || sectorName.isBlank()) {
@@ -4380,13 +4689,13 @@ public class LowestVolumeReversalService {
                     && !sectorState.topSector().isBlank()) {
                 sectorName = sectorState.topSector();
             } else {
-                return SectorGate.ALIGNED;
+                return SectorGate.NO_DATA;
             }
         }
 
         List<String> constituents = NiftySectorRegistry.getStocksForSector(sectorName);
         if (constituents == null || constituents.isEmpty()) {
-            return SectorGate.ALIGNED;
+            return SectorGate.NO_DATA;
         }
 
         double totalPctChange = 0.0;
@@ -4843,7 +5152,14 @@ public class LowestVolumeReversalService {
                                         : fetchLiveQuoteNode(pos.getSymbol()));
                 double spotLtp =
                         (qNode != null && qNode.has("lp")) ? qNode.get("lp").asDouble(0.0) : 0.0;
-                if (spotLtp <= 0) continue;
+                if (spotLtp <= 0) {
+                    // Missing data must not read as ₹0 of risk. Marking the position unpriced makes
+                    // the budget gate fail closed instead of handing out fresh risk on the strength
+                    // of a position it cannot actually see.
+                    unpricedPositions.add(pos.getSymbol());
+                    continue;
+                }
+                unpricedPositions.remove(pos.getSymbol());
                 BigDecimal spotPrice = BigDecimal.valueOf(spotLtp);
                 BigDecimal exitVal =
                         (pos.getInstrumentType() == LvrInstrumentType.FUTURES)
@@ -4866,14 +5182,76 @@ public class LowestVolumeReversalService {
                 double pnl = priceDiff.multiply(BigDecimal.valueOf(remQty)).doubleValue();
                 totalUnrealized += pnl;
             } catch (Exception e) {
-                log.debug(
-                        "[LVR] Error calculating unrealized PnL for {}: {}",
+                unpricedPositions.add(pos.getSymbol());
+                log.warn(
+                        "[LVR] Could not value open position for {} ({} consecutive failure(s));"
+                                + " treating it as unpriced — no new entries until it can be"
+                                + " valued.",
                         pos.getSymbol(),
-                        e.getMessage(),
-                        e);
+                        quoteFailureCounts.getOrDefault(pos.getSymbol(), 0));
             }
         }
         return totalUnrealized;
+    }
+
+    /**
+     * Whether any currently open position could not be valued on its most recent evaluation.
+     *
+     * <p>Used to fail the pre-trade budget closed. A position that cannot be priced might be deep
+     * under water; granting new risk on the strength of an invisible one turns a quote outage into
+     * a way to bypass the daily loss limit.
+     *
+     * @return {@code true} when at least one open position is unpriced
+     */
+    public boolean hasUnpricedOpenPosition() {
+        // Drop the marker if the position it referred to has since been closed.
+        unpricedPositions.removeIf(s -> !openPositions.containsKey(s));
+        return !unpricedPositions.isEmpty();
+    }
+
+    /**
+     * Aggregate rupee risk still at stake across open positions, measured against each one's stop.
+     *
+     * <p>This is the amount the day would lose if every open position were to hit its stop. It is
+     * the quantity a <em>loss</em> budget must be bounded by: the sum of planned risks is only an
+     * entry-time snapshot and ignores partial bookings and trailing stops, whereas the live stop is
+     * the level each position is actually protected at.
+     *
+     * @return total rupee risk to the current stops of all open positions
+     */
+    public double aggregateOpenStopRisk() {
+        double risk = 0.0;
+        for (LowestVolumePaperPosition pos : openPositions.values()) {
+            if (pos == null || pos.isClosed()) continue;
+            int qty =
+                    pos.getRemainingQuantity() > 0
+                            ? pos.getRemainingQuantity()
+                            : pos.getTotalQuantity();
+            if (qty <= 0) continue;
+            try {
+                BigDecimal stop = pos.getCurrentStockSl();
+                BigDecimal plannedRisk = pos.getPlannedRisk();
+                if (stop == null || plannedRisk == null || plannedRisk.doubleValue() <= 0.0) {
+                    continue;
+                }
+                // Rescale the entry-time planned risk to the current stop distance. The stop has
+                // trailed, so this overstates when it has moved in favour of the position — an
+                // acceptable direction for a loss budget.
+                BigDecimal initialStop = pos.getInitialStockSl();
+                if (initialStop == null) continue;
+                BigDecimal initialDist = initialStop.subtract(pos.getStockEntryPrice()).abs();
+                BigDecimal currentDist = stop.subtract(pos.getStockEntryPrice()).abs();
+                if (initialDist.doubleValue() <= 0.0) continue;
+                double scale = currentDist.doubleValue() / initialDist.doubleValue();
+                risk += plannedRisk.doubleValue() * Math.max(0.0, scale);
+            } catch (Exception e) {
+                log.debug(
+                        "[LVR] Could not measure stop risk for {}: {}",
+                        pos.getSymbol(),
+                        e.getMessage());
+            }
+        }
+        return risk;
     }
 
     public double calculateTodayTotalRiskPnl() {
@@ -4907,8 +5285,12 @@ public class LowestVolumeReversalService {
      * H5: records a failed quote fetch for {@code symbol}; after {@link
      * #QUOTE_STALL_ALERT_THRESHOLD} consecutive failures a single loud Telegram alert is emitted
      * (further alerts suppressed until a success resets the counter).
+     *
+     * @param symbol symbol whose quote failed
+     * @param context what was being attempted
+     * @return the number of consecutive failures recorded for the symbol
      */
-    private void recordQuoteFailure(String symbol, String context) {
+    private int recordQuoteFailure(String symbol, String context) {
         int failures = quoteFailureCounts.merge(symbol, 1, Integer::sum);
         log.warn(
                 "[LVR] Quote fetch failed for {} during {} ({} consecutive failures).",
@@ -4931,6 +5313,7 @@ public class LowestVolumeReversalService {
                                 failures));
             }
         }
+        return failures;
     }
 
     /** H5: records a successful quote fetch, resetting the failure streak for the symbol. */
@@ -5319,11 +5702,17 @@ public class LowestVolumeReversalService {
                     gateInput.maxConcurrent = maxConcurrentTrades;
                     gateInput.hasRegistryEntry = fno != null;
                     gateInput.plannedRisk = plannedRisk;
+                    // Mirror the live pre-trade budget exactly, or replay would quietly validate a
+                    // strategy the live bot does not run. Losses consume the budget; profits never
+                    // widen it (winners used to hand out fresh risk). The unrealized term is
+                    // dropped rather than carried over: it previously read the LIVE open
+                    // positions, which have nothing to do with the book being replayed. Replay's
+                    // simulated book does not expose stop distance, so the open-stop term applied
+                    // live is absent here by necessity — the budget is therefore, if anything,
+                    // stricter in replay than live.
                     gateInput.remainingBudget =
                             (maxDailyLoss > 0.0)
-                                    ? maxDailyLoss
-                                            + calculateTodayRealizedPnl()
-                                            + getCachedUnrealizedPnl()
+                                    ? maxDailyLoss + Math.min(0.0, calculateTodayRealizedPnl())
                                     : null;
 
                     EntryGateDecision gate = evaluateEntryGate(gateInput);

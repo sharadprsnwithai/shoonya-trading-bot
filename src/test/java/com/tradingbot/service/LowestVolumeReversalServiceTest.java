@@ -1167,7 +1167,7 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("LONG Entry Blocked and Discarded for the Day when Spot Price <= VWAP")
+    @DisplayName("LONG Entry Blocked when Spot Price <= VWAP — retried on cooldown, not discarded")
     void testLongEntryBlockedAndDiscardedWhenBelowVwap() {
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup.setTriggerCandle(
@@ -1195,8 +1195,10 @@ class LowestVolumeReversalServiceTest {
         service.evaluateLivePriceActions();
 
         assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
-        assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
+        // VWAP is recomputed from a fresh quote on every 30s pass, so one wrong-side tick must not
+        // burn the setup's attempts or blacklist the symbol until the close.
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getExhaustedSymbols()).doesNotContain("SUNPHARMA");
     }
 
     @Test
@@ -1236,7 +1238,7 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
-    @DisplayName("SHORT Entry Blocked and Discarded for the Day when Spot Price >= VWAP")
+    @DisplayName("SHORT Entry Blocked when Spot Price >= VWAP — retried on cooldown, not discarded")
     void testShortEntryBlockedAndDiscardedWhenAboveVwap() {
         LowestVolumeSetup setup = new LowestVolumeSetup("PVRINOX", LowestVolumeDirection.SHORT);
         setup.setTriggerCandle(
@@ -1265,8 +1267,9 @@ class LowestVolumeReversalServiceTest {
         service.evaluateLivePriceActions();
 
         assertThat(service.getOpenPositions()).doesNotContainKey("PVRINOX");
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
-        assertThat(service.getExhaustedSymbols()).contains("PVRINOX");
+        // See the LONG case: VWAP-relative is a transient verdict, so the setup stays retryable.
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getExhaustedSymbols()).doesNotContain("PVRINOX");
     }
 
     @Test
@@ -1917,6 +1920,11 @@ class LowestVolumeReversalServiceTest {
         // M2: raise the daily budget — this test is about trade-ID sequencing, not the
         // pre-trade risk budget (TATASTEEL's 5500 lot would exceed the default ₹15k limit).
         service.setMaxDailyLoss(1_000_000.0);
+        // The pre-trade budget refuses to open a second position while an existing one cannot be
+        // valued (an unpriceable open position is unmeasurable risk, not zero risk), so the first
+        // position needs a quote before the second entry can proceed.
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(new ObjectMapper().createObjectNode().put("lp", "1875.00"));
 
         LowestVolumeSetup setup1 = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
         setup1.setTriggerCandle(
@@ -2484,8 +2492,10 @@ class LowestVolumeReversalServiceTest {
                 mapper.createObjectNode().put("lp", "2515.00").put("ap", "2500.00"));
 
         assertThat(service.getOpenPositions()).doesNotContainKey("RELIANCE");
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
-        assertThat(service.getExhaustedSymbols()).contains("RELIANCE");
+        // Being a few rupees inside a live opening range is a transient verdict — the setup stays
+        // armed and is re-tested against a fresh quote on the next pass.
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getExhaustedSymbols()).doesNotContain("RELIANCE");
     }
 
     @Test
@@ -2585,13 +2595,15 @@ class LowestVolumeReversalServiceTest {
                 mapper.createObjectNode().put("lp", "2377.50").put("ap", "2370.00"));
 
         assertThat(service.getOpenPositions()).doesNotContainKey("MPHASIS");
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
-        assertThat(service.getExhaustedSymbols()).contains("MPHASIS");
+        // No entry, and — the point of the change — no day-long blacklist either. The re-armed
+        // setup survives the range test and is re-evaluated on a later candle.
+        assertThat(setup.getState()).isNotEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
+        assertThat(service.getExhaustedSymbols()).doesNotContain("MPHASIS");
     }
 
     @Test
     @DisplayName(
-            "Should reject LONG trade when spot price is below or equal to PDH (trapped in range)")
+            "Should reject LONG trade when spot price is below or equal to PDH — retried, not discarded")
     void testRejectLongTradeWhenInsidePdhPdlRange() {
         service.setMaxSlippagePct(2.0);
         service.setPdhPdlFilterEnabled(true);
@@ -2626,8 +2638,10 @@ class LowestVolumeReversalServiceTest {
         service.evaluateLivePriceActions();
 
         assertThat(service.getOpenPositions()).doesNotContainKey("SUNPHARMA");
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
-        assertThat(service.getExhaustedSymbols()).contains("SUNPHARMA");
+        // Inside PDH-PDL is a function of the live quote, so it defers and retries rather than
+        // throwing away the armed setup, its trigger and its two attempts until the close.
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getExhaustedSymbols()).doesNotContain("SUNPHARMA");
     }
 
     @Test
@@ -2671,7 +2685,7 @@ class LowestVolumeReversalServiceTest {
 
     @Test
     @DisplayName(
-            "Should reject SHORT trade when spot price is above or equal to PDL (trapped in range)")
+            "Should reject SHORT trade when spot price is above or equal to PDL — retried, not discarded")
     void testRejectShortTradeWhenInsidePdhPdlRange() {
         service.setMaxSlippagePct(2.0);
         service.setPdhPdlFilterEnabled(true);
@@ -2706,8 +2720,9 @@ class LowestVolumeReversalServiceTest {
         service.evaluateLivePriceActions();
 
         assertThat(service.getOpenPositions()).doesNotContainKey("PVRINOX");
-        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.REJECTED_EXHAUSTED);
-        assertThat(service.getExhaustedSymbols()).contains("PVRINOX");
+        // See the LONG case: PDH/PDL-relative is transient, so the setup stays retryable.
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+        assertThat(service.getExhaustedSymbols()).doesNotContain("PVRINOX");
     }
 
     @Test
@@ -3147,6 +3162,182 @@ class LowestVolumeReversalServiceTest {
         assertThat(state).isNotNull();
         assertThat(state.openPositions.size() + state.tradeHistory.size()).isEqualTo(1);
         assertThat(state.exhaustedSymbols).contains("TATAMOTORS");
+    }
+
+    @Test
+    @DisplayName(
+            "M-fix: resetDaily books an unpriceable position at its stop instead of dropping it from the ledger")
+    void testResetDailyBooksUnpricedPositionAtStop() throws Exception {
+        java.nio.file.Path stateFile =
+                java.nio.file.Files.createTempDirectory("lvr-orphan").resolve("lvr-state.json");
+        service.setStateFilePath(stateFile.toString());
+
+        // No quote is mocked, so executeHardExit cannot price this and deliberately leaves it
+        // open. Dropping it into the subsequent clear would have deleted the trade without ever
+        // booking it: no tradeHistory entry, so the realized loss never reached the daily budget
+        // or the circuit breaker, and the loss cap was silently re-opened for the rest of the day.
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "SUNPHARMA",
+                        "CE",
+                        "SUNPHARMA ATM 500CE",
+                        BigDecimal.valueOf(500),
+                        350,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(15.0),
+                        BigDecimal.valueOf(516.0),
+                        BigDecimal.valueOf(508.0),
+                        BigDecimal.valueOf(548.0),
+                        700,
+                        BigDecimal.valueOf(5600.0),
+                        Instant.now());
+        service.getOpenPositions().put("SUNPHARMA", pos);
+
+        service.resetDaily(true);
+
+        assertThat(service.getOpenPositions()).isEmpty();
+        com.tradingbot.persistence.LvrStateStore.DailyState state =
+                com.tradingbot.persistence.LvrStateStore.load(stateFile);
+        assertThat(state).isNotNull();
+        assertThat(state.tradeHistory)
+                .as("the unpriceable position must still leave a booked trade behind")
+                .hasSize(1);
+        assertThat(state.tradeHistory.get(0).symbol).isEqualTo("SUNPHARMA");
+        assertThat(state.tradeHistory.get(0).exitReason).isEqualTo("RESET_UNCLOSED_ASSUMED_STOP");
+        // Entry 15.0, planned risk 5600 over 700 units → 8.00 per unit → assumed exit 7.00, so
+        // the full planned loss is what the ledger records rather than a convenient zero.
+        assertThat(state.tradeHistory.get(0).totalRealizedPnl.doubleValue())
+                .isCloseTo(-5600.0, org.assertj.core.data.Offset.offset(1.0));
+    }
+
+    @Test
+    @DisplayName(
+            "M-fix: session keys survive a restart — a same-day reset is soft, keeping realized P&L and the loss cap")
+    void testRestartKeepsSessionKeys() throws Exception {
+        java.nio.file.Path stateFile =
+                java.nio.file.Files.createTempDirectory("lvr-session").resolve("lvr-state.json");
+
+        // A snapshot as a mid-day restart would leave one: morning scan already done, two losses
+        // already taken, still the same trading day.
+        com.tradingbot.persistence.LvrStateStore.DailyState state =
+                new com.tradingbot.persistence.LvrStateStore.DailyState();
+        state.date = java.time.LocalDate.of(2026, 9, 18);
+        state.lastScanDate = java.time.LocalDate.of(2026, 9, 18);
+        state.universeScanCompletedToday = true;
+        state.todayLossCount = 2;
+        com.tradingbot.persistence.LvrStateStore.save(stateFile, state);
+
+        LowestVolumeReversalService restored =
+                new LowestVolumeReversalService(marketDataService, taService, null, config, null);
+        restored.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST)); // 10:00 IST
+        restored.setStateFilePath(stateFile.toString());
+        restored.setStatePersistenceEnabled(true);
+        restored.restorePersistedState();
+
+        assertThat(restored.isUniverseScanCompletedToday())
+                .as("a restart after the morning scan must not look like an unscanned day")
+                .isTrue();
+        assertThat(restored.isStandDownToday())
+                .as("the 10:00 fallback must not stand down a session that already scanned")
+                .isFalse();
+
+        LowestVolumePaperPosition closedToday =
+                new LowestVolumePaperPosition(
+                        "LVR-7",
+                        "TCS",
+                        LvrInstrumentType.FUTURES,
+                        LvrExitMode.FULL_TARGET_1_2,
+                        "TCS FUT",
+                        80,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(4000.00),
+                        BigDecimal.valueOf(3980.00),
+                        BigDecimal.valueOf(4060.00),
+                        160,
+                        BigDecimal.valueOf(3200.00),
+                        Instant.parse("2026-09-18T05:00:00Z"));
+        closedToday.close(BigDecimal.valueOf(3960.00), "SPOT_SL_HIT", Instant.now());
+        restored.getTradeHistory().add(closedToday);
+
+        restored.resetDaily(false);
+
+        assertThat(restored.getTradeHistory())
+                .as("a same-day reset must be soft — today's realized trades are preserved")
+                .hasSize(1);
+        assertThat(restored.getTodayLossCount().get())
+                .as("a restart must not hand back the two losses already taken against the cap")
+                .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("M-fix: a position that cannot be valued must not be counted as ₹0 of risk")
+    void testUnpricedPositionFailsClosed() {
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "SUNPHARMA",
+                        "CE",
+                        "SUNPHARMA ATM 500CE",
+                        BigDecimal.valueOf(500),
+                        350,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(15.0),
+                        BigDecimal.valueOf(516.0),
+                        BigDecimal.valueOf(508.0),
+                        BigDecimal.valueOf(548.0),
+                        700,
+                        BigDecimal.valueOf(5600.0),
+                        Instant.now());
+        service.getOpenPositions().put("SUNPHARMA", pos);
+
+        // Quote service is deliberately unmocked, so the valuation cannot obtain a price. It used
+        // to contribute exactly ₹0 here — which meant the breaker and the pre-trade budget both
+        // went blind precisely during an outage, and new risk was granted on the strength of a
+        // position the strategy could not actually see.
+        service.calculateOpenPositionsUnrealizedPnl();
+        assertThat(service.hasUnpricedOpenPosition())
+                .as("an unpriceable open position must not read as zero risk")
+                .isTrue();
+
+        // Once a quote comes back the marker clears and risk-taking resumes.
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(new ObjectMapper().createObjectNode().put("lp", "520.0"));
+        service.calculateOpenPositionsUnrealizedPnl();
+        assertThat(service.hasUnpricedOpenPosition()).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+            "Aggregate stop-risk charges the budget for what every open position could still lose")
+    void testAggregateOpenStopRiskBoundsTheBudget() {
+        // Entry 15.0, planned risk 5600 over 700 units, stock stop 8.00 away and untouched.
+        LowestVolumePaperPosition pos =
+                new LowestVolumePaperPosition(
+                        "LVR-1",
+                        "SUNPHARMA",
+                        "CE",
+                        "SUNPHARMA ATM 500CE",
+                        BigDecimal.valueOf(500),
+                        350,
+                        2,
+                        LowestVolumeDirection.LONG,
+                        BigDecimal.valueOf(15.0),
+                        BigDecimal.valueOf(516.0),
+                        BigDecimal.valueOf(508.0),
+                        BigDecimal.valueOf(548.0),
+                        700,
+                        BigDecimal.valueOf(5600.0),
+                        Instant.now());
+        service.getOpenPositions().put("SUNPHARMA", pos);
+
+        // Risk is only ever counted per-position at entry, so four such positions were allowed
+        // under a ₹15k daily limit — each passed on its own. Charging the aggregate closes that.
+        assertThat(service.aggregateOpenStopRisk())
+                .isCloseTo(5600.0, org.assertj.core.data.Offset.offset(1.0));
     }
 
     @Test

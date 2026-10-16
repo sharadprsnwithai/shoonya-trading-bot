@@ -137,15 +137,43 @@ public class LowestVolumeReversalScheduler {
      */
     @Scheduled(cron = "0 0 15 ? * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledHardExit() {
+        runHardExit(LocalTime.of(15, 0));
+    }
+
+    /**
+     * Retry window for the 15:00 square-off.
+     *
+     * <p>{@code executeHardExit} deliberately leaves a position open when it cannot price it, so a
+     * single attempt at 15:00:00 was all that stood between an unquoted position and being left
+     * open overnight at the broker. Retrying over the next four minutes re-quotes each one on a
+     * fresh attempt; positions that closed already are skipped, so an already-clean book costs
+     * nothing. All four attempts land well inside market hours (15:30 IST).
+     */
+    @Scheduled(cron = "0 1-4 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledHardExitRetry() {
+        runHardExit(LocalTime.now(IST));
+    }
+
+    /**
+     * Runs the market square-off and swallows failures so the scheduler thread survives.
+     *
+     * @param triggeredAt the local time the square-off was triggered, for the log line
+     */
+    private void runHardExit(LocalTime triggeredAt) {
         if (!schedulerEnabled) {
             return;
         }
         log.info(
-                "[LVR-SCHEDULER] 15:00 IST Market Hard Exit reached. Executing position closures.");
+                "[LVR-SCHEDULER] Market Hard Exit triggered at {}. Executing position closures.",
+                triggeredAt);
         try {
-            strategyService.executeHardExit(LocalTime.of(15, 0));
+            strategyService.executeHardExit(triggeredAt);
         } catch (Exception e) {
-            log.error("[LVR-SCHEDULER] Exception during 15:00 hard exit: {}", e.getMessage(), e);
+            log.error(
+                    "[LVR-SCHEDULER] Exception during hard exit at {}: {}",
+                    triggeredAt,
+                    e.getMessage(),
+                    e);
         }
     }
 

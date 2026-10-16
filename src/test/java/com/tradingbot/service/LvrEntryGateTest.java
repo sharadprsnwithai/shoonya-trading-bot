@@ -8,6 +8,7 @@ import com.tradingbot.service.LowestVolumeReversalService.EntryGateDisposition;
 import com.tradingbot.service.LowestVolumeReversalService.EntryGateInput;
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -90,13 +91,15 @@ class LvrEntryGateTest {
     }
 
     @Test
-    @DisplayName("VWAP wrong side → EXHAUST (gate VWAP); right side → ALLOWED")
+    @DisplayName("VWAP wrong side → RETRY_COOLDOWN (gate VWAP); right side → ALLOWED")
     void testVwapConfirmation() {
         EntryGateInput wrong = baseInput();
         wrong.vwapEnabled = true;
         wrong.vwap = 1005.0; // LONG requires decisionPrice > VWAP
         EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(wrong);
-        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        // Transient by nature: VWAP moves every tick and this input is rebuilt from a fresh quote
+        // each pass. Denying with EXHAUST would discard the symbol for the day on one bad tick.
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("VWAP");
 
         EntryGateInput right = baseInput();
@@ -106,7 +109,7 @@ class LvrEntryGateTest {
     }
 
     @Test
-    @DisplayName("15-min range: spot inside the opening range → EXHAUST (gate 15M_RANGE)")
+    @DisplayName("15-min range: spot inside the opening range → RETRY_COOLDOWN (gate 15M_RANGE)")
     void testFifteenMinuteRangeInside() {
         EntryGateInput in = baseInput();
         in.range15mEnabled = true;
@@ -114,7 +117,7 @@ class LvrEntryGateTest {
         in.first15mLow = bd(990);
         in.decisionPrice = bd(1001);
         EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
-        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("15M_RANGE");
 
         in.decisionPrice = bd(1011); // above the high
@@ -134,13 +137,15 @@ class LvrEntryGateTest {
     }
 
     @Test
-    @DisplayName("PDH/PDL: missing values fail closed (gate PDH_PDL); inside range exhausts")
+    @DisplayName("PDH/PDL: missing values exhaust (bounded retries done); inside range retries")
     void testPdhPdlGates() {
         EntryGateInput missing = baseInput();
         missing.pdhPdlEnabled = true;
         missing.pdh = null;
         missing.pdl = null;
         EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(missing);
+        // The only price-relative gate that legitimately exhausts: the live path has already
+        // burned its bounded N5 lazy-fetch retries before this gate ever sees a null.
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d1.gate()).isEqualTo("PDH_PDL");
 
@@ -149,8 +154,9 @@ class LvrEntryGateTest {
         inside.pdh = bd(1010);
         inside.pdl = bd(990);
         inside.decisionPrice = bd(1001); // LONG must be > PDH
+        // Inside the range is a function of the live quote, not a permanent verdict.
         assertThat(LowestVolumeReversalService.evaluateEntryGate(inside).disposition())
-                .isEqualTo(EntryGateDisposition.EXHAUST);
+                .isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
 
         inside.decisionPrice = bd(1011);
         assertThat(LowestVolumeReversalService.evaluateEntryGate(inside).allowed()).isTrue();
@@ -174,18 +180,18 @@ class LvrEntryGateTest {
         inBand.pcrEnabled = true;
         inBand.pcrNeutralMin = 0.85;
         inBand.pcrNeutralMax = 1.15;
-        inBand.pcr = 1.10; // Inside neutral band -> EXHAUST
+        inBand.pcr = 1.10; // Inside neutral band -> RETRY_COOLDOWN
         EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(inBand);
-        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("PCR");
 
         EntryGateInput bearish = baseInput();
         bearish.pcrEnabled = true;
         bearish.pcrNeutralMin = 0.85;
         bearish.pcrNeutralMax = 1.15;
-        bearish.pcr = 0.70; // Below band (bearish) -> EXHAUST
+        bearish.pcr = 0.70; // Below band (bearish) -> RETRY_COOLDOWN
         EntryGateDecision d2 = LowestVolumeReversalService.evaluateEntryGate(bearish);
-        assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d2.gate()).isEqualTo("PCR");
 
         EntryGateInput right = baseInput();
@@ -204,9 +210,9 @@ class LvrEntryGateTest {
         inBand.pcrEnabled = true;
         inBand.pcrNeutralMin = 0.85;
         inBand.pcrNeutralMax = 1.15;
-        inBand.pcr = 0.90; // Inside neutral band -> EXHAUST
+        inBand.pcr = 0.90; // Inside neutral band -> RETRY_COOLDOWN
         EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(inBand);
-        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("PCR");
 
         EntryGateInput bullish = baseInput();
@@ -214,9 +220,9 @@ class LvrEntryGateTest {
         bullish.pcrEnabled = true;
         bullish.pcrNeutralMin = 0.85;
         bullish.pcrNeutralMax = 1.15;
-        bullish.pcr = 1.40; // Above band (bullish) -> EXHAUST
+        bullish.pcr = 1.40; // Above band (bullish) -> RETRY_COOLDOWN
         EntryGateDecision d2 = LowestVolumeReversalService.evaluateEntryGate(bullish);
-        assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d2.gate()).isEqualTo("PCR");
 
         EntryGateInput right = baseInput();
@@ -246,8 +252,9 @@ class LvrEntryGateTest {
                 EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
                 assertThat(d.disposition())
                         .as("PCR %.2f / %s must be blocked", pcr, dir)
-                        .isEqualTo(EntryGateDisposition.EXHAUST);
+                        .isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
                 assertThat(d.gate()).isEqualTo("PCR");
+                assertThat(d.allowed()).as("PCR %.2f / %s must never pass", pcr, dir).isFalse();
             }
         }
     }
@@ -259,9 +266,9 @@ class LvrEntryGateTest {
         in.direction = LowestVolumeDirection.LONG;
         in.optionSrFilterEnabled = true;
         in.optionResistanceStrike = bd(1000);
-        in.decisionPrice = bd(1000); // at resistance -> EXHAUST
+        in.decisionPrice = bd(1000); // at resistance -> RETRY_COOLDOWN
         EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(in);
-        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("OPTION_SR");
 
         in.decisionPrice = bd(990); // safely below resistance -> ALLOWED
@@ -275,9 +282,9 @@ class LvrEntryGateTest {
         in.direction = LowestVolumeDirection.SHORT;
         in.optionSrFilterEnabled = true;
         in.optionSupportStrike = bd(1000);
-        in.decisionPrice = bd(1000); // at support -> EXHAUST
+        in.decisionPrice = bd(1000); // at support -> RETRY_COOLDOWN
         EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(in);
-        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("OPTION_SR");
 
         in.decisionPrice = bd(1010); // safely above support -> ALLOWED
@@ -296,7 +303,7 @@ class LvrEntryGateTest {
         longIn.optionSupportStrike = bd(900); // the WRONG side is populated
         longIn.decisionPrice = bd(950);
         EntryGateDecision longDenied = LowestVolumeReversalService.evaluateEntryGate(longIn);
-        assertThat(longDenied.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(longDenied.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(longDenied.gate()).isEqualTo("OPTION_SR");
 
         EntryGateInput shortIn = baseInput();
@@ -305,7 +312,7 @@ class LvrEntryGateTest {
         shortIn.optionResistanceStrike = bd(1100); // the WRONG side is populated
         shortIn.decisionPrice = bd(1050);
         EntryGateDecision shortDenied = LowestVolumeReversalService.evaluateEntryGate(shortIn);
-        assertThat(shortDenied.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(shortDenied.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(shortDenied.gate()).isEqualTo("OPTION_SR");
 
         // Only the level for the direction being traded is required, so a populated level for
@@ -374,6 +381,79 @@ class LvrEntryGateTest {
         EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d.gate()).isEqualTo("REGISTRY");
+    }
+
+    @Test
+    @DisplayName(
+            "Regression: price-relative denials are RETRY/RETRY_COOLDOWN, never a day-long EXHAUST")
+    void testPriceRelativeDenialsNeverExhaust() {
+        // Each gate below is recomputed from a FRESH quote on every 30-second tick, so "the wrong
+        // side at this instant" is not a permanent verdict. Denying any of them with EXHAUST
+        // discarded the symbol for the rest of the day — its armed setup, its correctly computed
+        // trigger, SL and target, and both of its attempts — because it happened to sit a few paise
+        // the wrong side of a moving average on the single tick its trigger fired. Exhaustion is
+        // reserved for what genuinely cannot recover: a registry miss, and PDH/PDL still missing
+        // after the bounded N5 fetch retries.
+        record Case(String name, java.util.function.Consumer<EntryGateInput> configure) {}
+
+        List<Case> cases =
+                List.of(
+                        new Case(
+                                "VWAP wrong side",
+                                in -> {
+                                    in.vwapEnabled = true;
+                                    in.vwap = 1005.0;
+                                }),
+                        new Case(
+                                "15m range inside",
+                                in -> {
+                                    in.range15mEnabled = true;
+                                    in.first15mHigh = bd(1010);
+                                    in.first15mLow = bd(990);
+                                    in.decisionPrice = bd(1001);
+                                }),
+                        new Case(
+                                "PDH/PDL inside",
+                                in -> {
+                                    in.pdhPdlEnabled = true;
+                                    in.pdh = bd(1010);
+                                    in.pdl = bd(990);
+                                    in.decisionPrice = bd(1001);
+                                }),
+                        new Case(
+                                "PDH extension beyond the cap",
+                                in -> {
+                                    in.pdhPdlEnabled = true;
+                                    in.pdh = bd(1000);
+                                    in.pdl = bd(990);
+                                    in.maxPdhExtensionPct = 5.0;
+                                    in.decisionPrice = bd(1100); // 10% above PDH
+                                }),
+                        new Case(
+                                "PCR in the neutral band",
+                                in -> {
+                                    in.pcrEnabled = true;
+                                    in.pcrNeutralMin = 0.85;
+                                    in.pcrNeutralMax = 1.15;
+                                    in.pcr = 1.00;
+                                }),
+                        new Case(
+                                "Option S&R at resistance",
+                                in -> {
+                                    in.optionSrFilterEnabled = true;
+                                    in.optionResistanceStrike = bd(1000);
+                                    in.decisionPrice = bd(1000);
+                                }));
+
+        for (Case c : cases) {
+            EntryGateInput in = baseInput();
+            c.configure().accept(in);
+            EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+            assertThat(d.allowed()).as("%s must be denied", c.name()).isFalse();
+            assertThat(d.disposition())
+                    .as("%s must not permanently discard the symbol for the day", c.name())
+                    .isIn(EntryGateDisposition.RETRY, EntryGateDisposition.RETRY_COOLDOWN);
+        }
     }
 
     @Test
