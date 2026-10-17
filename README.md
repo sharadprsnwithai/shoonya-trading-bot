@@ -78,6 +78,51 @@ Quantitative volatility forecasting and safe strike selection for monthly stock 
    - **Safe CE Strike:** 2-SD upper price snapped up (ceiling) to official NSE strike step.
 5. **Advisory Alerts:** Dispatches formatted Telegram summary table with safe strikes, percentage safety buffers, ATR-22, and HV-30.
 
+### Weekly / Daily Range Forecast (GJR-GARCH, calibrated)
+
+Short-dated range forecasting for structures held to a single weekly expiry — the question a
+weekly condor actually poses, as opposed to the 22-session monthly projection above.
+
+1. **Schedule:** `08:00 IST` on the deployment weekday (Wednesday), so the band is in hand before
+   the open while the full window is still deployable.
+2. **Derived horizon, never hardcoded:** the session count from the last completed close to the
+   contractual expiry resolved through the trading calendar. A Wednesday deployment reads as
+   **5** sessions (Wed→Tue); the same endpoint called on a Monday correctly reads as **2**. A
+   Dussehra-style holiday that rolls Tuesday expiry back to Monday shortens it to **4**.
+3. **Spot reference is the last close**, not a live print — a forecast struck pre-open has no
+   Wednesday candle to use.
+4. **Bands at k = 1.0 / 1.5 / 2.0 σ**, each carrying *two* numbers:
+   - **Nominal** — the Gaussian `2Φ(k) − 1` the band is assumed to represent.
+   - **Measured** — the share of out-of-sample walk-forward windows whose **full high/low
+     excursion** actually stayed inside it.
+5. **Walk-forward calibration** fits parameters on the leading 60% of the series, then replays the
+   volatility filter at each origin using only the returns observed up to that point. The gap
+   between nominal and measured is the cost of being marked against an excursion rather than a
+   close, and it is the figure to size against.
+6. **GJR-GARCH alongside symmetric GARCH(1,1).** Both are fitted, both calibrated, and a verdict
+   is reported. The primary lens is out-of-sample predictive log-likelihood — parameters refit on
+   the training segment only, then scored on returns neither model saw — with AIC/BIC as a
+   penalised cross-check and coverage error as the decision-relevant one. The leverage term `γ`
+   lets negative shocks raise tomorrow's volatility more than equal positive shocks, which a
+   symmetric model cannot express; `MIXED` is returned whenever the lenses disagree rather than
+   forcing a winner. Disable with `MONTHLY_RANGE_GJR_COMPARISON_ENABLED=false` to report the
+   symmetric bands alone.
+7. **Wing-structure containment:** for a buy-far-wing / sell-two-near-wings / buy-far-wing
+   structure the profit zone is bounded by `2·short − wing` **on both sides** (250 pts for the
+   reference 150/200/350), plus the net credit — *not* by the short strike, which is where profit
+   peaks rather than where it dies. Falling below the long wing keeps the credit, so the downside
+   is not clipped at the wing offset. The zone is anchored to points, so it does not move with
+   the volatility model; only the σ-bands do.
+8. **Honest limits, stated in the payload:** both models see volatility clustering, not expiry-day
+   pinning or the post-expiry IV reset a Wednesday entry sits on. The Gaussian figure covers the
+   terminal return only and overstates hold-to-expiry probability.
+
+| Endpoint | Description |
+| :--- | :--- |
+| `/api/v1/monthly-range/weekly/forecast` | Calibrated weekly range for every configured symbol. |
+| `/api/v1/monthly-range/weekly/forecast/{symbol}` | Weekly range for a single symbol. |
+| `/api/v1/monthly-range/weekly/run` | Run the routine and dispatch the Telegram alert. |
+
 ---
 
 ## Telegram Bot Commands
@@ -138,6 +183,18 @@ cp .env.example .env
 | `MONTHLY_RANGE_ENABLED` | `true` | Enable/disable GARCH Monthly Option Range strategy. |
 | `MONTHLY_RANGE_CRON` | `0 0 10 ? * WED` | Schedule for monthly post-expiry range calculation. |
 | `MONTHLY_RANGE_SYMBOLS` | `RELIANCE,TCS,HDFCBANK,INFY,ICICIBANK,SBIN,TATAMOTORS,NIFTY50` | Comma-separated symbols for GARCH range forecast. |
+| `MONTHLY_WEEKLY_RANGE_ENABLED` | `true` | Enable/disable the short-dated weekly/daily range forecast. |
+| `MONTHLY_WEEKLY_RANGE_CRON` | `0 0 8 ? * WED` | Pre-open schedule for the weekly range routine. |
+| `MONTHLY_WEEKLY_SYMBOLS` | `NIFTY50` | Symbols to forecast over the weekly expiry window. |
+| `MONTHLY_WEEKLY_EXPIRY_DOW` | `TUESDAY` | Contractual weekly expiry weekday. |
+| `MONTHLY_WEEKLY_DEPLOYMENT_DOW` | `WEDNESDAY` | Weekday the routine fires on; must be a trading session. |
+| `MONTHLY_RANGE_K_SIGMAS` | `1.0,1.5,2.0` | Band widths, each reported with nominal and measured coverage. |
+| `MONTHLY_RANGE_CALIBRATION_TRAIN_PCT` | `0.60` | Share of history used to fit params; the rest calibrates out-of-sample. |
+| `MONTHLY_RANGE_CALIBRATION_MIN_WINDOWS` | `25` | Minimum out-of-sample windows before bands are reported as measured. |
+| `MONTHLY_RANGE_GJR_COMPARISON_ENABLED` | `true` | Fit GJR-GARCH alongside GARCH(1,1) and report a head-to-head verdict. |
+| `MONTHLY_WING_OFFSET_PTS` | `150` | Long wing offset from spot, in points. |
+| `MONTHLY_WING_SHORT_OFFSET_PTS` | `200` | Short strike offset from spot, in points. |
+| `MONTHLY_WING_CREDIT_PTS` | `20` | Net credit collected on entry, in points. |
 | `CAR_ENABLED` | `true` | Enable/disable Cumulative Average Reversal weekly GTT strategy. |
 | `CAR_WEEKLY_SUNDAY_CRON` | `0 0 10 ? * SUN` | CAR Weekly GTT evaluation schedule. |
 | `LVR_ENABLED` | `true` | Enable/disable Lowest Volume Reversal strategy. |

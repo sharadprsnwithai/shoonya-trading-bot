@@ -1,5 +1,6 @@
 package com.tradingbot.strategy.monthlyrange.config;
 
+import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -36,6 +37,23 @@ public class MonthlyRangeProperties {
             new ArrayList<>(List.of(1, 4, 7, 10)); // Jan, Apr, Jul, Oct
     private double ivHvSpikeThreshold = 1.25;
     private int optionChainStrikeCount = 25;
+
+    // Short-dated (weekly / daily) horizon range forecasting
+    private boolean weeklyRangeEnabled = true;
+    private String weeklyCron = "0 0 8 ? * WED";
+    private List<String> weeklySymbols = new ArrayList<>(List.of("NIFTY50"));
+    private String weeklyExpiryDayOfWeek = "TUESDAY";
+    private String weeklyDeploymentDayOfWeek = "WEDNESDAY";
+    private List<Double> rangeKSigmas = new ArrayList<>(List.of(1.0, 1.5, 2.0));
+    private double calibrationTrainPct = 0.60;
+    private int calibrationMinWindows = 25;
+    private boolean gjrComparisonEnabled = true;
+
+    // Reference wing structure: buy far wing, sell two near wings, buy far wing (150/200/350).
+    // Offsets are in points from spot; credit is the net premium collected on entry.
+    private double wingOffsetPts = 150.0;
+    private double wingShortOffsetPts = 200.0;
+    private double wingCreditPts = 20.0;
 
     public boolean isEnabled() {
         return enabled;
@@ -140,5 +158,134 @@ public class MonthlyRangeProperties {
 
     public void setOptionChainStrikeCount(int optionChainStrikeCount) {
         this.optionChainStrikeCount = optionChainStrikeCount;
+    }
+
+    public boolean isWeeklyRangeEnabled() {
+        return weeklyRangeEnabled;
+    }
+
+    public void setWeeklyRangeEnabled(boolean weeklyRangeEnabled) {
+        this.weeklyRangeEnabled = weeklyRangeEnabled;
+    }
+
+    public String getWeeklyCron() {
+        return weeklyCron;
+    }
+
+    public void setWeeklyCron(String weeklyCron) {
+        this.weeklyCron = weeklyCron;
+    }
+
+    public List<String> getWeeklySymbols() {
+        return weeklySymbols;
+    }
+
+    public void setWeeklySymbols(List<String> weeklySymbols) {
+        this.weeklySymbols =
+                weeklySymbols != null ? new ArrayList<>(weeklySymbols) : new ArrayList<>();
+    }
+
+    public String getWeeklyExpiryDayOfWeek() {
+        return weeklyExpiryDayOfWeek;
+    }
+
+    public void setWeeklyExpiryDayOfWeek(String weeklyExpiryDayOfWeek) {
+        this.weeklyExpiryDayOfWeek = weeklyExpiryDayOfWeek;
+    }
+
+    /**
+     * Resolves the configured contractual weekly expiry weekday, defaulting to Tuesday — the NSE
+     * equity-derivatives contract day — whenever the property is absent or unparseable.
+     *
+     * @return the configured expiry weekday, never null
+     */
+    public DayOfWeek resolveExpiryDayOfWeek() {
+        return parseDayOfWeek(weeklyExpiryDayOfWeek, DayOfWeek.TUESDAY);
+    }
+
+    public String getWeeklyDeploymentDayOfWeek() {
+        return weeklyDeploymentDayOfWeek;
+    }
+
+    public void setWeeklyDeploymentDayOfWeek(String weeklyDeploymentDayOfWeek) {
+        this.weeklyDeploymentDayOfWeek = weeklyDeploymentDayOfWeek;
+    }
+
+    /**
+     * Resolves the configured day the weekly routine should fire, defaulting to Wednesday — the
+     * first session after a Tuesday expiry.
+     *
+     * @return the configured deployment weekday, never null
+     */
+    public DayOfWeek resolveDeploymentDayOfWeek() {
+        return parseDayOfWeek(weeklyDeploymentDayOfWeek, DayOfWeek.WEDNESDAY);
+    }
+
+    private static DayOfWeek parseDayOfWeek(String raw, DayOfWeek fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return DayOfWeek.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return fallback;
+        }
+    }
+
+    public List<Double> getRangeKSigmas() {
+        return rangeKSigmas;
+    }
+
+    public void setRangeKSigmas(List<Double> rangeKSigmas) {
+        this.rangeKSigmas =
+                rangeKSigmas != null ? new ArrayList<>(rangeKSigmas) : new ArrayList<>();
+    }
+
+    public double getCalibrationTrainPct() {
+        return calibrationTrainPct;
+    }
+
+    public void setCalibrationTrainPct(double calibrationTrainPct) {
+        this.calibrationTrainPct = calibrationTrainPct;
+    }
+
+    public int getCalibrationMinWindows() {
+        return calibrationMinWindows;
+    }
+
+    public void setCalibrationMinWindows(int calibrationMinWindows) {
+        this.calibrationMinWindows = calibrationMinWindows;
+    }
+
+    public boolean isGjrComparisonEnabled() {
+        return gjrComparisonEnabled;
+    }
+
+    public void setGjrComparisonEnabled(boolean gjrComparisonEnabled) {
+        this.gjrComparisonEnabled = gjrComparisonEnabled;
+    }
+
+    public double getWingOffsetPts() {
+        return wingOffsetPts;
+    }
+
+    public void setWingOffsetPts(double wingOffsetPts) {
+        this.wingOffsetPts = wingOffsetPts;
+    }
+
+    public double getWingShortOffsetPts() {
+        return wingShortOffsetPts;
+    }
+
+    public void setWingShortOffsetPts(double wingShortOffsetPts) {
+        this.wingShortOffsetPts = wingShortOffsetPts;
+    }
+
+    public double getWingCreditPts() {
+        return wingCreditPts;
+    }
+
+    public void setWingCreditPts(double wingCreditPts) {
+        this.wingCreditPts = wingCreditPts;
     }
 }
