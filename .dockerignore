@@ -1,9 +1,36 @@
+# VCS / editor state
 .git
+.gitignore
+.idea
+.vscode
+
+# Gradle and build outputs — regenerated inside the container build stage
 .gradle
 build
-.idea
-logs
+out
+
+# Runtime state and logs. The Dockerfile only COPYs gradle files and src/,
+# so none of this belongs in the image or the build context.
 data
+logs
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# Secrets: read from the environment at runtime, never baked into an image.
 .env
-.env.example
+.env.*
+*.pem
+*.key
+
+# Non-Java content that has no bearing on compiling the bootJar.
+# NOTE: config/ is deliberately NOT ignored — build.gradle.kts points the
+# spotbugs/pmd/spotless rulesets at files under config/.
+scripts
+docs
+docker-compose*.yml
+Dockerfile
+.dockerignore
 *.md
+**/*.csv
