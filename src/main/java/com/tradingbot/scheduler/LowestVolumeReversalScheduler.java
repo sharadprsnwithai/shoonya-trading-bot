@@ -82,6 +82,31 @@ public class LowestVolumeReversalScheduler {
     }
 
     /**
+     * 09:10 IST pre-market F&O ban-period fetch: pulls NSE's "securities in ban for the next trade
+     * date" list BEFORE the 09:25:20 morning universe scan, so banned symbols are excluded from
+     * candidate selection and never occupy an active slot. The list is published EOD for the
+     * current session, so a pre-market fetch always targets today. Fetch failures log a WARN, mark
+     * the list unavailable and alert — the entry gate then applies the configured
+     * fail-open/fail-closed policy; the job never throws.
+     */
+    @Scheduled(
+            cron = "${trading-bot.strategy.lowest-volume.nse-ban.cron:0 10 9 ? * MON-FRI}",
+            zone = "Asia/Kolkata")
+    public void scheduledNseBanListFetch() {
+        if (!schedulerEnabled) {
+            log.debug("[LVR-SCHEDULER] Scheduler is disabled in configuration.");
+            return;
+        }
+        try {
+            log.info("[LVR-SCHEDULER] Triggering pre-market F&O ban-period fetch...");
+            strategyService.runNseBanListFetch();
+        } catch (Exception e) {
+            log.error(
+                    "[LVR-SCHEDULER] Exception during F&O ban-period fetch: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
      * Runs every 5 minutes from 09:25:20 to 15:15:20 IST on trading weekdays. (20s offset for
      * broker candle aggregation latency). Automatically runs morning universe scan on first 09:25
      * cycle.

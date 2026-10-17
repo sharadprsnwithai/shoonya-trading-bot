@@ -68,6 +68,18 @@ public final class LvrStateStore {
 
         /** Monotonic trade-id source; restored so ids never collide with restored positions. */
         public int tradeCounter;
+
+        /**
+         * Securities in the NSE F&O ban period for this session (NCL/CMPT/70085). Restoring lets a
+         * restart keep excluding them before the next pre-market fetch.
+         */
+        public List<String> bannedSymbols = new ArrayList<>();
+
+        /** Trading-day stamp of {@code bannedSymbols}; a null means "not fetched today". */
+        public LocalDate banListFetchedDate;
+
+        /** True when the ban list could not be fetched or was unrecognisable for this session. */
+        public boolean banListFetchUnavailable;
     }
 
     /** Atomically writes {@code state} to {@code path}. Creates parent directories as needed. */

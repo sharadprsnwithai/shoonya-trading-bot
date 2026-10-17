@@ -2880,7 +2880,9 @@ class LowestVolumeReversalServiceTest {
 
         assertThat(service.isUniverseScanCompletedToday()).isTrue();
         assertThat(service.getActiveSetups()).isNotEmpty();
-        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(3);
+        // Two-sided: at most 3 bullish + 3 bearish sectors × 3 stocks. Every pick is still
+        // sector-only and directioned — none arrives from the quote OI fields below.
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(18);
         assertThat(service.getActiveSetups().values())
                 .allSatisfy(s -> assertThat(s.getOiChangePct()).isNull());
     }
@@ -2911,13 +2913,18 @@ class LowestVolumeReversalServiceTest {
                         s -> {
                             assertThat(s.getDirection()).isEqualTo(LowestVolumeDirection.SHORT);
                         });
-        // Phase 1 builds the sector watchlist (max 3); NSE OI additions arrive in phase 2.
-        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(3);
+        // Every sector falls bearish, so the bullish side cannot fill (sector sign gating): the
+        // watchlist is capped at bearishSectors × stocksPerSector = 3 × 3. OI additions arrive
+        // in phase 2.
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(9);
     }
 
     @Test
-    @DisplayName("N6/H10 Fix: neutral-breadth scan stands down for the day and refuses entries")
+    @DisplayName("N6/H10 Fix: with NIFTY bias on, a neutral-breadth scan stands down and refuses")
     void testStandDownAfterNeutralSentimentRefusesEntries() {
+        // Legacy one-directional mode: breadth is authoritative, so a mixed reading has no
+        // direction to trade and stands the day down (design §4.3, gated on nifty-bias-enabled).
+        service.setNiftyBiasEnabled(true);
         when(marketDataService.resolveToken(any())).thenReturn("1234");
         // Flat quotes (lp == c) → 0% advance breadth across the universe → sentiment NONE.
         when(marketDataService.fetchQuote(any(), any()))
@@ -2956,6 +2963,89 @@ class LowestVolumeReversalServiceTest {
         service.getCandidateReservoir().add("TATAMOTORS");
         service.replenishActiveCandidatesIfNeeded(LocalTime.of(10, 15));
         assertThat(service.getActiveSetups()).doesNotContainKey("TATAMOTORS");
+    }
+
+    @Test
+    @DisplayName("Two-sided default: a mixed index is reporting-only and arms BOTH sides")
+    void testMixedIndexIsReportingOnlyAndArmsBothSides() {
+        service.setNiftyBiasEnabled(false);
+        // A flat index with two sectors cleanly trending apart — exactly the reading that used to
+        // end the day. IT +2%, METAL -2%, everything else unchanged: 5 of 50 advance (10%) and 3
+        // decline (6%), both far below the 56% breadth threshold, so sentiment is NONE.
+        java.util.Set<String> upSymbols =
+                java.util.Set.of(
+                        "TCS",
+                        "INFY",
+                        "WIPRO",
+                        "TECHM",
+                        "HCLTECH",
+                        "COFORGE",
+                        "LTM",
+                        "PERSISTENT",
+                        "MPHASIS",
+                        "LTTS");
+        java.util.Set<String> downSymbols =
+                java.util.Set.of(
+                        "TATASTEEL",
+                        "JSWSTEEL",
+                        "HINDALCO",
+                        "JINDALSTEL",
+                        "SAIL",
+                        "NATIONALUM",
+                        "NMDC",
+                        "VEDL",
+                        "HINDZINC",
+                        "APLAPOLLO");
+        // The quote is requested by exchange token when the symbol is in StockFnoRegistry (TCS is
+        // token 11536), so index the moves by BOTH the symbol and its registry token.
+        java.util.Map<String, Double> moveByToken = new java.util.HashMap<>();
+        for (String s : upSymbols) {
+            moveByToken.put(s, 2.0);
+            var info = com.tradingbot.util.StockFnoRegistry.get(s);
+            if (info != null && info.token() != null) {
+                moveByToken.put(info.token(), 2.0);
+            }
+        }
+        for (String s : downSymbols) {
+            moveByToken.put(s, -2.0);
+            var info = com.tradingbot.util.StockFnoRegistry.get(s);
+            if (info != null && info.token() != null) {
+                moveByToken.put(info.token(), -2.0);
+            }
+        }
+        when(marketDataService.resolveToken(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenAnswer(
+                        inv -> {
+                            String token = inv.getArgument(1);
+                            double pct = moveByToken.getOrDefault(token, 0.0);
+                            return new ObjectMapper()
+                                    .createObjectNode()
+                                    .put("lp", 100.0 * (1 + pct / 100))
+                                    .put("c", 100.0)
+                                    .put("o", 100.0);
+                        });
+
+        service.runMorningUniverseScan();
+
+        assertThat(service.isUniverseScanCompletedToday()).isTrue();
+        assertThat(service.isStandDownToday()).isFalse();
+
+        // The whole point of dropping the bias: both sides are armed from a mixed index. Sector
+        // sign gating keeps flat sectors out, so the picks are the trending ones and only they.
+        assertThat(service.getActiveSetups()).isNotEmpty();
+        assertThat(service.getActiveSetups().values())
+                .anySatisfy(
+                        s -> assertThat(s.getDirection()).isEqualTo(LowestVolumeDirection.LONG));
+        assertThat(service.getActiveSetups().values())
+                .anySatisfy(
+                        s -> assertThat(s.getDirection()).isEqualTo(LowestVolumeDirection.SHORT));
+        assertThat(service.getActiveSetups().values())
+                .allSatisfy(
+                        s -> assertThat(s.getDirection()).isNotEqualTo(LowestVolumeDirection.NONE));
+        // No flat sector can sneak in: a bullish sector needs a positive average move and a
+        // bearish one a negative, so exactly the IT (LONG) and METAL (SHORT) picks qualify.
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(6);
     }
 
     @Test
@@ -3713,7 +3803,8 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.isUniverseScanCompletedToday()).isTrue();
         assertThat(service.isStandDownToday()).isFalse();
         assertThat(service.getActiveSetups().size()).isGreaterThanOrEqualTo(2);
-        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(3);
+        // Two-sided: at most 3 bullish + 3 bearish sectors × 3 stocks.
+        assertThat(service.getActiveSetups().size()).isLessThanOrEqualTo(18);
     }
 
     // ------------------------------------------------------------------
@@ -3758,7 +3849,9 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.hasPendingOiItems()).isFalse();
         assertThat(service.isNseOiAppliedToday()).isTrue();
         assertThat(service.getActiveSetups()).containsKeys("AAAA", "BBBB", "CCCC");
-        assertThat(service.getActiveSetups()).hasSize(6); // 3 sector + 3 OI = HYBRID cap
+        // Phase-1 fills both sides of the market (3 bullish sectors × 3) and the OI merge adds
+        // its 3 spurts on top — the old hard 6-symbol HYBRID cap no longer applies.
+        assertThat(service.getActiveSetups()).hasSize(12);
         LowestVolumeSetup oiSetup = service.getActiveSetups().get("AAAA");
         assertThat(oiSetup.getDirection()).isEqualTo(LowestVolumeDirection.LONG);
         assertThat(oiSetup.getOiChangePct()).isEqualTo(48.7);
@@ -3785,7 +3878,7 @@ class LowestVolumeReversalServiceTest {
         service.runNseOiSpurtAugmentation();
         service.runNseOiSpurtAugmentation();
         verify(client, times(1)).fetchTopUnderlyings(anyInt());
-        assertThat(service.getActiveSetups()).hasSize(6);
+        assertThat(service.getActiveSetups()).hasSize(12);
     }
 
     @Test
@@ -3869,7 +3962,9 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.hasPendingOiItems()).isFalse();
         assertThat(service.isNseOiAppliedToday()).isTrue();
         assertThat(service.getActiveSetups()).containsKeys("AAAA", "BBBB", "CCCC");
-        assertThat(service.getActiveSetups()).hasSize(6); // 3 sector + 3 OI = HYBRID cap
+        // Phase-1 fills both sides of the market (3 bullish sectors × 3) and the OI merge adds
+        // its 3 spurts on top — the old hard 6-symbol HYBRID cap no longer applies.
+        assertThat(service.getActiveSetups()).hasSize(12);
         LowestVolumeSetup oiSetup = service.getActiveSetups().get("AAAA");
         assertThat(oiSetup.getDirection()).isEqualTo(LowestVolumeDirection.LONG);
         assertThat(oiSetup.getOiChangePct()).isEqualTo(48.7);
@@ -3908,7 +4003,7 @@ class LowestVolumeReversalServiceTest {
 
         assertThat(service.getActiveSetups()).containsKeys("AAAA", "BBBB", "CCCC");
         assertThat(service.getActiveSetups()).doesNotContainKey("DDDD"); // topN=3 respected
-        assertThat(service.getActiveSetups()).hasSize(6);
+        assertThat(service.getActiveSetups()).hasSize(12);
     }
 
     @Test
@@ -3934,7 +4029,7 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.getActiveSetups().get(activeSym)).isSameAs(activeBefore);
         assertThat(service.getActiveSetups()).containsKeys("EEEE", "FFFF", "GGGG");
         assertThat(service.getActiveSetups()).doesNotContainKey("HHHH"); // topN=3 respected
-        assertThat(service.getActiveSetups()).hasSize(6); // 3 sector + 3 OI
+        assertThat(service.getActiveSetups()).hasSize(12); // 9 sector (two-sided) + 3 OI
     }
 
     @Test
@@ -4011,5 +4106,101 @@ class LowestVolumeReversalServiceTest {
         service.setNseOiMidMorningRefreshEnabled(false);
         service.runMidMorningUniverseRefresh(LocalTime.of(11, 5));
         verify(client, times(1)).fetchTopUnderlyings(anyInt());
+    }
+
+    // ------------------------------------------------------------------
+    // D3: two-sided (triangle-channel) arming — which side a NONE setup latches to
+    // ------------------------------------------------------------------
+
+    /** Builds an UNARMED setup for the given side (state SCANNING). */
+    private static LowestVolumeSetup scanningSetup(LowestVolumeDirection direction) {
+        return new LowestVolumeSetup("INFY", direction);
+    }
+
+    /** Builds a setup armed on a candle stamped at {@code triggerTime}. */
+    private static LowestVolumeSetup armedSetup(
+            LowestVolumeDirection direction, Instant triggerTime) {
+        LowestVolumeSetup s = new LowestVolumeSetup("INFY", direction);
+        s.setTriggerCandle(
+                Candle.of5m(
+                        "INFY",
+                        triggerTime,
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(101),
+                        BigDecimal.valueOf(99),
+                        BigDecimal.valueOf(100.5),
+                        1000L),
+                BigDecimal.valueOf(101.05),
+                BigDecimal.valueOf(98.95),
+                BigDecimal.valueOf(105));
+        s.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "test");
+        return s;
+    }
+
+    @Test
+    @DisplayName("Two-sided: neither side armed stays neutral and keeps re-evaluating")
+    void testResolveTwoSidedUnarmedStaysNeutral() {
+        LowestVolumeSetup longSide = scanningSetup(LowestVolumeDirection.LONG);
+        LowestVolumeSetup shortSide = scanningSetup(LowestVolumeDirection.SHORT);
+
+        LowestVolumeSetup resolved =
+                LowestVolumeReversalService.resolveTwoSided(longSide, shortSide);
+
+        assertThat(resolved).isSameAs(longSide);
+        assertThat(resolved.getState()).isEqualTo(LowestVolumeSetupState.SCANNING);
+        assertThat(resolved.getTriggerPrice()).isNull();
+    }
+
+    @Test
+    @DisplayName("Two-sided: the single side that formed a pullback is the one that latches")
+    void testResolveTwoSidedSingleArmedSideWins() {
+        LowestVolumeSetup onlyLong =
+                LowestVolumeReversalService.resolveTwoSided(
+                        armedSetup(
+                                LowestVolumeDirection.LONG, Instant.parse("2026-10-16T05:00:00Z")),
+                        scanningSetup(LowestVolumeDirection.SHORT));
+        assertThat(onlyLong.getDirection()).isEqualTo(LowestVolumeDirection.LONG);
+
+        LowestVolumeSetup onlyShort =
+                LowestVolumeReversalService.resolveTwoSided(
+                        scanningSetup(LowestVolumeDirection.LONG),
+                        armedSetup(
+                                LowestVolumeDirection.SHORT,
+                                Instant.parse("2026-10-16T05:00:00Z")));
+        assertThat(onlyShort.getDirection()).isEqualTo(LowestVolumeDirection.SHORT);
+    }
+
+    @Test
+    @DisplayName("Two-sided: when both sides arm, the fresher pullback wins")
+    void testResolveTwoSidedFresherPullbackWins() {
+        Instant early = Instant.parse("2026-10-16T04:30:00Z");
+        Instant late = Instant.parse("2026-10-16T06:00:00Z");
+
+        assertThat(
+                        LowestVolumeReversalService.resolveTwoSided(
+                                        armedSetup(LowestVolumeDirection.LONG, late),
+                                        armedSetup(LowestVolumeDirection.SHORT, early))
+                                .getDirection())
+                .isEqualTo(LowestVolumeDirection.LONG);
+
+        assertThat(
+                        LowestVolumeReversalService.resolveTwoSided(
+                                        armedSetup(LowestVolumeDirection.LONG, early),
+                                        armedSetup(LowestVolumeDirection.SHORT, late))
+                                .getDirection())
+                .isEqualTo(LowestVolumeDirection.SHORT);
+    }
+
+    @Test
+    @DisplayName("Two-sided: an exact freshness tie falls back to LONG deterministically")
+    void testResolveTwoSidedTieFallsBackToLong() {
+        Instant same = Instant.parse("2026-10-16T05:00:00Z");
+
+        assertThat(
+                        LowestVolumeReversalService.resolveTwoSided(
+                                        armedSetup(LowestVolumeDirection.LONG, same),
+                                        armedSetup(LowestVolumeDirection.SHORT, same))
+                                .getDirection())
+                .isEqualTo(LowestVolumeDirection.LONG);
     }
 }

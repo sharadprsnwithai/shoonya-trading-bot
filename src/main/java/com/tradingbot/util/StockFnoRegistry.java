@@ -442,26 +442,25 @@ public final class StockFnoRegistry {
     }
 
     /**
-     * Calculates the target weekly expiry date (Friday for SENSEX, Thursday for NIFTY/BANKNIFTY).
-     * If days to expiry <= minDteThreshold (e.g. 1 or 2 days), rolls to the next week.
+     * Calculates the target weekly expiry date (Thursday for SENSEX, Tuesday for NIFTY/BANKNIFTY
+     * and other NSE indices). Expiry rolls backward over exchange holidays to the preceding trading
+     * day. If days to expiry &lt;= minDteThreshold (e.g. 1 or 2 days), rolls to the next week.
+     *
+     * @see NseTradingCalendarUtil#getWeeklyExpiry(LocalDate, DayOfWeek)
      */
     public static LocalDate calculateWeeklyTargetExpiry(
             String symbol, LocalDate entryDate, int minDteThreshold) {
         if (entryDate == null) {
             entryDate = LocalDate.now(clock);
         }
-        DayOfWeek expiryDay =
-                (symbol != null
-                                && (symbol.toUpperCase().contains("SENSEX")
-                                        || symbol.toUpperCase().contains("BSESN")))
-                        ? DayOfWeek.FRIDAY
-                        : DayOfWeek.THURSDAY;
+        DayOfWeek expiryDay = weeklyExpiryDay(symbol);
 
-        LocalDate currentWeekExpiry = entryDate.with(TemporalAdjusters.nextOrSame(expiryDay));
+        LocalDate currentWeekExpiry = NseTradingCalendarUtil.getWeeklyExpiry(entryDate, expiryDay);
         long daysRemaining = ChronoUnit.DAYS.between(entryDate, currentWeekExpiry);
 
         if (daysRemaining <= Math.max(0, minDteThreshold)) {
-            return currentWeekExpiry.plusWeeks(1);
+            return NseTradingCalendarUtil.getWeeklyExpiry(
+                    currentWeekExpiry.plusWeeks(1), expiryDay);
         }
         return currentWeekExpiry;
     }
@@ -471,29 +470,79 @@ public final class StockFnoRegistry {
     }
 
     /**
-     * Calculates monthly target expiry date (last Friday for SENSEX, last Thursday for
-     * NIFTY/BANKNIFTY/Stocks). If days to expiry < minDteThreshold, rolls to next month.
+     * The contractual monthly expiry of {@code symbol}'s series for the month containing {@code
+     * referenceDate} — i.e. the <b>current</b> contract expiry, with no DTE-driven roll and no
+     * "roll past expired contracts" behaviour. This is the date an open contract in that series
+     * settles on, and the reference for DTE/expiry-day decisions.
+     *
+     * @param symbol underlying (BSE Sensex/BSESN → Thursday, everything else → Tuesday)
+     * @param referenceDate the session to resolve the month from; null uses the injected clock
+     * @return the contractual monthly expiry date for that month
+     * @see NseTradingCalendarUtil#getMonthlyExpiry(int, int, DayOfWeek)
+     */
+    public static LocalDate getMonthlyContractExpiry(String symbol, LocalDate referenceDate) {
+        LocalDate reference = referenceDate != null ? referenceDate : LocalDate.now(clock);
+        DayOfWeek expiryDay = monthlyExpiryDay(symbol);
+        return NseTradingCalendarUtil.getMonthlyExpiry(
+                reference.getYear(), reference.getMonthValue(), expiryDay);
+    }
+
+    /**
+     * Calculates the monthly target expiry date (last Thursday for SENSEX, last Tuesday for
+     * NIFTY/BANKNIFTY/single stocks). Expiry rolls backward over exchange holidays to the preceding
+     * trading day. If days to expiry &lt; minDteThreshold, rolls to the next month.
+     *
+     * <p><b>Expiry-day basis:</b> since contracts expiring on/after 01-Sep-2025, NSE settles all
+     * equity derivatives on <b>Tuesday</b> — single stock and non-benchmark index contracts on the
+     * last Tuesday of the month, and BSE Sensex on Thursday (SEBI/HO/MRD/MRD-TPD-1/P/CIR/2025/76;
+     * NSE/FAOP/68747). Contract dates are resolved through {@link NseTradingCalendarUtil} so the
+     * holiday rollback matches the exchange rule.
      */
     public static LocalDate calculateMonthlyTargetExpiry(
             String symbol, LocalDate entryDate, int minDteThreshold) {
         if (entryDate == null) {
             entryDate = LocalDate.now(clock);
         }
-        DayOfWeek expiryDay =
-                (symbol != null
-                                && (symbol.toUpperCase().contains("SENSEX")
-                                        || symbol.toUpperCase().contains("BSESN")))
-                        ? DayOfWeek.FRIDAY
-                        : DayOfWeek.THURSDAY;
+        // Single source for "current month's contractual expiry" — the DTE/expiry-day gate reads
+        // the same value via getMonthlyContractExpiry, so screening and rolling can't disagree.
+        LocalDate currentMonthExpiry = getMonthlyContractExpiry(symbol, entryDate);
+        DayOfWeek expiryDay = monthlyExpiryDay(symbol);
 
-        LocalDate currentMonthExpiry = getLastDayOfWeekOfMonth(entryDate, expiryDay);
         long daysRemaining = ChronoUnit.DAYS.between(entryDate, currentMonthExpiry);
 
         if (daysRemaining < Math.max(1, minDteThreshold)) {
             LocalDate nextMonth = entryDate.plusMonths(1);
-            return getLastDayOfWeekOfMonth(nextMonth, expiryDay);
+            return NseTradingCalendarUtil.getMonthlyExpiry(
+                    nextMonth.getYear(), nextMonth.getMonthValue(), expiryDay);
         }
         return currentMonthExpiry;
+    }
+
+    /**
+     * Contractual weekly expiry weekday: Thursday for BSE (Sensex), Tuesday for NSE indices since
+     * the September 2025 expiry-day revision.
+     */
+    private static DayOfWeek weeklyExpiryDay(String symbol) {
+        return isBseSymbol(symbol) ? DayOfWeek.THURSDAY : DayOfWeek.TUESDAY;
+    }
+
+    /**
+     * Contractual monthly expiry weekday: last Thursday for BSE (Sensex), last Tuesday for NSE
+     * indices and single stocks since the September 2025 expiry-day revision.
+     */
+    private static DayOfWeek monthlyExpiryDay(String symbol) {
+        return isBseSymbol(symbol) ? DayOfWeek.THURSDAY : DayOfWeek.TUESDAY;
+    }
+
+    /**
+     * @return true for BSE-listed derivatives (Sensex / BSESN), false for NSE (incl. null).
+     */
+    private static boolean isBseSymbol(String symbol) {
+        if (symbol == null) {
+            return false;
+        }
+        String upper = symbol.toUpperCase(BotLocale.INSTANCE);
+        return upper.contains("SENSEX") || upper.contains("BSESN");
     }
 
     public static LocalDate calculateTargetExpiry(LocalDate entryDate, int minDteThreshold) {

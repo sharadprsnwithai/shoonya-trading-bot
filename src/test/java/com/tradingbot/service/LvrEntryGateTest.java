@@ -3,6 +3,7 @@ package com.tradingbot.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tradingbot.model.strategy.LowestVolumeDirection;
+import com.tradingbot.model.strategy.LvrInstrumentType;
 import com.tradingbot.service.LowestVolumeReversalService.EntryGateDecision;
 import com.tradingbot.service.LowestVolumeReversalService.EntryGateDisposition;
 import com.tradingbot.service.LowestVolumeReversalService.EntryGateInput;
@@ -47,6 +48,18 @@ class LvrEntryGateTest {
         in.hasRegistryEntry = true;
         in.plannedRisk = bd(5000);
         in.remainingBudget = 15000.0;
+        // P2/P3: the regulatory gates start inactive so every table test above keeps its meaning;
+        // the ban and expiry/DTE tests below flip exactly the field under test.
+        in.banPeriodEnabled = false;
+        in.symbolBanned = false;
+        in.banListUnavailable = false;
+        in.banPeriodFailClosed = false;
+        in.expiryDteEnabled = false;
+        in.instrumentType = LvrInstrumentType.FUTURES;
+        in.optionDteSessions = 10;
+        in.expiryDayToday = false;
+        in.optionMinDteSessions = 2;
+        in.futuresMinDteSessions = 0;
         return in;
     }
 
@@ -77,6 +90,125 @@ class LvrEntryGateTest {
         EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("SLIPPAGE");
+    }
+
+    @Test
+    @DisplayName("Index-alignment: LONG with the index below previous close → RETRY_COOLDOWN")
+    void testIndexAlignmentLongMisaligned() {
+        EntryGateInput in = baseInput();
+        in.indexAlignmentEnabled = true;
+        in.indexAlignmentBufferBps = 10.0;
+        in.indexPrevClose = 24000.0;
+        in.indexSpot = 23950.0; // -20.8 bps: the index has reversed against the long
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
+        assertThat(d.gate()).isEqualTo("INDEX_ALIGNMENT");
+    }
+
+    @Test
+    @DisplayName("Index-alignment: SHORT with the index above previous close → RETRY_COOLDOWN")
+    void testIndexAlignmentShortMisaligned() {
+        EntryGateInput in = baseInput();
+        in.direction = LowestVolumeDirection.SHORT;
+        in.indexAlignmentEnabled = true;
+        in.indexAlignmentBufferBps = 10.0;
+        in.indexPrevClose = 24000.0;
+        in.indexSpot = 24050.0; // +20.8 bps: the index has rallied against the short
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
+        assertThat(d.gate()).isEqualTo("INDEX_ALIGNMENT");
+    }
+
+    @Test
+    @DisplayName("Index-alignment: dead-band vetoes a LONG inside the buffer, boundary allows it")
+    void testIndexAlignmentDeadBand() {
+        // Inside the band (+4.2 bps < the 10 bps buffer) the index says nothing, so a coin-flip
+        // read must not veto a valid breakout. The boundary itself (+10.0 bps) is aligned.
+        EntryGateInput inside = baseInput();
+        inside.indexAlignmentEnabled = true;
+        inside.indexAlignmentBufferBps = 10.0;
+        inside.indexPrevClose = 24000.0;
+        inside.indexSpot = 24010.0;
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(inside);
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
+        assertThat(d.gate()).isEqualTo("INDEX_ALIGNMENT");
+
+        EntryGateInput boundary = baseInput();
+        boundary.indexAlignmentEnabled = true;
+        boundary.indexAlignmentBufferBps = 10.0;
+        boundary.indexPrevClose = 24000.0;
+        boundary.indexSpot = 24024.0; // exactly +10 bps
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(boundary).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Index-alignment: aligned index → ALLOWED for both directions")
+    void testIndexAlignmentAlignedAllowed() {
+        EntryGateInput longIn = baseInput();
+        longIn.indexAlignmentEnabled = true;
+        longIn.indexAlignmentBufferBps = 10.0;
+        longIn.indexPrevClose = 24000.0;
+        longIn.indexSpot = 24100.0; // +41.7 bps
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(longIn).allowed()).isTrue();
+
+        EntryGateInput shortIn = baseInput();
+        shortIn.direction = LowestVolumeDirection.SHORT;
+        shortIn.indexAlignmentEnabled = true;
+        shortIn.indexAlignmentBufferBps = 10.0;
+        shortIn.indexPrevClose = 24000.0;
+        shortIn.indexSpot = 23900.0; // -41.7 bps
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(shortIn).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Index-alignment: fail-open — a missing or invalid index read never blocks entry")
+    void testIndexAlignmentFailOpen() {
+        // No level quoted (outage / unresolvable token): the gate must not stand in for the data.
+        EntryGateInput missing = baseInput();
+        missing.indexAlignmentEnabled = true;
+        missing.indexAlignmentBufferBps = 10.0;
+        missing.indexPrevClose = 24000.0;
+        missing.indexSpot = null;
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(missing).allowed()).isTrue();
+
+        // Prev close of 0 would make the basis-point move meaningless — treat as unavailable.
+        EntryGateInput zeroPrev = baseInput();
+        zeroPrev.indexAlignmentEnabled = true;
+        zeroPrev.indexAlignmentBufferBps = 10.0;
+        zeroPrev.indexPrevClose = 0.0;
+        zeroPrev.indexSpot = 24000.0;
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(zeroPrev).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Index-alignment: flag off → misaligned index is ignored (gate skipped)")
+    void testIndexAlignmentDisabledSkipsGate() {
+        EntryGateInput in = baseInput();
+        in.indexAlignmentEnabled = false;
+        in.indexAlignmentBufferBps = 10.0;
+        in.indexPrevClose = 24000.0;
+        in.indexSpot = 23950.0; // would have denied had the flag been on
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Index-alignment: identical live and replay inputs still decide identically")
+    void testIndexAlignmentLiveReplayParity() {
+        EntryGateInput live = baseInput();
+        live.indexAlignmentEnabled = true;
+        live.indexAlignmentBufferBps = 10.0;
+        live.indexPrevClose = 24000.0;
+        live.indexSpot = 23950.0;
+
+        EntryGateInput replay = baseInput();
+        replay.indexAlignmentEnabled = true;
+        replay.indexAlignmentBufferBps = 10.0;
+        replay.indexPrevClose = 24000.0;
+        replay.indexSpot = 23950.0;
+
+        EntryGateDecision liveDecision = LowestVolumeReversalService.evaluateEntryGate(live);
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(replay)).isEqualTo(liveDecision);
+        assertThat(liveDecision.gate()).isEqualTo("INDEX_ALIGNMENT");
     }
 
     @Test
@@ -502,5 +634,235 @@ class LvrEntryGateTest {
         replay.entryPrice = bd(1005);
         assertThat(LowestVolumeReversalService.evaluateEntryGate(replay))
                 .isEqualTo(LowestVolumeReversalService.evaluateEntryGate(live));
+
+        // P2/P3 parity: the regulatory gates decide identically too, for both a ban denial …
+        for (EntryGateInput in : List.of(live, replay)) {
+            in.entryPrice = bd(1001);
+            in.banPeriodEnabled = true;
+            in.symbolBanned = true;
+            in.banListUnavailable = false;
+        }
+        EntryGateDecision liveBan = LowestVolumeReversalService.evaluateEntryGate(live);
+        assertThat(liveBan.gate()).isEqualTo("BAN_PERIOD");
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(replay)).isEqualTo(liveBan);
+
+        // … and a DTE denial.
+        for (EntryGateInput in : List.of(live, replay)) {
+            in.banPeriodEnabled = false;
+            in.symbolBanned = false;
+            in.expiryDteEnabled = true;
+            in.instrumentType = LvrInstrumentType.OPTIONS;
+            in.optionDteSessions = 1;
+            in.optionMinDteSessions = 2;
+        }
+        EntryGateDecision liveDte = LowestVolumeReversalService.evaluateEntryGate(live);
+        assertThat(liveDte.gate()).isEqualTo("EXPIRY_DTE");
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(replay)).isEqualTo(liveDte);
+    }
+
+    @Test
+    @DisplayName("Symbol in F&O ban → EXHAUST (gate BAN_PERIOD)")
+    void testSymbolBannedExhausts() {
+        EntryGateInput in = baseInput();
+        in.banPeriodEnabled = true;
+        in.symbolBanned = true;
+
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d.gate()).isEqualTo("BAN_PERIOD");
+        assertThat(d.reason()).contains("ban period");
+    }
+
+    @Test
+    @DisplayName("Ban is absolute and price-independent: BAN_PERIOD is evaluated before SLIPPAGE")
+    void testBanEvaluatedBeforeSlippage() {
+        EntryGateInput in = baseInput();
+        in.banPeriodEnabled = true;
+        in.symbolBanned = true;
+        in.entryPrice = bd(1005); // also an SLIPPAGE breach
+        in.vwapEnabled = true;
+        in.vwap = 1005.0; // also a VWAP failure
+
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+
+        // A symbol that can never be traded must not burn a 60s slippage cooldown first.
+        assertThat(d.gate()).isEqualTo("BAN_PERIOD");
+    }
+
+    @Test
+    @DisplayName("Ban list unavailable + fail-open (default) → ALLOWED")
+    void testBanUnavailableFailsOpen() {
+        EntryGateInput in = baseInput();
+        in.banPeriodEnabled = true;
+        in.symbolBanned = false;
+        in.banListUnavailable = true;
+        in.banPeriodFailClosed = false;
+
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed())
+                .as("a network blip must not shut the strategy down")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("Ban list unavailable + fail-closed → RETRY, never EXHAUST (gate BAN_PERIOD)")
+    void testBanUnavailableFailsClosed() {
+        EntryGateInput in = baseInput();
+        in.banPeriodEnabled = true;
+        in.symbolBanned = false;
+        in.banListUnavailable = true;
+        in.banPeriodFailClosed = true;
+
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+
+        // A transient fetch failure must not permanently discard symbols for the day.
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
+        assertThat(d.gate()).isEqualTo("BAN_PERIOD");
+    }
+
+    @Test
+    @DisplayName("Ban gate off (kill switch / log-only mode) → ALLOWED even for a banned symbol")
+    void testBanGateOff() {
+        EntryGateInput in = baseInput();
+        in.banPeriodEnabled = false;
+        in.symbolBanned = true;
+        in.banListUnavailable = true;
+
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("OPTIONS on the monthly expiry session → EXHAUST (gate EXPIRY_DTE)")
+    void testExpiryDayBlocksOptions() {
+        EntryGateInput in = baseInput();
+        in.expiryDteEnabled = true;
+        in.instrumentType = LvrInstrumentType.OPTIONS;
+        in.expiryDayToday = true;
+        in.optionDteSessions = 0;
+
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d.gate()).isEqualTo("EXPIRY_DTE");
+        assertThat(d.reason()).contains("expiry session");
+    }
+
+    @Test
+    @DisplayName("OPTIONS inside the DTE floor → EXHAUST; at the floor → ALLOWED (gate EXPIRY_DTE)")
+    void testDteFloorBlocksNearExpiry() {
+        EntryGateInput in = baseInput();
+        in.expiryDteEnabled = true;
+        in.instrumentType = LvrInstrumentType.OPTIONS;
+        in.optionMinDteSessions = 2;
+        in.optionDteSessions = 1;
+        in.expiryDayToday = false;
+
+        EntryGateDecision denied = LowestVolumeReversalService.evaluateEntryGate(in);
+
+        assertThat(denied.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(denied.gate()).isEqualTo("EXPIRY_DTE");
+        assertThat(denied.reason()).contains("trading session(s) left");
+
+        // Two sessions left is exactly the floor — not below it, so the entry proceeds.
+        in.optionDteSessions = 2;
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("FUTURES pass the DTE gate at the default floor of 0, even on expiry day")
+    void testFuturesUnaffectedByDefaultFloor() {
+        EntryGateInput in = baseInput();
+        in.expiryDteEnabled = true;
+        in.instrumentType = LvrInstrumentType.FUTURES;
+        in.futuresMinDteSessions = 0;
+        in.expiryDayToday = true;
+        in.optionDteSessions = 0;
+
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed())
+                .as("the live FUTURES strategy must not be silently disabled")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("FUTURES honour futures-min-dte-sessions once it is raised above 0")
+    void testFuturesFloorCanBeRaised() {
+        EntryGateInput in = baseInput();
+        in.expiryDteEnabled = true;
+        in.instrumentType = LvrInstrumentType.FUTURES;
+        in.futuresMinDteSessions = 2;
+        in.expiryDayToday = false;
+        in.optionDteSessions = 0;
+
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d.gate()).isEqualTo("EXPIRY_DTE");
+    }
+
+    @Test
+    @DisplayName(
+            "Unresolvable series with the DTE gate active → EXHAUST fail-closed (gate EXPIRY_DTE)")
+    void testUnknownDteFailsClosed() {
+        EntryGateInput in = baseInput();
+        in.expiryDteEnabled = true;
+        in.instrumentType = LvrInstrumentType.OPTIONS;
+        in.optionDteSessions = null;
+
+        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+
+        // Mirrors REGISTRY: a contract we cannot resolve cannot be traded, and the miss is
+        // permanent for the day.
+        assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
+        assertThat(d.gate()).isEqualTo("EXPIRY_DTE");
+    }
+
+    @Test
+    @DisplayName("Gate order: CUTOFF is evaluated before EXPIRY_DTE")
+    void testCutoffBeforeExpiryDte() {
+        EntryGateInput in = baseInput();
+        in.nowTime = LocalTime.of(11, 30); // == cutoff → CUTOFF fires
+        in.expiryDteEnabled = true;
+        in.instrumentType = LvrInstrumentType.OPTIONS;
+        in.expiryDayToday = true;
+        in.optionDteSessions = 0;
+
+        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).gate()).isEqualTo("CUTOFF");
+    }
+
+    @Test
+    @DisplayName(
+            "Complement of the price-relative rule: day-static regulatory/data denials ARE EXHAUST")
+    void testDayStaticDenialsAreExhaust() {
+        record Case(
+                String name, String gate, java.util.function.Consumer<EntryGateInput> configure) {}
+
+        List<Case> cases =
+                List.of(
+                        new Case(
+                                "F&O ban",
+                                "BAN_PERIOD",
+                                in -> {
+                                    in.banPeriodEnabled = true;
+                                    in.symbolBanned = true;
+                                }),
+                        new Case(
+                                "series DTE below the floor",
+                                "EXPIRY_DTE",
+                                in -> {
+                                    in.expiryDteEnabled = true;
+                                    in.instrumentType = LvrInstrumentType.OPTIONS;
+                                    in.optionDteSessions = 1;
+                                }),
+                        new Case("registry miss", "REGISTRY", in -> in.hasRegistryEntry = false));
+
+        for (Case c : cases) {
+            EntryGateInput in = baseInput();
+            c.configure().accept(in);
+            EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+            assertThat(d.disposition())
+                    .as("%s is session-static and cannot recover intraday", c.name())
+                    .isEqualTo(EntryGateDisposition.EXHAUST);
+            assertThat(d.gate()).as("%s must name its own gate", c.name()).isEqualTo(c.gate());
+        }
     }
 }

@@ -146,64 +146,100 @@ class StockFnoRegistryTest {
     }
 
     @Test
-    void testWeeklyExpiryForNiftyIsThursday() {
-        // Monday Oct 5, 2026 -> Thursday is Oct 8, 2026 (3 days remaining > 2)
+    void testWeeklyExpiryForNiftyIsTuesday() {
+        // Wednesday Oct 7, 2026 -> next Tuesday is Oct 13, 2026 (6 days remaining > 2)
+        LocalDate wednesday = LocalDate.of(2026, 10, 7);
+        LocalDate weeklyExpiry =
+                StockFnoRegistry.calculateWeeklyTargetExpiry("NIFTY", wednesday, 2);
+        assertThat(weeklyExpiry).isEqualTo(LocalDate.of(2026, 10, 13));
+        assertThat(weeklyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
+    }
+
+    @Test
+    void testWeeklyExpiryForSensexIsThursday() {
+        // Monday Oct 5, 2026 -> Thursday is Oct 8, 2026
         LocalDate monday = LocalDate.of(2026, 10, 5);
-        LocalDate weeklyExpiry = StockFnoRegistry.calculateWeeklyTargetExpiry("NIFTY", monday, 2);
+        LocalDate weeklyExpiry = StockFnoRegistry.calculateWeeklyTargetExpiry("SENSEX", monday, 2);
         assertThat(weeklyExpiry).isEqualTo(LocalDate.of(2026, 10, 8));
         assertThat(weeklyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
     }
 
     @Test
-    void testWeeklyExpiryForSensexIsFriday() {
-        // Monday Oct 5, 2026 -> Friday is Oct 9, 2026
-        LocalDate monday = LocalDate.of(2026, 10, 5);
-        LocalDate weeklyExpiry = StockFnoRegistry.calculateWeeklyTargetExpiry("SENSEX", monday, 2);
-        assertThat(weeklyExpiry).isEqualTo(LocalDate.of(2026, 10, 9));
-        assertThat(weeklyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.FRIDAY);
-    }
-
-    @Test
     void testWeeklyExpiryRollsToNextWeek() {
-        // Wednesday Oct 7, 2026 -> Thursday Oct 8 (1 day <= 2) -> Rolls to next Thu Oct 15
-        LocalDate wednesday = LocalDate.of(2026, 10, 7);
-        LocalDate rolledWeekly =
-                StockFnoRegistry.calculateWeeklyTargetExpiry("NIFTY", wednesday, 2);
-        assertThat(rolledWeekly).isEqualTo(LocalDate.of(2026, 10, 15));
+        // Monday Oct 5, 2026 -> Tuesday Oct 6 (1 day <= 2) -> Rolls to next Tue Oct 13
+        LocalDate monday = LocalDate.of(2026, 10, 5);
+        LocalDate rolledWeekly = StockFnoRegistry.calculateWeeklyTargetExpiry("NIFTY", monday, 2);
+        assertThat(rolledWeekly).isEqualTo(LocalDate.of(2026, 10, 13));
     }
 
     @Test
-    void testMonthlyExpiryForNiftyIsLastThursday() {
+    void testWeeklyExpiryRollsOverHolidayWeek() {
+        // Monday Oct 12, 2026 -> Tuesday Oct 13 (1 day <= 2) -> rolls forward. The following
+        // Tuesday (Oct 20) is Dussehra, so expiry lands on Tue Oct 27 rather than Oct 20.
+        LocalDate monday = LocalDate.of(2026, 10, 12);
+        LocalDate rolledWeekly = StockFnoRegistry.calculateWeeklyTargetExpiry("NIFTY", monday, 2);
+        assertThat(rolledWeekly).isEqualTo(LocalDate.of(2026, 10, 27));
+        assertThat(rolledWeekly.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
+    }
+
+    @Test
+    void testMonthlyExpiryForNiftyIsLastTuesday() {
         LocalDate earlyOct = LocalDate.of(2026, 10, 5);
         LocalDate monthlyExpiry =
                 StockFnoRegistry.calculateMonthlyTargetExpiry("NIFTY", earlyOct, 10);
-        assertThat(monthlyExpiry).isEqualTo(LocalDate.of(2026, 10, 29));
-        assertThat(monthlyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
+        assertThat(monthlyExpiry).isEqualTo(LocalDate.of(2026, 10, 27));
+        assertThat(monthlyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
     }
 
     @Test
-    void testMonthlyExpiryForSensexIsLastFriday() {
+    void testMonthlyExpiryForSensexIsLastThursday() {
         LocalDate earlyOct = LocalDate.of(2026, 10, 5);
         LocalDate monthlyExpiry =
                 StockFnoRegistry.calculateMonthlyTargetExpiry("SENSEX", earlyOct, 10);
-        assertThat(monthlyExpiry).isEqualTo(LocalDate.of(2026, 10, 30));
-        assertThat(monthlyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.FRIDAY);
+        assertThat(monthlyExpiry).isEqualTo(LocalDate.of(2026, 10, 29));
+        assertThat(monthlyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
     }
 
     @Test
-    void testMonthlyExpiryForBankNiftyIsLastThursday() {
+    void testMonthlyExpiryForBankNiftyIsLastTuesday() {
         LocalDate earlyOct = LocalDate.of(2026, 10, 5);
         LocalDate monthlyExpiry =
                 StockFnoRegistry.calculateMonthlyTargetExpiry("BANKNIFTY", earlyOct, 10);
-        assertThat(monthlyExpiry).isEqualTo(LocalDate.of(2026, 10, 29));
-        assertThat(monthlyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
+        assertThat(monthlyExpiry).isEqualTo(LocalDate.of(2026, 10, 27));
+        assertThat(monthlyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
+    }
+
+    @Test
+    void testMonthlyExpiryForStockIsLastTuesday() {
+        // Single stocks follow the same last-Tuesday convention as NSE indices.
+        LocalDate earlyOct = LocalDate.of(2026, 10, 5);
+        LocalDate monthlyExpiry =
+                StockFnoRegistry.calculateMonthlyTargetExpiry("RELIANCE", earlyOct, 10);
+        assertThat(monthlyExpiry).isEqualTo(LocalDate.of(2026, 10, 27));
+        assertThat(monthlyExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
     }
 
     @Test
     void testMonthlyExpiryRollsToNextMonth() {
+        // Oct 26, 2026 -> Oct 27 expiry is 1 day away (< 10) -> rolls to November.
+        // Nov 2026's last Tuesday (Nov 24) is Gurunanak Jayanti, so expiry rolls back to
+        // Monday Nov 23, 2026.
         LocalDate lateOct = LocalDate.of(2026, 10, 26);
         LocalDate expiry = StockFnoRegistry.calculateMonthlyTargetExpiry("NIFTY", lateOct, 10);
         assertThat(expiry.getMonthValue()).isEqualTo(11);
+        assertThat(expiry).isEqualTo(LocalDate.of(2026, 11, 23));
+    }
+
+    @Test
+    void testMonthlyExpiryRollsAfterRealTuesdayExpiry() {
+        // Regression for the Thursday-vs-Tuesday defect: on Wednesday Oct 28, 2026 the real
+        // Oct contract (expiry Tue Oct 27) is already dead. The series must roll to November
+        // instead of resolving a non-existent contract.
+        LocalDate dayAfterExpiry = LocalDate.of(2026, 10, 28);
+        LocalDate expiry =
+                StockFnoRegistry.calculateMonthlyTargetExpiry("RELIANCE", dayAfterExpiry, 1);
+        assertThat(expiry.getMonthValue()).isEqualTo(11);
+        assertThat(expiry).isEqualTo(LocalDate.of(2026, 11, 23));
     }
 
     @Test
@@ -337,24 +373,24 @@ class StockFnoRegistryTest {
         LocalDate earlyOct = LocalDate.of(2026, 10, 5);
         // Stock should ALWAYS get monthly expiry regardless of preferWeekly
         LocalDate stockExpiry = StockFnoRegistry.calculateTargetExpiry("BSE", earlyOct, true, 10);
-        assertThat(stockExpiry).isEqualTo(LocalDate.of(2026, 10, 29));
-        assertThat(stockExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
+        assertThat(stockExpiry).isEqualTo(LocalDate.of(2026, 10, 27));
+        assertThat(stockExpiry.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
     }
 
     @Test
     void testTargetExpiryForNiftyWeekly() {
         LocalDate monday = LocalDate.of(2026, 10, 5);
         LocalDate expiry = StockFnoRegistry.calculateTargetExpiry("NIFTY", monday, true, 2);
-        assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 8));
-        assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
+        assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 13));
+        assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
     }
 
     @Test
     void testTargetExpiryForSensexWeekly() {
         LocalDate monday = LocalDate.of(2026, 10, 5);
         LocalDate expiry = StockFnoRegistry.calculateTargetExpiry("SENSEX", monday, true, 2);
-        assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 9));
-        assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.FRIDAY);
+        assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 8));
+        assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
     }
 
     @Test
@@ -362,18 +398,18 @@ class StockFnoRegistryTest {
         // BANKNIFTY with preferWeekly=false should get monthly
         LocalDate earlyOct = LocalDate.of(2026, 10, 5);
         LocalDate expiry = StockFnoRegistry.calculateTargetExpiry("BANKNIFTY", earlyOct, false, 10);
-        assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 29));
-        assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.THURSDAY);
+        assertThat(expiry).isEqualTo(LocalDate.of(2026, 10, 27));
+        assertThat(expiry.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
     }
 
     @Test
     void testFuturesSymbolRollsAfterMonthlyExpiry() {
-        // September 2026 expiry is Thursday Sep 24, 2026.
-        // On Friday Sep 25, 2026, a null expiry must roll to Oct 2026 (H3).
+        // September 2026 expiry is Tuesday Sep 29, 2026.
+        // On Wednesday Sep 30, 2026, a null expiry must roll to Oct 2026 (H3).
         try {
             StockFnoRegistry.setClock(
                     java.time.Clock.fixed(
-                            java.time.Instant.parse("2026-09-25T06:00:00Z"),
+                            java.time.Instant.parse("2026-09-30T06:00:00Z"),
                             java.time.ZoneId.of("Asia/Kolkata")));
             String sym = StockFnoRegistry.formatFuturesTradingSymbol("RELIANCE", null);
             assertThat(sym).isEqualTo("RELIANCE26OCTFUT");

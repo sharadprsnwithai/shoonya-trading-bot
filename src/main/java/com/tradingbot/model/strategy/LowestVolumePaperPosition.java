@@ -3,6 +3,7 @@ package com.tradingbot.model.strategy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * Represents an active or closed paper trading position for the Lowest Volume Reversal strategy.
@@ -52,6 +53,15 @@ public class LowestVolumePaperPosition {
 
     private BigDecimal trailingSuperTrendValue;
     private String brokerTradingSymbol;
+
+    /**
+     * Contract expiry captured at entry (P3 / design §4.4). Exit-side symbol resolution and premium
+     * valuation read this instead of recomputing the series, so an intraday month roll or a
+     * DTE-driven series change can never make entry and exit reference different contracts. {@code
+     * null} on positions restored from pre-§4.4 state files, which keep today's
+     * recompute-from-expiry behaviour.
+     */
+    private LocalDate expiryDate;
 
     /** Primary constructor for Futures / Full specification. */
     public LowestVolumePaperPosition(
@@ -303,6 +313,21 @@ public class LowestVolumePaperPosition {
         this.brokerTradingSymbol = brokerTradingSymbol;
     }
 
+    /**
+     * @return the expiry date of the contract entered, or {@code null} if captured before §4.4
+     */
+    public LocalDate getExpiryDate() {
+        return expiryDate;
+    }
+
+    /**
+     * @param expiryDate contract expiry fixed at entry; call together with {@link
+     *     #setBrokerTradingSymbol(String)} so both describe the same contract
+     */
+    public void setExpiryDate(LocalDate expiryDate) {
+        this.expiryDate = expiryDate;
+    }
+
     public BigDecimal getAtmStrike() {
         return atmStrike;
     }
@@ -475,6 +500,11 @@ public class LowestVolumePaperPosition {
         s.exitReason = pos.exitReason;
         s.closed = pos.closed;
         s.trailingSuperTrendValue = pos.trailingSuperTrendValue;
+        // P3/§4.4: the entry contract travels with the snapshot — without it a restart silently
+        // fell back to recomputing the series, which is exactly the entry/exit mismatch the
+        // persisted expiry exists to prevent.
+        s.brokerTradingSymbol = pos.brokerTradingSymbol;
+        s.expiryDate = pos.expiryDate;
         return s;
     }
 
@@ -538,6 +568,8 @@ public class LowestVolumePaperPosition {
         pos.exitReason = s.exitReason;
         pos.closed = s.closed;
         pos.trailingSuperTrendValue = s.trailingSuperTrendValue;
+        pos.brokerTradingSymbol = s.brokerTradingSymbol;
+        pos.expiryDate = s.expiryDate;
         return pos;
     }
 }

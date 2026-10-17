@@ -148,6 +148,23 @@ cp .env.example .env
 | `LVR_NSE_OI_ATTEMPTS` | `3` | HTTP retry attempts against the NSE OI spurts endpoint before degrading to sector-only selection. |
 | `LVR_NSE_OI_CRON` | `0 25 9 ? * MON-FRI` | Schedule of the NSE OI spurts fetch (fires before the 09:25:20 morning scan). |
 | `LVR_NSE_OI_MIDMORNING_REFRESH` | `true` | Top up the standby reservoir from the NSE OI feed during the mid-morning refresh. |
+| `LVR_BAN_PERIOD_ENABLED` | `true` | Master switch for the F&O ban-period exclusion (NCL/CMPT/70085; SEBI 2025/79). |
+| `LVR_BAN_LOG_ONLY` | `true` | Validation mode: fetch, log and alert the ban list but exclude nothing. Set `false` to enforce. |
+| `LVR_BAN_FAIL_CLOSED` | `false` | Policy when the ban list is unavailable: `true` blocks fresh entries, `false` trades unfiltered and alerts. |
+| `LVR_NSE_BAN_URL` | `https://nsearchives.nseindia.com/content/fo/ban_list_{date}.csv` | Ban-list endpoint; `{date}` is filled with `ddMMyyyy` for the current session. |
+| `LVR_NSE_BAN_ATTEMPTS` | `3` | HTTP retry attempts against the ban-list endpoint before reporting the list unavailable. |
+| `LVR_NSE_BAN_CRON` | `0 10 9 ? * MON-FRI` | Pre-market ban-list fetch (fires before the 09:25:20 morning scan). |
+| `LVR_EXPIRY_DTE_ENABLED` | `true` | Master switch for the expiry/DTE entry gate and its OPTIONS universe exclusion. |
+| `LVR_OPTION_MIN_DTE_SESSIONS` | `2` | Trading sessions before monthly expiry at which a fresh OPTIONS entry is barred (0 = legacy). |
+| `LVR_FUTURES_MIN_DTE_SESSIONS` | `0` | Same floor for FUTURES; 0 leaves the live FUTURES strategy unchanged. |
+| `LVR_NIFTY_BIAS_ENABLED` | `false` | `false` = two-sided selection (strongest sectors long, weakest short) with NIFTY breadth as reporting only. `true` restores the legacy behaviour where a mixed-breadth reading stands the day down. |
+| `LVR_BULLISH_SECTORS` / `LVR_BEARISH_SECTORS` | `3` | How many sectors are taken from each side of the market at the 09:25 scan. |
+| `LVR_STOCKS_PER_SECTOR` | `3` | Top stocks drawn from each selected sector (sides are capped at `sectors × stocks`). |
+| `LVR_TRIANGLE_ENABLED` | `true` | Adds stocks whose last three completed daily bars print strictly contracting highs **and** strictly rising lows; both directions are armed and the first valid pullback wins. |
+| `LVR_TRIANGLE_MAX` | `5` | Cap on triangle picks, tightest squeeze first. |
+| `LVR_INDEX_ALIGNMENT_ENABLED` | `true` | Entry gate at trigger time: LONG requires NIFTY 50 above its previous close, SHORT below it. Fails **open** — a missing quote never blocks an entry. |
+| `LVR_INDEX_ALIGNMENT_BUFFER_BPS` | `10.0` | Dead-band in basis points the index must clear the previous close by, so a sub-0.05% wobble cannot flip-flop the decision. `0` = a naked cross. |
+| `LVR_INDEX_ALIGNMENT_SYMBOL` | `NIFTY 50` | Index instrument quoted for the gate (resolves to NSE token 26000). |
 | `LVR_PCR_NEUTRAL_MIN` | `0.85` | Lower edge of the PCR no-trade band: SHORT requires PCR below it. |
 | `LVR_PCR_NEUTRAL_MAX` | `1.15` | Upper edge of the PCR no-trade band: LONG requires PCR above it; in between blocks both directions. |
 | `POSTCLOSE_SCHEDULER_ENABLED` | `true` | Enable the 20:00 IST post-close data job (high/low sync + option-chain snapshots). |

@@ -1,5 +1,6 @@
 package com.tradingbot.service;
 
+import com.tradingbot.model.Candle;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import com.tradingbot.util.BotLocale;
@@ -21,6 +22,11 @@ import org.springframework.stereotype.Service;
 public class LowestVolumeReversalScanner {
 
     private static final Logger log = LoggerFactory.getLogger(LowestVolumeReversalScanner.class);
+
+    /**
+     * Default per-sector stock cap for {@link #filterCandidateStocks(List, LowestVolumeDirection)}.
+     */
+    private static final int DEFAULT_STOCKS_PER_SECTOR = 3;
 
     public record SectorRankResult(String sectorName, double pctChange, int stockCount) {}
 
@@ -267,10 +273,184 @@ public class LowestVolumeReversalScanner {
             return Collections.emptyList();
         }
 
-        if (eligible.size() <= 3) {
+        return filterCandidateStocks(sectorStockQuotes, sentiment, DEFAULT_STOCKS_PER_SECTOR);
+    }
+
+    /**
+     * Same filter as {@link #filterCandidateStocks(List, LowestVolumeDirection)} with an explicit
+     * per-sector stock cap. Selection is direction-scoped rather than index-scoped: the caller
+     * passes {@code LONG} for a bullish sector and {@code SHORT} for a bearish one, so both sides
+     * of the market can contribute candidates in the same session.
+     *
+     * <p>Rules, unchanged from the original: LONG requires {@code 0 < pctChange <= 5.0} (green but
+     * not exhausted), SHORT requires {@code -5.0 <= pctChange < 0}; each keeps the most extreme
+     * movers first.
+     *
+     * @param sectorStockQuotes quotes of one sectoral index's constituents
+     * @param direction side this sector contributes to; {@code NONE}/null yields nothing
+     * @param maxStocks maximum symbols to return
+     * @return selected symbols in rank order, size {@code <= maxStocks}
+     */
+    public List<String> filterCandidateStocks(
+            List<StockQuoteSnapshot> sectorStockQuotes,
+            LowestVolumeDirection direction,
+            int maxStocks) {
+        if (sectorStockQuotes == null
+                || sectorStockQuotes.isEmpty()
+                || direction == null
+                || direction == LowestVolumeDirection.NONE
+                || maxStocks <= 0) {
+            return Collections.emptyList();
+        }
+
+        List<StockQuoteSnapshot> eligible;
+        if (direction == LowestVolumeDirection.LONG) {
+            eligible =
+                    sectorStockQuotes.stream()
+                            .filter(q -> q.pctChange() > 0.0) // Must be positive/green for LONG
+                            .filter(q -> q.pctChange() <= 5.0) // Not exhausted (> 5%)
+                            // Most positive pctChange first
+                            .sorted(
+                                    Comparator.comparingDouble(StockQuoteSnapshot::pctChange)
+                                            .reversed())
+                            .toList();
+        } else {
+            eligible =
+                    sectorStockQuotes.stream()
+                            .filter(q -> q.pctChange() < 0.0) // Must be negative/red for SHORT
+                            .filter(q -> q.pctChange() >= -5.0) // Not exhausted (< -5%)
+                            // Most negative pctChange first
+                            .sorted(Comparator.comparingDouble(StockQuoteSnapshot::pctChange))
+                            .toList();
+        }
+
+        if (eligible.size() <= maxStocks) {
             return eligible.stream().map(StockQuoteSnapshot::symbol).toList();
         }
 
-        return eligible.stream().limit(3).map(StockQuoteSnapshot::symbol).toList();
+        return eligible.stream().limit(maxStocks).map(StockQuoteSnapshot::symbol).toList();
+    }
+
+    /**
+     * Ranks sectoral groups purely by average % change, strongest first, with no directional input.
+     * The caller takes the head for the bullish side and the (sign-filtered, re-sorted) tail for
+     * the bearish side, so both sides are available in one session.
+     *
+     * @param sectorQuotes quotes grouped by sectoral index; may be null or empty
+     * @return sectors sorted by average % change descending
+     */
+    public List<SectorRankResult> rankSectorsByStrength(
+            Map<String, List<StockQuoteSnapshot>> sectorQuotes) {
+        if (sectorQuotes == null || sectorQuotes.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<SectorRankResult> results = new ArrayList<>();
+        for (Map.Entry<String, List<StockQuoteSnapshot>> entry : sectorQuotes.entrySet()) {
+            List<StockQuoteSnapshot> quotes = entry.getValue();
+            if (quotes == null || quotes.isEmpty()) {
+                continue;
+            }
+            double avgPctChange =
+                    quotes.stream()
+                            .mapToDouble(StockQuoteSnapshot::pctChange)
+                            .average()
+                            .orElse(0.0);
+            results.add(new SectorRankResult(entry.getKey(), avgPctChange, quotes.size()));
+        }
+
+        results.sort(Comparator.comparingDouble(SectorRankResult::pctChange).reversed());
+        return results;
+    }
+
+    /**
+     * Detects the 3-day contracting-triangle ("squeeze") pattern over the last three <b>completed
+     * </b> daily bars.
+     *
+     * <p>The bars are passed in ascending chronological order, so the last element is yesterday and
+     * today's in-progress bar must already have been stripped by the caller. Naming the three bars
+     * {@code d3, d2, d1} (oldest to newest), the pattern holds when highs strictly descend and lows
+     * strictly rise:
+     *
+     * <pre>
+     *   H(d3) &gt; H(d2) &gt; H(d1)   lower highs
+     *   L(d3) &lt; L(d2) &lt; L(d1)   higher lows
+     * </pre>
+     *
+     * <p>Both chains are required — one-sided contraction is a trend, not a triangle. Inequalities
+     * are strict so a flat or tied bar disqualifies the pattern. Fails closed: fewer than three
+     * usable bars, or any null high/low, is not a triangle rather than an error.
+     *
+     * @param pastDailyAscending completed daily bars, oldest first; may be null
+     * @return true when the last three bars form the pattern
+     */
+    public static boolean isTrianglePattern(List<Candle> pastDailyAscending) {
+        List<Candle> last3 = lastThreeCompleted(pastDailyAscending);
+        if (last3 == null) {
+            return false;
+        }
+        Candle d3 = last3.get(0);
+        Candle d2 = last3.get(1);
+        Candle d1 = last3.get(2);
+        if (!hasHighAndLow(d3) || !hasHighAndLow(d2) || !hasHighAndLow(d1)) {
+            return false;
+        }
+
+        boolean lowerHighs =
+                d3.high().compareTo(d2.high()) > 0 && d2.high().compareTo(d1.high()) > 0;
+        boolean higherLows = d3.low().compareTo(d2.low()) < 0 && d2.low().compareTo(d1.low()) < 0;
+
+        return lowerHighs && higherLows;
+    }
+
+    /**
+     * Measures how far a candidate's range has contracted: the newest bar's range divided by the
+     * oldest bar's range across the same three completed bars used by {@link
+     * #isTrianglePattern(List)}. Used to rank triangle picks — a smaller ratio means a tighter
+     * squeeze and therefore a more informative pattern.
+     *
+     * @param pastDailyAscending completed daily bars, oldest first; may be null
+     * @return squeeze ratio in {@code (0, ~1+]}, or {@code NaN} when it cannot be computed
+     */
+    public static double squeezeRatio(List<Candle> pastDailyAscending) {
+        List<Candle> last3 = lastThreeCompleted(pastDailyAscending);
+        if (last3 == null) {
+            return Double.NaN;
+        }
+        Candle d3 = last3.get(0);
+        Candle d1 = last3.get(2);
+        if (!hasHighAndLow(d3) || !hasHighAndLow(d1)) {
+            return Double.NaN;
+        }
+
+        double outerRange = d3.high().subtract(d3.low()).doubleValue();
+        if (outerRange <= 0.0) {
+            return Double.NaN;
+        }
+        double innerRange = d1.high().subtract(d1.low()).doubleValue();
+        return innerRange / outerRange;
+    }
+
+    /**
+     * @param pastDailyAscending completed daily bars, oldest first
+     * @return the final three bars, or {@code null} when fewer than three are available
+     */
+    private static List<Candle> lastThreeCompleted(List<Candle> pastDailyAscending) {
+        if (pastDailyAscending == null || pastDailyAscending.size() < 3) {
+            return null;
+        }
+        int n = pastDailyAscending.size();
+        return List.of(
+                pastDailyAscending.get(n - 3),
+                pastDailyAscending.get(n - 2),
+                pastDailyAscending.get(n - 1));
+    }
+
+    /**
+     * @param candle bar to validate; may be null
+     * @return true when the bar carries both a high and a low
+     */
+    private static boolean hasHighAndLow(Candle candle) {
+        return candle != null && candle.high() != null && candle.low() != null;
     }
 }

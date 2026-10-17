@@ -2,8 +2,11 @@ package com.tradingbot.service;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.tradingbot.model.Candle;
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -266,5 +269,164 @@ class LowestVolumeReversalScannerTest {
                         items, quotes, LowestVolumeDirection.NONE, 2, java.util.Set.of());
 
         assertEquals(List.of("AAA", "BBB"), selected);
+    }
+
+    /** Builds a completed daily bar; only high/low matter to the triangle scan. */
+    private static Candle daily(String symbol, int dayOffset, double high, double low) {
+        return Candle.ofDaily(
+                symbol,
+                Instant.parse("2026-10-01T00:00:00Z").plusSeconds(dayOffset * 86_400L),
+                BigDecimal.valueOf(low),
+                BigDecimal.valueOf(high),
+                BigDecimal.valueOf(low),
+                BigDecimal.valueOf(high),
+                1000L);
+    }
+
+    @Test
+    @DisplayName("isTrianglePattern: strict lower highs AND higher lows over the last 3 bars")
+    void testTrianglePatternDetectsBothSidedContraction() {
+        List<Candle> bars =
+                List.of(
+                        daily("INFY", 0, 110, 90),
+                        daily("INFY", 1, 106, 93),
+                        daily("INFY", 2, 102, 96));
+        assertTrue(LowestVolumeReversalScanner.isTrianglePattern(bars));
+    }
+
+    @Test
+    @DisplayName("isTrianglePattern: one-sided contraction is a trend, not a triangle")
+    void testTrianglePatternRejectsOneSidedContraction() {
+        // Lower highs but flat lows — a plain downtrend, which must not be picked up.
+        List<Candle> downtrend =
+                List.of(
+                        daily("INFY", 0, 110, 95),
+                        daily("INFY", 1, 106, 95),
+                        daily("INFY", 2, 102, 95));
+        assertFalse(LowestVolumeReversalScanner.isTrianglePattern(downtrend));
+
+        // Rising highs with flat highs rejected symmetrically: the HIGH chain must descend.
+        List<Candle> upOnly =
+                List.of(
+                        daily("INFY", 0, 100, 90),
+                        daily("INFY", 1, 105, 93),
+                        daily("INFY", 2, 110, 96));
+        assertFalse(LowestVolumeReversalScanner.isTrianglePattern(upOnly));
+    }
+
+    @Test
+    @DisplayName("isTrianglePattern: a tied bar disqualifies — the inequalities are strict")
+    void testTrianglePatternRejectsTiedBar() {
+        List<Candle> tiedHighs =
+                List.of(
+                        daily("INFY", 0, 110, 90),
+                        daily("INFY", 1, 110, 93),
+                        daily("INFY", 2, 102, 96));
+        assertFalse(LowestVolumeReversalScanner.isTrianglePattern(tiedHighs));
+
+        List<Candle> tiedLows =
+                List.of(
+                        daily("INFY", 0, 110, 90),
+                        daily("INFY", 1, 106, 90),
+                        daily("INFY", 2, 102, 96));
+        assertFalse(LowestVolumeReversalScanner.isTrianglePattern(tiedLows));
+    }
+
+    @Test
+    @DisplayName("isTrianglePattern: fewer than three completed bars fails closed")
+    void testTrianglePatternFailsClosedOnShortHistory() {
+        assertFalse(LowestVolumeReversalScanner.isTrianglePattern(null));
+        assertFalse(LowestVolumeReversalScanner.isTrianglePattern(List.of()));
+        assertFalse(
+                LowestVolumeReversalScanner.isTrianglePattern(
+                        List.of(daily("INFY", 0, 110, 90), daily("INFY", 1, 106, 93))));
+    }
+
+    @Test
+    @DisplayName("isTrianglePattern: only the final three bars are examined")
+    void testTrianglePatternUsesOnlyLastThreeBars() {
+        // An expanding first pair must be ignored — the pattern is defined on D-3, D-2, D-1.
+        List<Candle> bars =
+                List.of(
+                        daily("INFY", 0, 200, 10),
+                        daily("INFY", 1, 500, 5),
+                        daily("INFY", 2, 110, 90),
+                        daily("INFY", 3, 106, 93),
+                        daily("INFY", 4, 102, 96));
+        assertTrue(LowestVolumeReversalScanner.isTrianglePattern(bars));
+    }
+
+    @Test
+    @DisplayName("squeezeRatio: newest range over oldest range, NaN when it cannot be measured")
+    void testSqueezeRatioMeasuresContraction() {
+        List<Candle> bars =
+                List.of(
+                        daily("INFY", 0, 110, 90), // outer range 20
+                        daily("INFY", 1, 106, 93),
+                        daily("INFY", 2, 102, 96)); // inner range 6
+        assertEquals(0.3, LowestVolumeReversalScanner.squeezeRatio(bars), 1e-9);
+
+        // A tighter squeeze scores lower, which is why triangle picks are ranked by it.
+        List<Candle> tighter =
+                List.of(
+                        daily("INFY", 0, 110, 90),
+                        daily("INFY", 1, 106, 93),
+                        daily("INFY", 2, 101, 99)); // inner range 2
+        assertEquals(0.1, LowestVolumeReversalScanner.squeezeRatio(tighter), 1e-9);
+
+        // A zero-width outer bar makes the ratio undefined rather than infinite.
+        List<Candle> degenerate =
+                List.of(
+                        daily("INFY", 0, 100, 100),
+                        daily("INFY", 1, 106, 93),
+                        daily("INFY", 2, 101, 99));
+        assertEquals(Double.NaN, LowestVolumeReversalScanner.squeezeRatio(degenerate));
+        assertEquals(Double.NaN, LowestVolumeReversalScanner.squeezeRatio(List.of()));
+    }
+
+    @Test
+    @DisplayName("rankSectorsByStrength: strongest first, both sides retained, no direction filter")
+    void testRankSectorsByStrengthKeepsBothSides() {
+        Map<String, List<StockQuoteSnapshot>> sectorData =
+                Map.of(
+                        "NIFTY MEDIA", List.of(quote("PVRINOX", -4.75)),
+                        "NIFTY IT", List.of(quote("INFY", 3.2)),
+                        "NIFTY PHARMA", List.of(quote("SUNPHARMA", 1.2)));
+
+        var ranked = scanner.rankSectorsByStrength(sectorData);
+
+        // Descending by average move, with the loser still present so a bearish side exists.
+        assertEquals(3, ranked.size());
+        assertEquals("NIFTY IT", ranked.get(0).sectorName());
+        assertEquals("NIFTY PHARMA", ranked.get(1).sectorName());
+        assertEquals("NIFTY MEDIA", ranked.get(2).sectorName());
+        assertTrue(ranked.get(0).pctChange() > 0.0);
+        assertTrue(ranked.get(2).pctChange() < 0.0);
+    }
+
+    @Test
+    @DisplayName("filterCandidateStocks: maxStocks caps the pick and keeps best-first order")
+    void testFilterCandidateStocksHonoursMaxStocks() {
+        List<StockQuoteSnapshot> quotes =
+                List.of(
+                        quote("A", 4.9),
+                        quote("B", 2.0),
+                        quote("C", 6.5), // already exhausted (> 5%) — never picked
+                        quote("D", -1.0), // not green — never picked on the LONG side
+                        quote("E", 3.0));
+
+        assertEquals(
+                List.of("A", "E"),
+                scanner.filterCandidateStocks(quotes, LowestVolumeDirection.LONG, 2));
+
+        // A side with no eligible stocks yields nothing rather than a forced pick.
+        assertTrue(
+                scanner.filterCandidateStocks(
+                                List.of(quote("D", -1.0), quote("C", 6.5)),
+                                LowestVolumeDirection.LONG,
+                                3)
+                        .isEmpty());
+        // NONE is the two-sided/unresolved state and can never be passed a side.
+        assertTrue(scanner.filterCandidateStocks(quotes, LowestVolumeDirection.NONE, 3).isEmpty());
     }
 }

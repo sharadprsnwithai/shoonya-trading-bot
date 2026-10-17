@@ -2,6 +2,7 @@ package com.tradingbot.model.strategy;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * M10: plain, Jackson-friendly snapshot of a {@link LowestVolumePaperPosition} — captures entry
@@ -22,6 +23,13 @@ public class LvrPositionSnapshot {
     public String optionType;
     public String optionSymbol;
     public BigDecimal atmStrike;
+
+    /** Exchange trading symbol the position was entered under (P3 / design §4.4). */
+    public String brokerTradingSymbol;
+
+    /** Contract expiry captured at entry (P3 / design §4.4); null on pre-§4.4 snapshots. */
+    public LocalDate expiryDate;
+
     public int lotSize;
     public int lots;
 

@@ -3,6 +3,7 @@ package com.tradingbot.util;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Set;
 
 /**
@@ -114,27 +115,20 @@ public final class NseTradingCalendarUtil {
     }
 
     /**
-     * Calculates the monthly Nifty options expiry date (Last Thursday of the month). If the last
-     * Thursday is an exchange holiday, rolls backward to the preceding trading day (Wednesday).
+     * Calculates the monthly Nifty options expiry date (Last Thursday of the month, the
+     * pre-September-2025 convention). If the last Thursday is an exchange holiday, rolls backward
+     * to the preceding trading day (Wednesday).
+     *
+     * <p>Prefer {@link #getMonthlyExpiryTuesday(int, int)} for current NSE equity derivatives:
+     * since contracts expiring on/after 01-Sep-2025 the NSE monthly expiry is the last
+     * <b>Tuesday</b> (NSE circular NSE/FAOP/68747).
      *
      * @param year the calendar year
      * @param month the calendar month (1-12)
      * @return the monthly expiry date
      */
     public static LocalDate getMonthlyExpiryThursday(int year, int month) {
-        LocalDate lastDayOfMonth = LocalDate.of(year, month, 1).plusMonths(1).minusDays(1);
-        LocalDate current = lastDayOfMonth;
-
-        // Find last Thursday of the month
-        while (current.getDayOfWeek() != DayOfWeek.THURSDAY) {
-            current = current.minusDays(1);
-        }
-
-        // If that Thursday is a trading holiday, roll backward to the preceding trading day
-        while (!isTradingDay(current)) {
-            current = current.minusDays(1);
-        }
-        return current;
+        return getMonthlyExpiry(year, month, DayOfWeek.THURSDAY);
     }
 
     /**
@@ -146,19 +140,106 @@ public final class NseTradingCalendarUtil {
      * @return the monthly Tuesday expiry date
      */
     public static LocalDate getMonthlyExpiryTuesday(int year, int month) {
+        return getMonthlyExpiry(year, month, DayOfWeek.TUESDAY);
+    }
+
+    /**
+     * Calculates the monthly derivatives expiry on the supplied contractual weekday, rolling
+     * backward over exchange holidays and weekends to the preceding trading day.
+     *
+     * <p>NSE rule: when the expiry day falls on a trading holiday, expiry is the previous trading
+     * day. Weekday conventions: <b>Tuesday</b> for NSE equity derivatives since September 2025
+     * (NSE/FAOP/68747), <b>Thursday</b> for BSE Sensex.
+     *
+     * @param year the calendar year
+     * @param month the calendar month (1-12)
+     * @param expiryDay the contractual expiry weekday (must be a weekday, not Sat/Sun)
+     * @return the monthly expiry date
+     */
+    public static LocalDate getMonthlyExpiry(int year, int month, DayOfWeek expiryDay) {
+        if (expiryDay == null) {
+            expiryDay = DayOfWeek.TUESDAY;
+        }
         LocalDate lastDayOfMonth = LocalDate.of(year, month, 1).plusMonths(1).minusDays(1);
         LocalDate current = lastDayOfMonth;
 
-        // Find last Tuesday of the month
-        while (current.getDayOfWeek() != DayOfWeek.TUESDAY) {
+        // Find the last occurrence of the contractual expiry weekday in the month
+        while (current.getDayOfWeek() != expiryDay) {
             current = current.minusDays(1);
         }
 
-        // If that Tuesday is a trading holiday, roll backward to the preceding trading day
+        // If that day is a trading holiday (or weekend), roll backward to a trading day
         while (!isTradingDay(current)) {
             current = current.minusDays(1);
         }
         return current;
+    }
+
+    /**
+     * Calculates the weekly derivatives expiry on the supplied contractual weekday: the next such
+     * weekday on or after {@code referenceDate}, rolled backward over holidays to the preceding
+     * trading day. If that rollback would place expiry before {@code referenceDate}, steps to the
+     * following week.
+     *
+     * @param referenceDate the date from which to resolve (typically "today")
+     * @param expiryDay the contractual expiry weekday (Tuesday for NSE, Thursday for BSE Sensex)
+     * @return the weekly expiry date, never before {@code referenceDate}
+     */
+    public static LocalDate getWeeklyExpiry(LocalDate referenceDate, DayOfWeek expiryDay) {
+        if (referenceDate == null) {
+            return null;
+        }
+        if (expiryDay == null) {
+            expiryDay = DayOfWeek.TUESDAY;
+        }
+        LocalDate candidate = referenceDate.with(TemporalAdjusters.nextOrSame(expiryDay));
+        while (!isTradingDay(candidate)) {
+            candidate = candidate.minusDays(1);
+        }
+        // A holiday rollback can move expiry before the reference date; step to the next week.
+        if (candidate.isBefore(referenceDate)) {
+            return getWeeklyExpiry(referenceDate.plusWeeks(1), expiryDay);
+        }
+        return candidate;
+    }
+
+    /**
+     * Checks whether the given date is the monthly NSE equity-derivatives expiry session (last
+     * Tuesday of its month, holiday-rolled backward to the preceding trading day).
+     *
+     * @param date the date to evaluate
+     * @return true when the date is that month's monthly expiry session
+     */
+    public static boolean isMonthlyExpiryDay(LocalDate date) {
+        if (date == null || !isTradingDay(date)) {
+            return false;
+        }
+        return date.equals(getMonthlyExpiryTuesday(date.getYear(), date.getMonthValue()));
+    }
+
+    /**
+     * Counts the exchange trading sessions strictly after {@code from} up to and including {@code
+     * through} — the days-to-expiry (DTE) a session taken on {@code from} has in a series expiring
+     * on {@code through}. The expiry session itself therefore reads {@code 0}, the preceding
+     * trading session {@code 1}, and so on. Weekends and holidays are skipped, so a holiday-rolled
+     * expiry (e.g. a Tuesday that moves to Monday) needs no special case. Returns {@code 0} when
+     * {@code through} is null or falls on/before {@code from}.
+     *
+     * @param from the session the DTE is measured on (exclusive)
+     * @param through the series expiry date (inclusive)
+     * @return trading sessions remaining in the series
+     */
+    public static int tradingSessionsRemaining(LocalDate from, LocalDate through) {
+        if (from == null || through == null || !through.isAfter(from)) {
+            return 0;
+        }
+        int sessions = 0;
+        for (LocalDate d = from.plusDays(1); !d.isAfter(through); d = d.plusDays(1)) {
+            if (isTradingDay(d)) {
+                sessions++;
+            }
+        }
+        return sessions;
     }
 
     /**

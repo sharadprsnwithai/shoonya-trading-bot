@@ -17,6 +17,7 @@ import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NiftySectorRegistry;
+import com.tradingbot.util.NseTradingCalendarUtil;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -261,6 +262,122 @@ public class LowestVolumeReversalService {
     @Value("${trading-bot.strategy.lowest-volume.nse-oi.mid-morning-refresh-enabled:true}")
     private volatile boolean nseOiMidMorningRefreshEnabled = true;
 
+    // ---- F&O ban-period exclusion (NCL/CMPT/70085; SEBI/HO/MRD/TPD-1/P/CIR/2025/79) ----
+
+    /** Symbols placed in the NSE F&O ban period for the current session (never tradeable). */
+    private final Set<String> bannedSymbols = ConcurrentHashMap.newKeySet();
+
+    /** Trading-day stamp of {@link #bannedSymbols}; used to detect a stale cached list. */
+    private volatile LocalDate banListFetchedDate = null;
+
+    /** True when today's ban list could not be fetched or was unrecognisable. */
+    private volatile boolean banListUnavailable = false;
+
+    /** Re-entrancy guard for {@link #runNseBanListFetch()}. */
+    private final java.util.concurrent.atomic.AtomicBoolean isBanListFetching =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** NSE ban-period HTTP client; optional (tests inject a mock via the setter). */
+    private volatile com.tradingbot.marketdata.NseBanPeriodClient nseBanPeriodClient;
+
+    @Value("${trading-bot.strategy.lowest-volume.ban-period-enabled:true}")
+    private volatile boolean banPeriodEnabled = true;
+
+    /**
+     * P1 validation mode: fetch, log and alert the ban list, but never exclude a symbol. Flip off
+     * (or set {@code LVR_BAN_LOG_ONLY=false}) once the endpoint and parser have been validated
+     * against a live session.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.ban-period-log-only:true}")
+    private volatile boolean banPeriodLogOnly = true;
+
+    /**
+     * Policy when the ban list is unavailable: {@code true} blocks fresh entries until the list is
+     * fetched (fail-closed); {@code false} trades unfiltered and alerts (fail-open, the default,
+     * mirroring the NSE OI-spurts degrade path).
+     */
+    @Value("${trading-bot.strategy.lowest-volume.ban-period-fail-closed:false}")
+    private volatile boolean banPeriodFailClosed = false;
+
+    // ---- Expiry / DTE rules for a fresh entry (P3; §4 of the 2026-10-17 design) ----
+
+    /** Master switch for the {@code EXPIRY_DTE} entry gate and the matching universe exclusion. */
+    @Value("${trading-bot.strategy.lowest-volume.expiry-dte-enabled:true}")
+    private volatile boolean expiryDteEnabled = true;
+
+    /**
+     * Trading sessions before monthly expiry at which a fresh <b>OPTIONS</b> entry is barred.
+     * {@code 2} blocks the last two sessions of the series (including expiry day); {@code 0}
+     * restores the legacy behaviour while leaving the §4.1 date fix in force.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.option-min-dte-sessions:2}")
+    private volatile int optionMinDteSessions = 2;
+
+    /**
+     * Trading sessions before monthly expiry at which a fresh <b>FUTURES</b> entry is barred.
+     * {@code 0} (the default) leaves the currently-configured strategy's behaviour unchanged.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.futures-min-dte-sessions:0}")
+    private volatile int futuresMinDteSessions = 0;
+
+    // --- D5: two-sided sector channel (design §6) -------------------------------------------
+
+    /** Strongest (highest avg % change) bullish sectors taken each session. */
+    @Value("${trading-bot.strategy.lowest-volume.selection.bullish-sectors:3}")
+    private volatile int bullishSectors = 3;
+
+    /** Weakest (lowest avg % change) bearish sectors taken each session. */
+    @Value("${trading-bot.strategy.lowest-volume.selection.bearish-sectors:3}")
+    private volatile int bearishSectors = 3;
+
+    /** Stocks taken from each selected sector. */
+    @Value("${trading-bot.strategy.lowest-volume.selection.stocks-per-sector:3}")
+    private volatile int stocksPerSector = 3;
+
+    /** Triangle channel (design §4) on/off. */
+    @Value("${trading-bot.strategy.lowest-volume.selection.triangle-enabled:true}")
+    private volatile boolean triangleEnabled = true;
+
+    /** Cap on triangle-detected symbols merged into the watchlist. */
+    @Value("${trading-bot.strategy.lowest-volume.selection.triangle-max-candidates:5}")
+    private volatile int triangleMaxCandidates = 5;
+
+    /**
+     * D4 / design §5.1 revert switch. When true, the legacy behaviour is restored: NIFTY breadth
+     * picks the session direction and a mixed reading stands the day down. When false (default),
+     * breadth is observability only and both sides of the market are traded.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.nifty-bias-enabled:false}")
+    private volatile boolean niftyBiasEnabled = false;
+
+    /**
+     * Index-alignment regime gate (design §5.2). Evaluated at trigger time: a LONG requires the
+     * index to be above its previous close by {@link #indexAlignmentBufferBps}, a SHORT below it by
+     * the same. This is the fix for a watchlist fixed on a morning read that the index has since
+     * reversed against — the stock-level confirmations can all pass while the market has turned.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.index-alignment-enabled:true}")
+    private volatile boolean indexAlignmentEnabled = true;
+
+    /**
+     * Dead-band in basis points. Without it a ~0.05% wobble around the previous close would
+     * flip-flop the decision and randomly veto valid breakouts. {@code 0} reverts to a naked cross.
+     */
+    @Value("${trading-bot.strategy.lowest-volume.index-alignment-buffer-bps:10.0}")
+    private volatile double indexAlignmentBufferBps = 10.0;
+
+    /** Index instrument quoted for the alignment gate (resolves to NSE token 26000). */
+    @Value("${trading-bot.strategy.lowest-volume.index-alignment-symbol:NIFTY 50}")
+    private volatile String indexAlignmentSymbol = "NIFTY 50";
+
+    /**
+     * D5: direction decided at morning selection, per symbol rather than per session. {@code NONE}
+     * marks a triangle-detected symbol that is armed two-sidedly (design §3.1). Kept separate from
+     * the setups so reservoir promotion can recover a symbol's intended side.
+     */
+    private final Map<String, LowestVolumeDirection> symbolDirections =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private final List<String> currentTopGainers =
             new java.util.concurrent.CopyOnWriteArrayList<>();
     private final List<String> currentTopLosers = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -394,6 +511,9 @@ public class LowestVolumeReversalService {
         state.universeScanCompletedToday = universeScanCompletedToday;
         state.todayLossCount = todayLossCount.get();
         state.tradeCounter = tradeCounter.get();
+        state.bannedSymbols.addAll(bannedSymbols);
+        state.banListFetchedDate = banListFetchedDate;
+        state.banListFetchUnavailable = banListUnavailable;
         return state;
     }
 
@@ -457,6 +577,15 @@ public class LowestVolumeReversalService {
                 dailyCircuitBreakerTripped.set(true);
             }
             standDownToday = state.standDownToday;
+
+            // F&O ban list: session-scoped, but restoring it lets a restart keep excluding banned
+            // symbols without waiting for the next fetch, and preserves the degraded-fetch flag
+            // so the entry gate's fail-open/fail-closed policy survives the restart.
+            if (state.bannedSymbols != null) {
+                bannedSymbols.addAll(state.bannedSymbols);
+            }
+            banListFetchedDate = state.banListFetchedDate;
+            banListUnavailable = state.banListFetchUnavailable;
 
             // Session keys. Restoring these is what makes a restart a continuation rather than a
             // fresh, unscanned day. lastScanDate keeps a later reset recognising today as today,
@@ -892,6 +1021,219 @@ public class LowestVolumeReversalService {
         }
     }
 
+    // ---- F&O ban-period fetch (pre-market, 09:10 IST) ----
+
+    /**
+     * Fetches the NSE F&O ban-period list for today's session, refreshes {@link #bannedSymbols},
+     * and — unless in log-only validation mode — drops banned symbols from the watchlist and
+     * reservoir.
+     *
+     * <p>The list is published EOD and applies to the <b>next</b> trade date, so the pre-market
+     * fetch always targets the current session. A failed or unrecognisable fetch never fails the
+     * session: it clears the cached list, marks {@link #banListUnavailable} and alerts; the entry
+     * gate then applies the configured fail-open / fail-closed policy. Idempotent per session and
+     * re-entrancy guarded.
+     */
+    public void runNseBanListFetch() {
+        if (!enabled || !banPeriodEnabled) {
+            log.debug("[LVR] [NSE-BAN] Disabled — skipping F&O ban-period fetch.");
+            return;
+        }
+        if (nseBanPeriodClient == null) {
+            log.debug("[LVR] [NSE-BAN] No ban-period client wired — no exclusions applied.");
+            return;
+        }
+        if (!isBanListFetching.compareAndSet(false, true)) {
+            log.warn(
+                    "[LVR] [NSE-BAN] Ban-list fetch already in progress. Skipping concurrent run.");
+            return;
+        }
+        try {
+            Set<String> banned = nseBanPeriodClient.fetchBanList();
+            if (!nseBanPeriodClient.isLastFetchSuccessful()) {
+                bannedSymbols.clear();
+                banListFetchedDate = null;
+                banListUnavailable = true;
+                log.warn(
+                        "[LVR] [NSE-BAN] Ban list unavailable for {} — policy: {}.",
+                        LocalDate.now(clock),
+                        banPeriodFailClosed ? "fail-closed (block fresh entries)" : "fail-open");
+                if (telegramAlerts && telegramService != null) {
+                    telegramService.sendTextMessage(
+                            "⚠️ *LVR F&O Ban List unavailable*\n"
+                                    + "• Reason: NSE ban-list fetch failed or was unrecognisable\n"
+                                    + "• Policy: *"
+                                    + (banPeriodFailClosed
+                                            ? "fail-closed — blocking fresh entries"
+                                            : "fail-open — continuing unfiltered")
+                                    + "*");
+                }
+                return;
+            }
+
+            bannedSymbols.clear();
+            if (banned != null && !banned.isEmpty()) {
+                bannedSymbols.addAll(banned);
+            }
+            banListFetchedDate = LocalDate.now(clock);
+            banListUnavailable = false;
+            log.info(
+                    "[LVR] [NSE-BAN] Ban list loaded for {} — {} symbol(s) in ban: {}.",
+                    banListFetchedDate,
+                    bannedSymbols.size(),
+                    bannedSymbols);
+            if (bannedSymbols.isEmpty()) {
+                return;
+            }
+            if (!banPeriodEnforced()) {
+                log.info(
+                        "[LVR] [NSE-BAN] Log-only validation mode — {} banned symbol(s) reported,"
+                                + " none excluded.",
+                        bannedSymbols.size());
+                return;
+            }
+            excludeBannedFromUniverse();
+            if (telegramAlerts && telegramService != null) {
+                telegramService.sendTextMessage(
+                        String.format(
+                                BotLocale.INSTANCE,
+                                "🚫 *LVR F&O Ban Period*\n• Symbols in ban (%d): `%s`\n"
+                                        + "• Status: *Excluded from today's universe*",
+                                bannedSymbols.size(),
+                                String.join(", ", bannedSymbols)));
+            }
+        } catch (RuntimeException e) {
+            log.error("[LVR] [NSE-BAN] Ban-list refresh failed: {}", e.getMessage(), e);
+        } finally {
+            isBanListFetching.set(false);
+        }
+    }
+
+    /**
+     * @return true when banned symbols are actually excluded (enabled and not log-only)
+     */
+    private boolean banPeriodEnforced() {
+        return banPeriodEnabled && !banPeriodLogOnly;
+    }
+
+    /**
+     * @param symbol candidate underlying
+     * @return true when the symbol is in today's F&O ban list and enforcement is active
+     */
+    private boolean isBannedForTrading(String symbol) {
+        return banPeriodEnforced() && symbol != null && bannedSymbols.contains(symbol);
+    }
+
+    /**
+     * P2+P3: the single universe-screening predicate — true when a symbol may not be armed,
+     * promoted or entered today because it is in the F&amp;O ban period, or because its current
+     * monthly series is inside the OPTIONS expiry/DTE floor. Both reasons are permanent for the
+     * session, so screening them out at selection time is what keeps the ≤3 active candidate slots
+     * productive instead of filling with symbols that can never fire.
+     *
+     * @param symbol candidate underlying
+     * @return true when the symbol must be skipped by every selection path
+     */
+    private boolean isExcludedFromUniverse(String symbol) {
+        return isBannedForTrading(symbol) || isDteExcluded(symbol);
+    }
+
+    /**
+     * Drops banned symbols from the active watchlist (never when a position is open in them — open
+     * positions are always managed through to exit by the normal lifecycle) and from the standby
+     * reservoir, so a banned symbol cannot occupy one of the ≤3 active candidate slots all day.
+     */
+    private void excludeBannedFromUniverse() {
+        if (bannedSymbols.isEmpty()) {
+            return;
+        }
+        List<String> droppedActive = new ArrayList<>();
+        for (String symbol : new java.util.HashSet<>(activeSetups.keySet())) {
+            if (!bannedSymbols.contains(symbol)) {
+                continue;
+            }
+            if (openPositions.containsKey(symbol)) {
+                log.warn(
+                        "[LVR] [NSE-BAN] {} is in ban but holds an open position — leaving it under"
+                                + " normal exit management, no fresh entries.",
+                        symbol);
+                continue;
+            }
+            activeSetups.remove(symbol);
+            droppedActive.add(symbol);
+        }
+        int reservoirBefore = candidateReservoir.size();
+        candidateReservoir.removeIf(bannedSymbols::contains);
+        int droppedReservoir = reservoirBefore - candidateReservoir.size();
+        if (!droppedActive.isEmpty() || droppedReservoir > 0) {
+            log.info(
+                    "[LVR] [NSE-BAN] Excluded banned symbols — active dropped: {}, reservoir"
+                            + " dropped: {}.",
+                    droppedActive,
+                    droppedReservoir);
+        }
+    }
+
+    // ---- Expiry / DTE readings (shared by the entry gate and the universe exclusions) ----
+
+    /**
+     * Reading of {@code symbol}'s <b>current</b> monthly series: its contractual expiry, the
+     * trading sessions remaining in that series ({@code 0} on the expiry session itself), and
+     * whether that expiry is today.
+     *
+     * <p>The same reading feeds both the {@code EXPIRY_DTE} entry gate (via its input fields) and
+     * the universe exclusions, so screening and gating can never disagree about a symbol. The
+     * contractual expiry is used — deliberately <i>not</i> the DTE-rolled {@code
+     * calculateTargetExpiry}, which would already have advanced to next month on the last session
+     * and reported a healthy DTE for a series with none left.
+     *
+     * @param symbol underlying to read
+     * @return the series reading; {@code expiry == null} when the contract is unresolvable
+     */
+    private DteReading readDte(String symbol) {
+        LocalDate today = LocalDate.now(clock);
+        LocalDate expiry = StockFnoRegistry.getMonthlyContractExpiry(symbol, today);
+        if (expiry == null) {
+            return new DteReading(null, -1, false);
+        }
+        return new DteReading(
+                expiry,
+                NseTradingCalendarUtil.tradingSessionsRemaining(today, expiry),
+                expiry.equals(today));
+    }
+
+    /**
+     * P3: true when a fresh <b>OPTIONS</b> entry in {@code symbol}'s current series is barred by
+     * the expiry/DTE floor. Inert outside OPTIONS mode, when the gate is off, or when the floor is
+     * {@code 0} — so the currently-configured FUTURES strategy is untouched.
+     *
+     * @param symbol candidate underlying
+     * @return true when the symbol must not be armed, promoted or entered
+     */
+    private boolean isDteExcluded(String symbol) {
+        if (!expiryDteEnabled || instrumentType != LvrInstrumentType.OPTIONS) {
+            return false;
+        }
+        if (optionMinDteSessions <= 0 || symbol == null) {
+            return false;
+        }
+        DteReading reading = readDte(symbol);
+        if (reading.expiry() == null) {
+            // Unresolvable contract: fail closed, mirroring the REGISTRY gate.
+            return true;
+        }
+        return reading.expiryToday() || reading.sessions() < optionMinDteSessions;
+    }
+
+    /**
+     * Contract series reading used by the expiry/DTE gate and the OPTIONS universe exclusion.
+     *
+     * @param expiry contractual expiry of the current monthly series, null if unresolvable
+     * @param sessions trading sessions remaining in that series ({@code 0} on expiry day)
+     * @param expiryToday true when the series expires today
+     */
+    private record DteReading(LocalDate expiry, int sessions, boolean expiryToday) {}
+
     /**
      * Merges ranked NSE OI spurt candidates into the morning watchlist: selects up to {@code top-n}
      * eligible symbols (sentiment price-alignment band with relaxed fill), creates their setups,
@@ -908,11 +1250,18 @@ public class LowestVolumeReversalService {
         LowestVolumeDirection sentiment =
                 sectorState != null ? sectorState.sentiment() : LowestVolumeDirection.NONE;
         if (sentiment == null || sentiment == LowestVolumeDirection.NONE) {
-            log.warn(
-                    "[LVR] [NSE-OI] No directional sentiment available (scan incomplete?) —"
-                            + " dropping {} staged OI spurts.",
-                    items.size());
-            return;
+            if (niftyBiasEnabled) {
+                log.warn(
+                        "[LVR] [NSE-OI] No directional sentiment available (scan incomplete?) —"
+                                + " dropping {} staged OI spurts.",
+                        items.size());
+                return;
+            }
+            // D4: with the bias off there is no global direction; OI picks are directioned from
+            // their own price move below, so a mixed index reading must not drop the leg.
+            log.info(
+                    "[LVR] [NSE-OI] No directional index sentiment (breadth reporting-only) — OI"
+                            + " picks take direction from their own price move.");
         }
         boolean oiSpurtsMode = "OI_SPURTS".equalsIgnoreCase(scannerMode);
         int topN = oiSpurtsMode ? oiSpurtsTopN : nseOiTopN;
@@ -926,6 +1275,10 @@ public class LowestVolumeReversalService {
         Map<String, StockQuoteSnapshot> quotes = fetchSnapshotsFor(rankedSymbols);
         Set<String> exclude = new java.util.HashSet<>(activeSetups.keySet());
         exclude.addAll(exhaustedSymbols);
+        exclude.addAll(bannedSymbols);
+        // P3: an OI-spurt candidate whose current series sits inside the expiry/DTE floor is
+        // equally un-enterable in OPTIONS mode (no-op in FUTURES mode).
+        rankedSymbols.stream().filter(this::isExcludedFromUniverse).forEach(exclude::add);
         List<String> selected =
                 scanner.selectOiSpurtCandidates(items, quotes, sentiment, topN, exclude);
         if (selected.isEmpty()) {
@@ -960,8 +1313,10 @@ public class LowestVolumeReversalService {
             }
             StockQuoteSnapshot quote = quotes.get(sym);
             LowestVolumeDirection dir;
-            if (oiSpurtsMode) {
-                // OI_SPURTS mode: direction follows the stock's own price move, not sentiment.
+            if (oiSpurtsMode || !niftyBiasEnabled) {
+                // OI picks follow the stock's own price move, not an index reading. With the bias
+                // off (D4) there is no global direction left to inherit, so HYBRID picks use the
+                // same per-stock rule OI_SPURTS mode always used.
                 dir =
                         (quote != null && quote.pctChange() < 0)
                                 ? LowestVolumeDirection.SHORT
@@ -970,6 +1325,7 @@ public class LowestVolumeReversalService {
                 dir = sentiment;
             }
             LowestVolumeSetup setup = new LowestVolumeSetup(sym, dir);
+            symbolDirections.put(sym, dir);
             com.tradingbot.model.NseOiSpurtItem item = bySymbol.get(sym);
             if (item != null) {
                 setup.setOiChangePct(item.avgInOi());
@@ -1124,7 +1480,11 @@ public class LowestVolumeReversalService {
 
             LowestVolumeDirection sentiment =
                     scanner.evaluateMarketSentiment(niftyQuotes, minBreadthPct);
-            if (sentiment == LowestVolumeDirection.NONE) {
+
+            // D4 / design §5: breadth is observability only unless the legacy bias switch is on.
+            // A mixed index reading must not stand the day down — two sectors can be cleanly
+            // trending in opposite directions while the index as a whole is flat.
+            if (niftyBiasEnabled && sentiment == LowestVolumeDirection.NONE) {
                 log.info(
                         "[LVR] Market sentiment is NEUTRAL/MIXED (below {}% breadth threshold on {}/50 quotes). Standing down for the day to avoid whipsaws.",
                         minBreadthPct, niftyQuotes.size());
@@ -1136,6 +1496,7 @@ public class LowestVolumeReversalService {
                 activeSetups.clear();
                 candidateReservoir.clear();
                 exhaustedSymbols.clear();
+                symbolDirections.clear();
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendTextMessage(
                             String.format(
@@ -1147,6 +1508,13 @@ public class LowestVolumeReversalService {
                                     niftyQuotes.size()));
                 }
                 return;
+            }
+            if (sentiment == LowestVolumeDirection.NONE) {
+                log.info(
+                        "[LVR] NIFTY 50 breadth below the {}% threshold on {}/50 quotes — reporting"
+                                + " only (nifty-bias disabled). Sector selection proceeds on both"
+                                + " sides.",
+                        minBreadthPct, niftyQuotes.size());
             }
             this.niftyBullish = (sentiment == LowestVolumeDirection.LONG);
 
@@ -1168,7 +1536,7 @@ public class LowestVolumeReversalService {
             }
 
             List<LowestVolumeReversalScanner.SectorRankResult> rankedSectors =
-                    scanner.rankSectors(sectorQuotes, sentiment);
+                    scanner.rankSectorsByStrength(sectorQuotes);
 
             if (rankedSectors.isEmpty()) {
                 log.warn("[LVR] No sectors ranked from quotes.");
@@ -1180,26 +1548,70 @@ public class LowestVolumeReversalService {
                 return;
             }
 
-            // Iterate through ranked sectors to find the top sector with qualifying candidate
-            // stocks
-            LowestVolumeReversalScanner.SectorRankResult winningSector = null;
-            List<StockQuoteSnapshot> winningSectorStockQuotes = Collections.emptyList();
-            List<String> candidateStocks = Collections.emptyList();
+            // D5 / design §3: both sides of the market contribute. The strongest sectors supply
+            // LONG picks and the weakest supply SHORT picks, so no single index reading decides
+            // the book. D6: a sector must actually lean that way — a "least bad" sector that is
+            // still green is not a short.
+            Map<String, LowestVolumeDirection> sectorPicks = new java.util.LinkedHashMap<>();
 
-            for (LowestVolumeReversalScanner.SectorRankResult sector : rankedSectors) {
-                List<StockQuoteSnapshot> sQuotes =
-                        sectorQuotes.getOrDefault(sector.sectorName(), Collections.emptyList());
-                List<String> candidates = scanner.filterCandidateStocks(sQuotes, sentiment);
-                if (!candidates.isEmpty()) {
-                    winningSector = sector;
-                    winningSectorStockQuotes = sQuotes;
-                    candidateStocks = candidates;
-                    break;
+            List<LowestVolumeReversalScanner.SectorRankResult> bullishPicked =
+                    rankedSectors.stream()
+                            .filter(s -> s.pctChange() > 0.0)
+                            .limit(Math.max(0, bullishSectors))
+                            .toList();
+            List<LowestVolumeReversalScanner.SectorRankResult> bearishPicked =
+                    rankedSectors.stream()
+                            .filter(s -> s.pctChange() < 0.0)
+                            .sorted(
+                                    java.util.Comparator.comparingDouble(
+                                            LowestVolumeReversalScanner.SectorRankResult
+                                                    ::pctChange))
+                            .limit(Math.max(0, bearishSectors))
+                            .toList();
+
+            for (LowestVolumeReversalScanner.SectorRankResult sector : bullishPicked) {
+                addSectorPicks(sector, sectorQuotes, LowestVolumeDirection.LONG, sectorPicks);
+            }
+            for (LowestVolumeReversalScanner.SectorRankResult sector : bearishPicked) {
+                addSectorPicks(sector, sectorQuotes, LowestVolumeDirection.SHORT, sectorPicks);
+            }
+
+            // Triangle channel (design §4) — independent of sectors and added on top. A symbol
+            // already picked by a sector keeps that sector's side (design §4.4); one found only
+            // here is armed two-sidedly (direction NONE, resolved in §3.1).
+            List<String> trianglePicks =
+                    triangleEnabled ? rankTriangleCandidates(universeQuotes) : List.of();
+            for (String sym : trianglePicks) {
+                sectorPicks.putIfAbsent(sym, LowestVolumeDirection.NONE);
+            }
+
+            List<String> finalActiveList = new ArrayList<>(sectorPicks.keySet());
+            if (!finalActiveList.isEmpty()) {
+                List<String> excluded =
+                        finalActiveList.stream().filter(this::isExcludedFromUniverse).toList();
+                if (!excluded.isEmpty()) {
+                    log.info(
+                            "[LVR] Dropped {} non-tradeable candidate(s) from the morning watchlist"
+                                    + " (F&O ban / expiry-DTE): {}",
+                            excluded.size(),
+                            excluded);
+                    finalActiveList.removeIf(this::isExcludedFromUniverse);
+                }
+                List<String> alreadyExhausted =
+                        finalActiveList.stream().filter(exhaustedSymbols::contains).toList();
+                if (!alreadyExhausted.isEmpty()) {
+                    log.info(
+                            "[LVR] Dropped {} already-exhausted candidate(s): {}",
+                            alreadyExhausted.size(),
+                            alreadyExhausted);
+                    finalActiveList.removeIf(exhaustedSymbols::contains);
                 }
             }
 
-            if (winningSector == null || candidateStocks.isEmpty()) {
-                log.warn("[LVR] No candidate stocks qualified across any sector.");
+            if (finalActiveList.isEmpty()) {
+                log.warn(
+                        "[LVR] No candidate stocks qualified across any sector or the triangle"
+                                + " scan.");
                 this.universeScanCompletedToday = false;
                 if (telegramAlerts && telegramService != null) {
                     telegramService.sendLvrScanRetryAlert(
@@ -1207,78 +1619,102 @@ public class LowestVolumeReversalService {
                 }
                 return;
             }
-
-            List<String> finalActiveList = new ArrayList<>();
-            // Phase-1 watchlist: top sector candidates for every scanner mode. Phase-2 NSE OI
-            // spurts are merged after this scan completes (consume step below), so the HYBRID
-            // cap of 3 sector + 3 OI (6 total) is enforced at merge time.
-            finalActiveList.addAll(candidateStocks);
+            // Reported as a summary only: the strongest sector by absolute move says where the
+            // day's energy is, but it no longer drives selection.
+            LowestVolumeReversalScanner.SectorRankResult strongest =
+                    rankedSectors.stream()
+                            .max(java.util.Comparator.comparingDouble(s -> Math.abs(s.pctChange())))
+                            .orElse(rankedSectors.get(0));
 
             this.sectorState =
                     new LowestVolumeSectorState(
                             (int) niftyQuotes.stream().filter(q -> q.pctChange() > 0).count(),
                             (int) niftyQuotes.stream().filter(q -> q.pctChange() < 0).count(),
                             sentiment,
-                            winningSector.sectorName(),
-                            winningSector.pctChange(),
+                            strongest.sectorName(),
+                            strongest.pctChange(),
                             finalActiveList);
 
             log.info(
-                    "[LVR] Morning Scan Result (Mode={}): Sentiment={}, Winning Sector={} ({}%), Sector Candidates={}, Final Active={}",
+                    "[LVR] Morning Scan Result (Mode={}): Sentiment={} (reporting only),"
+                            + " Bullish sectors ({}): {}, Bearish sectors ({}): {},"
+                            + " Triangle picks={}, Two-sided={}, Final Active={}",
                     scannerMode,
                     sentiment,
-                    winningSector.sectorName(),
-                    winningSector.pctChange(),
-                    candidateStocks,
+                    bullishPicked.size(),
+                    bullishPicked.stream()
+                            .map(LowestVolumeReversalScanner.SectorRankResult::sectorName)
+                            .toList(),
+                    bearishPicked.size(),
+                    bearishPicked.stream()
+                            .map(LowestVolumeReversalScanner.SectorRankResult::sectorName)
+                            .toList(),
+                    trianglePicks,
+                    sectorPicks.entrySet().stream()
+                            .filter(e -> e.getValue() == LowestVolumeDirection.NONE)
+                            .map(Map.Entry::getKey)
+                            .toList(),
                     finalActiveList);
 
-            // Populate active setups
+            // Populate active setups — direction is per symbol now (D5), not one session-wide
+            // index reading. A NONE here marks a two-sided triangle pick (design §3.1).
             activeSetups.clear();
+            symbolDirections.clear();
             for (String symbol : finalActiveList) {
-                LowestVolumeSetup setup = new LowestVolumeSetup(symbol, sentiment);
+                LowestVolumeDirection dir =
+                        sectorPicks.getOrDefault(symbol, LowestVolumeDirection.NONE);
+                LowestVolumeSetup setup = new LowestVolumeSetup(symbol, dir);
                 // OI change is not available from quotes anymore — phase-2 NSE OI spurts set it
                 // on merged setups (mergeOiCandidates); sector setups carry none.
                 initPdhPdlForSetup(setup);
                 activeSetups.put(symbol, setup);
+                symbolDirections.put(symbol, dir);
             }
-
-            Set<String> candidateSet = new java.util.HashSet<>(finalActiveList);
 
             currentTopGainers.clear();
             currentTopLosers.clear();
             currentTopGainerSnapshots.clear();
             currentTopLoserSnapshots.clear();
 
-            if (sentiment == LowestVolumeDirection.LONG) {
-                currentTopGainers.addAll(finalActiveList);
-                currentTopGainerSnapshots.addAll(
-                        winningSectorStockQuotes.stream()
-                                .filter(q -> candidateSet.contains(q.symbol()))
-                                .toList());
-            } else {
-                currentTopLosers.addAll(finalActiveList);
-                currentTopLoserSnapshots.addAll(
-                        winningSectorStockQuotes.stream()
-                                .filter(q -> candidateSet.contains(q.symbol()))
-                                .toList());
+            for (String symbol : finalActiveList) {
+                LowestVolumeDirection dir = sectorPicks.get(symbol);
+                StockQuoteSnapshot q = universeQuotes.get(symbol);
+                // Two-sided picks are not yet directional, so they belong in neither list until
+                // arming latches a side (design §3.1).
+                if (dir == LowestVolumeDirection.LONG) {
+                    currentTopGainers.add(symbol);
+                    if (q != null) {
+                        currentTopGainerSnapshots.add(q);
+                    }
+                } else if (dir == LowestVolumeDirection.SHORT) {
+                    currentTopLosers.add(symbol);
+                    if (q != null) {
+                        currentTopLoserSnapshots.add(q);
+                    }
+                }
             }
 
-            // Populate Candidate Reservoir from reserve leading sectors (OI additions may also
-            // land here during the phase-2 merge)
+            // Populate Candidate Reservoir from every sector, both sides (OI additions may also
+            // land here during the phase-2 merge). Each reserve symbol carries its intended
+            // direction so promotion later arms the correct side.
             candidateReservoir.clear();
             for (LowestVolumeReversalScanner.SectorRankResult sector : rankedSectors) {
-                if (winningSector != null
-                        && sector.sectorName().equals(winningSector.sectorName())) {
+                LowestVolumeDirection dir =
+                        sector.pctChange() > 0.0
+                                ? LowestVolumeDirection.LONG
+                                : (sector.pctChange() < 0.0 ? LowestVolumeDirection.SHORT : null);
+                if (dir == null) {
                     continue;
                 }
                 List<StockQuoteSnapshot> sQuotes =
                         sectorQuotes.getOrDefault(sector.sectorName(), Collections.emptyList());
-                List<String> reserveCandidates = scanner.filterCandidateStocks(sQuotes, sentiment);
-                for (String sym : reserveCandidates) {
+                for (String sym : scanner.filterCandidateStocks(sQuotes, dir, stocksPerSector)) {
                     if (!activeSetups.containsKey(sym)
                             && !exhaustedSymbols.contains(sym)
+                            && !isExcludedFromUniverse(sym)
                             && !candidateReservoir.contains(sym)) {
                         candidateReservoir.add(sym);
+                        symbolDirections.putIfAbsent(sym, dir);
                     }
                 }
             }
@@ -1301,18 +1737,31 @@ public class LowestVolumeReversalService {
             }
 
             if (telegramAlerts && telegramService != null) {
+                String bullishNames =
+                        bullishPicked.stream()
+                                .map(LowestVolumeReversalScanner.SectorRankResult::sectorName)
+                                .collect(java.util.stream.Collectors.joining(", "));
+                String bearishNames =
+                        bearishPicked.stream()
+                                .map(LowestVolumeReversalScanner.SectorRankResult::sectorName)
+                                .collect(java.util.stream.Collectors.joining(", "));
                 telegramService.sendTextMessage(
                         String.format(
                                 BotLocale.INSTANCE,
                                 "📊 *LVR 09:25 AM Morning Scan*\n"
-                                        + "• Sentiment: *%s*\n"
-                                        + "• Winning Sector: *%s* (%.2f%%)\n"
+                                        + "• Sentiment: *%s* (reporting only)\n"
+                                        + "• Bullish sectors (%d): %s\n"
+                                        + "• Bearish sectors (%d): %s\n"
+                                        + "• Triangle picks: %s\n"
                                         + "• Active Watchlist (%d): `%s`\n"
                                         + "• Standby Reservoir: %d stocks\n"
                                         + "• Setup Mode: *5m Lowest Volume Pullback*",
                                 sentiment,
-                                winningSector.sectorName(),
-                                winningSector.pctChange(),
+                                bullishPicked.size(),
+                                bullishNames.isEmpty() ? "none" : bullishNames,
+                                bearishPicked.size(),
+                                bearishNames.isEmpty() ? "none" : bearishNames,
+                                trianglePicks.isEmpty() ? "none" : String.join(", ", trianglePicks),
                                 finalActiveList.size(),
                                 String.join(", ", finalActiveList),
                                 candidateReservoir.size()));
@@ -1543,6 +1992,80 @@ public class LowestVolumeReversalService {
         return setup;
     }
 
+    /**
+     * Evaluates one active setup against the session's 5-minute candles, resolving the side for
+     * two-sided picks (design §3.1).
+     *
+     * <p>A setup with a fixed direction — every sector-picked symbol — is evaluated exactly as
+     * before. A {@code NONE} setup is a triangle pick that has not committed yet, so both sides are
+     * evaluated and the one that actually formed a lowest-volume pullback is returned. When both
+     * sides armed, the freshest pullback wins (the more recent bar is the more informative
+     * squeeze); an exact tie falls back to LONG so the outcome is deterministic.
+     *
+     * @param setup active setup; must not be null
+     * @param candles completed 5-minute bars for today
+     * @return the evaluated setup for the resolved side — never null
+     */
+    private LowestVolumeSetup evaluateSetupForCycle(LowestVolumeSetup setup, List<Candle> candles) {
+        String symbol = setup.getSymbol();
+        Instant lastExit = setup.getLastExitTime();
+        LowestVolumeDirection direction = setup.getDirection();
+
+        if (direction != null && direction != LowestVolumeDirection.NONE) {
+            return evaluateCandleSequence(symbol, direction, candles, lastExit);
+        }
+
+        return resolveTwoSided(
+                evaluateCandleSequence(symbol, LowestVolumeDirection.LONG, candles, lastExit),
+                evaluateCandleSequence(symbol, LowestVolumeDirection.SHORT, candles, lastExit));
+    }
+
+    /**
+     * Resolves which side a two-sided (triangle-channel) pick commits to for this cycle (design
+     * §3.1). A sector-picked setup never reaches here — it is evaluated on its own fixed side.
+     *
+     * <p>Exactly one side armed is decisive. When both sides armed, the fresher pullback wins: the
+     * more recent bar is the more informative squeeze. An exact tie — and the neither-armed case —
+     * falls back to the LONG evaluation, which keeps the non-directional bookkeeping (first-15m
+     * range, day-lowest volume) populated without committing to a side, and makes the outcome
+     * deterministic rather than dependent on iteration order.
+     *
+     * @param longSide evaluation of the LONG side; must not be null
+     * @param shortSide evaluation of the SHORT side; must not be null
+     * @return the setup to carry forward for this symbol
+     */
+    static LowestVolumeSetup resolveTwoSided(
+            LowestVolumeSetup longSide, LowestVolumeSetup shortSide) {
+        boolean longArmed = longSide.getState() == LowestVolumeSetupState.TRIGGER_ARMED;
+        boolean shortArmed = shortSide.getState() == LowestVolumeSetupState.TRIGGER_ARMED;
+
+        if (longArmed && !shortArmed) {
+            return longSide;
+        }
+        if (shortArmed && !longArmed) {
+            return shortSide;
+        }
+        if (longArmed) {
+            Instant longCandleTime = armingCandleTime(longSide);
+            Instant shortCandleTime = armingCandleTime(shortSide);
+            if (shortCandleTime != null
+                    && (longCandleTime == null || shortCandleTime.isAfter(longCandleTime))) {
+                return shortSide;
+            }
+        }
+        return longSide;
+    }
+
+    /**
+     * @param setup an evaluated setup
+     * @return the timestamp of the candle that armed it, or {@code null} when
+     *     unarmed/unarmed-candle
+     */
+    private static Instant armingCandleTime(LowestVolumeSetup setup) {
+        Candle trigger = setup.getTriggerCandle();
+        return trigger != null ? trigger.timestamp() : null;
+    }
+
     /** Processes 5-minute candles for all active watchlist candidate stocks. */
     private void processCandidateSetups() {
         if (marketDataService == null) return;
@@ -1579,9 +2102,21 @@ public class LowestVolumeReversalService {
                                 .toList();
                 if (candles.size() < 3) continue;
 
-                LowestVolumeSetup evaluated =
-                        evaluateCandleSequence(
-                                symbol, setup.getDirection(), candles, setup.getLastExitTime());
+                LowestVolumeSetup evaluated = evaluateSetupForCycle(setup, candles);
+
+                // D3 / design §3.1: a two-sided pick latches to the side that actually formed a
+                // pullback, and keeps it for the rest of the session. Until then it stays NONE.
+                if (setup.getDirection() == LowestVolumeDirection.NONE
+                        && evaluated.getDirection() != null
+                        && evaluated.getDirection() != LowestVolumeDirection.NONE) {
+                    setup.setDirection(evaluated.getDirection());
+                    symbolDirections.put(symbol, evaluated.getDirection());
+                    log.info(
+                            "[LVR] Two-sided pick {} latched to {} — a lowest-volume pullback"
+                                    + " formed on that side.",
+                            symbol,
+                            evaluated.getDirection());
+                }
 
                 if (evaluated.getFirst15MinHigh() != null && evaluated.getFirst15MinLow() != null) {
                     setup.setFirst15MinHigh(evaluated.getFirst15MinHigh());
@@ -1939,6 +2474,8 @@ public class LowestVolumeReversalService {
                 gateInput.decisionPrice = spotPrice;
                 gateInput.entryPrice = spotPrice;
                 gateInput.maxSlippagePct = maxSlippagePct;
+                // Index-alignment data collection only; the decision belongs to the gate.
+                fillIndexAlignment(gateInput);
                 gateInput.vwapEnabled = vwapConfirmationEnabled;
                 gateInput.vwap = (liveVwap > 0.0) ? liveVwap : null;
                 gateInput.range15mEnabled = opening15mRangeFilterEnabled;
@@ -1956,6 +2493,22 @@ public class LowestVolumeReversalService {
                 gateInput.optionResistanceStrike = setup.getOptionResistanceStrike();
                 gateInput.optionSupportStrike = setup.getOptionSupportStrike();
                 gateInput.optionSrBufferPct = optionSrBufferPct;
+                // F&O ban period (P2): an absolute, price-independent regulatory block, so it is
+                // always populated and the gate evaluates it first. Log-only validation mode
+                // leaves the gate off (banPeriodEnforced() false) while still reporting the list.
+                gateInput.banPeriodEnabled = banPeriodEnabled && banPeriodEnforced();
+                gateInput.symbolBanned = bannedSymbols.contains(symbol);
+                gateInput.banListUnavailable = banListUnavailable;
+                gateInput.banPeriodFailClosed = banPeriodFailClosed;
+                // Expiry / DTE (P3): the very reading the universe exclusions used, so a symbol
+                // that somehow reaches the trigger is judged by identical numbers.
+                DteReading dte = readDte(symbol);
+                gateInput.expiryDteEnabled = expiryDteEnabled;
+                gateInput.instrumentType = instrumentType;
+                gateInput.optionDteSessions = dte.expiry() != null ? dte.sessions() : null;
+                gateInput.expiryDayToday = dte.expiryToday();
+                gateInput.optionMinDteSessions = optionMinDteSessions;
+                gateInput.futuresMinDteSessions = futuresMinDteSessions;
                 // Session-level gates (breaker/cutoff/attempts/concurrency/budget) are enforced
                 // by evaluateLivePriceActions' outer loop and inside executePositionEntry.
 
@@ -2312,10 +2865,17 @@ public class LowestVolumeReversalService {
             BigDecimal atmStrike = resolveAtmStrike(spotPrice, strikeStep);
             String optType = (setup.getDirection() == LowestVolumeDirection.SHORT) ? "PE" : "CE";
             String optSymbol = symbol + " ATM " + atmStrike + optType;
+            // P3 / design §4.4: resolve the contract series ONCE, here, and carry it on the
+            // position. The premium is priced against this same contract and the exit side reads
+            // it back instead of recomputing, so an intraday month roll can never make entry and
+            // exit reference different contracts.
+            LocalDate contractExpiry =
+                    StockFnoRegistry.getMonthlyContractExpiry(symbol, LocalDate.now(clock));
             String brokerTradingSymbol =
-                    StockFnoRegistry.formatTradingSymbol(symbol, null, atmStrike, optType, false);
+                    StockFnoRegistry.formatTradingSymbol(
+                            symbol, contractExpiry, atmStrike, optType, false);
 
-            double optLtp = fetchOptionLtp(symbol, optType, atmStrike);
+            double optLtp = fetchOptionLtp(symbol, optType, atmStrike, contractExpiry);
             if (optLtp <= 0.0) {
                 recordQuoteFailure(symbol, "option LTP at entry");
                 log.warn(
@@ -2347,6 +2907,7 @@ public class LowestVolumeReversalService {
                             plannedRisk,
                             Instant.now());
             position.setBrokerTradingSymbol(brokerTradingSymbol);
+            position.setExpiryDate(contractExpiry);
 
             LowestVolumePaperPosition existing = openPositions.putIfAbsent(symbol, position);
             if (existing != null) {
@@ -3206,6 +3767,10 @@ public class LowestVolumeReversalService {
         openPositions.clear();
         exhaustedSymbols.clear();
         candidateReservoir.clear();
+        // F&O ban list is session-scoped: re-fetched pre-market each morning.
+        bannedSymbols.clear();
+        banListFetchedDate = null;
+        banListUnavailable = false;
         // Day-scoped gate/alert state must not survive into the next session: gateRetryCounts is
         // a consecutive-failure streak, and carrying it over made a symbol that had a rough Monday
         // fail-closed on the first sector hiccup of Tuesday.
@@ -3266,6 +3831,7 @@ public class LowestVolumeReversalService {
             tradeHistory.clear();
             lastScanDate = null;
             niftyBullish = true;
+            symbolDirections.clear();
             dailyCircuitBreakerAlertSent.set(false);
             dailyCircuitBreakerTripped.set(false);
             todayLossCount.set(0);
@@ -3296,18 +3862,24 @@ public class LowestVolumeReversalService {
         long actionableCount = countActionableSetups();
 
         if (actionableCount < minActiveCandidates && !candidateReservoir.isEmpty()) {
-            LowestVolumeDirection dir =
-                    niftyBullish ? LowestVolumeDirection.LONG : LowestVolumeDirection.SHORT;
             List<String> promotedSymbols = new ArrayList<>();
+            Map<String, LowestVolumeDirection> promotedDirections = new java.util.LinkedHashMap<>();
 
             while (actionableCount < minActiveCandidates && !candidateReservoir.isEmpty()) {
                 String nextSymbol = candidateReservoir.remove(0);
                 if (!activeSetups.containsKey(nextSymbol)
-                        && !exhaustedSymbols.contains(nextSymbol)) {
+                        && !exhaustedSymbols.contains(nextSymbol)
+                        && !isExcludedFromUniverse(nextSymbol)) {
+                    // D5: a promoted symbol keeps the side chosen at selection. A two-sided
+                    // triangle pick stays NONE and is resolved when it actually arms.
+                    LowestVolumeDirection dir =
+                            symbolDirections.getOrDefault(nextSymbol, LowestVolumeDirection.NONE);
                     LowestVolumeSetup setup = new LowestVolumeSetup(nextSymbol, dir);
                     initPdhPdlForSetup(setup);
                     activeSetups.put(nextSymbol, setup);
+                    symbolDirections.put(nextSymbol, dir);
                     promotedSymbols.add(nextSymbol);
+                    promotedDirections.put(nextSymbol, dir);
                     actionableCount++;
                 }
             }
@@ -3331,7 +3903,7 @@ public class LowestVolumeReversalService {
                                             + " (%d)",
                                     promotedSymbols.size(),
                                     String.join(", ", promotedSymbols),
-                                    dir,
+                                    promotedDirections,
                                     activeSetups.size(),
                                     minActiveCandidates));
                 }
@@ -3452,6 +4024,7 @@ public class LowestVolumeReversalService {
                 for (String sym : candidates) {
                     if (!activeSetups.containsKey(sym)
                             && !exhaustedSymbols.contains(sym)
+                            && !isExcludedFromUniverse(sym)
                             && !candidateReservoir.contains(sym)) {
                         candidateReservoir.add(sym);
                     }
@@ -3809,8 +4382,15 @@ public class LowestVolumeReversalService {
 
         // 1. Attempt live option quote fetch first if option metadata is present
         if (pos.getAtmStrike() != null && pos.getOptionType() != null) {
+            // P3/§4.4: price the contract the position actually holds, not whatever the calendar
+            // resolves today — a month roll mid-hold must not reprice the position on a
+            // different series.
             double liveLtp =
-                    fetchOptionLtp(pos.getSymbol(), pos.getOptionType(), pos.getAtmStrike());
+                    fetchOptionLtp(
+                            pos.getSymbol(),
+                            pos.getOptionType(),
+                            pos.getAtmStrike(),
+                            pos.getExpiryDate());
             if (liveLtp > 0.0) {
                 return BigDecimal.valueOf(liveLtp).setScale(2, RoundingMode.HALF_UP);
             }
@@ -3862,6 +4442,23 @@ public class LowestVolumeReversalService {
     }
 
     public double fetchOptionLtp(String symbol, String optionType, BigDecimal strike) {
+        return fetchOptionLtp(symbol, optionType, strike, null);
+    }
+
+    /**
+     * Fetches the option premium for a specific contract.
+     *
+     * @param symbol underlying
+     * @param optionType "CE" or "PE"
+     * @param strike strike price
+     * @param expiry the contract's expiry; when {@code null} the current monthly series is resolved
+     *     from the clock (used by callers that have no persisted contract, e.g. entry before a
+     *     position exists)
+     * @return premium in rupees, or {@code 0.0} when the contract cannot be quoted (never a
+     *     fabricated price)
+     */
+    public double fetchOptionLtp(
+            String symbol, String optionType, BigDecimal strike, java.time.LocalDate expiry) {
         if (optionChainService != null) {
             try {
                 var chain = optionChainService.getIndexOptionChain(symbol, strike, 2, true);
@@ -3895,12 +4492,16 @@ public class LowestVolumeReversalService {
         // Fallback: Query direct option quote via formatted exchange trading symbol
         try {
             if (marketDataService != null) {
-                LocalDate expiry =
-                        StockFnoRegistry.calculateTargetExpiry(
-                                symbol, LocalDate.now(clock), false, 1);
+                // P3/§4.4: an explicit expiry (the contract a position already holds) wins over
+                // resolving today's series from the clock.
+                LocalDate targetExpiry =
+                        expiry != null
+                                ? expiry
+                                : StockFnoRegistry.calculateTargetExpiry(
+                                        symbol, LocalDate.now(clock), false, 1);
                 String tsym =
                         StockFnoRegistry.formatTradingSymbol(
-                                symbol, expiry, strike, optionType, false);
+                                symbol, targetExpiry, strike, optionType, false);
                 String tok = marketDataService.resolveToken(tsym);
                 if (tok == null || tok.isBlank()) {
                     // L5: never fall back to the underlying's equity token — that would fabricate
@@ -4209,6 +4810,51 @@ public class LowestVolumeReversalService {
     }
 
     /**
+     * Collects the live index level and the exchange previous close for the index-alignment gate
+     * (gate {@code INDEX_ALIGNMENT}). Pure data collection — the decision belongs to the gate.
+     *
+     * <p>Fail-OPEN by contract: any failure (disabled, unresolvable symbol, missing/zero fields,
+     * thrown error) leaves {@code indexSpot}/{@code indexPrevClose} {@code null}, which the gate
+     * skips. A quote outage therefore never blocks an entry.
+     *
+     * @param in gate input to populate in place
+     */
+    private void fillIndexAlignment(EntryGateInput in) {
+        in.indexAlignmentEnabled = indexAlignmentEnabled;
+        in.indexAlignmentBufferBps = indexAlignmentBufferBps;
+        if (!indexAlignmentEnabled
+                || indexAlignmentSymbol == null
+                || indexAlignmentSymbol.isBlank()) {
+            return;
+        }
+        try {
+            // "NIFTY 50" resolves to NSE token 26000; the live quote carries both the level (lp)
+            // and the exchange previous close (c), so a single fetch supplies both inputs.
+            StockQuoteSnapshot snap =
+                    fetchSnapshotsFor(List.of(indexAlignmentSymbol)).get(indexAlignmentSymbol);
+            if (snap != null && snap.ltp() > 0.0 && snap.prevClose() > 0.0) {
+                in.indexSpot = snap.ltp();
+                in.indexPrevClose = snap.prevClose();
+                return;
+            }
+            log.warn(
+                    "[LVR] [INDEX-ALIGNMENT] Incomplete quote for {} (ltp={}, prevClose={}) —"
+                            + " skipping the gate for this trigger (fail-open).",
+                    indexAlignmentSymbol,
+                    snap == null ? "n/a" : String.format(BotLocale.INSTANCE, "%.2f", snap.ltp()),
+                    snap == null
+                            ? "n/a"
+                            : String.format(BotLocale.INSTANCE, "%.2f", snap.prevClose()));
+        } catch (Exception e) {
+            log.warn(
+                    "[LVR] [INDEX-ALIGNMENT] Quote failed for {}: {} — skipping the gate for this"
+                            + " trigger (fail-open).",
+                    indexAlignmentSymbol,
+                    e.getMessage());
+        }
+    }
+
+    /**
      * L6: inputs for the shared entry gate. Fields left {@code null} (or {@code maxSlippagePct <
      * 0}) are NOT evaluated — the live trigger path leaves session-level gates to the outer loop of
      * {@code evaluateLivePriceActions} and to {@link #executePositionEntry}, while {@link
@@ -4264,6 +4910,57 @@ public class LowestVolumeReversalService {
         public Boolean hasRegistryEntry;
         public BigDecimal plannedRisk;
         public Double remainingBudget;
+
+        // ---- F&O ban-period hard block (gate BAN_PERIOD; NCL/CMPT/70085) ----
+
+        /** Master switch; {@code false} (kill switch or log-only validation) skips the gate. */
+        public Boolean banPeriodEnabled;
+
+        /** Symbol is in today's NSE F&O ban list. Consulted only when the gate is enabled. */
+        public Boolean symbolBanned;
+
+        /** Today's ban list could not be fetched or was unrecognisable. */
+        public Boolean banListUnavailable;
+
+        /** Policy for an unavailable list: {@code true} defers entries, {@code false} trades. */
+        public Boolean banPeriodFailClosed;
+
+        // ---- Expiry / DTE session gate (gate EXPIRY_DTE) ----
+
+        /** Master switch; {@code false} or a floor of {@code <= 0} skips the gate. */
+        public Boolean expiryDteEnabled;
+
+        /** Instrument being entered — selects the OPTIONS vs FUTURES DTE floor. */
+        public LvrInstrumentType instrumentType;
+
+        /** Trading sessions left in the current monthly series ({@code 0} on expiry day). */
+        public Integer optionDteSessions;
+
+        /** True when today is the monthly expiry session of the current series. */
+        public Boolean expiryDayToday;
+
+        /** Fresh-entry floor for OPTIONS, in trading sessions. */
+        public Integer optionMinDteSessions;
+
+        /** Fresh-entry floor for FUTURES, in trading sessions ({@code 0} = legacy behaviour). */
+        public Integer futuresMinDteSessions;
+
+        // ---- Index-alignment regime gate (gate INDEX_ALIGNMENT) ----
+
+        /**
+         * Master switch. Consulted only alongside a live index read: a {@code null}/{@code false}
+         * switch, or a missing index level, skips the gate (fail-open).
+         */
+        public Boolean indexAlignmentEnabled;
+
+        /** Live index level at trigger time. {@code null} = unavailable → fail-open. */
+        public Double indexSpot;
+
+        /** Exchange previous close of the index. {@code null} or {@code <= 0} → fail-open. */
+        public Double indexPrevClose;
+
+        /** Dead-band in basis points the index must clear the previous close by. Clamped at 0. */
+        public double indexAlignmentBufferBps;
     }
 
     private static EntryGateDecision deny(
@@ -4275,10 +4972,50 @@ public class LowestVolumeReversalService {
      * L6: THE single pre-entry decision. Pure and stateless — the live trigger path and {@link
      * #replaySession} both evaluate this exact function, so a gate can never pass live and fail
      * replay (or vice versa) for identical inputs. Evaluation order mirrors the live chain:
-     * slippage → VWAP → 15m range → PDH/PDL → stand-down → breaker → cutoff → attempts →
-     * concurrency → registry → budget.
+     * ban-period → slippage → index-alignment → VWAP → 15m range → PDH/PDL → stand-down → breaker →
+     * cutoff → expiry/DTE → attempts → concurrency → registry → budget.
+     *
+     * <p>Note on index-alignment: the live path collects the index level at the moment the trigger
+     * is touched. A replay harness has no live index quote, so it leaves those fields {@code null}
+     * and the gate is skipped there — the same mechanism ({@code null} = not evaluated) every other
+     * optional input already uses, and never a divergence in the other direction.
      */
     public static EntryGateDecision evaluateEntryGate(EntryGateInput in) {
+        // 0. F&O ban-period hard block (NCL/CMPT/70085; SEBI/HO/MRD/TPD-1/P/CIR/2025/79).
+        //
+        // Evaluated FIRST, ahead of the price chain: ban status is an absolute regulatory block,
+        // independent of price, so a symbol that can never be traded today must not burn a 60s
+        // slippage cooldown before being rejected. During ban, every trade must reduce the
+        // entity's end-of-day Futures-equivalent OI — LVR's long option/futures entries always
+        // increase it, so there is no compliant way to enter.
+        if (Boolean.TRUE.equals(in.banPeriodEnabled)) {
+            if (Boolean.TRUE.equals(in.symbolBanned)) {
+                return deny(
+                        EntryGateDisposition.EXHAUST,
+                        "BAN_PERIOD",
+                        in.symbol
+                                + " is in the NSE F&O ban period — only risk-reducing trades are"
+                                + " permitted, so no fresh LVR entry (discarded for the day)");
+            }
+            if (Boolean.TRUE.equals(in.banListUnavailable)) {
+                if (Boolean.TRUE.equals(in.banPeriodFailClosed)) {
+                    // Transient by nature: RETRY, never EXHAUST. A failed fetch must not
+                    // permanently discard symbols for the day, and runNseBanListFetch already
+                    // emitted the WARN plus the degraded-fetch Telegram alert.
+                    return deny(
+                            EntryGateDisposition.RETRY,
+                            "BAN_PERIOD",
+                            "F&O ban list unavailable and ban-period-fail-closed=true — deferring"
+                                    + " fresh entries until the list can be fetched");
+                }
+                // Fail-open (default): a network blip must not shut the strategy down. The
+                // degraded-fetch alert was already raised once at fetch time, not per tick.
+                log.warn(
+                        "[LVR] [NSE-BAN] Ban list unavailable — proceeding unfiltered"
+                                + " (ban-period-fail-closed=false).");
+            }
+        }
+
         // 1. Slippage band (price-data dependent → cooldown retry).
         if (in.maxSlippagePct > 0
                 && in.triggerPrice != null
@@ -4311,6 +5048,51 @@ public class LowestVolumeReversalService {
                                 String.format(BotLocale.INSTANCE, "%.2f", in.maxSlippagePct),
                                 in.triggerPrice,
                                 band));
+            }
+        }
+
+        // 1b. Index-alignment regime gate.
+        //
+        // A LONG requires the index to be above its previous close by the dead-band, a SHORT below
+        // it by the same. This closes the gap where a watchlist was fixed on a morning read but the
+        // index has since reversed: every stock-level confirmation below (VWAP, 15m, PDH) can be
+        // satisfied while the broader market has already turned against the trade — which is
+        // exactly the "NIFTY reverses after 10am and the opportunity is missed" failure.
+        //
+        // The reference is the exchange PREVIOUS CLOSE rather than an intraday anchor (a 09:25
+        // print, VWAP): it is stationary, computed once, never ambiguous, and is the conventional
+        // risk-on/risk-off read. The buffer is a dead-band — without it a sub-0.05% wobble around
+        // the reference would flip-flop and randomly veto valid breakouts.
+        //
+        // Fail-OPEN, deliberately: a missing index quote must never block trading, mirroring the
+        // ban-list policy (a data outage stops nothing). The denial is RETRY_COOLDOWN, not EXHAUST,
+        // for the same reason as every price-relative check below — the index crosses its previous
+        // close routinely, so "wrong side at this tick" is not grounds to discard the symbol.
+        if (Boolean.TRUE.equals(in.indexAlignmentEnabled)
+                && in.direction != null
+                && in.indexSpot != null
+                && in.indexSpot > 0.0
+                && in.indexPrevClose != null
+                && in.indexPrevClose > 0.0) {
+            double bufferBps = Math.max(0.0, in.indexAlignmentBufferBps);
+            double moveBps = ((in.indexSpot - in.indexPrevClose) / in.indexPrevClose) * 10_000.0;
+            boolean aligned =
+                    in.direction == LowestVolumeDirection.LONG
+                            ? moveBps >= bufferBps
+                            : moveBps <= -bufferBps;
+            if (!aligned) {
+                return deny(
+                        EntryGateDisposition.RETRY_COOLDOWN,
+                        "INDEX_ALIGNMENT",
+                        String.format(
+                                BotLocale.INSTANCE,
+                                "index at %.2f is %+.2f bps vs previous close %.2f — not aligned"
+                                        + " with %s (buffer %.2f bps, re-checking after cooldown)",
+                                in.indexSpot,
+                                moveBps,
+                                in.indexPrevClose,
+                                in.direction,
+                                bufferBps));
             }
         }
 
@@ -4601,7 +5383,54 @@ public class LowestVolumeReversalService {
                     "entry cutoff " + in.entryCutoff + " reached (now " + in.nowTime + ")");
         }
 
-        // 8. Per-symbol attempt budget.
+        // 8. Expiry / DTE for a fresh entry in the current monthly series.
+        //
+        // Session-static (a series' DTE cannot improve intraday), so a breach is EXHAUST — the
+        // same reasoning as BAN_PERIOD and REGISTRY. Measured in trading sessions, so weekends and
+        // holiday-rolled expiries need no special case. A floor of 0 (the FUTURES default) keeps
+        // the legacy behaviour: this gate is inert for the currently-configured live strategy.
+        if (Boolean.TRUE.equals(in.expiryDteEnabled) && in.instrumentType != null) {
+            int minDte =
+                    in.instrumentType == LvrInstrumentType.FUTURES
+                            ? (in.futuresMinDteSessions != null ? in.futuresMinDteSessions : 0)
+                            : (in.optionMinDteSessions != null ? in.optionMinDteSessions : 0);
+            if (minDte > 0) {
+                if (Boolean.TRUE.equals(in.expiryDayToday)) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "EXPIRY_DTE",
+                            in.symbol
+                                    + " — monthly expiry session; no fresh entry on expiry day"
+                                    + " (discarded for the day)");
+                }
+                if (in.optionDteSessions == null) {
+                    // The series could not be resolved for this symbol, so its contract cannot be
+                    // traded (the exact failure mode that made an unresolvable option series skip
+                    // entries silently). Permanent for the day → EXHAUST, like REGISTRY, and loud.
+                    log.warn(
+                            "[LVR] Series DTE unavailable for {} with the expiry/DTE gate active —"
+                                    + " failing closed (discarded for the day).",
+                            in.symbol);
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "EXPIRY_DTE",
+                            "current series DTE unknown for " + in.symbol + " (fail-closed)");
+                }
+                if (in.optionDteSessions < minDte) {
+                    return deny(
+                            EntryGateDisposition.EXHAUST,
+                            "EXPIRY_DTE",
+                            "only "
+                                    + in.optionDteSessions
+                                    + " trading session(s) left in the current monthly series"
+                                    + " (minimum "
+                                    + minDte
+                                    + ") — discarded for the day");
+                }
+            }
+        }
+
+        // 9. Per-symbol attempt budget.
         if (in.tradeAttempts != null
                 && in.maxAttempts != null
                 && in.tradeAttempts >= in.maxAttempts) {
@@ -4611,7 +5440,7 @@ public class LowestVolumeReversalService {
                     "max " + in.maxAttempts + " attempt(s) already used");
         }
 
-        // 9. Max concurrent trades.
+        // 10. Max concurrent trades.
         if (in.openConcurrent != null
                 && in.maxConcurrent != null
                 && in.openConcurrent >= in.maxConcurrent) {
@@ -4621,7 +5450,7 @@ public class LowestVolumeReversalService {
                     "max concurrent trades (" + in.maxConcurrent + ") reached");
         }
 
-        // 10. F&O registry (static for the day — a miss is permanent → exhaust).
+        // 11. F&O registry (static for the day — a miss is permanent → exhaust).
         if (Boolean.FALSE.equals(in.hasRegistryEntry)) {
             return deny(
                     EntryGateDisposition.EXHAUST,
@@ -4629,7 +5458,7 @@ public class LowestVolumeReversalService {
                     "F&O registry miss for " + in.symbol + " — lot size/strike step unknown");
         }
 
-        // 11. M2 pre-trade daily budget.
+        // 12. M2 pre-trade daily budget.
         if (in.plannedRisk != null
                 && in.remainingBudget != null
                 && in.plannedRisk.doubleValue() > in.remainingBudget) {
@@ -4926,6 +5755,71 @@ public class LowestVolumeReversalService {
     }
 
     /**
+     * Injects the NSE F&O ban-period client. Spring wires this via
+     * {@code @Autowired(required=false)} so a missing bean leaves the ban gate inert; tests inject
+     * a mock here.
+     *
+     * @param nseBanPeriodClient client used for the pre-market ban-list fetch
+     */
+    @Autowired(required = false)
+    public void setNseBanPeriodClient(
+            com.tradingbot.marketdata.NseBanPeriodClient nseBanPeriodClient) {
+        this.nseBanPeriodClient = nseBanPeriodClient;
+    }
+
+    /**
+     * @param banPeriodLogOnly true to report the ban list without excluding any symbol
+     */
+    public void setBanPeriodLogOnly(boolean banPeriodLogOnly) {
+        this.banPeriodLogOnly = banPeriodLogOnly;
+    }
+
+    /**
+     * @param banPeriodFailClosed true to block fresh entries while the ban list is unavailable
+     */
+    public void setBanPeriodFailClosed(boolean banPeriodFailClosed) {
+        this.banPeriodFailClosed = banPeriodFailClosed;
+    }
+
+    /**
+     * @param expiryDteEnabled true to enable the {@code EXPIRY_DTE} gate and its OPTIONS universe
+     *     exclusion
+     */
+    public void setExpiryDteEnabled(boolean expiryDteEnabled) {
+        this.expiryDteEnabled = expiryDteEnabled;
+    }
+
+    /**
+     * @param optionMinDteSessions trading sessions before monthly expiry at which a fresh OPTIONS
+     *     entry is barred; {@code 0} restores the legacy behaviour
+     */
+    public void setOptionMinDteSessions(int optionMinDteSessions) {
+        this.optionMinDteSessions = optionMinDteSessions;
+    }
+
+    /**
+     * @param futuresMinDteSessions trading sessions before monthly expiry at which a fresh FUTURES
+     *     entry is barred; {@code 0} keeps the live behaviour unchanged
+     */
+    public void setFuturesMinDteSessions(int futuresMinDteSessions) {
+        this.futuresMinDteSessions = futuresMinDteSessions;
+    }
+
+    /**
+     * @return symbols currently in the NSE F&O ban period (live view, never null)
+     */
+    public Set<String> getBannedSymbols() {
+        return java.util.Collections.unmodifiableSet(bannedSymbols);
+    }
+
+    /**
+     * @return true when today's ban list could not be fetched or was unrecognisable
+     */
+    public boolean isBanListUnavailable() {
+        return banListUnavailable;
+    }
+
+    /**
      * @return whether the 09:25 NSE OI spurts fetch/merge is enabled
      */
     public boolean isNseOiEnabled() {
@@ -4939,6 +5833,36 @@ public class LowestVolumeReversalService {
      */
     public void setNseOiEnabled(boolean nseOiEnabled) {
         this.nseOiEnabled = nseOiEnabled;
+    }
+
+    /**
+     * @return true when NIFTY breadth still drives a one-directional watchlist and a mixed reading
+     *     stands the day down; false for two-sided selection (default)
+     */
+    public boolean isNiftyBiasEnabled() {
+        return niftyBiasEnabled;
+    }
+
+    /**
+     * Enables/disables the legacy NIFTY-biased selection (tuning/test hook).
+     *
+     * @param niftyBiasEnabled true to restore one-directional selection + breadth stand-down
+     */
+    public void setNiftyBiasEnabled(boolean niftyBiasEnabled) {
+        this.niftyBiasEnabled = niftyBiasEnabled;
+    }
+
+    /**
+     * Sets the two-sided selection tuning (tuning/test hook).
+     *
+     * @param bullishSectors how many strongest sectors contribute LONG candidates
+     * @param bearishSectors how many weakest sectors contribute SHORT candidates
+     * @param stocksPerSector how many stocks are drawn from each selected sector
+     */
+    public void setSelectionTuning(int bullishSectors, int bearishSectors, int stocksPerSector) {
+        this.bullishSectors = bullishSectors;
+        this.bearishSectors = bearishSectors;
+        this.stocksPerSector = stocksPerSector;
     }
 
     /**
@@ -4987,39 +5911,7 @@ public class LowestVolumeReversalService {
     public void initPdhPdlForSetup(LowestVolumeSetup setup) {
         if (setup == null) return;
         try {
-            LocalDate today = LocalDate.now(clock);
-            List<Candle> dailyCandles = null;
-
-            // 1. Primary source: in-memory / SQLite cached daily candles from
-            // HistoricalOhlcCacheService
-            if (ohlcCacheService != null) {
-                try {
-                    dailyCandles = ohlcCacheService.getDailyCandles(setup.getSymbol());
-                } catch (Exception e) {
-                    log.warn(
-                            "[LVR] Failed to fetch daily candles from OHLC cache for {}: {}",
-                            setup.getSymbol(),
-                            e.getMessage(),
-                            e);
-                }
-            }
-
-            List<Candle> pastDaily = filterPastDailyCandles(dailyCandles, today);
-
-            // 2. Fallback: ShoonyaMarketDataService if OHLC cache is unavailable or has no valid
-            // past daily candles
-            if (pastDaily.isEmpty() && marketDataService != null) {
-                try {
-                    dailyCandles = marketDataService.fetchDailyCandles(setup.getSymbol(), 5);
-                    pastDaily = filterPastDailyCandles(dailyCandles, today);
-                } catch (Exception e) {
-                    log.warn(
-                            "[LVR] Failed to fetch daily candles from Shoonya for {}: {}",
-                            setup.getSymbol(),
-                            e.getMessage(),
-                            e);
-                }
-            }
+            List<Candle> pastDaily = fetchPastDailyCandles(setup.getSymbol());
 
             if (!pastDaily.isEmpty()) {
                 Candle prevDay = pastDaily.get(pastDaily.size() - 1);
@@ -5042,6 +5934,132 @@ public class LowestVolumeReversalService {
                     e.getMessage(),
                     e);
         }
+    }
+
+    /**
+     * Resolves the last <b>completed</b> daily bars for a symbol, oldest first.
+     *
+     * <p>Source order matches the PDH/PDL path: the OHLC cache first (in-memory / SQLite, no
+     * network) and {@code ShoonyaMarketDataService} as the fallback. Today's in-progress bar is
+     * always stripped, so the final element is yesterday — which is what makes this the shared
+     * entry point for both PDH/PDL and the 3-day triangle scan (design §4.2).
+     *
+     * @param symbol trading symbol
+     * @return completed daily bars ascending; never null, empty when unresolvable
+     */
+    private List<Candle> fetchPastDailyCandles(String symbol) {
+        LocalDate today = LocalDate.now(clock);
+        List<Candle> dailyCandles = null;
+
+        // 1. Primary source: in-memory / SQLite cached daily candles from
+        // HistoricalOhlcCacheService
+        if (ohlcCacheService != null) {
+            try {
+                dailyCandles = ohlcCacheService.getDailyCandles(symbol);
+            } catch (Exception e) {
+                log.warn(
+                        "[LVR] Failed to fetch daily candles from OHLC cache for {}: {}",
+                        symbol,
+                        e.getMessage(),
+                        e);
+            }
+        }
+
+        List<Candle> pastDaily = filterPastDailyCandles(dailyCandles, today);
+
+        // 2. Fallback: ShoonyaMarketDataService if OHLC cache is unavailable or has no valid
+        // past daily candles
+        if (pastDaily.isEmpty() && marketDataService != null) {
+            try {
+                dailyCandles = marketDataService.fetchDailyCandles(symbol, 5);
+                pastDaily = filterPastDailyCandles(dailyCandles, today);
+            } catch (Exception e) {
+                log.warn(
+                        "[LVR] Failed to fetch daily candles from Shoonya for {}: {}",
+                        symbol,
+                        e.getMessage(),
+                        e);
+            }
+        }
+
+        return pastDaily;
+    }
+
+    /**
+     * Adds one sector's candidates to the two-sided pick map, direction-scoped (design §3). A
+     * symbol already picked by another sector keeps its first direction so a stock can never sit on
+     * both sides of the book.
+     *
+     * @param sector ranked sector to draw from; may be null (no-op)
+     * @param sectorQuotes quotes grouped by sectoral index
+     * @param direction side this sector contributes, {@code LONG} or {@code SHORT}
+     * @param picks accumulator of symbol to direction
+     */
+    private void addSectorPicks(
+            LowestVolumeReversalScanner.SectorRankResult sector,
+            Map<String, List<StockQuoteSnapshot>> sectorQuotes,
+            LowestVolumeDirection direction,
+            Map<String, LowestVolumeDirection> picks) {
+        if (sector == null) {
+            return;
+        }
+        List<StockQuoteSnapshot> sQuotes =
+                sectorQuotes.getOrDefault(sector.sectorName(), Collections.emptyList());
+        for (String symbol : scanner.filterCandidateStocks(sQuotes, direction, stocksPerSector)) {
+            picks.putIfAbsent(symbol, direction);
+        }
+    }
+
+    /**
+     * Runs the 3-day triangle scan (design §4) across the morning universe and returns the
+     * qualifying symbols, tightest squeeze first and capped at {@link #triangleMaxCandidates}.
+     *
+     * <p>A symbol whose daily bars cannot be resolved is skipped here only — it stays eligible
+     * through the sector channel, so a data gap can never empty the watchlist.
+     *
+     * @param universeQuotes every sectoral constituent carrying a live quote
+     * @return triangle-detected symbols in rank order
+     */
+    private List<String> rankTriangleCandidates(Map<String, StockQuoteSnapshot> universeQuotes) {
+        if (universeQuotes == null
+                || universeQuotes.isEmpty()
+                || triangleMaxCandidates <= 0
+                || scanner == null) {
+            return Collections.emptyList();
+        }
+
+        Map<String, Double> squeezeScores = new java.util.LinkedHashMap<>();
+        for (String symbol : universeQuotes.keySet()) {
+            if (isExcludedFromUniverse(symbol) || exhaustedSymbols.contains(symbol)) {
+                continue;
+            }
+            List<Candle> pastDaily = fetchPastDailyCandles(symbol);
+            if (!LowestVolumeReversalScanner.isTrianglePattern(pastDaily)) {
+                continue;
+            }
+            double ratio = LowestVolumeReversalScanner.squeezeRatio(pastDaily);
+            squeezeScores.put(symbol, Double.isNaN(ratio) ? Double.MAX_VALUE : ratio);
+        }
+
+        List<String> ranked =
+                squeezeScores.entrySet().stream()
+                        .sorted(
+                                java.util.Map.Entry.<String, Double>comparingByValue()
+                                        .thenComparing(java.util.Map.Entry.comparingByKey()))
+                        .limit(triangleMaxCandidates)
+                        .map(java.util.Map.Entry::getKey)
+                        .toList();
+
+        if (!ranked.isEmpty()) {
+            log.info(
+                    "[LVR] Triangle scan: {} of {} universe symbols matched; taking {} (tightest"
+                            + " squeeze first): {}",
+                    squeezeScores.size(),
+                    universeQuotes.size(),
+                    ranked.size(),
+                    ranked);
+        }
+        return ranked;
     }
 
     private List<Candle> filterPastDailyCandles(List<Candle> dailyCandles, LocalDate today) {
@@ -5654,6 +6672,12 @@ public class LowestVolumeReversalService {
                     // slippage, VWAP, 15m range, PDH/PDL, stand-down, breaker, cutoff,
                     // attempts, concurrency, registry and M2 budget can never diverge between
                     // live and replay for identical inputs.
+                    //
+                    // INDEX_ALIGNMENT is deliberately NOT populated here: this harness is handed
+                    // one stock's session candles and has no index series, so its fields stay null
+                    // and the gate is skipped (the standard "null = not evaluated" mechanism).
+                    // See evaluateEntryGate's javadoc; the gate's own logic is covered by direct
+                    // unit tests on the shared function.
                     EntryGateInput gateInput = new EntryGateInput();
                     gateInput.symbol = symbol;
                     gateInput.direction = direction;
@@ -5692,6 +6716,21 @@ public class LowestVolumeReversalService {
                     gateInput.optionResistanceStrike = activeSetup.getOptionResistanceStrike();
                     gateInput.optionSupportStrike = activeSetup.getOptionSupportStrike();
                     gateInput.optionSrBufferPct = optionSrBufferPct;
+                    // P2/P3: populate identically to the live builder in checkSpotTriggerBreach —
+                    // same fields, same readDte() source, so the ban and expiry/DTE gates cannot
+                    // diverge between live and replay for identical inputs.
+                    gateInput.banPeriodEnabled = banPeriodEnabled && banPeriodEnforced();
+                    gateInput.symbolBanned = bannedSymbols.contains(symbol);
+                    gateInput.banListUnavailable = banListUnavailable;
+                    gateInput.banPeriodFailClosed = banPeriodFailClosed;
+                    DteReading replayDte = readDte(symbol);
+                    gateInput.expiryDteEnabled = expiryDteEnabled;
+                    gateInput.instrumentType = instrumentType;
+                    gateInput.optionDteSessions =
+                            replayDte.expiry() != null ? replayDte.sessions() : null;
+                    gateInput.expiryDayToday = replayDte.expiryToday();
+                    gateInput.optionMinDteSessions = optionMinDteSessions;
+                    gateInput.futuresMinDteSessions = futuresMinDteSessions;
                     gateInput.standDown = standDownToday;
                     gateInput.breakerTripped = dailyCircuitBreakerTripped.get();
                     gateInput.nowTime = candleTime;
@@ -5883,6 +6922,15 @@ public class LowestVolumeReversalService {
                 }
             }
             return StockFnoRegistry.formatFuturesTradingSymbol(pos.getSymbol(), null);
+        } else if (pos.getExpiryDate() != null && pos.getAtmStrike() != null) {
+            // P3/§4.4: reuse the contract fixed at entry rather than re-resolving today's series,
+            // so a month roll mid-hold cannot silently repoint the exit at a different contract.
+            return StockFnoRegistry.formatTradingSymbol(
+                    pos.getSymbol(),
+                    pos.getExpiryDate(),
+                    pos.getAtmStrike(),
+                    pos.getOptionType(),
+                    false);
         } else if (pos.getAtmStrike() != null) {
             return StockFnoRegistry.formatTradingSymbol(
                     pos.getSymbol(), null, pos.getAtmStrike(), pos.getOptionType(), false);

@@ -154,6 +154,74 @@ class LvrStateStoreTest {
         }
     }
 
+    @Test
+    @DisplayName("P3/§4.4: the entry contract survives a disk snapshot round trip")
+    void testEntryContractSurvivesSnapshotRoundTrip() throws Exception {
+        LowestVolumePaperPosition pos = optionsPosition();
+        pos.setBrokerTradingSymbol("RELIANCE27OCT2500CE");
+        pos.setExpiryDate(java.time.LocalDate.of(2026, 10, 27));
+
+        LvrStateStore.DailyState state = new LvrStateStore.DailyState();
+        state.date = java.time.LocalDate.of(2026, 10, 13);
+        state.openPositions.add(LowestVolumePaperPosition.snapshotOf(pos));
+
+        Path file = tmpDir.resolve("lvr-state.json");
+        LvrStateStore.save(file, state);
+        LowestVolumePaperPosition restored =
+                LowestVolumePaperPosition.restoreFrom(
+                        LvrStateStore.load(file).openPositions.get(0));
+
+        // Without the persisted expiry a restart recomputed the series from the clock — the exact
+        // entry/exit mismatch §4.4 exists to prevent.
+        assertThat(restored.getInstrumentType()).isEqualTo(LvrInstrumentType.OPTIONS);
+        assertThat(restored.getBrokerTradingSymbol()).isEqualTo("RELIANCE27OCT2500CE");
+        assertThat(restored.getExpiryDate()).isEqualTo(java.time.LocalDate.of(2026, 10, 27));
+    }
+
+    @Test
+    @DisplayName("P3/§4.4: a pre-§4.4 snapshot still loads with a null expiry (legacy behaviour)")
+    void testPreDteSnapshotStillLoads() throws Exception {
+        LvrStateStore.DailyState state = new LvrStateStore.DailyState();
+        state.date = java.time.LocalDate.of(2026, 10, 13);
+        state.openPositions.add(LowestVolumePaperPosition.snapshotOf(optionsPosition()));
+
+        Path file = tmpDir.resolve("lvr-state.json");
+        LvrStateStore.save(file, state);
+        String json = Files.readString(file);
+        ObjectMapper plain = new ObjectMapper().registerModule(new JavaTimeModule());
+        var tree = (com.fasterxml.jackson.databind.node.ObjectNode) plain.readTree(json);
+        tree.remove("expiryDate");
+        tree.remove("brokerTradingSymbol");
+        Files.writeString(file, plain.writeValueAsString(tree));
+
+        LowestVolumePaperPosition restored =
+                LowestVolumePaperPosition.restoreFrom(
+                        LvrStateStore.load(file).openPositions.get(0));
+
+        assertThat(restored.getExpiryDate()).isNull();
+        assertThat(restored.getBrokerTradingSymbol()).isNull();
+    }
+
+    private static LowestVolumePaperPosition optionsPosition() {
+        return new LowestVolumePaperPosition(
+                "LVR-1",
+                "RELIANCE",
+                LvrExitMode.PARTIAL_1_2_TRAIL_COST_EOD_1500,
+                "CE",
+                "RELIANCE ATM 2500 CE",
+                BigDecimal.valueOf(2500),
+                250,
+                2,
+                LowestVolumeDirection.LONG,
+                BigDecimal.valueOf(45.50),
+                BigDecimal.valueOf(3000.00),
+                BigDecimal.valueOf(2980.00),
+                BigDecimal.valueOf(3040.00),
+                500,
+                BigDecimal.valueOf(5000.00),
+                Instant.now());
+    }
+
     private static LowestVolumePaperPosition openPosition() {
         return new LowestVolumePaperPosition(
                 "LVR-1",
