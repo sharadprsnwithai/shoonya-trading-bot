@@ -2,10 +2,12 @@ package com.tradingbot.strategy.fiftytwohigh.service;
 
 import com.tradingbot.marketdata.HistoricalOhlcCacheService;
 import com.tradingbot.model.Candle;
+import com.tradingbot.strategy.fiftytwohigh.BreakoutTradeSetupCalculator;
 import com.tradingbot.strategy.fiftytwohigh.FiftyTwoHighCalculator;
 import com.tradingbot.strategy.fiftytwohigh.FiftyTwoHighCalculator.Outcome;
 import com.tradingbot.strategy.fiftytwohigh.FiftyTwoHighCalculator.Status;
 import com.tradingbot.strategy.fiftytwohigh.config.FiftyTwoHighProperties;
+import com.tradingbot.strategy.fiftytwohigh.model.BreakoutTradeSetup;
 import com.tradingbot.strategy.fiftytwohigh.model.FiftyTwoHighBreakout;
 import com.tradingbot.strategy.fiftytwohigh.model.FiftyTwoHighReport;
 import com.tradingbot.strategy.fiftytwohigh.model.NiftyHaStatus;
@@ -51,6 +53,7 @@ public class FiftyTwoHighService {
 
     private final FiftyTwoHighProperties properties;
     private final FiftyTwoHighCalculator calculator;
+    private final BreakoutTradeSetupCalculator setupCalculator;
     private final HistoricalOhlcCacheService ohlcCache;
     private final TelegramService telegramService;
 
@@ -58,10 +61,12 @@ public class FiftyTwoHighService {
     public FiftyTwoHighService(
             FiftyTwoHighProperties properties,
             FiftyTwoHighCalculator calculator,
+            BreakoutTradeSetupCalculator setupCalculator,
             HistoricalOhlcCacheService ohlcCache,
             @Autowired(required = false) TelegramService telegramService) {
         this.properties = properties;
         this.calculator = calculator;
+        this.setupCalculator = setupCalculator;
         this.ohlcCache = ohlcCache;
         this.telegramService = telegramService;
     }
@@ -116,6 +121,7 @@ public class FiftyTwoHighService {
                         unavailable);
 
         NiftyHaStatus niftyHa = computeNiftyHaStatus();
+        List<BreakoutTradeSetup> tradeReadySetups = computeTradeReadySetups(breakouts);
 
         FiftyTwoHighReport report =
                 new FiftyTwoHighReport(
@@ -128,21 +134,41 @@ public class FiftyTwoHighService {
                         insufficient,
                         unavailable,
                         List.copyOf(breakouts),
+                        tradeReadySetups,
                         summary);
 
         log.info("[52WH] {}", report.summary());
         return report;
     }
 
-    /** Runs the scan and dispatches the Telegram summary when enabled. Returns the report. */
+    /**
+     * Runs the scan and — when the trade-setup filter is enabled — dispatches a Telegram alert
+     * <em>only</em> if at least one close-confirmed breakout cleared all five filters. The alert
+     * carries just those trade-ready setups (with the recommended spread strikes). When the filter
+     * is disabled, falls back to the legacy full-breakout summary.
+     *
+     * @return the aggregated report
+     */
     public FiftyTwoHighReport scanAndAlert() {
         FiftyTwoHighReport report = scan();
-        if (properties.isTelegramAlertsEnabled() && telegramService != null) {
-            try {
+        if (!properties.isTelegramAlertsEnabled() || telegramService == null) {
+            return report;
+        }
+        try {
+            if (properties.isTradeSetupEnabled()) {
+                List<BreakoutTradeSetup> setups = report.tradeReadySetups();
+                if (setups == null || setups.isEmpty()) {
+                    log.info(
+                            "[52WH] Trade-setup filter active but no breakout cleared all filters; "
+                                    + "suppressing Telegram alert.");
+                    return report;
+                }
+                telegramService.sendTextMessage(formatTradeReadyMessage(report));
+            } else {
                 telegramService.sendTextMessage(formatTelegramMessage(report));
-            } catch (Exception e) {
-                log.error("[52WH] Failed to dispatch Telegram report: {}", e.getMessage(), e);
             }
+        } catch (Exception e) {
+            log.error("[52WH] Failed to dispatch Telegram report: {}", e.getMessage(), e);
         }
         return report;
     }
@@ -231,12 +257,7 @@ public class FiftyTwoHighService {
      */
     private Outcome evaluateSymbol(String symbol) {
         try {
-            List<Candle> daily = ohlcCache.getDailyCandles(symbol);
-            if (isStale(daily)) {
-                ohlcCache.syncSymbol(symbol, Math.max(1, properties.getYearsBack()));
-                daily = ohlcCache.getDailyCandles(symbol);
-            }
-            daily = retainCompletedSessions(daily);
+            List<Candle> daily = getCompletedDaily(symbol);
             if (daily == null || daily.isEmpty()) {
                 return new Outcome(Status.NO_DATA, null, null);
             }
@@ -247,6 +268,63 @@ public class FiftyTwoHighService {
             log.warn("[52WH] Error evaluating {}: {}", symbol, e.getMessage());
             return new Outcome(Status.NO_DATA, null, null);
         }
+    }
+
+    /**
+     * Loads a symbol's daily candles, re-syncing first when the cached series is stale, then drops
+     * any in-progress (today) candle so the caller always sees the last fully completed session.
+     *
+     * @param symbol NSE symbol or index label (e.g. "NIFTY 50")
+     * @return completed-session daily candles; empty when unavailable
+     */
+    private List<Candle> getCompletedDaily(String symbol) {
+        try {
+            List<Candle> daily = ohlcCache.getDailyCandles(symbol);
+            if (isStale(daily)) {
+                ohlcCache.syncSymbol(symbol, Math.max(1, properties.getYearsBack()));
+                daily = ohlcCache.getDailyCandles(symbol);
+            }
+            return retainCompletedSessions(daily);
+        } catch (Exception e) {
+            log.warn("[52WH] Failed to load daily candles for {}: {}", symbol, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Scores each close-confirmed breakout against the five research filters and returns those that
+     * cleared all of them (strongest volume participation first). NIFTY 50 daily candles are read
+     * once and shared across symbols for the relative-strength and market-regime gates.
+     *
+     * @param breakouts the raw breakouts from the scan
+     * @return qualifying trade-ready setups (empty when disabled or nothing qualified)
+     */
+    private List<BreakoutTradeSetup> computeTradeReadySetups(List<FiftyTwoHighBreakout> breakouts) {
+        if (!properties.isTradeSetupEnabled() || breakouts == null || breakouts.isEmpty()) {
+            return List.of();
+        }
+        List<Candle> niftyDaily = getCompletedDaily(NIFTY_50);
+        List<BreakoutTradeSetup> setups = new ArrayList<>();
+        for (FiftyTwoHighBreakout b : breakouts) {
+            if (!b.closeConfirmed()) {
+                continue; // the filter only qualifies close-confirmed crosses
+            }
+            List<Candle> daily = getCompletedDaily(b.symbol());
+            if (daily == null || daily.isEmpty()) {
+                continue;
+            }
+            BreakoutTradeSetup setup =
+                    setupCalculator.evaluate(b.symbol(), daily, niftyDaily, b.lotSize());
+            if (setup != null && setup.tradeReady()) {
+                setups.add(setup);
+            }
+        }
+        setups.sort(
+                Comparator.comparing(
+                                BreakoutTradeSetup::volumeRatio,
+                                Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(BreakoutTradeSetup::symbol));
+        return List.copyOf(setups);
     }
 
     /**
@@ -380,6 +458,26 @@ public class FiftyTwoHighService {
                 .append(report.dataUnavailableCount())
                 .append("\n\n");
 
+        List<BreakoutTradeSetup> setups =
+                report.tradeReadySetups() != null ? report.tradeReadySetups() : List.of();
+        sb.append("🎯 *Trade-ready (all filters):* ").append(setups.size()).append("\n");
+        for (BreakoutTradeSetup s : setups) {
+            sb.append(" 🔸 *")
+                    .append(s.symbol())
+                    .append("* — BUY ₹")
+                    .append(s.buyStrike())
+                    .append("C / SELL ₹")
+                    .append(s.sellStrike())
+                    .append("C  (vol ")
+                    .append(s.volumeRatio())
+                    .append("×, 20d ")
+                    .append(s.momentum20dPct())
+                    .append("%, RS ")
+                    .append(s.relativeStrengthPct())
+                    .append("%)\n");
+        }
+        sb.append("\n");
+
         if (report.breakouts().isEmpty()) {
             sb.append("_No F&O equity crossed its 52-week high on the latest daily candle._\n");
             return sb.toString();
@@ -419,6 +517,86 @@ public class FiftyTwoHighService {
         int remaining = report.breakouts().size() - shown;
         if (remaining > 0) {
             sb.append("_…and ").append(remaining).append(" more (see REST report)._");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Formats the 09:25 Telegram alert: only the trade-ready setups that cleared all five filters,
+     * each with its recommended bull-call-spread strikes. Carries an experimental disclaimer since
+     * the filter encodes in-sample research.
+     *
+     * @param report the scan report (its {@code tradeReadySetups} drive the message)
+     * @return a crisp Markdown Telegram message
+     */
+    public String formatTradeReadyMessage(FiftyTwoHighReport report) {
+        List<BreakoutTradeSetup> setups =
+                report.tradeReadySetups() != null ? report.tradeReadySetups() : List.of();
+        StringBuilder sb = new StringBuilder();
+        sb.append("🎯 *52-WEEK HIGH · TRADE-READY SETUPS* (NSE F&O)\n");
+        sb.append("📅 `")
+                .append(report.evaluatedSession() != null ? report.evaluatedSession() : "n/a")
+                .append("` • *")
+                .append(setups.size())
+                .append("* passed all filters\n");
+
+        NiftyHaStatus ha = report.niftyHa();
+        if (ha != null) {
+            String emoji =
+                    switch (ha.color()) {
+                        case GREEN -> "🟩";
+                        case RED -> "🟥";
+                        case FLAT -> "⬜";
+                    };
+            sb.append(emoji).append(" NIFTY 50 HA: *").append(ha.color()).append("*");
+            if (ha.streak() > 0) {
+                sb.append(" • ").append(ha.streak()).append("-bar");
+            }
+            sb.append("\n");
+        }
+        sb.append("\n");
+
+        int limit = Math.max(1, properties.getTelegramMaxSymbols());
+        int shown = 0;
+        for (BreakoutTradeSetup s : setups) {
+            if (shown >= limit) {
+                break;
+            }
+            sb.append("🔸 *")
+                    .append(s.symbol())
+                    .append("*  · Lot ")
+                    .append(s.lotSize())
+                    .append("\n");
+            sb.append(" • Spot ₹")
+                    .append(s.spotRef())
+                    .append(" • Vol ")
+                    .append(s.volumeRatio())
+                    .append("× 20d avg")
+                    .append(" • 20d ")
+                    .append(s.momentum20dPct())
+                    .append("%")
+                    .append(" • RS ")
+                    .append(s.relativeStrengthPct())
+                    .append("%\n");
+            sb.append(" • 📦 BUY ₹")
+                    .append(s.buyStrike())
+                    .append("C / SELL ₹")
+                    .append(s.sellStrike())
+                    .append("C  (ATM+")
+                    .append(properties.getTradeSetupLongStrikeOffset())
+                    .append(" / ATM+")
+                    .append(properties.getTradeSetupShortStrikeOffset())
+                    .append(", near-monthly)\n");
+            sb.append(" • Structure: hold-to-expiry · risk = debit · target = spread width\n\n");
+            shown++;
+        }
+
+        int remaining = setups.size() - shown;
+        if (remaining > 0) {
+            sb.append("_…and ").append(remaining).append(" more (see REST report)._");
+        } else {
+            sb.append(
+                    "_Experimental research signal (in-sample). Paper-trade & validate before sizing._");
         }
         return sb.toString();
     }

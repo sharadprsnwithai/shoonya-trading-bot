@@ -71,6 +71,36 @@ public class FiftyTwoHighProperties {
     /** How many breakouts a Telegram message lists before truncating (REST always returns all). */
     private int telegramMaxSymbols = 15;
 
+    /**
+     * Master switch for the experimental "trade-ready setup" filter layered on top of the raw
+     * breakout scan. When enabled, breakouts are scored against the five research filters (volume
+     * participation, 200-DMA trend, 20d momentum, relative strength vs NIFTY, NIFTY regime) and
+     * only those clearing <em>all</em> are surfaced as trade-ready setups — the 09:25 Telegram
+     * alert is then gated to fire only when at least one setup qualifies, carrying the recommended
+     * spread strikes.
+     *
+     * <p>In-sample research signal. Validate (paper-trade) before sizing.
+     */
+    private boolean tradeSetupEnabled = true;
+
+    /**
+     * Minimum breakout-session volume, as a multiple of its 20-session average, to count as genuine
+     * participation. Backtested default: 1.3.
+     */
+    private double tradeSetupMinVolumeRatio = 1.3;
+
+    /**
+     * Strikes above ATM for the <em>long</em> leg of the recommended bull-call debit spread (e.g. 4
+     * → buy ATM+4).
+     */
+    private int tradeSetupLongStrikeOffset = 4;
+
+    /**
+     * Strikes above ATM for the <em>short</em> leg of the recommended bull-call debit spread (e.g.
+     * 8 → sell ATM+8). Always forced above the long offset.
+     */
+    private int tradeSetupShortStrikeOffset = 8;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -165,5 +195,37 @@ public class FiftyTwoHighProperties {
 
     public void setTelegramMaxSymbols(int telegramMaxSymbols) {
         this.telegramMaxSymbols = telegramMaxSymbols;
+    }
+
+    public boolean isTradeSetupEnabled() {
+        return tradeSetupEnabled;
+    }
+
+    public void setTradeSetupEnabled(boolean tradeSetupEnabled) {
+        this.tradeSetupEnabled = tradeSetupEnabled;
+    }
+
+    public double getTradeSetupMinVolumeRatio() {
+        return tradeSetupMinVolumeRatio;
+    }
+
+    public void setTradeSetupMinVolumeRatio(double tradeSetupMinVolumeRatio) {
+        this.tradeSetupMinVolumeRatio = tradeSetupMinVolumeRatio;
+    }
+
+    public int getTradeSetupLongStrikeOffset() {
+        return tradeSetupLongStrikeOffset;
+    }
+
+    public void setTradeSetupLongStrikeOffset(int tradeSetupLongStrikeOffset) {
+        this.tradeSetupLongStrikeOffset = tradeSetupLongStrikeOffset;
+    }
+
+    public int getTradeSetupShortStrikeOffset() {
+        return tradeSetupShortStrikeOffset;
+    }
+
+    public void setTradeSetupShortStrikeOffset(int tradeSetupShortStrikeOffset) {
+        this.tradeSetupShortStrikeOffset = tradeSetupShortStrikeOffset;
     }
 }

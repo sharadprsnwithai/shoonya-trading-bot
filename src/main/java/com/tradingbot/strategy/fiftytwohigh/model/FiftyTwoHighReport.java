@@ -16,6 +16,9 @@ import java.util.List;
  * @param insufficientHistoryCount Symbols skipped for having too few prior sessions
  * @param dataUnavailableCount Symbols with no usable daily data (fetch/parse failures)
  * @param breakouts Qualifying breakouts, strongest first (by breakout percentage)
+ * @param tradeReadySetups Close-confirmed breakouts that cleared all five filters, carrying the
+ *     recommended spread strikes (empty when the trade-setup filter is disabled or nothing
+ *     qualified)
  * @param summary One-line human summary
  */
 public record FiftyTwoHighReport(
@@ -28,4 +31,5 @@ public record FiftyTwoHighReport(
         int insufficientHistoryCount,
         int dataUnavailableCount,
         List<FiftyTwoHighBreakout> breakouts,
+        List<BreakoutTradeSetup> tradeReadySetups,
         String summary) {}

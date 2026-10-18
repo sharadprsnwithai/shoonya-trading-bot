@@ -151,7 +151,7 @@ The bot provides a bidirectional polling listener supporting the following comma
 | Command | Description |
 | :--- | :--- |
 | `/monthlyrange`, `/monthly_range`, `/garch` | **Calculate GARCH(1,1) Monthly Option Range & Safe CE/PE Strikes** for `RELIANCE`, `TCS`, `HDFCBANK`, `INFY`, `ICICIBANK`, `SBIN`, `TATAMOTORS`, `NIFTY50`. |
-| `/52wh`, `/52weekhigh`, `/breakout` | **NSE F&O 52-Week-High Breakout Scan** — reports F&O equities whose latest completed daily candle crossed their 52-week high, plus the NIFTY 50 index's last-session Heikin-Ashi color (green/red). |
+| `/52wh`, `/52weekhigh`, `/breakout` | **NSE F&O 52-Week-High Breakout Scan** — reports F&O equities whose latest completed daily candle crossed their 52-week high, plus the NIFTY 50 index's last-session Heikin-Ashi color (green/red). Highlights any **trade-ready setups** that also cleared all five research filters, with the recommended bull-call-spread strikes. |
 | `/status`, `/lvr`, `/lvr_status` | View live LVR strategy state, market sentiment breadth, winning sector, candidates, and open positions. |
 | `/scan`, `/lvr_scan` | Force execute an immediate 5-minute LVR strategy cycle. |
 | `/morning_scan` | Force execute 09:25 AM LVR morning universe scan and sectoral ranking. |
@@ -258,13 +258,17 @@ cp .env.example .env
 | `FIFTY_TWO_HIGH_YEARS_BACK` | `2` | Years of daily history fetched per symbol. |
 | `FIFTY_TWO_HIGH_MAX_STALE_DAYS` | `4` | Re-sync a symbol when its latest cached daily candle is older than this many days. |
 | `FIFTY_TWO_HIGH_TELEGRAM_MAX_SYMBOLS` | `15` | How many breakouts a Telegram message lists (REST always returns all). |
+| `FIFTY_TWO_HIGH_TRADE_SETUP_ENABLED` | `true` | **Experimental.** Score each close-confirmed breakout against five filters (vol > 1.3× its 20d avg, above 200-DMA, 20d momentum > 0, relative strength > 0 vs NIFTY, NIFTY > 200-DMA); the 09:25 alert fires **only** for setups clearing all five, carrying the recommended spread strikes. |
+| `FIFTY_TWO_HIGH_TRADE_SETUP_MIN_VOLUME_RATIO` | `1.3` | Minimum breakout volume as a multiple of its 20-day average (volume-participation gate). |
+| `FIFTY_TWO_HIGH_TRADE_SETUP_LONG_STRIKE_OFFSET` | `4` | Strikes above ATM for the **long** leg of the recommended bull-call debit spread (buy ATM+4). |
+| `FIFTY_TWO_HIGH_TRADE_SETUP_SHORT_STRIKE_OFFSET` | `8` | Strikes above ATM for the **short** leg of the recommended debit spread (sell ATM+8). |
 
 ### Scheduled Data Jobs
 
 | Time (IST) | Job | What it does |
 | :--- | :--- | :--- |
 | 08:00, Mon-Fri | Morning OHLC sync | Refreshes daily/weekly/monthly candles from Yahoo Finance before the open. |
-| 09:25, Mon-Fri | 52-week-high breakout scan | Scans every NSE F&O equity and reports symbols whose latest **completed** daily candle crossed the prior 52-week high (daily candles only); pushes a Telegram summary. Skips NSE holidays. |
+| 09:25, Mon-Fri | 52-week-high breakout scan | Scans every NSE F&O equity for symbols whose latest **completed** daily candle crossed the prior 52-week high (daily candles only). With `FIFTY_TWO_HIGH_TRADE_SETUP_ENABLED` (default on), the pushed Telegram alert fires **only** for close-confirmed breakouts clearing all five filters (volume, 200-DMA, momentum, relative strength, NIFTY regime), listing the recommended bull-call-spread strikes; otherwise it suppresses the alert. Skips NSE holidays. |
 | 20:00, Mon-Fri | Post-close data job | Force-syncs today's **completed** daily high/low into SQLite (the normal freshness check would skip a day that just closed) and captures the closing **option chain** for every F&O universe symbol (`NiftySectorRegistry`, deduplicated) into the `option_chain_snapshots` table of `data/trading_bot.db`. Snapshots are stored under the trading session they reflect and pruned after 30 days. |
 | 23:00, daily | SQLite backup | Atomic defragmented backup of the active database. |
 
