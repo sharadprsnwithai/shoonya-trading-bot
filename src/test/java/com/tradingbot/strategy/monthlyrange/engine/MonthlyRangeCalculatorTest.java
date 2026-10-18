@@ -26,9 +26,7 @@ class MonthlyRangeCalculatorTest {
     @BeforeEach
     void setUp() {
         properties = new MonthlyRangeProperties();
-        calculator =
-                new MonthlyRangeCalculator(
-                        new GjrGarchOptimizer(), properties);
+        calculator = new MonthlyRangeCalculator(new GjrGarchOptimizer(), properties);
     }
 
     private List<Candle> generateMockCandles(

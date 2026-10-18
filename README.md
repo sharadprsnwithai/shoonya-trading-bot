@@ -125,6 +125,25 @@ weekly condor actually poses, as opposed to the 22-session monthly projection ab
 
 ---
 
+### NSE F&O 52-Week-High Breakout Scanner
+
+Momentum breakout screen over the NSE F&O equity universe (indices excluded):
+
+1. **Schedule:** Runs each trading morning at **09:25 IST**, so the prior session's **completed** daily candle is evaluated rather than an in-progress one. Skips NSE holidays.
+2. **Definition (fresh breakout):** the latest daily candle's **high** exceeded the highest high of the preceding **52 weeks** (a 364-calendar-day window that *excludes* the latest candle itself).
+3. **Daily candles only:** no intraday resampling. Reads the shared OHLC cache and re-syncs any symbol whose latest candle is stale.
+4. **Gates:** a minimum prior-session count guards thin recent listings; optional `MIN_BREAKOUT_PCT` demands a bigger margin; optional close-confirmation requires the close to also finish above the prior high.
+5. **Delivery:** REST (`/api/v1/fifty-two-week-high/scan`) and a Telegram command (`/52wh`), plus an automatic 09:25 Telegram summary.
+6. **NIFTY 50 context:** every report also carries the NIFTY 50 index's last-session **Heikin-Ashi** color (green/red) and streak, so the breakout list can be read against the prevailing index trend.
+
+| Endpoint | Description |
+| :--- | :--- |
+| `GET /api/v1/fifty-two-week-high/scan` | Full breakout report (JSON). |
+| `POST /api/v1/fifty-two-week-high/run` | Scan + dispatch Telegram summary. |
+| `GET /api/v1/fifty-two-week-high/scan/{symbol}` | Single-symbol breakout check. |
+
+---
+
 ## Telegram Bot Commands
 
 The bot provides a bidirectional polling listener supporting the following commands:
@@ -132,6 +151,7 @@ The bot provides a bidirectional polling listener supporting the following comma
 | Command | Description |
 | :--- | :--- |
 | `/monthlyrange`, `/monthly_range`, `/garch` | **Calculate GARCH(1,1) Monthly Option Range & Safe CE/PE Strikes** for `RELIANCE`, `TCS`, `HDFCBANK`, `INFY`, `ICICIBANK`, `SBIN`, `TATAMOTORS`, `NIFTY50`. |
+| `/52wh`, `/52weekhigh`, `/breakout` | **NSE F&O 52-Week-High Breakout Scan** — reports F&O equities whose latest completed daily candle crossed their 52-week high, plus the NIFTY 50 index's last-session Heikin-Ashi color (green/red). |
 | `/status`, `/lvr`, `/lvr_status` | View live LVR strategy state, market sentiment breadth, winning sector, candidates, and open positions. |
 | `/scan`, `/lvr_scan` | Force execute an immediate 5-minute LVR strategy cycle. |
 | `/morning_scan` | Force execute 09:25 AM LVR morning universe scan and sectoral ranking. |
@@ -226,12 +246,25 @@ cp .env.example .env
 | `LVR_PCR_NEUTRAL_MAX` | `1.15` | Upper edge of the PCR no-trade band: LONG requires PCR above it; in between blocks both directions. |
 | `POSTCLOSE_SCHEDULER_ENABLED` | `true` | Enable the 20:00 IST post-close data job (high/low sync + option-chain snapshots). |
 | `POSTCLOSE_CRON` | `0 0 20 ? * MON-FRI` | Schedule of the post-close data job. |
+| `FIFTY_TWO_HIGH_ENABLED` | `true` | Enable/disable the NSE F&O 52-week-high breakout scanner. |
+| `FIFTY_TWO_HIGH_SCHEDULER_ENABLED` | `true` | Arm the 09:25 IST scheduled scan (independent of on-demand REST/Telegram). |
+| `FIFTY_TWO_HIGH_CRON` | `0 25 9 ? * MON-FRI` | Schedule of the breakout scan (IST). |
+| `FIFTY_TWO_HIGH_TELEGRAM_ALERTS` | `true` | Push the breakout summary to Telegram on each scan. |
+| `FIFTY_TWO_HIGH_LOOKBACK_DAYS` | `364` | Calendar-day window defining the "52 weeks" prior-high lookback. |
+| `FIFTY_TWO_HIGH_MIN_PRIOR_SESSIONS` | `60` | Minimum prior sessions before a 52-week high is considered meaningful. |
+| `FIFTY_TWO_HIGH_MIN_BREAKOUT_PCT` | `0.0` | Minimum % the latest high must exceed the prior 52w high by (0.0 = any strict cross). |
+| `FIFTY_TWO_HIGH_REQUIRE_CLOSE_CONFIRMATION` | `false` | `true` reports only close-confirmed breakouts (close also above the prior 52w high). |
+| `FIFTY_TWO_HIGH_SYMBOLS` | *(empty)* | Optional comma-separated universe; empty = full NSE F&O equity universe (indices excluded). |
+| `FIFTY_TWO_HIGH_YEARS_BACK` | `2` | Years of daily history fetched per symbol. |
+| `FIFTY_TWO_HIGH_MAX_STALE_DAYS` | `4` | Re-sync a symbol when its latest cached daily candle is older than this many days. |
+| `FIFTY_TWO_HIGH_TELEGRAM_MAX_SYMBOLS` | `15` | How many breakouts a Telegram message lists (REST always returns all). |
 
 ### Scheduled Data Jobs
 
 | Time (IST) | Job | What it does |
 | :--- | :--- | :--- |
 | 08:00, Mon-Fri | Morning OHLC sync | Refreshes daily/weekly/monthly candles from Yahoo Finance before the open. |
+| 09:25, Mon-Fri | 52-week-high breakout scan | Scans every NSE F&O equity and reports symbols whose latest **completed** daily candle crossed the prior 52-week high (daily candles only); pushes a Telegram summary. Skips NSE holidays. |
 | 20:00, Mon-Fri | Post-close data job | Force-syncs today's **completed** daily high/low into SQLite (the normal freshness check would skip a day that just closed) and captures the closing **option chain** for every F&O universe symbol (`NiftySectorRegistry`, deduplicated) into the `option_chain_snapshots` table of `data/trading_bot.db`. Snapshots are stored under the trading session they reflect and pruned after 30 days. |
 | 23:00, daily | SQLite backup | Atomic defragmented backup of the active database. |
 
@@ -376,6 +409,9 @@ xdg-open build/reports/spotbugs/main.html # Linux
 | `GET` | `/api/v1/orders/*` | Broker order listing / status via Shoonya. |
 | `GET/POST` | `/api/v1/execution/*` | Execution mode switch, directional spread trades, close, positions. |
 | `GET/POST` | `/api/strategy/lowest-volume/*` | LVR scan, morning-scan, notify, status, setups, positions, history, reset, toggle. |
+| `GET` | `/api/v1/fifty-two-week-high/scan` | Scan NSE F&O equities for fresh 52-week-high breakouts (JSON, no Telegram). |
+| `POST` | `/api/v1/fifty-two-week-high/run` | Run the breakout scan and dispatch the Telegram summary. |
+| `GET` | `/api/v1/fifty-two-week-high/scan/{symbol}` | Single-symbol 52-week-high breakout check (404 if none). |
 
 ---
 

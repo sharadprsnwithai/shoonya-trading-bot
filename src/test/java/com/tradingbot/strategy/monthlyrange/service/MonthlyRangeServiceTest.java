@@ -47,9 +47,7 @@ class MonthlyRangeServiceTest {
         properties.setSymbols(List.of("RELIANCE", "TCS"));
         properties.setTelegramAlertsEnabled(true);
 
-        calculator =
-                new MonthlyRangeCalculator(
-                        new GjrGarchOptimizer(), properties);
+        calculator = new MonthlyRangeCalculator(new GjrGarchOptimizer(), properties);
         service =
                 new MonthlyRangeService(
                         properties,

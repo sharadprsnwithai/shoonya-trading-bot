@@ -39,6 +39,8 @@ public class TelegramBotCommandListener {
     private final com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService;
     private final com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService
             monthlyRangeService;
+    private final com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService
+            fiftyTwoHighService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -56,6 +58,9 @@ public class TelegramBotCommandListener {
             @Autowired(required = false)
                     com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService
                             monthlyRangeService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService
+                            fiftyTwoHighService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
@@ -63,6 +68,7 @@ public class TelegramBotCommandListener {
                 lvrService,
                 carWeeklyService,
                 monthlyRangeService,
+                fiftyTwoHighService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -75,7 +81,15 @@ public class TelegramBotCommandListener {
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
             HttpClient httpClient) {
-        this(lvrService, null, null, telegramService, shoonyaConfig, objectMapper, httpClient);
+        this(
+                lvrService,
+                null,
+                null,
+                null,
+                telegramService,
+                shoonyaConfig,
+                objectMapper,
+                httpClient);
     }
 
     public TelegramBotCommandListener(
@@ -89,6 +103,7 @@ public class TelegramBotCommandListener {
                 lvrService,
                 carWeeklyService,
                 null,
+                null,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -99,6 +114,7 @@ public class TelegramBotCommandListener {
             LowestVolumeReversalService lvrService,
             com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
             com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyRangeService,
+            com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService fiftyTwoHighService,
             TelegramService telegramService,
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
@@ -106,6 +122,7 @@ public class TelegramBotCommandListener {
         this.lvrService = lvrService;
         this.carWeeklyService = carWeeklyService;
         this.monthlyRangeService = monthlyRangeService;
+        this.fiftyTwoHighService = fiftyTwoHighService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
@@ -315,6 +332,16 @@ public class TelegramBotCommandListener {
                 var monthlyReport = monthlyRangeService.generateMonthlyReport();
                 return monthlyRangeService.formatTelegramMessage(monthlyReport);
 
+            case "/52wh":
+            case "/52week":
+            case "/52weekhigh":
+            case "/breakout":
+                if (fiftyTwoHighService == null) {
+                    return "⚠️ 52-Week-High Breakout Scanner not active.";
+                }
+                var fiftyTwoReport = fiftyTwoHighService.scan();
+                return fiftyTwoHighService.formatTelegramMessage(fiftyTwoReport);
+
             case "/exit":
             case "/squareoff":
                 if (lvrService == null) return "⚠️ LVR Service not active.";
@@ -358,6 +385,7 @@ public class TelegramBotCommandListener {
                         + "• `/car` - Live CAR Weekly GTT Portfolio Status\n"
                         + "• `/car_run` - Force execute CAR Weekly GTT Sunday routine & place orders\n"
                         + "• `/monthlyrange` - Calculate GARCH Monthly Option Range & Safe Strikes\n"
+                        + "• `/52wh` - NSE F&O equities that crossed their 52-week high\n"
                         + "• `/help` - Show this command menu";
         }
     }

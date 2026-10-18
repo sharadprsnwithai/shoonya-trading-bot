@@ -4,7 +4,6 @@ import com.tradingbot.model.Candle;
 import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionStrike;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
-import com.tradingbot.strategy.monthlyrange.engine.GjrGarchOptimizer;
 import com.tradingbot.strategy.monthlyrange.model.GjrGarchModelParams;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeForecast;
 import com.tradingbot.util.NseTradingCalendarUtil;
