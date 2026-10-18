@@ -4,7 +4,8 @@ import com.tradingbot.model.Candle;
 import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionStrike;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
-import com.tradingbot.strategy.monthlyrange.model.GarchModelParams;
+import com.tradingbot.strategy.monthlyrange.engine.GjrGarchOptimizer;
+import com.tradingbot.strategy.monthlyrange.model.GjrGarchModelParams;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeForecast;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import com.tradingbot.util.StockFnoRegistry;
@@ -29,22 +30,17 @@ public class MonthlyRangeCalculator {
 
     private static final Logger log = LoggerFactory.getLogger(MonthlyRangeCalculator.class);
 
-    private final Garch11Optimizer garchOptimizer;
-    private final GarchVolForecaster volForecaster;
+    private final GjrGarchOptimizer gjrOptimizer;
     private final MonthlyRangeProperties properties;
 
-    public MonthlyRangeCalculator(
-            Garch11Optimizer garchOptimizer, GarchVolForecaster volForecaster) {
-        this(garchOptimizer, volForecaster, new MonthlyRangeProperties());
+    public MonthlyRangeCalculator(GjrGarchOptimizer gjrOptimizer) {
+        this(gjrOptimizer, new MonthlyRangeProperties());
     }
 
     @Autowired
     public MonthlyRangeCalculator(
-            Garch11Optimizer garchOptimizer,
-            GarchVolForecaster volForecaster,
-            MonthlyRangeProperties properties) {
-        this.garchOptimizer = garchOptimizer;
-        this.volForecaster = volForecaster;
+            GjrGarchOptimizer gjrOptimizer, MonthlyRangeProperties properties) {
+        this.gjrOptimizer = gjrOptimizer;
         this.properties = properties != null ? properties : new MonthlyRangeProperties();
     }
 
@@ -114,14 +110,12 @@ public class MonthlyRangeCalculator {
             returns[i - 1] = Math.log(curClose / prevClose);
         }
 
-        // 2. Fit GARCH(1,1) Model & Project Multi-Step Volatility
-        GarchModelParams garchParams = garchOptimizer.fit(returns);
-        GarchVolForecaster.VolForecastResult volResult =
-                volForecaster.forecastMonthlyVol(garchParams, returns, horizon);
-
-        double monthlyVolDec = volResult.cumulativeMonthlyVolDecimal();
-        double monthlyVolPct = volResult.cumulativeMonthlyVolPct();
-        double annualizedVolPct = volResult.annualizedVolPct();
+        // 2. Fit GJR-GARCH Model & Project Multi-Step Volatility with Leverage
+        GjrGarchModelParams gjrParams = gjrOptimizer.fit(returns);
+        double horizonVariance = gjrHorizonVariance(gjrParams, returns, returns.length, horizon);
+        double monthlyVolDec = Math.sqrt(Math.max(horizonVariance, 1e-10));
+        double monthlyVolPct = monthlyVolDec * 100.0;
+        double annualizedVolPct = monthlyVolPct * Math.sqrt(252.0 / horizon);
 
         // 3. Event / Earnings Detection & Asymmetric Confidence Multipliers (kPE, kCE)
         boolean isEventMonth = isEarningsMonth(date);
@@ -357,7 +351,68 @@ public class MonthlyRangeCalculator {
         return BigDecimal.valueOf(atr).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private double round2(double val) {
+    private static double round2(double val) {
         return Math.round(val * 100.0) / 100.0;
+    }
+
+    private static double gjrHorizonVariance(
+            GjrGarchModelParams params, double[] returns, int uptoExclusive, int horizon) {
+        if (params == null
+                || returns == null
+                || uptoExclusive <= 0
+                || uptoExclusive > returns.length) {
+            return Double.NaN;
+        }
+
+        double mean = 0.0;
+        for (int i = 0; i < uptoExclusive; i++) {
+            mean += returns[i];
+        }
+        mean /= uptoExclusive;
+
+        double sampleVar = sampleVariance(returns, uptoExclusive, mean);
+
+        double omega = params.omega();
+        double alpha = params.alpha();
+        double beta = params.beta();
+        double gamma = params.gamma();
+        double persistence = Math.min(params.persistence(), 0.999);
+        double vl = params.longRunVariance();
+        double minSigma = 1e-10;
+
+        double sigma2 = sampleVar;
+        for (int i = 1; i < uptoExclusive; i++) {
+            double eps = returns[i - 1] - mean;
+            double shockCoef = eps < 0.0 ? (alpha + gamma) : alpha;
+            sigma2 = omega + shockCoef * (eps * eps) + beta * sigma2;
+        }
+
+        double lastEps = returns[uptoExclusive - 1] - mean;
+        double shockCoef = lastEps < 0.0 ? (alpha + gamma) : alpha;
+        double sigmaNext =
+                Math.max(omega + shockCoef * (lastEps * lastEps) + beta * sigma2, minSigma);
+        return cumulativeForward(sigmaNext, vl, persistence, horizon);
+    }
+
+    private static double cumulativeForward(
+            double sigmaNext, double longRunVar, double persistence, int horizon) {
+        double minSigma = 1e-10;
+        double total = sigmaNext;
+        for (int k = 1; k < horizon; k++) {
+            total +=
+                    Math.max(
+                            longRunVar + Math.pow(persistence, k) * (sigmaNext - longRunVar),
+                            minSigma);
+        }
+        return total;
+    }
+
+    private static double sampleVariance(double[] returns, int uptoExclusive, double mean) {
+        double sumSq = 0.0;
+        for (int i = 0; i < uptoExclusive; i++) {
+            double diff = returns[i] - mean;
+            sumSq += diff * diff;
+        }
+        return Math.max(sumSq / uptoExclusive, 1e-8);
     }
 }

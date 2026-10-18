@@ -28,7 +28,7 @@ class MonthlyRangeCalculatorTest {
         properties = new MonthlyRangeProperties();
         calculator =
                 new MonthlyRangeCalculator(
-                        new Garch11Optimizer(), new GarchVolForecaster(), properties);
+                        new GjrGarchOptimizer(), properties);
     }
 
     private List<Candle> generateMockCandles(

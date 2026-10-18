@@ -14,8 +14,7 @@ import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.model.OptionContract;
 import com.tradingbot.model.OptionStrike;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
-import com.tradingbot.strategy.monthlyrange.engine.Garch11Optimizer;
-import com.tradingbot.strategy.monthlyrange.engine.GarchVolForecaster;
+import com.tradingbot.strategy.monthlyrange.engine.GjrGarchOptimizer;
 import com.tradingbot.strategy.monthlyrange.engine.MonthlyRangeCalculator;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeForecast;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport;
@@ -50,7 +49,7 @@ class MonthlyRangeServiceTest {
 
         calculator =
                 new MonthlyRangeCalculator(
-                        new Garch11Optimizer(), new GarchVolForecaster(), properties);
+                        new GjrGarchOptimizer(), properties);
         service =
                 new MonthlyRangeService(
                         properties,
