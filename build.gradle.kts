@@ -53,6 +53,13 @@ dependencies {
     // SpotBugs / FindBugs Annotations
     compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.6")
     testCompileOnly("com.github.spotbugs:spotbugs-annotations:4.8.6")
+
+    // Lombok — replaces hand-written getter/setter boilerplate on config/state fields.
+    // Version is managed by the Spring Boot BOM (io.spring.dependency-management).
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
+    testCompileOnly("org.projectlombok:lombok")
+    testAnnotationProcessor("org.projectlombok:lombok")
 }
 
 tasks.withType<Test> {

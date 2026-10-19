@@ -37,6 +37,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.Getter;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -104,75 +106,118 @@ public class LowestVolumeReversalService {
     private java.time.Clock clock = java.time.Clock.system(IST);
 
     @Value("${trading-bot.strategy.lowest-volume.enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean enabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.instrument-type:FUTURES}")
+    @Getter
+    @Setter
     private volatile LvrInstrumentType instrumentType = LvrInstrumentType.FUTURES;
 
     @Value("${trading-bot.strategy.lowest-volume.order-type:LMT}")
+    @Getter
     private volatile String orderType = "LMT";
 
     @Value("${trading-bot.strategy.lowest-volume.exit-mode:PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500}")
+    @Getter
+    @Setter
     private volatile LvrExitMode exitMode = LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500;
 
     @Value("${trading-bot.strategy.lowest-volume.paper-capital:1000000.0}")
+    @Getter
     private volatile double paperCapital = 1000000.0;
 
     @Value("${trading-bot.strategy.lowest-volume.risk-per-trade-percent:1.0}")
+    @Getter
     private volatile double riskPerTradePercent = 1.0;
 
     @Value("${trading-bot.strategy.lowest-volume.max-concurrent-trades:5}")
+    @Getter
     private volatile int maxConcurrentTrades = 5;
 
     @Value("${trading-bot.strategy.lowest-volume.max-attempts-per-symbol:2}")
+    @Getter
+    @Setter
     private volatile int maxAttemptsPerSymbol = 2;
 
     @Value("${trading-bot.strategy.lowest-volume.min-breadth-pct:56.0}")
+    @Getter
+    @Setter
     private volatile double minBreadthPct = 56.0;
 
     @Value("${trading-bot.strategy.lowest-volume.min-sl-pct:0.35}")
+    @Getter
+    @Setter
     private volatile double minStopLossPct = 0.35;
 
     @Value("${trading-bot.strategy.lowest-volume.max-daily-loss:15000.0}")
+    @Getter
+    @Setter
     private volatile double maxDailyLoss = 15000.0;
 
     @Value("${trading-bot.strategy.lowest-volume.lots:2}")
+    @Getter
+    @Setter
     private volatile int defaultLots = 2;
 
     @Value("${trading-bot.strategy.lowest-volume.dynamic-position-sizing:false}")
+    @Getter
+    @Setter
     private volatile boolean dynamicPositionSizing = false;
 
     @Value("${trading-bot.strategy.lowest-volume.telegram-alerts:true}")
+    @Getter
+    @Setter
     private volatile boolean telegramAlerts = true;
 
     @Value("${trading-bot.strategy.lowest-volume.telegram-armed-alerts:true}")
+    @Getter
+    @Setter
     private volatile boolean telegramArmedAlerts = true;
 
     @Value("${trading-bot.strategy.lowest-volume.vwap-confirmation-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean vwapConfirmationEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.opening-15m-range-filter-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean opening15mRangeFilterEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.pcr-filter-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean pcrFilterEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.pcr-neutral-min:0.85}")
+    @Getter
+    @Setter
     private volatile double pcrNeutralMin = 0.85;
 
     @Value("${trading-bot.strategy.lowest-volume.pcr-neutral-max:1.15}")
+    @Getter
+    @Setter
     private volatile double pcrNeutralMax = 1.15;
 
     @Value("${trading-bot.strategy.lowest-volume.option-sr-filter-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean optionSrFilterEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.option-sr-buffer-pct:0.0}")
+    @Getter
+    @Setter
     private volatile double optionSrBufferPct = 0.0;
 
     @Value("${trading-bot.strategy.lowest-volume.entry-cutoff:11:30}")
+    @Getter
     private volatile LocalTime entryCutoffTime = TIME_ENTRY_CUTOFF;
 
     @Value("${trading-bot.strategy.lowest-volume.pdh-pdl-filter-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean pdhPdlFilterEnabled = true;
 
     /**
@@ -185,21 +230,33 @@ public class LowestVolumeReversalService {
     private volatile double maxPdhExtensionPct = 3.0;
 
     @Value("${trading-bot.strategy.lowest-volume.scanner-mode:HYBRID}")
+    @Getter
+    @Setter
     private volatile String scannerMode = "HYBRID";
 
     @Value("${trading-bot.strategy.lowest-volume.oi-spurts-top-n:5}")
+    @Getter
+    @Setter
     private volatile int oiSpurtsTopN = 5;
 
     @Value("${trading-bot.strategy.lowest-volume.sector-momentum-filter-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean sectorMomentumFilterEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.vande-bharat-enabled:false}")
+    @Getter
+    @Setter
     private volatile boolean vandeBharatEnabled = false;
 
     @Value("${trading-bot.strategy.lowest-volume.target-rr:2.5}")
+    @Getter
+    @Setter
     private volatile double targetRr = 2.5;
 
     @Value("${trading-bot.strategy.lowest-volume.max-daily-losses:2}")
+    @Getter
+    @Setter
     private volatile int maxDailyLosses = 2;
 
     private final AtomicInteger todayLossCount = new AtomicInteger(0);
@@ -210,15 +267,23 @@ public class LowestVolumeReversalService {
      * 5-minute-cycle-only behavior.
      */
     @Value("${trading-bot.strategy.lowest-volume.live-breach-check-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean liveBreachCheckEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.setup-timeout-candles:6}")
+    @Getter
+    @Setter
     private volatile int setupTimeoutCandles = 6;
 
     @Value("${trading-bot.strategy.lowest-volume.min-active-candidates:2}")
+    @Getter
+    @Setter
     private volatile int minActiveCandidates = 2;
 
     @Value("${trading-bot.strategy.lowest-volume.max-slippage-pct:0.12}")
+    @Getter
+    @Setter
     private volatile double maxSlippagePct = 0.12;
 
     private volatile long morningScanDelayMs = 115;
@@ -257,12 +322,18 @@ public class LowestVolumeReversalService {
     private volatile com.tradingbot.marketdata.NseOiSpurtClient nseOiSpurtClient;
 
     @Value("${trading-bot.strategy.lowest-volume.nse-oi.enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean nseOiEnabled = true;
 
     @Value("${trading-bot.strategy.lowest-volume.nse-oi.top-n:3}")
+    @Getter
+    @Setter
     private volatile int nseOiTopN = 3;
 
     @Value("${trading-bot.strategy.lowest-volume.nse-oi.mid-morning-refresh-enabled:true}")
+    @Getter
+    @Setter
     private volatile boolean nseOiMidMorningRefreshEnabled = true;
 
     // ---- F&O ban-period exclusion (NCL/CMPT/70085; SEBI/HO/MRD/TPD-1/P/CIR/2025/79) ----
@@ -292,6 +363,7 @@ public class LowestVolumeReversalService {
      * against a live session.
      */
     @Value("${trading-bot.strategy.lowest-volume.ban-period-log-only:true}")
+    @Setter
     private volatile boolean banPeriodLogOnly = true;
 
     /**
@@ -300,12 +372,14 @@ public class LowestVolumeReversalService {
      * mirroring the NSE OI-spurts degrade path).
      */
     @Value("${trading-bot.strategy.lowest-volume.ban-period-fail-closed:false}")
+    @Setter
     private volatile boolean banPeriodFailClosed = false;
 
     // ---- Expiry / DTE rules for a fresh entry (P3; §4 of the 2026-10-17 design) ----
 
     /** Master switch for the {@code EXPIRY_DTE} entry gate and the matching universe exclusion. */
     @Value("${trading-bot.strategy.lowest-volume.expiry-dte-enabled:true}")
+    @Setter
     private volatile boolean expiryDteEnabled = true;
 
     /**
@@ -314,6 +388,7 @@ public class LowestVolumeReversalService {
      * restores the legacy behaviour while leaving the §4.1 date fix in force.
      */
     @Value("${trading-bot.strategy.lowest-volume.option-min-dte-sessions:2}")
+    @Setter
     private volatile int optionMinDteSessions = 2;
 
     /**
@@ -321,6 +396,7 @@ public class LowestVolumeReversalService {
      * {@code 0} (the default) leaves the currently-configured strategy's behaviour unchanged.
      */
     @Value("${trading-bot.strategy.lowest-volume.futures-min-dte-sessions:0}")
+    @Setter
     private volatile int futuresMinDteSessions = 0;
 
     // --- D5: two-sided sector channel (design §6) -------------------------------------------
@@ -351,6 +427,8 @@ public class LowestVolumeReversalService {
      * breadth is observability only and both sides of the market are traded.
      */
     @Value("${trading-bot.strategy.lowest-volume.nifty-bias-enabled:false}")
+    @Getter
+    @Setter
     private volatile boolean niftyBiasEnabled = false;
 
     /**
@@ -454,6 +532,8 @@ public class LowestVolumeReversalService {
 
     /** M10: JSON snapshot file for open positions / trade history / daily state. */
     @Value("${trading-bot.strategy.lowest-volume.state-file:./data/lvr-state.json}")
+    @Getter
+    @Setter
     private volatile String stateFilePath = "./data/lvr-state.json";
 
     /**
@@ -461,6 +541,8 @@ public class LowestVolumeReversalService {
      * services; Spring environments turn it on via application.properties / env override.
      */
     @Value("${trading-bot.strategy.lowest-volume.state-persistence-enabled:false}")
+    @Getter
+    @Setter
     private volatile boolean statePersistenceEnabled = false;
 
     /** H9/M11: cutoff after which a failed morning scan permanently stands down (now bound). */
@@ -4045,14 +4127,6 @@ public class LowestVolumeReversalService {
         return candidateReservoir;
     }
 
-    public int getMinActiveCandidates() {
-        return minActiveCandidates;
-    }
-
-    public void setMinActiveCandidates(int minActiveCandidates) {
-        this.minActiveCandidates = minActiveCandidates;
-    }
-
     public static BigDecimal roundToTick(BigDecimal price) {
         if (price == null) return null;
         double rounded = Math.round(price.doubleValue() * 20.0) / 20.0;
@@ -4714,80 +4788,13 @@ public class LowestVolumeReversalService {
     }
 
     // Getters / Setters for Controller, Scheduler & Tests
-    public boolean isEnabled() {
-        return enabled;
-    }
-
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
-    }
-
-    public LvrInstrumentType getInstrumentType() {
-        return instrumentType;
-    }
-
-    public void setInstrumentType(LvrInstrumentType instrumentType) {
-        this.instrumentType = instrumentType;
-    }
-
-    public LvrExitMode getExitMode() {
-        return exitMode;
-    }
-
-    public void setExitMode(LvrExitMode exitMode) {
-        this.exitMode = exitMode;
-    }
-
-    public double getPaperCapital() {
-        return paperCapital;
-    }
-
-    public double getRiskPerTradePercent() {
-        return riskPerTradePercent;
-    }
 
     public double getRiskPerTradeAmount() {
         return paperCapital * (riskPerTradePercent / 100.0);
     }
 
-    public int getMaxConcurrentTrades() {
-        return maxConcurrentTrades;
-    }
-
     public Set<String> getExhaustedSymbols() {
         return exhaustedSymbols;
-    }
-
-    public int getSetupTimeoutCandles() {
-        return setupTimeoutCandles;
-    }
-
-    public void setSetupTimeoutCandles(int setupTimeoutCandles) {
-        this.setupTimeoutCandles = setupTimeoutCandles;
-    }
-
-    public double getMaxSlippagePct() {
-        return maxSlippagePct;
-    }
-
-    public void setMaxSlippagePct(double maxSlippagePct) {
-        this.maxSlippagePct = maxSlippagePct;
-    }
-
-    public boolean isSectorMomentumFilterEnabled() {
-        return sectorMomentumFilterEnabled;
-    }
-
-    public void setSectorMomentumFilterEnabled(boolean sectorMomentumFilterEnabled) {
-        this.sectorMomentumFilterEnabled = sectorMomentumFilterEnabled;
-    }
-
-    public boolean isLiveBreachCheckEnabled() {
-        return liveBreachCheckEnabled;
-    }
-
-    public void setLiveBreachCheckEnabled(boolean liveBreachCheckEnabled) {
-        this.liveBreachCheckEnabled = liveBreachCheckEnabled;
     }
 
     /**
@@ -4971,30 +4978,6 @@ public class LowestVolumeReversalService {
         return gate;
     }
 
-    public boolean isVwapConfirmationEnabled() {
-        return vwapConfirmationEnabled;
-    }
-
-    public void setVwapConfirmationEnabled(boolean vwapConfirmationEnabled) {
-        this.vwapConfirmationEnabled = vwapConfirmationEnabled;
-    }
-
-    public boolean isVandeBharatEnabled() {
-        return vandeBharatEnabled;
-    }
-
-    public void setVandeBharatEnabled(boolean vandeBharatEnabled) {
-        this.vandeBharatEnabled = vandeBharatEnabled;
-    }
-
-    public double getTargetRr() {
-        return targetRr;
-    }
-
-    public void setTargetRr(double targetRr) {
-        this.targetRr = targetRr;
-    }
-
     /**
      * Display form of the configured reward-to-risk ratio, e.g. {@code 1:2.5} for {@code
      * target-rr=2.5} and {@code 1:2} for {@code target-rr=2.0}.
@@ -5008,96 +4991,12 @@ public class LowestVolumeReversalService {
         return "1:" + BigDecimal.valueOf(targetRr).stripTrailingZeros().toPlainString();
     }
 
-    public int getMaxDailyLosses() {
-        return maxDailyLosses;
-    }
-
-    public void setMaxDailyLosses(int maxDailyLosses) {
-        this.maxDailyLosses = maxDailyLosses;
-    }
-
     public AtomicInteger getTodayLossCount() {
         return todayLossCount;
     }
 
-    public LocalTime getEntryCutoffTime() {
-        return entryCutoffTime;
-    }
-
     public void setEntryCutoffTime(LocalTime entryCutoffTime) {
         this.entryCutoffTime = (entryCutoffTime != null) ? entryCutoffTime : TIME_ENTRY_CUTOFF;
-    }
-
-    public boolean isOptionSrFilterEnabled() {
-        return optionSrFilterEnabled;
-    }
-
-    public void setOptionSrFilterEnabled(boolean optionSrFilterEnabled) {
-        this.optionSrFilterEnabled = optionSrFilterEnabled;
-    }
-
-    public double getOptionSrBufferPct() {
-        return optionSrBufferPct;
-    }
-
-    public void setOptionSrBufferPct(double optionSrBufferPct) {
-        this.optionSrBufferPct = optionSrBufferPct;
-    }
-
-    public boolean isPcrFilterEnabled() {
-        return pcrFilterEnabled;
-    }
-
-    public void setPcrFilterEnabled(boolean pcrFilterEnabled) {
-        this.pcrFilterEnabled = pcrFilterEnabled;
-    }
-
-    public double getPcrNeutralMin() {
-        return pcrNeutralMin;
-    }
-
-    public void setPcrNeutralMin(double pcrNeutralMin) {
-        this.pcrNeutralMin = pcrNeutralMin;
-    }
-
-    public double getPcrNeutralMax() {
-        return pcrNeutralMax;
-    }
-
-    public void setPcrNeutralMax(double pcrNeutralMax) {
-        this.pcrNeutralMax = pcrNeutralMax;
-    }
-
-    public boolean isOpening15mRangeFilterEnabled() {
-        return opening15mRangeFilterEnabled;
-    }
-
-    public void setOpening15mRangeFilterEnabled(boolean opening15mRangeFilterEnabled) {
-        this.opening15mRangeFilterEnabled = opening15mRangeFilterEnabled;
-    }
-
-    public boolean isPdhPdlFilterEnabled() {
-        return pdhPdlFilterEnabled;
-    }
-
-    public void setPdhPdlFilterEnabled(boolean pdhPdlFilterEnabled) {
-        this.pdhPdlFilterEnabled = pdhPdlFilterEnabled;
-    }
-
-    public String getScannerMode() {
-        return scannerMode;
-    }
-
-    public void setScannerMode(String scannerMode) {
-        this.scannerMode = scannerMode;
-    }
-
-    public int getOiSpurtsTopN() {
-        return oiSpurtsTopN;
-    }
-
-    public void setOiSpurtsTopN(int oiSpurtsTopN) {
-        this.oiSpurtsTopN = oiSpurtsTopN;
     }
 
     /**
@@ -5128,40 +5027,25 @@ public class LowestVolumeReversalService {
     /**
      * @param banPeriodLogOnly true to report the ban list without excluding any symbol
      */
-    public void setBanPeriodLogOnly(boolean banPeriodLogOnly) {
-        this.banPeriodLogOnly = banPeriodLogOnly;
-    }
 
     /**
      * @param banPeriodFailClosed true to block fresh entries while the ban list is unavailable
      */
-    public void setBanPeriodFailClosed(boolean banPeriodFailClosed) {
-        this.banPeriodFailClosed = banPeriodFailClosed;
-    }
 
     /**
      * @param expiryDteEnabled true to enable the {@code EXPIRY_DTE} gate and its OPTIONS universe
      *     exclusion
      */
-    public void setExpiryDteEnabled(boolean expiryDteEnabled) {
-        this.expiryDteEnabled = expiryDteEnabled;
-    }
 
     /**
      * @param optionMinDteSessions trading sessions before monthly expiry at which a fresh OPTIONS
      *     entry is barred; {@code 0} restores the legacy behaviour
      */
-    public void setOptionMinDteSessions(int optionMinDteSessions) {
-        this.optionMinDteSessions = optionMinDteSessions;
-    }
 
     /**
      * @param futuresMinDteSessions trading sessions before monthly expiry at which a fresh FUTURES
      *     entry is barred; {@code 0} keeps the live behaviour unchanged
      */
-    public void setFuturesMinDteSessions(int futuresMinDteSessions) {
-        this.futuresMinDteSessions = futuresMinDteSessions;
-    }
 
     /**
      * @return symbols currently in the NSE F&O ban period (live view, never null)
@@ -5180,35 +5064,23 @@ public class LowestVolumeReversalService {
     /**
      * @return whether the 09:25 NSE OI spurts fetch/merge is enabled
      */
-    public boolean isNseOiEnabled() {
-        return nseOiEnabled;
-    }
 
     /**
      * Enables/disables the 09:25 NSE OI spurts fetch (tuning/test hook).
      *
      * @param nseOiEnabled true to enable
      */
-    public void setNseOiEnabled(boolean nseOiEnabled) {
-        this.nseOiEnabled = nseOiEnabled;
-    }
 
     /**
      * @return true when NIFTY breadth still drives a one-directional watchlist and a mixed reading
      *     stands the day down; false for two-sided selection (default)
      */
-    public boolean isNiftyBiasEnabled() {
-        return niftyBiasEnabled;
-    }
 
     /**
      * Enables/disables the legacy NIFTY-biased selection (tuning/test hook).
      *
      * @param niftyBiasEnabled true to restore one-directional selection + breadth stand-down
      */
-    public void setNiftyBiasEnabled(boolean niftyBiasEnabled) {
-        this.niftyBiasEnabled = niftyBiasEnabled;
-    }
 
     /**
      * Sets the two-sided selection tuning (tuning/test hook).
@@ -5226,30 +5098,18 @@ public class LowestVolumeReversalService {
     /**
      * @return HYBRID-mode count of OI-spurt additions merged at 09:25 (default 3)
      */
-    public int getNseOiTopN() {
-        return nseOiTopN;
-    }
 
     /**
      * @param nseOiTopN HYBRID-mode count of OI-spurt additions merged at 09:25
      */
-    public void setNseOiTopN(int nseOiTopN) {
-        this.nseOiTopN = nseOiTopN;
-    }
 
     /**
      * @return whether the mid-morning NSE reservoir refresh may top up the reservoir
      */
-    public boolean isNseOiMidMorningRefreshEnabled() {
-        return nseOiMidMorningRefreshEnabled;
-    }
 
     /**
      * @param nseOiMidMorningRefreshEnabled true to enable the mid-morning NSE top-up
      */
-    public void setNseOiMidMorningRefreshEnabled(boolean nseOiMidMorningRefreshEnabled) {
-        this.nseOiMidMorningRefreshEnabled = nseOiMidMorningRefreshEnabled;
-    }
 
     /**
      * @return true once the daily NSE OI merge (or a successful no-op selection) has completed
@@ -5440,55 +5300,11 @@ public class LowestVolumeReversalService {
         this.ohlcCacheService = ohlcCacheService;
     }
 
-    public String getOrderType() {
-        return orderType;
-    }
-
     public void setOrderType(String orderType) {
         this.orderType =
                 (orderType != null && !orderType.isBlank())
                         ? orderType.trim().toUpperCase()
                         : "LMT";
-    }
-
-    public int getDefaultLots() {
-        return defaultLots;
-    }
-
-    public void setDefaultLots(int defaultLots) {
-        this.defaultLots = defaultLots;
-    }
-
-    public int getMaxAttemptsPerSymbol() {
-        return maxAttemptsPerSymbol;
-    }
-
-    public void setMaxAttemptsPerSymbol(int maxAttemptsPerSymbol) {
-        this.maxAttemptsPerSymbol = maxAttemptsPerSymbol;
-    }
-
-    public double getMinBreadthPct() {
-        return minBreadthPct;
-    }
-
-    public void setMinBreadthPct(double minBreadthPct) {
-        this.minBreadthPct = minBreadthPct;
-    }
-
-    public double getMinStopLossPct() {
-        return minStopLossPct;
-    }
-
-    public void setMinStopLossPct(double minStopLossPct) {
-        this.minStopLossPct = minStopLossPct;
-    }
-
-    public double getMaxDailyLoss() {
-        return maxDailyLoss;
-    }
-
-    public void setMaxDailyLoss(double maxDailyLoss) {
-        this.maxDailyLoss = maxDailyLoss;
     }
 
     public double calculateTodayRealizedPnl() {
@@ -5731,30 +5547,6 @@ public class LowestVolumeReversalService {
             return true;
         }
         return false;
-    }
-
-    public boolean isDynamicPositionSizing() {
-        return dynamicPositionSizing;
-    }
-
-    public void setDynamicPositionSizing(boolean dynamicPositionSizing) {
-        this.dynamicPositionSizing = dynamicPositionSizing;
-    }
-
-    public boolean isTelegramAlerts() {
-        return telegramAlerts;
-    }
-
-    public void setTelegramAlerts(boolean telegramAlerts) {
-        this.telegramAlerts = telegramAlerts;
-    }
-
-    public boolean isTelegramArmedAlerts() {
-        return telegramArmedAlerts;
-    }
-
-    public void setTelegramArmedAlerts(boolean telegramArmedAlerts) {
-        this.telegramArmedAlerts = telegramArmedAlerts;
     }
 
     /**
@@ -6207,23 +5999,8 @@ public class LowestVolumeReversalService {
     }
 
     /** M10: overrides where the JSON state snapshot is written/read (tests, deployments). */
-    public void setStateFilePath(String stateFilePath) {
-        this.stateFilePath = stateFilePath;
-    }
-
-    public String getStateFilePath() {
-        return stateFilePath;
-    }
 
     /** M10: enables/disables JSON snapshot persistence. */
-    public void setStatePersistenceEnabled(boolean statePersistenceEnabled) {
-        this.statePersistenceEnabled = statePersistenceEnabled;
-    }
-
-    public boolean isStatePersistenceEnabled() {
-        return statePersistenceEnabled;
-    }
-
     public LowestVolumeSectorState getSectorState() {
         return sectorState;
     }
