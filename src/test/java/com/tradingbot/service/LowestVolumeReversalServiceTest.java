@@ -366,7 +366,7 @@ class LowestVolumeReversalServiceTest {
                 .publish(
                         org.mockito.ArgumentMatchers.argThat(
                                 sig ->
-                                        sig.underlyingSymbol().equals("SUNPHARMA")
+                                        "SUNPHARMA".equals(sig.underlyingSymbol())
                                                 && "LOWEST_VOLUME_REVERSAL".equals(sig.strategyId())
                                                 && sig.action()
                                                         == com.tradingbot.strategy.SignalAction
@@ -378,7 +378,7 @@ class LowestVolumeReversalServiceTest {
                 .publish(
                         org.mockito.ArgumentMatchers.argThat(
                                 sig ->
-                                        sig.underlyingSymbol().equals("SUNPHARMA")
+                                        "SUNPHARMA".equals(sig.underlyingSymbol())
                                                 && sig.action()
                                                         == com.tradingbot.strategy.SignalAction
                                                                 .EXIT_LONG));
@@ -1468,7 +1468,7 @@ class LowestVolumeReversalServiceTest {
         when(marketDataService.fetchQuote(any(), any()))
                 .thenReturn(mapper.createObjectNode().put("lp", "1869.50").put("ap", "1875.00"));
 
-        service.evaluateOpenPositions(LocalTime.of(11, 00));
+        service.evaluateOpenPositions(LocalTime.of(11, 0));
 
         // Position should now be CLOSED with TRAILING_COST_SL_HIT
         assertThat(service.getOpenPositions()).isEmpty();
@@ -1477,6 +1477,59 @@ class LowestVolumeReversalServiceTest {
         assertThat(closed.isClosed()).isTrue();
         assertThat(closed.getExitReason()).isEqualTo("TRAILING_COST_SL_HIT");
         assertThat(closed.getTotalRealizedPnl()).isGreaterThan(BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("PNL-6: partial-exit signal carries remainingQuantity for runner-stop sizing")
+    void testPartialExitSignalCarriesRemainingQuantity() {
+        com.tradingbot.bus.SignalPublisher mockPublisher =
+                mock(com.tradingbot.bus.SignalPublisher.class);
+        when(mockPublisher.publish(any())).thenReturn(true);
+        service =
+                new LowestVolumeReversalService(
+                        marketDataService, taService, null, config, null, null, mockPublisher);
+        service.setClock(Clock.fixed(Instant.parse("2026-09-18T04:30:00Z"), IST));
+        service.setInstrumentType(LvrInstrumentType.FUTURES);
+        service.setExitMode(LvrExitMode.PARTIAL_1_2_TRAIL_10EMA_COST_EOD_1500);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1865),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1859),
+                        BigDecimal.valueOf(1869),
+                        5000),
+                BigDecimal.valueOf(1870.05),
+                BigDecimal.valueOf(1860.05), // Unit Risk = 10.00
+                BigDecimal.valueOf(1895.05)); // Armed at target-rr: 1870.05 + 25 = 1895.05
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        LowestVolumePaperPosition pos =
+                service.executePositionEntry("SUNPHARMA", setup, BigDecimal.valueOf(1870.00));
+
+        ObjectMapper mapper = new ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1895.50").put("ap", "1875.00"));
+        service.evaluateOpenPositions(LocalTime.of(10, 30));
+
+        assertThat(pos.isPartialBooked()).isTrue();
+        verify(mockPublisher)
+                .publish(
+                        org.mockito.ArgumentMatchers.argThat(
+                                sig ->
+                                        sig.action()
+                                                        == com.tradingbot.strategy.SignalAction
+                                                                .PARTIAL_EXIT_LONG
+                                                && sig.metadata() != null
+                                                && Integer.valueOf(pos.getRemainingQuantity())
+                                                        .equals(
+                                                                sig.metadata()
+                                                                        .get(
+                                                                                "remainingQuantity"))));
     }
 
     @Test
@@ -2910,9 +2963,7 @@ class LowestVolumeReversalServiceTest {
         assertThat(service.getActiveSetups()).isNotEmpty();
         assertThat(service.getActiveSetups().values())
                 .allSatisfy(
-                        s -> {
-                            assertThat(s.getDirection()).isEqualTo(LowestVolumeDirection.SHORT);
-                        });
+                        s -> assertThat(s.getDirection()).isEqualTo(LowestVolumeDirection.SHORT));
         // Every sector falls bearish, so the bullish side cannot fill (sector sign gating): the
         // watchlist is capped at bearishSectors × stocksPerSector = 3 × 3. OI additions arrive
         // in phase 2.
