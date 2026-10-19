@@ -1421,6 +1421,21 @@ class LowestVolumeReversalServiceTest {
     }
 
     @Test
+    @DisplayName("PNL-9: replay skips symbols missing from the F&O registry (live would reject)")
+    void testReplaySessionSkipsSymbolsOutsideFnoRegistry() {
+        // Isolate the registry path: with every data gate off, the ONLY thing standing between a
+        // fabricated lot size and a fake replay trade is the registry check itself.
+        service.setExpiryDteEnabled(false);
+        List<LowestVolumePaperPosition> trades =
+                service.replaySession(
+                        "NOT_IN_REGISTRY_PVT", LowestVolumeDirection.LONG, replayFixtureCandles());
+
+        // Live entry fails closed (REJECTED_EXHAUSTED) for unregistered symbols — replay must not
+        // fabricate a lot size and produce fake P&L.
+        assertThat(trades).isEmpty();
+    }
+
+    @Test
     @DisplayName(
             "Futures LONG Position - 50% Profit Booked at the configured Target and SL moved to Cost")
     void testFuturesPartialExitTarget14AndTrailSl11() {

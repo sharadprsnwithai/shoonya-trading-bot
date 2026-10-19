@@ -5900,8 +5900,18 @@ public class LowestVolumeReversalService {
                     // Sizing preview — also feeds the budget gate (identical math to the
                     // position construction below and to executePositionEntry's budget check).
                     StockFnoRegistry.InstrumentInfo fno = StockFnoRegistry.get(symbol);
-                    int lotSize = fno != null ? fno.lotSize() : 100;
-                    BigDecimal strikeStep = fno != null ? fno.strikeStep() : BigDecimal.valueOf(10);
+                    if (fno == null) {
+                        // PNL-9: live entry fails closed (REJECTED_EXHAUSTED) on a registry miss —
+                        // replay must never fabricate a lot size and mint fake P&L.
+                        log.warn(
+                                "[LVR] Replay skip {}: not in the F&O registry — live entry would"
+                                        + " be rejected (REJECTED_EXHAUSTED).",
+                                symbol);
+                        discardedForDay = true;
+                        break;
+                    }
+                    int lotSize = fno.lotSize();
+                    BigDecimal strikeStep = fno.strikeStep();
                     BigDecimal unitRisk =
                             triggerPrice.subtract(activeSetup.getStopLossPrice()).abs();
                     int lots = defaultLots > 0 ? defaultLots : 2;
