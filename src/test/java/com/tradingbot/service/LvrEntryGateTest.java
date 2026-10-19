@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tradingbot.model.strategy.LowestVolumeDirection;
 import com.tradingbot.model.strategy.LvrInstrumentType;
-import com.tradingbot.service.LowestVolumeReversalService.EntryGateDecision;
-import com.tradingbot.service.LowestVolumeReversalService.EntryGateDisposition;
-import com.tradingbot.service.LowestVolumeReversalService.EntryGateInput;
+import com.tradingbot.service.LvrEntryGate.EntryGateDecision;
+import com.tradingbot.service.LvrEntryGate.EntryGateDisposition;
+import com.tradingbot.service.LvrEntryGate.EntryGateInput;
 import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.util.List;
@@ -66,7 +66,7 @@ class LvrEntryGateTest {
     @Test
     @DisplayName("All gates satisfied → ALLOWED")
     void testBaseInputAllowed() {
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(baseInput());
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(baseInput());
         assertThat(d.allowed()).isTrue();
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.ALLOWED);
     }
@@ -76,7 +76,7 @@ class LvrEntryGateTest {
     void testSlippageLongExcessive() {
         EntryGateInput in = baseInput();
         in.entryPrice = bd(1005); // > trigger × 1.0012 = 1001.2
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("SLIPPAGE");
     }
@@ -87,7 +87,7 @@ class LvrEntryGateTest {
         EntryGateInput in = baseInput();
         in.direction = LowestVolumeDirection.SHORT;
         in.entryPrice = bd(995); // < trigger × 0.9988 = 998.8
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("SLIPPAGE");
     }
@@ -100,7 +100,7 @@ class LvrEntryGateTest {
         in.indexAlignmentBufferBps = 10.0;
         in.indexPrevClose = 24000.0;
         in.indexSpot = 23950.0; // -20.8 bps: the index has reversed against the long
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("INDEX_ALIGNMENT");
     }
@@ -114,7 +114,7 @@ class LvrEntryGateTest {
         in.indexAlignmentBufferBps = 10.0;
         in.indexPrevClose = 24000.0;
         in.indexSpot = 24050.0; // +20.8 bps: the index has rallied against the short
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("INDEX_ALIGNMENT");
     }
@@ -129,7 +129,7 @@ class LvrEntryGateTest {
         inside.indexAlignmentBufferBps = 10.0;
         inside.indexPrevClose = 24000.0;
         inside.indexSpot = 24010.0;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(inside);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(inside);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("INDEX_ALIGNMENT");
 
@@ -138,7 +138,7 @@ class LvrEntryGateTest {
         boundary.indexAlignmentBufferBps = 10.0;
         boundary.indexPrevClose = 24000.0;
         boundary.indexSpot = 24024.0; // exactly +10 bps
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(boundary).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(boundary).allowed()).isTrue();
     }
 
     @Test
@@ -149,7 +149,7 @@ class LvrEntryGateTest {
         longIn.indexAlignmentBufferBps = 10.0;
         longIn.indexPrevClose = 24000.0;
         longIn.indexSpot = 24100.0; // +41.7 bps
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(longIn).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(longIn).allowed()).isTrue();
 
         EntryGateInput shortIn = baseInput();
         shortIn.direction = LowestVolumeDirection.SHORT;
@@ -157,7 +157,7 @@ class LvrEntryGateTest {
         shortIn.indexAlignmentBufferBps = 10.0;
         shortIn.indexPrevClose = 24000.0;
         shortIn.indexSpot = 23900.0; // -41.7 bps
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(shortIn).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(shortIn).allowed()).isTrue();
     }
 
     @Test
@@ -169,7 +169,7 @@ class LvrEntryGateTest {
         missing.indexAlignmentBufferBps = 10.0;
         missing.indexPrevClose = 24000.0;
         missing.indexSpot = null;
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(missing).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(missing).allowed()).isTrue();
 
         // Prev close of 0 would make the basis-point move meaningless — treat as unavailable.
         EntryGateInput zeroPrev = baseInput();
@@ -177,7 +177,7 @@ class LvrEntryGateTest {
         zeroPrev.indexAlignmentBufferBps = 10.0;
         zeroPrev.indexPrevClose = 0.0;
         zeroPrev.indexSpot = 24000.0;
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(zeroPrev).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(zeroPrev).allowed()).isTrue();
     }
 
     @Test
@@ -188,7 +188,7 @@ class LvrEntryGateTest {
         in.indexAlignmentBufferBps = 10.0;
         in.indexPrevClose = 24000.0;
         in.indexSpot = 23950.0; // would have denied had the flag been on
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed()).isTrue();
     }
 
     @Test
@@ -206,8 +206,8 @@ class LvrEntryGateTest {
         replay.indexPrevClose = 24000.0;
         replay.indexSpot = 23950.0;
 
-        EntryGateDecision liveDecision = LowestVolumeReversalService.evaluateEntryGate(live);
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(replay)).isEqualTo(liveDecision);
+        EntryGateDecision liveDecision = LvrEntryGate.evaluateEntryGate(live);
+        assertThat(LvrEntryGate.evaluateEntryGate(replay)).isEqualTo(liveDecision);
         assertThat(liveDecision.gate()).isEqualTo("INDEX_ALIGNMENT");
     }
 
@@ -217,7 +217,7 @@ class LvrEntryGateTest {
         EntryGateInput in = baseInput();
         in.vwapEnabled = true;
         in.vwap = null;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("VWAP");
     }
@@ -228,7 +228,7 @@ class LvrEntryGateTest {
         EntryGateInput wrong = baseInput();
         wrong.vwapEnabled = true;
         wrong.vwap = 1005.0; // LONG requires decisionPrice > VWAP
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(wrong);
+        EntryGateDecision d1 = LvrEntryGate.evaluateEntryGate(wrong);
         // Transient by nature: VWAP moves every tick and this input is rebuilt from a fresh quote
         // each pass. Denying with EXHAUST would discard the symbol for the day on one bad tick.
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
@@ -237,7 +237,7 @@ class LvrEntryGateTest {
         EntryGateInput right = baseInput();
         right.vwapEnabled = true;
         right.vwap = 990.0;
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(right).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(right).allowed()).isTrue();
     }
 
     @Test
@@ -248,12 +248,12 @@ class LvrEntryGateTest {
         in.first15mHigh = bd(1010);
         in.first15mLow = bd(990);
         in.decisionPrice = bd(1001);
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d.gate()).isEqualTo("15M_RANGE");
 
         in.decisionPrice = bd(1011); // above the high
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed()).isTrue();
     }
 
     @Test
@@ -263,7 +263,7 @@ class LvrEntryGateTest {
         in.range15mEnabled = true;
         in.first15mHigh = null;
         in.first15mLow = null;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("15M_RANGE");
     }
@@ -275,7 +275,7 @@ class LvrEntryGateTest {
         missing.pdhPdlEnabled = true;
         missing.pdh = null;
         missing.pdl = null;
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(missing);
+        EntryGateDecision d1 = LvrEntryGate.evaluateEntryGate(missing);
         // The only price-relative gate that legitimately exhausts: the live path has already
         // burned its bounded N5 lazy-fetch retries before this gate ever sees a null.
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
@@ -287,11 +287,11 @@ class LvrEntryGateTest {
         inside.pdl = bd(990);
         inside.decisionPrice = bd(1001); // LONG must be > PDH
         // Inside the range is a function of the live quote, not a permanent verdict.
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(inside).disposition())
+        assertThat(LvrEntryGate.evaluateEntryGate(inside).disposition())
                 .isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
 
         inside.decisionPrice = bd(1011);
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(inside).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(inside).allowed()).isTrue();
     }
 
     @Test
@@ -300,7 +300,7 @@ class LvrEntryGateTest {
         EntryGateInput in = baseInput();
         in.pcrEnabled = true;
         in.pcr = null;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("PCR");
     }
@@ -313,7 +313,7 @@ class LvrEntryGateTest {
         inBand.pcrNeutralMin = 0.85;
         inBand.pcrNeutralMax = 1.15;
         inBand.pcr = 1.10; // Inside neutral band -> RETRY_COOLDOWN
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(inBand);
+        EntryGateDecision d1 = LvrEntryGate.evaluateEntryGate(inBand);
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("PCR");
 
@@ -322,7 +322,7 @@ class LvrEntryGateTest {
         bearish.pcrNeutralMin = 0.85;
         bearish.pcrNeutralMax = 1.15;
         bearish.pcr = 0.70; // Below band (bearish) -> RETRY_COOLDOWN
-        EntryGateDecision d2 = LowestVolumeReversalService.evaluateEntryGate(bearish);
+        EntryGateDecision d2 = LvrEntryGate.evaluateEntryGate(bearish);
         assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d2.gate()).isEqualTo("PCR");
 
@@ -331,7 +331,7 @@ class LvrEntryGateTest {
         right.pcrNeutralMin = 0.85;
         right.pcrNeutralMax = 1.15;
         right.pcr = 1.30; // Above band (bullish) -> allowed
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(right).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(right).allowed()).isTrue();
     }
 
     @Test
@@ -343,7 +343,7 @@ class LvrEntryGateTest {
         inBand.pcrNeutralMin = 0.85;
         inBand.pcrNeutralMax = 1.15;
         inBand.pcr = 0.90; // Inside neutral band -> RETRY_COOLDOWN
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(inBand);
+        EntryGateDecision d1 = LvrEntryGate.evaluateEntryGate(inBand);
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("PCR");
 
@@ -353,7 +353,7 @@ class LvrEntryGateTest {
         bullish.pcrNeutralMin = 0.85;
         bullish.pcrNeutralMax = 1.15;
         bullish.pcr = 1.40; // Above band (bullish) -> RETRY_COOLDOWN
-        EntryGateDecision d2 = LowestVolumeReversalService.evaluateEntryGate(bullish);
+        EntryGateDecision d2 = LvrEntryGate.evaluateEntryGate(bullish);
         assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d2.gate()).isEqualTo("PCR");
 
@@ -363,7 +363,7 @@ class LvrEntryGateTest {
         right.pcrNeutralMin = 0.85;
         right.pcrNeutralMax = 1.15;
         right.pcr = 0.70; // Below band (bearish) -> allowed
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(right).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(right).allowed()).isTrue();
     }
 
     @Test
@@ -381,7 +381,7 @@ class LvrEntryGateTest {
                 in.pcrNeutralMax = 1.15;
                 in.pcr = pcr;
 
-                EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+                EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
                 assertThat(d.disposition())
                         .as("PCR %.2f / %s must be blocked", pcr, dir)
                         .isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
@@ -399,12 +399,12 @@ class LvrEntryGateTest {
         in.optionSrFilterEnabled = true;
         in.optionResistanceStrike = bd(1000);
         in.decisionPrice = bd(1000); // at resistance -> RETRY_COOLDOWN
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d1 = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("OPTION_SR");
 
         in.decisionPrice = bd(990); // safely below resistance -> ALLOWED
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed()).isTrue();
     }
 
     @Test
@@ -415,12 +415,12 @@ class LvrEntryGateTest {
         in.optionSrFilterEnabled = true;
         in.optionSupportStrike = bd(1000);
         in.decisionPrice = bd(1000); // at support -> RETRY_COOLDOWN
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d1 = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY_COOLDOWN);
         assertThat(d1.gate()).isEqualTo("OPTION_SR");
 
         in.decisionPrice = bd(1010); // safely above support -> ALLOWED
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed()).isTrue();
     }
 
     @Test
@@ -434,7 +434,7 @@ class LvrEntryGateTest {
         longIn.optionSrFilterEnabled = true;
         longIn.optionSupportStrike = bd(900); // the WRONG side is populated
         longIn.decisionPrice = bd(950);
-        EntryGateDecision longDenied = LowestVolumeReversalService.evaluateEntryGate(longIn);
+        EntryGateDecision longDenied = LvrEntryGate.evaluateEntryGate(longIn);
         assertThat(longDenied.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(longDenied.gate()).isEqualTo("OPTION_SR");
 
@@ -443,7 +443,7 @@ class LvrEntryGateTest {
         shortIn.optionSrFilterEnabled = true;
         shortIn.optionResistanceStrike = bd(1100); // the WRONG side is populated
         shortIn.decisionPrice = bd(1050);
-        EntryGateDecision shortDenied = LowestVolumeReversalService.evaluateEntryGate(shortIn);
+        EntryGateDecision shortDenied = LvrEntryGate.evaluateEntryGate(shortIn);
         assertThat(shortDenied.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(shortDenied.gate()).isEqualTo("OPTION_SR");
 
@@ -454,7 +454,7 @@ class LvrEntryGateTest {
         okIn.optionSrFilterEnabled = true;
         okIn.optionResistanceStrike = bd(1000);
         okIn.decisionPrice = bd(950);
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(okIn).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(okIn).allowed()).isTrue();
     }
 
     @Test
@@ -462,13 +462,13 @@ class LvrEntryGateTest {
     void testStandDownAndBreaker() {
         EntryGateInput sd = baseInput();
         sd.standDown = true;
-        EntryGateDecision d1 = LowestVolumeReversalService.evaluateEntryGate(sd);
+        EntryGateDecision d1 = LvrEntryGate.evaluateEntryGate(sd);
         assertThat(d1.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d1.gate()).isEqualTo("STAND_DOWN");
 
         EntryGateInput br = baseInput();
         br.breakerTripped = true;
-        EntryGateDecision d2 = LowestVolumeReversalService.evaluateEntryGate(br);
+        EntryGateDecision d2 = LvrEntryGate.evaluateEntryGate(br);
         assertThat(d2.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d2.gate()).isEqualTo("BREAKER");
     }
@@ -478,7 +478,7 @@ class LvrEntryGateTest {
     void testEntryCutoff() {
         EntryGateInput in = baseInput();
         in.nowTime = LocalTime.of(11, 30);
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("CUTOFF");
     }
@@ -489,7 +489,7 @@ class LvrEntryGateTest {
         EntryGateInput in = baseInput();
         in.tradeAttempts = 2;
         in.maxAttempts = 2;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("ATTEMPTS");
     }
@@ -500,7 +500,7 @@ class LvrEntryGateTest {
         EntryGateInput in = baseInput();
         in.openConcurrent = 5;
         in.maxConcurrent = 5;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("CONCURRENCY");
     }
@@ -510,7 +510,7 @@ class LvrEntryGateTest {
     void testRegistryMiss() {
         EntryGateInput in = baseInput();
         in.hasRegistryEntry = false;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d.gate()).isEqualTo("REGISTRY");
     }
@@ -580,7 +580,7 @@ class LvrEntryGateTest {
         for (Case c : cases) {
             EntryGateInput in = baseInput();
             c.configure().accept(in);
-            EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+            EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
             assertThat(d.allowed()).as("%s must be denied", c.name()).isFalse();
             assertThat(d.disposition())
                     .as("%s must not permanently discard the symbol for the day", c.name())
@@ -594,7 +594,7 @@ class LvrEntryGateTest {
         EntryGateInput in = baseInput();
         in.plannedRisk = bd(20000);
         in.remainingBudget = 15000.0;
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
         assertThat(d.gate()).isEqualTo("BUDGET");
     }
@@ -606,7 +606,7 @@ class LvrEntryGateTest {
         in.entryPrice = bd(1005); // slippage breach
         in.vwapEnabled = true;
         in.vwap = 1005.0; // also VWAP-failing
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
         assertThat(d.gate()).isEqualTo("SLIPPAGE");
     }
 
@@ -625,15 +625,15 @@ class LvrEntryGateTest {
         replay.decisionPrice = bd(1001);
         replay.entryPrice = bd(1001);
 
-        EntryGateDecision liveDecision = LowestVolumeReversalService.evaluateEntryGate(live);
-        EntryGateDecision replayDecision = LowestVolumeReversalService.evaluateEntryGate(replay);
+        EntryGateDecision liveDecision = LvrEntryGate.evaluateEntryGate(live);
+        EntryGateDecision replayDecision = LvrEntryGate.evaluateEntryGate(replay);
         assertThat(replayDecision).isEqualTo(liveDecision);
 
         // And the same holds for a denial: both see the identical gate + disposition.
         live.entryPrice = bd(1005);
         replay.entryPrice = bd(1005);
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(replay))
-                .isEqualTo(LowestVolumeReversalService.evaluateEntryGate(live));
+        assertThat(LvrEntryGate.evaluateEntryGate(replay))
+                .isEqualTo(LvrEntryGate.evaluateEntryGate(live));
 
         // P2/P3 parity: the regulatory gates decide identically too, for both a ban denial …
         for (EntryGateInput in : List.of(live, replay)) {
@@ -642,9 +642,9 @@ class LvrEntryGateTest {
             in.symbolBanned = true;
             in.banListUnavailable = false;
         }
-        EntryGateDecision liveBan = LowestVolumeReversalService.evaluateEntryGate(live);
+        EntryGateDecision liveBan = LvrEntryGate.evaluateEntryGate(live);
         assertThat(liveBan.gate()).isEqualTo("BAN_PERIOD");
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(replay)).isEqualTo(liveBan);
+        assertThat(LvrEntryGate.evaluateEntryGate(replay)).isEqualTo(liveBan);
 
         // … and a DTE denial.
         for (EntryGateInput in : List.of(live, replay)) {
@@ -655,9 +655,9 @@ class LvrEntryGateTest {
             in.optionDteSessions = 1;
             in.optionMinDteSessions = 2;
         }
-        EntryGateDecision liveDte = LowestVolumeReversalService.evaluateEntryGate(live);
+        EntryGateDecision liveDte = LvrEntryGate.evaluateEntryGate(live);
         assertThat(liveDte.gate()).isEqualTo("EXPIRY_DTE");
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(replay)).isEqualTo(liveDte);
+        assertThat(LvrEntryGate.evaluateEntryGate(replay)).isEqualTo(liveDte);
     }
 
     @Test
@@ -667,7 +667,7 @@ class LvrEntryGateTest {
         in.banPeriodEnabled = true;
         in.symbolBanned = true;
 
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
 
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d.gate()).isEqualTo("BAN_PERIOD");
@@ -684,7 +684,7 @@ class LvrEntryGateTest {
         in.vwapEnabled = true;
         in.vwap = 1005.0; // also a VWAP failure
 
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
 
         // A symbol that can never be traded must not burn a 60s slippage cooldown first.
         assertThat(d.gate()).isEqualTo("BAN_PERIOD");
@@ -699,7 +699,7 @@ class LvrEntryGateTest {
         in.banListUnavailable = true;
         in.banPeriodFailClosed = false;
 
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed())
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed())
                 .as("a network blip must not shut the strategy down")
                 .isTrue();
     }
@@ -713,7 +713,7 @@ class LvrEntryGateTest {
         in.banListUnavailable = true;
         in.banPeriodFailClosed = true;
 
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
 
         // A transient fetch failure must not permanently discard symbols for the day.
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.RETRY);
@@ -728,7 +728,7 @@ class LvrEntryGateTest {
         in.symbolBanned = true;
         in.banListUnavailable = true;
 
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed()).isTrue();
     }
 
     @Test
@@ -740,7 +740,7 @@ class LvrEntryGateTest {
         in.expiryDayToday = true;
         in.optionDteSessions = 0;
 
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
 
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d.gate()).isEqualTo("EXPIRY_DTE");
@@ -757,7 +757,7 @@ class LvrEntryGateTest {
         in.optionDteSessions = 1;
         in.expiryDayToday = false;
 
-        EntryGateDecision denied = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision denied = LvrEntryGate.evaluateEntryGate(in);
 
         assertThat(denied.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(denied.gate()).isEqualTo("EXPIRY_DTE");
@@ -765,7 +765,7 @@ class LvrEntryGateTest {
 
         // Two sessions left is exactly the floor — not below it, so the entry proceeds.
         in.optionDteSessions = 2;
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed()).isTrue();
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed()).isTrue();
     }
 
     @Test
@@ -778,7 +778,7 @@ class LvrEntryGateTest {
         in.expiryDayToday = true;
         in.optionDteSessions = 0;
 
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).allowed())
+        assertThat(LvrEntryGate.evaluateEntryGate(in).allowed())
                 .as("the live FUTURES strategy must not be silently disabled")
                 .isTrue();
     }
@@ -793,7 +793,7 @@ class LvrEntryGateTest {
         in.expiryDayToday = false;
         in.optionDteSessions = 0;
 
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
 
         assertThat(d.disposition()).isEqualTo(EntryGateDisposition.EXHAUST);
         assertThat(d.gate()).isEqualTo("EXPIRY_DTE");
@@ -808,7 +808,7 @@ class LvrEntryGateTest {
         in.instrumentType = LvrInstrumentType.OPTIONS;
         in.optionDteSessions = null;
 
-        EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+        EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
 
         // Mirrors REGISTRY: a contract we cannot resolve cannot be traded, and the miss is
         // permanent for the day.
@@ -826,7 +826,7 @@ class LvrEntryGateTest {
         in.expiryDayToday = true;
         in.optionDteSessions = 0;
 
-        assertThat(LowestVolumeReversalService.evaluateEntryGate(in).gate()).isEqualTo("CUTOFF");
+        assertThat(LvrEntryGate.evaluateEntryGate(in).gate()).isEqualTo("CUTOFF");
     }
 
     @Test
@@ -858,7 +858,7 @@ class LvrEntryGateTest {
         for (Case c : cases) {
             EntryGateInput in = baseInput();
             c.configure().accept(in);
-            EntryGateDecision d = LowestVolumeReversalService.evaluateEntryGate(in);
+            EntryGateDecision d = LvrEntryGate.evaluateEntryGate(in);
             assertThat(d.disposition())
                     .as("%s is session-static and cannot recover intraday", c.name())
                     .isEqualTo(EntryGateDisposition.EXHAUST);
