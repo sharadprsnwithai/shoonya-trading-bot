@@ -57,7 +57,7 @@ class ZerodhaTradeConsumerTest {
                 .placeOrder(
                         argThat(
                                 (OrderRequest req) ->
-                                        req.tradingSymbol().equals("TCS26MARFUT")
+                                        "TCS26MARFUT".equals(req.tradingSymbol())
                                                 && req.transactionType() == TransactionType.SELL
                                                 && req.quantity() == 350));
         consumer.stop();
@@ -102,7 +102,7 @@ class ZerodhaTradeConsumerTest {
                 .placeOrder(
                         argThat(
                                 (OrderRequest req) ->
-                                        req.tradingSymbol().equals("INFY26OCT1450PE")
+                                        "INFY26OCT1450PE".equals(req.tradingSymbol())
                                                 && req.transactionType() == TransactionType.BUY
                                                 && req.triggerPrice() == null
                                                 && req.quantity() == 400));
@@ -175,7 +175,7 @@ class ZerodhaTradeConsumerTest {
                 .placeOrder(
                         argThat(
                                 (OrderRequest req) ->
-                                        req.tradingSymbol().equals("NIFTY26OCT25950CE")
+                                        "NIFTY26OCT25950CE".equals(req.tradingSymbol())
                                                 && req.transactionType() == TransactionType.BUY
                                                 && req.quantity() == 130));
         consumer.stop();
@@ -205,6 +205,17 @@ class ZerodhaTradeConsumerTest {
                                 "KITE-EXIT",
                                 OrderStatus.COMPLETE,
                                 "Exited",
+                                null,
+                                Instant.now()));
+
+        // PNL-2 contract: the exit first cancels the resting protective stop (verified).
+        when(gateway.cancelOrder("KITE-SL"))
+                .thenReturn(
+                        new OrderResponse(
+                                true,
+                                "KITE-SL",
+                                OrderStatus.CANCELLED,
+                                "SL cancelled",
                                 null,
                                 Instant.now()));
 
@@ -372,6 +383,6 @@ class ZerodhaTradeConsumerTest {
                                         req.orderType() == OrderType.LMT
                                                 && req.price().compareTo(BigDecimal.valueOf(113.40))
                                                         == 0
-                                                && req.symbol().equals("PNB FUT")));
+                                                && "PNB FUT".equals(req.symbol())));
     }
 }

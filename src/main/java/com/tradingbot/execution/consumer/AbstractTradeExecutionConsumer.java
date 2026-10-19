@@ -200,13 +200,17 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             new java.util.concurrent.ConcurrentHashMap<>();
 
     protected static boolean isEntryAction(com.tradingbot.strategy.SignalAction action) {
-        if (action == null) return false;
+        if (action == null) {
+            return false;
+        }
         String n = action.name();
-        return n.startsWith("ENTRY") || n.equals("BUY") || n.equals("SELL");
+        return n.startsWith("ENTRY") || "BUY".equals(n) || "SELL".equals(n);
     }
 
     protected static boolean isExitAction(com.tradingbot.strategy.SignalAction action) {
-        if (action == null) return false;
+        if (action == null) {
+            return false;
+        }
         String n = action.name();
         // SQUARE_OFF is a full flatten: like EXIT_* it must cancel the resting protective stop,
         // clear the entry ledger and pass the unconfirmed-entry guard.
@@ -214,30 +218,58 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     }
 
     protected static boolean isPartialExitAction(com.tradingbot.strategy.SignalAction action) {
-        if (action == null) return false;
+        if (action == null) {
+            return false;
+        }
         return action == SignalAction.PARTIAL_EXIT_LONG
                 || action == SignalAction.PARTIAL_EXIT_SHORT;
     }
 
     protected String ledgerKey(TradeSignal signal) {
         String underlying = signal.underlyingSymbol();
-        return (underlying != null && !underlying.isBlank()) ? underlying : signal.tradingSymbol();
+        return underlying != null && !underlying.isBlank() ? underlying : signal.tradingSymbol();
     }
 
     /**
-     * C3: places an order with response validation and entry-ledger tracking.
+     * C3/PNL-1: places an order with response validation and entry-ledger tracking.
      *
      * <ul>
      *   <li>Rejected/failed ENTRY → symbol is marked {@code ENTRY_UNCONFIRMED}; later EXITs for it
      *       are suppressed (no naked reverse order at the broker).
-     *   <li>Confirmed ENTRY → symbol moves to the confirmed ledger and a best-effort protective
-     *       SL-M order is placed using the contract-scaled {@code brokerStopLossPrice} metadata.
-     *   <li>When the gateway supports order-status polling (Zerodha), the status is polled briefly
-     *       before the entry is considered confirmed.
+     *   <li>PNL-1: an ENTRY that is still unfilled after the bounded status poll is cancelled and
+     *       marked {@code ENTRY_UNCONFIRMED} — an open LIMIT order is not a position.
+     *   <li>Confirmed ENTRY → the broker position is cross-checked (PNL-4), the symbol moves to the
+     *       confirmed ledger and a best-effort protective SL-M order is placed using the
+     *       contract-scaled {@code brokerStopLossPrice} metadata.
+     *   <li>PNL-2: exit-family orders cancel the resting protective stop FIRST (verified); a failed
+     *       cancel aborts the exit with the position still protected by the stop.
+     *   <li>PNL-1: a failed or unfilled-and-cancelled EXIT re-places the protective stop — the
+     *       position is still open and must not be left naked.
      * </ul>
      */
     protected OrderResponse placeOrderConfirmed(
             TradeSignal signal, OrderRequest request, BrokerOrderGateway gateway) {
+        String key = ledgerKey(signal);
+        boolean entry = isEntryAction(signal.action());
+        boolean partialExit = isPartialExitAction(signal.action());
+        boolean exit = isExitAction(signal.action());
+
+        // PNL-2: the stop must be off the book before an exit-family order goes out — otherwise a
+        // fast market can trigger the stop and the exit together (double execution → naked short).
+        if (!entry && (exit || partialExit)) {
+            if (!cancelRestingProtectiveStop(gateway, key, signal.action().name())) {
+                log.error(
+                        "[CONSUMER:{}] {} for {} ABORTED — the protective SL could not be cancelled"
+                                + " at the broker. The position stays protected by the stop; the"
+                                + " next evaluation retries the exit.",
+                        consumerId,
+                        signal.action(),
+                        key);
+                return OrderResponse.failure(
+                        request, signal.action() + " aborted: protective SL cancel failed");
+            }
+        }
+
         OrderResponse resp;
         try {
             resp = gateway.placeOrder(request);
@@ -246,11 +278,10 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         }
 
         boolean rejected = resp == null || !resp.success() || resp.status() == OrderStatus.REJECTED;
-        String key = ledgerKey(signal);
 
-        if (!rejected && isEntryAction(signal.action()) && orderIdOf(resp) != null) {
-            OrderStatus polled = pollOrderStatus(gateway, orderIdOf(resp));
-            if (polled == OrderStatus.REJECTED || polled == OrderStatus.CANCELLED) {
+        if (!rejected && entry && orderIdOf(resp) != null) {
+            OrderPollOutcome polled = pollOrderOutcome(gateway, orderIdOf(resp));
+            if (polled == OrderPollOutcome.REJECTED || polled == OrderPollOutcome.CANCELLED) {
                 rejected = true;
                 log.error(
                         "[CONSUMER:{}] Order {} later reported as {} for {}",
@@ -258,11 +289,30 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                         orderIdOf(resp),
                         polled,
                         key);
+            } else if (polled == OrderPollOutcome.STILL_OPEN) {
+                // PNL-1: an entry order that never filled is not a position. Cancel it and fail
+                // closed — even when the cancel itself fails the entry stays unconfirmed, because
+                // a possibly-later-filling order must not be treated as a booked position.
+                rejected = true;
+                cancelQuietly(gateway, orderIdOf(resp), key, "unfilled ENTRY");
+                log.error(
+                        "[CONSUMER:{}] ENTRY order {} for {} still unfilled after the bounded"
+                                + " status poll — cancelled and marked UNCONFIRMED. If the cancel"
+                                + " failed the order may still fill; the drift reconciler will"
+                                + " flag any resulting position.",
+                        consumerId,
+                        orderIdOf(resp),
+                        key);
             }
         }
 
+        // PNL-4: cross-check the confirmed entry against the broker's actual position.
+        if (!rejected && entry) {
+            verifyFillAtBroker(signal, request, gateway);
+        }
+
         if (rejected) {
-            if (isEntryAction(signal.action())) {
+            if (entry) {
                 unconfirmedEntries.add(key);
                 confirmedEntries.remove(key);
                 log.error(
@@ -282,19 +332,22 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                         key,
                         request.symbol(),
                         resp != null ? resp.message() : "null response");
+                // PNL-1/2: the protective stop is already off the book (pre-flight cancel); the
+                // position is still open — it must not be left naked.
+                if (exit || partialExit) {
+                    replaceProtectiveStopForOpenPosition(signal, request, gateway);
+                }
             }
             return resp;
         }
 
-        if (isEntryAction(signal.action())) {
+        if (entry) {
             confirmedEntries.add(key);
             unconfirmedEntries.remove(key);
             placeBestEffortProtectiveStop(signal, request, gateway);
-        } else if (isPartialExitAction(signal.action())) {
-            // 1.2: On partial exit, cancel the 100% SL order and replace with a 50% runner SL order
-            // at Cost SL
-            cancelRestingProtectiveStop(gateway, key, "partial exit");
-
+        } else if (partialExit) {
+            // 1.2: the 100% stop was cancelled pre-flight (PNL-2); place the runner stop at Cost
+            // SL for the lots that remain in the market.
             int remainingQty = request.quantity();
             if (signal.metadata() != null && signal.metadata().get("remainingQuantity") != null) {
                 try {
@@ -326,9 +379,13 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                                 signal.signalId() + "-RUNNER");
                 placeBestEffortProtectiveStop(signal, runnerEntryReq, gateway);
             }
-        } else if (isExitAction(signal.action())) {
+        } else if (exit) {
             confirmedEntries.remove(key);
-            cancelRestingProtectiveStop(gateway, key, "exit");
+            // PNL-1: verify the exit actually completed; a rejected or never-filled exit leaves
+            // the position open and must get its protective stop back.
+            if (!resolveExitOutcome(signal, gateway, resp)) {
+                replaceProtectiveStopForOpenPosition(signal, request, gateway);
+            }
         }
 
         log.info(
@@ -343,34 +400,47 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     }
 
     /**
-     * Cancels and forgets the resting protective stop for {@code key}. Returns the cancelled order
-     * id, or {@code null} when there was nothing to cancel or the cancel failed (the broker keeps
-     * the stop in that case — callers log and continue).
+     * PNL-2: cancels and forgets the resting protective stop for {@code key}. Returns {@code true}
+     * when there was nothing to cancel or the broker VERIFIED the cancel; on failure the order id
+     * is kept in the map so the next tick retries, and the caller must treat the stop as live.
      */
-    private String cancelRestingProtectiveStop(
+    private boolean cancelRestingProtectiveStop(
             BrokerOrderGateway gateway, String key, String reason) {
-        String slOrderId = protectiveSlOrders.remove(key);
+        String slOrderId = protectiveSlOrders.get(key);
         if (slOrderId == null || slOrderId.isBlank()) {
-            return null;
+            return true;
         }
         try {
-            gateway.cancelOrder(slOrderId);
-            log.info(
-                    "[CONSUMER:{}] Cancelled resting protective SL order {} for {} on {}.",
+            OrderResponse resp = gateway.cancelOrder(slOrderId);
+            if (resp != null && resp.success()) {
+                protectiveSlOrders.remove(key, slOrderId);
+                log.info(
+                        "[CONSUMER:{}] Cancelled resting protective SL order {} for {} on {}.",
+                        consumerId,
+                        slOrderId,
+                        key,
+                        reason);
+                return true;
+            }
+            log.error(
+                    "[CONSUMER:{}] FAILED to cancel protective SL order {} for {} on {} ({}) —"
+                            + " kept for retry; the stop is still live at the broker.",
                     consumerId,
                     slOrderId,
                     key,
-                    reason);
-            return slOrderId;
+                    reason,
+                    resp != null ? resp.message() : "null response");
+            return false;
         } catch (Exception e) {
-            log.warn(
-                    "[CONSUMER:{}] Failed to cancel protective SL order {} for {}: {}",
+            log.error(
+                    "[CONSUMER:{}] FAILED to cancel protective SL order {} for {} on {} — kept for"
+                            + " retry; the stop is still live at the broker.",
                     consumerId,
                     slOrderId,
                     key,
-                    e.getMessage(),
+                    reason,
                     e);
-            return null;
+            return false;
         }
     }
 
@@ -393,7 +463,16 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
             return false;
         }
         String key = ledgerKey(signal);
-        cancelRestingProtectiveStop(gateway, key, "stop-loss update");
+        // PNL-2: never place a second stop while the first one may still be live.
+        if (!cancelRestingProtectiveStop(gateway, key, "stop-loss update")) {
+            log.error(
+                    "[CONSUMER:{}] UPDATE_STOP_LOSS for {} ABORTED — the previous stop could not be"
+                            + " cancelled at the broker (a second stop would risk double"
+                            + " execution).",
+                    consumerId,
+                    key);
+            return true;
+        }
 
         int qty = quantity > 0 ? quantity : signal.baseQuantity();
         if (qty <= 0) {
@@ -452,10 +531,23 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
         return true;
     }
 
-    /** C3: bounded order-status poll; returns {@code null} when polling is unsupported. */
-    protected OrderStatus pollOrderStatus(BrokerOrderGateway gateway, String orderId) {
+    /**
+     * PNL-1: outcome of a bounded order-status poll — distinguishes an unfilled order from an
+     * unpolled one.
+     */
+    protected enum OrderPollOutcome {
+        UNSUPPORTED,
+        POLL_FAILED,
+        STILL_OPEN,
+        COMPLETE,
+        REJECTED,
+        CANCELLED
+    }
+
+    /** C3/PNL-1: bounded order-status poll. */
+    protected OrderPollOutcome pollOrderOutcome(BrokerOrderGateway gateway, String orderId) {
         if (!gateway.supportsOrderStatusPolling()) {
-            return null;
+            return OrderPollOutcome.UNSUPPORTED;
         }
         for (int attempt = 1; attempt <= 5; attempt++) {
             OrderStatus status;
@@ -468,26 +560,198 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
                         orderId,
                         e.getMessage(),
                         e);
-                return null;
+                return OrderPollOutcome.POLL_FAILED;
             }
-            if (status == OrderStatus.COMPLETE
-                    || status == OrderStatus.REJECTED
-                    || status == OrderStatus.CANCELLED) {
-                return status;
+            if (status == OrderStatus.COMPLETE) {
+                return OrderPollOutcome.COMPLETE;
+            }
+            if (status == OrderStatus.REJECTED) {
+                return OrderPollOutcome.REJECTED;
+            }
+            if (status == OrderStatus.CANCELLED) {
+                return OrderPollOutcome.CANCELLED;
             }
             try {
                 Thread.sleep(400);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                return null;
+                return OrderPollOutcome.POLL_FAILED;
             }
         }
         log.warn(
-                "[CONSUMER:{}] Order {} still not terminal after bounded poll — treating place"
-                        + " response as authoritative.",
+                "[CONSUMER:{}] Order {} still not terminal after bounded poll — treating as"
+                        + " unfilled.",
                 consumerId,
                 orderId);
-        return null;
+        return OrderPollOutcome.STILL_OPEN;
+    }
+
+    /**
+     * PNL-1: best-effort cancel; returns {@code true} only when the broker confirmed the cancel.
+     */
+    private boolean cancelQuietly(
+            BrokerOrderGateway gateway, String orderId, String key, String reason) {
+        try {
+            OrderResponse resp = gateway.cancelOrder(orderId);
+            if (resp != null && resp.success()) {
+                log.info(
+                        "[CONSUMER:{}] Cancelled {} order {} for {} as intended.",
+                        consumerId,
+                        reason,
+                        orderId,
+                        key);
+                return true;
+            }
+            log.error(
+                    "[CONSUMER:{}] CANCEL FAILED for {} order {} of {} ({}) — the order may"
+                            + " still fill; the drift reconciler will flag it.",
+                    consumerId,
+                    reason,
+                    orderId,
+                    key,
+                    resp != null ? resp.message() : "null response");
+            return false;
+        } catch (Exception e) {
+            log.error(
+                    "[CONSUMER:{}] CANCEL FAILED for {} order {} of {} — the order may still fill;"
+                            + " the drift reconciler will flag it.",
+                    consumerId,
+                    reason,
+                    orderId,
+                    key,
+                    e);
+            return false;
+        }
+    }
+
+    /**
+     * PNL-1: resolves whether an exit-family order actually completed at the broker. Returns {@code
+     * true} when the exit must be treated as done (filled, or not pollable — the place response is
+     * authoritative on gateways without status polling).
+     */
+    private boolean resolveExitOutcome(
+            TradeSignal signal, BrokerOrderGateway gateway, OrderResponse resp) {
+        String orderId = resp != null ? resp.orderId() : null;
+        if (orderId == null || orderId.isBlank() || !gateway.supportsOrderStatusPolling()) {
+            return true;
+        }
+        OrderPollOutcome polled = pollOrderOutcome(gateway, orderId);
+        if (polled == OrderPollOutcome.STILL_OPEN) {
+            // The resting exit limit never filled — cancel the remainder. If the cancel itself
+            // fails the order stays live and may still fill (the exit we wanted), so the caller
+            // must NOT re-place a stop that would fight it.
+            String key = ledgerKey(signal);
+            return !cancelQuietly(gateway, orderId, key, "unfilled " + signal.action());
+        }
+        if (polled == OrderPollOutcome.REJECTED || polled == OrderPollOutcome.CANCELLED) {
+            return false;
+        }
+        // COMPLETE, POLL_FAILED or UNSUPPORTED: treat the place response as authoritative.
+        return true;
+    }
+
+    /**
+     * PNL-1/2: the position is still open (the exit failed or was never filled) — re-place the
+     * protective stop so it is never left naked. For a failed partial exit the stop must cover the
+     * runner lots too ({@code remainingQuantity} metadata, PNL-6).
+     */
+    private void replaceProtectiveStopForOpenPosition(
+            TradeSignal signal, OrderRequest failedRequest, BrokerOrderGateway gateway) {
+        int openQty = failedRequest.quantity();
+        if (signal.metadata() != null && signal.metadata().get("remainingQuantity") != null) {
+            try {
+                openQty +=
+                        Integer.parseInt(
+                                String.valueOf(signal.metadata().get("remainingQuantity")));
+            } catch (Exception ignore) {
+                log.warn(
+                        "[CONSUMER:{}] Unparseable remainingQuantity metadata '{}' — re-placing the"
+                                + " stop for the failed order's quantity only.",
+                        consumerId,
+                        signal.metadata().get("remainingQuantity"),
+                        ignore);
+            }
+        }
+        OrderRequest anchor =
+                new OrderRequest(
+                        failedRequest.symbol(),
+                        failedRequest.exchange(),
+                        failedRequest.transactionType() == TransactionType.BUY
+                                ? TransactionType.SELL
+                                : TransactionType.BUY,
+                        OrderType.MKT,
+                        failedRequest.productType(),
+                        openQty,
+                        BigDecimal.ZERO,
+                        null,
+                        signal.signalId() + "-REPAIR-SL");
+        log.error(
+                "[CONSUMER:{}] {} for {} did not complete — the position is still OPEN; re-placing"
+                        + " the protective stop for {} units.",
+                consumerId,
+                signal.action(),
+                ledgerKey(signal),
+                openQty);
+        placeBestEffortProtectiveStop(signal, anchor, gateway);
+    }
+
+    /**
+     * PNL-4: after a confirmed entry, cross-checks the broker's actual position against the order
+     * that was booked. Log-only — it never blocks exits; it makes fill divergence (partial fills,
+     * far-off average prices, phantom confirmations) visible instead of silent.
+     */
+    private void verifyFillAtBroker(
+            TradeSignal signal, OrderRequest request, BrokerOrderGateway gateway) {
+        try {
+            java.util.List<com.tradingbot.model.execution.BrokerPosition> positions =
+                    gateway.getPositions();
+            if (positions == null) {
+                return;
+            }
+            String symbol = request.symbol();
+            com.tradingbot.model.execution.BrokerPosition match =
+                    positions.stream()
+                            .filter(p -> p.quantity() != 0)
+                            .filter(
+                                    p ->
+                                            symbol.equalsIgnoreCase(p.tradingSymbol())
+                                                    || symbol.equalsIgnoreCase(p.symbol()))
+                            .findFirst()
+                            .orElse(null);
+            if (match == null) {
+                log.error(
+                        "[CONSUMER:{}] Fill verification: NO open broker position for {} after a"
+                                + " confirmed {} entry — the fill may have failed; the drift"
+                                + " reconciler will flag it.",
+                        consumerId,
+                        symbol,
+                        signal.action());
+                return;
+            }
+            if (Math.abs(match.quantity()) != request.quantity()) {
+                log.error(
+                        "[CONSUMER:{}] PARTIAL FILL for {}: broker holds {} @ {} but the signal"
+                                + " booked {} — paper/broker quantity divergence.",
+                        consumerId,
+                        symbol,
+                        match.quantity(),
+                        match.averagePrice(),
+                        request.quantity());
+            } else {
+                log.info(
+                        "[CONSUMER:{}] Fill verified for {}: {} @ avg {}.",
+                        consumerId,
+                        symbol,
+                        match.quantity(),
+                        match.averagePrice());
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[CONSUMER:{}] Fill verification failed for {}: {}",
+                    consumerId,
+                    request.symbol(),
+                    e.getMessage());
+        }
     }
 
     /**
@@ -618,8 +882,12 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     }
 
     protected static BigDecimal parseBigDecimal(Object value) {
-        if (value == null) return null;
-        if (value instanceof BigDecimal bd) return bd;
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof BigDecimal bd) {
+            return bd;
+        }
         try {
             return new BigDecimal(String.valueOf(value));
         } catch (NumberFormatException e) {
@@ -632,7 +900,9 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
     }
 
     private static BigDecimal roundToTick(BigDecimal price) {
-        if (price == null) return BigDecimal.ZERO;
+        if (price == null) {
+            return BigDecimal.ZERO;
+        }
         return price.divide(BigDecimal.valueOf(0.05), 0, java.math.RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(0.05))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
