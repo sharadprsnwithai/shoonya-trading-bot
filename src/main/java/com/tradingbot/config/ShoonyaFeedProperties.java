@@ -85,6 +85,25 @@ public class ShoonyaFeedProperties {
      */
     private long stableConnectionSeconds = 30;
 
+    /**
+     * Whether to push Telegram alerts when the feed transitions between healthy and down.
+     *
+     * <p>An outage is only reported once the feed has stayed down for {@link
+     * #healthDownThresholdSeconds}, so the routine one-to-three-second connection resets that the
+     * gateway throws during a session do not spam the channel. A recovery is reported only if a
+     * down alert was actually sent for that outage.
+     */
+    private boolean healthAlertsEnabled = true;
+
+    /** Interval at which the feed health is polled, in milliseconds. */
+    private long healthPollMs = 15000;
+
+    /**
+     * How long the feed must remain down before a "down" alert is sent, in seconds. Sized to ride
+     * out transient reconnect blips while still catching a genuine outage quickly.
+     */
+    private long healthDownThresholdSeconds = 60;
+
     // Getters and setters
 
     /**
@@ -268,5 +287,47 @@ public class ShoonyaFeedProperties {
      */
     public void setStableConnectionSeconds(long stableConnectionSeconds) {
         this.stableConnectionSeconds = stableConnectionSeconds;
+    }
+
+    /**
+     * @return true when feed health transitions should push Telegram alerts
+     */
+    public boolean isHealthAlertsEnabled() {
+        return healthAlertsEnabled;
+    }
+
+    /**
+     * @param healthAlertsEnabled whether to push Telegram alerts on feed health transitions
+     */
+    public void setHealthAlertsEnabled(boolean healthAlertsEnabled) {
+        this.healthAlertsEnabled = healthAlertsEnabled;
+    }
+
+    /**
+     * @return interval between feed health polls, in milliseconds
+     */
+    public long getHealthPollMs() {
+        return healthPollMs;
+    }
+
+    /**
+     * @param healthPollMs interval between feed health polls, in milliseconds
+     */
+    public void setHealthPollMs(long healthPollMs) {
+        this.healthPollMs = healthPollMs;
+    }
+
+    /**
+     * @return seconds the feed must stay down before a down alert is sent
+     */
+    public long getHealthDownThresholdSeconds() {
+        return healthDownThresholdSeconds;
+    }
+
+    /**
+     * @param healthDownThresholdSeconds seconds the feed must stay down before a down alert is sent
+     */
+    public void setHealthDownThresholdSeconds(long healthDownThresholdSeconds) {
+        this.healthDownThresholdSeconds = healthDownThresholdSeconds;
     }
 }

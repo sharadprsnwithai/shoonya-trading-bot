@@ -194,6 +194,8 @@ cp .env.example .env
 | `SHOONYA_TOTP_SECRET` | — | Base32 TOTP secret key for automatic 2FA. |
 | `SHOONYA_CLIENT_ID` | — | Shoonya API Client ID. |
 | `SHOONYA_SECRET_KEY` | — | Shoonya API Secret Key. |
+| `SHOONYA_FEED_HEALTH_ALERTS_ENABLED` | `true` | Telegram alert when the Shoonya live feed goes down / recovers (debounced so brief reconnect blips are ignored). |
+| `SHOONYA_FEED_HEALTH_DOWN_THRESHOLD_SECONDS` | `60` | How long the feed must stay down before the "down" alert fires. |
 | `KITE_ENABLED` | `true` | Enable Zerodha Kite Connect API integration. |
 | `KITE_API_KEY` | — | Kite Connect API key. |
 | `KITE_API_SECRET` | — | Kite Connect API secret. |
