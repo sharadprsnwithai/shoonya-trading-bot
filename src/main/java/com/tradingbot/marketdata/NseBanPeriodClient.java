@@ -380,6 +380,15 @@ public class NseBanPeriodClient {
      */
     public record BanListResult(Set<String> symbols, boolean valid) {
 
+        public BanListResult {
+            symbols = symbols == null ? null : new LinkedHashSet<>(symbols);
+        }
+
+        @Override
+        public Set<String> symbols() {
+            return symbols == null ? null : new LinkedHashSet<>(symbols);
+        }
+
         static BanListResult invalid() {
             return new BanListResult(Collections.emptySet(), false);
         }

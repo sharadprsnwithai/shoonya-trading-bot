@@ -3,6 +3,7 @@ package com.tradingbot.strategy.fiftytwohigh.scheduler;
 import com.tradingbot.strategy.fiftytwohigh.config.FiftyTwoHighProperties;
 import com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService;
 import com.tradingbot.util.NseTradingCalendarUtil;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,9 @@ public class FiftyTwoHighScheduler {
     private final FiftyTwoHighProperties properties;
     private final FiftyTwoHighService service;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Spring-injected singleton dependency stored by reference")
     @Autowired
     public FiftyTwoHighScheduler(FiftyTwoHighProperties properties, FiftyTwoHighService service) {
         this.properties = properties;

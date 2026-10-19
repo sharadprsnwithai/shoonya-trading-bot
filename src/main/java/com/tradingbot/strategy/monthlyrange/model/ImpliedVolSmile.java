@@ -3,6 +3,7 @@ package com.tradingbot.strategy.monthlyrange.model;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -52,6 +53,15 @@ public record ImpliedVolSmile(
         List<SmilePoint> points,
         String status,
         String note) {
+
+    public ImpliedVolSmile {
+        points = points == null ? null : new ArrayList<>(points);
+    }
+
+    @Override
+    public List<SmilePoint> points() {
+        return points == null ? null : new ArrayList<>(points);
+    }
 
     /**
      * True when the smile is fit for the primary headline figures.

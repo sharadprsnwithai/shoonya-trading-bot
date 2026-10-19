@@ -246,33 +246,6 @@ public class LowestVolumeReversalScanner {
             return Collections.emptyList();
         }
 
-        List<StockQuoteSnapshot> eligible;
-        if (sentiment == LowestVolumeDirection.LONG) {
-            eligible =
-                    new ArrayList<>(
-                            sectorStockQuotes.stream()
-                                    .filter(q -> q.pctChange() > 0.0) // Must be positive/green for
-                                    // LONG
-                                    .filter(q -> q.pctChange() <= 5.0) // Not exhausted (> 5%)
-                                    .toList());
-            // Most positive pctChange first
-            eligible.sort(Comparator.comparingDouble(StockQuoteSnapshot::pctChange).reversed());
-        } else if (sentiment == LowestVolumeDirection.SHORT) {
-            eligible =
-                    new ArrayList<>(
-                            sectorStockQuotes.stream()
-                                    .filter(
-                                            q ->
-                                                    q.pctChange()
-                                                            < 0.0) // Must be negative/red for SHORT
-                                    .filter(q -> q.pctChange() >= -5.0) // Not exhausted (< -5%)
-                                    .toList());
-            // Most negative pctChange first
-            eligible.sort(Comparator.comparingDouble(StockQuoteSnapshot::pctChange));
-        } else {
-            return Collections.emptyList();
-        }
-
         return filterCandidateStocks(sectorStockQuotes, sentiment, DEFAULT_STOCKS_PER_SECTOR);
     }
 

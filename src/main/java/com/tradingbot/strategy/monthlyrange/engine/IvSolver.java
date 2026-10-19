@@ -103,7 +103,7 @@ final class IvSolver {
     /** Newton-Raphson from a vega-free seed; returns null when it cannot be trusted to finish. */
     private Solved newton(
             double premium, double spot, double strike, double years, double rate, boolean isCall) {
-        double sigma = seed(premium, spot, strike, years, isCall);
+        double sigma = seed(premium, spot, strike, years);
         for (int step = 1; step <= MAX_NEWTON_STEPS; step++) {
             double model;
             double vega;
@@ -177,7 +177,7 @@ final class IvSolver {
      * and lands within a few percent for anything near the money. Far strikes get a floor so the
      * seed never enters a region where vega is already negligible.
      */
-    private double seed(double premium, double spot, double strike, double years, boolean isCall) {
+    private double seed(double premium, double spot, double strike, double years) {
         double approx = Math.sqrt(2.0 * Math.PI / years) * (premium / spot);
         if (!Double.isFinite(approx) || approx <= 0.0) {
             return 0.20;

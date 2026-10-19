@@ -11,6 +11,7 @@ import com.tradingbot.strategy.monthlyrange.model.WingZoneForecast;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NseTradingCalendarUtil;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -46,6 +47,9 @@ public class GarchRangeService {
     private final YahooFinanceService yahooFinanceService;
     private final TelegramService telegramService;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Spring-injected singleton dependency stored by reference")
     @Autowired
     public GarchRangeService(
             MonthlyRangeProperties properties,

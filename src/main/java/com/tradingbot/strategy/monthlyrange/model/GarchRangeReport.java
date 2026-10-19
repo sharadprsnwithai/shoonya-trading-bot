@@ -2,6 +2,7 @@ package com.tradingbot.strategy.monthlyrange.model;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -20,4 +21,14 @@ public record GarchRangeReport(
         LocalDate expirySession,
         int horizonSessions,
         List<GarchRangeForecast> forecasts,
-        String summary) {}
+        String summary) {
+
+    public GarchRangeReport {
+        forecasts = forecasts == null ? null : new ArrayList<>(forecasts);
+    }
+
+    @Override
+    public List<GarchRangeForecast> forecasts() {
+        return forecasts == null ? null : new ArrayList<>(forecasts);
+    }
+}

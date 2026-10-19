@@ -17,6 +17,7 @@ import com.tradingbot.util.HeikinAshiUtil;
 import com.tradingbot.util.NiftySectorRegistry;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import com.tradingbot.util.StockFnoRegistry;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -57,6 +58,9 @@ public class FiftyTwoHighService {
     private final HistoricalOhlcCacheService ohlcCache;
     private final TelegramService telegramService;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Spring-injected singleton dependencies stored by reference")
     @Autowired
     public FiftyTwoHighService(
             FiftyTwoHighProperties properties,

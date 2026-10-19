@@ -2,6 +2,7 @@ package com.tradingbot.strategy.fiftytwohigh.model;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -32,4 +33,20 @@ public record FiftyTwoHighReport(
         int dataUnavailableCount,
         List<FiftyTwoHighBreakout> breakouts,
         List<BreakoutTradeSetup> tradeReadySetups,
-        String summary) {}
+        String summary) {
+
+    public FiftyTwoHighReport {
+        breakouts = breakouts == null ? null : new ArrayList<>(breakouts);
+        tradeReadySetups = tradeReadySetups == null ? null : new ArrayList<>(tradeReadySetups);
+    }
+
+    @Override
+    public List<FiftyTwoHighBreakout> breakouts() {
+        return breakouts == null ? null : new ArrayList<>(breakouts);
+    }
+
+    @Override
+    public List<BreakoutTradeSetup> tradeReadySetups() {
+        return tradeReadySetups == null ? null : new ArrayList<>(tradeReadySetups);
+    }
+}

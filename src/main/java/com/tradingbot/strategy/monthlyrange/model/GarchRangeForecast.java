@@ -3,6 +3,7 @@ package com.tradingbot.strategy.monthlyrange.model;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -53,4 +54,20 @@ public record GarchRangeForecast(
         int calibrationWindows,
         int trainSplitIndex,
         String garchStatus,
-        Instant generatedAt) {}
+        Instant generatedAt) {
+
+    public GarchRangeForecast {
+        bands = bands == null ? null : new ArrayList<>(bands);
+        gjrBands = gjrBands == null ? null : new ArrayList<>(gjrBands);
+    }
+
+    @Override
+    public List<GarchRangeBand> bands() {
+        return bands == null ? null : new ArrayList<>(bands);
+    }
+
+    @Override
+    public List<GarchRangeBand> gjrBands() {
+        return gjrBands == null ? null : new ArrayList<>(gjrBands);
+    }
+}

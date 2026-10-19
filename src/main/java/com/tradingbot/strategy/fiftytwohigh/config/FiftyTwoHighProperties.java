@@ -166,7 +166,7 @@ public class FiftyTwoHighProperties {
     }
 
     public List<String> getSymbols() {
-        return symbols;
+        return new ArrayList<>(symbols);
     }
 
     public void setSymbols(List<String> symbols) {

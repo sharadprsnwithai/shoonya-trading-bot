@@ -22,6 +22,7 @@ import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NiftySectorRegistry;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import com.tradingbot.util.StockFnoRegistry;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Path;
@@ -1182,7 +1183,7 @@ public class LowestVolumeReversalService {
                 telegramService.sendTextMessage(
                         String.format(
                                 BotLocale.INSTANCE,
-                                "🚫 *LVR F&O Ban Period*\n• Symbols in ban (%d): `%s`\n"
+                                "🚫 *LVR F&O Ban Period*%n• Symbols in ban (%d): `%s`%n"
                                         + "• Status: *Excluded from today's universe*",
                                 bannedSymbols.size(),
                                 String.join(", ", bannedSymbols)));
@@ -5018,6 +5019,9 @@ public class LowestVolumeReversalService {
      *
      * @param nseBanPeriodClient client used for the pre-market ban-list fetch
      */
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Spring @Autowired injection point; the client reference is shared")
     @Autowired(required = false)
     public void setNseBanPeriodClient(
             com.tradingbot.marketdata.NseBanPeriodClient nseBanPeriodClient) {

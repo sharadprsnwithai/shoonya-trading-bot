@@ -3,6 +3,7 @@ package com.tradingbot.strategy.monthlyrange.scheduler;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
 import com.tradingbot.strategy.monthlyrange.service.GarchRangeService;
 import com.tradingbot.util.NseTradingCalendarUtil;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,9 @@ public class GarchRangeScheduler {
     private final MonthlyRangeProperties properties;
     private final GarchRangeService garchRangeService;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Spring-injected singleton dependency stored by reference")
     public GarchRangeScheduler(
             MonthlyRangeProperties properties, GarchRangeService garchRangeService) {
         this.properties = properties;

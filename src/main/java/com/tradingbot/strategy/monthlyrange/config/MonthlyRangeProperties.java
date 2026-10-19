@@ -72,7 +72,7 @@ public class MonthlyRangeProperties {
     }
 
     public List<String> getSymbols() {
-        return symbols;
+        return new ArrayList<>(symbols);
     }
 
     public void setSymbols(List<String> symbols) {
@@ -136,7 +136,7 @@ public class MonthlyRangeProperties {
     }
 
     public List<Integer> getEarningsMonths() {
-        return earningsMonths;
+        return new ArrayList<>(earningsMonths);
     }
 
     public void setEarningsMonths(List<Integer> earningsMonths) {
@@ -177,7 +177,7 @@ public class MonthlyRangeProperties {
     }
 
     public List<String> getWeeklySymbols() {
-        return weeklySymbols;
+        return new ArrayList<>(weeklySymbols);
     }
 
     public void setWeeklySymbols(List<String> weeklySymbols) {
@@ -233,7 +233,7 @@ public class MonthlyRangeProperties {
     }
 
     public List<Double> getRangeKSigmas() {
-        return rangeKSigmas;
+        return new ArrayList<>(rangeKSigmas);
     }
 
     public void setRangeKSigmas(List<Double> rangeKSigmas) {
