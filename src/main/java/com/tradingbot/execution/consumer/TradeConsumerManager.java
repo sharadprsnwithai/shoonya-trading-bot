@@ -7,13 +7,10 @@ import com.tradingbot.execution.gateway.ShoonyaBrokerGateway;
 import com.tradingbot.execution.gateway.ZerodhaBrokerGateway;
 import com.tradingbot.model.execution.BrokerPosition;
 import com.tradingbot.model.execution.ExecutionMode;
+import com.tradingbot.telegram.TelegramService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +27,14 @@ public class TradeConsumerManager {
     private final SignalStreamProvider signalStreamProvider;
     private final ShoonyaBrokerGateway shoonyaGateway;
     private final ZerodhaBrokerGateway zerodhaGateway;
+
+    /** PNL-7: optional operator channel for drift alerts (absent in tests / minimal deploys). */
+    @Autowired(required = false)
+    private TelegramService telegramService;
+
+    void setTelegramService(TelegramService telegramService) {
+        this.telegramService = telegramService;
+    }
 
     private final Map<String, TradeExecutionConsumer> consumers = new ConcurrentHashMap<>();
 
@@ -189,6 +194,13 @@ public class TradeConsumerManager {
                                         + " failed fill bookkeeping. Inspect immediately.",
                                 brokerSymbol,
                                 consumer.getConsumerId());
+                        alertDrift(
+                                "⚠️ DRIFT: broker position "
+                                        + brokerSymbol
+                                        + " has NO confirmed ENTRY in consumer "
+                                        + consumer.getConsumerId()
+                                        + " — manual/external position or failed fill"
+                                        + " bookkeeping. Inspect immediately.");
                     }
                 }
             }
@@ -196,7 +208,7 @@ public class TradeConsumerManager {
             List<String> brokerSymbols =
                     openPositions.stream()
                             .map(p -> firstNonBlank(p.tradingSymbol(), p.symbol()))
-                            .filter(s -> s != null)
+                            .filter(Objects::nonNull)
                             .map(String::toUpperCase)
                             .toList();
             for (String key : confirmed) {
@@ -209,6 +221,13 @@ public class TradeConsumerManager {
                                     + " was closed outside the bot.",
                             key,
                             consumer.getConsumerId());
+                    alertDrift(
+                            "⚠️ DRIFT: confirmed ENTRY "
+                                    + key
+                                    + " not present as an open broker position in "
+                                    + consumer.getConsumerId()
+                                    + " — fill may have failed or the position was closed"
+                                    + " outside the bot.");
                 }
             }
         } catch (Exception e) {
@@ -219,6 +238,19 @@ public class TradeConsumerManager {
     private boolean isLive(TradeExecutionConsumer consumer) {
         return consumer.getExecutionMode() == ExecutionMode.LIVE
                 || consumer.getStrategyModes().containsValue(ExecutionMode.LIVE);
+    }
+
+    /** PNL-7: drift is a money-path anomaly — it must reach the operator, not just the logs. */
+    private void alertDrift(String message) {
+        if (telegramService == null) {
+            return;
+        }
+        try {
+            telegramService.sendTextMessage(message);
+        } catch (Exception e) {
+            // An alert failure must never break the reconciliation itself.
+            log.warn("[CONSUMER-MGR] Drift alert failed: {}", e.getMessage(), e);
+        }
     }
 
     private BrokerOrderGateway gatewayFor(String brokerName) {
@@ -236,6 +268,6 @@ public class TradeConsumerManager {
         if (a != null && !a.isBlank()) {
             return a;
         }
-        return (b != null && !b.isBlank()) ? b : null;
+        return b != null && !b.isBlank() ? b : null;
     }
 }

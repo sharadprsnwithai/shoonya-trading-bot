@@ -1,6 +1,7 @@
 package com.tradingbot.execution.consumer;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.*;
 
 import com.tradingbot.bus.ReactiveSignalEventBus;
@@ -111,6 +112,72 @@ class TradeConsumerManagerTest {
 
         verify(shoonyaGw, never()).getPositions();
         verify(zerodhaGw, never()).getPositions();
+        manager.shutdown();
+    }
+
+    @Test
+    void testDriftReconciliationSendsTelegramAlerts() {
+        ExecutionProperties props = new ExecutionProperties();
+        ExecutionProperties.ConsumerConfig c1 = new ExecutionProperties.ConsumerConfig();
+        c1.setId("shoonya-live");
+        c1.setBroker("SHOONYA");
+        c1.setMode(ExecutionMode.LIVE);
+        c1.setQuantityMultiplier(1.0);
+        c1.setEnabled(true);
+        props.setConsumers(List.of(c1));
+
+        ReactiveSignalEventBus bus = new ReactiveSignalEventBus();
+        ShoonyaBrokerGateway shoonyaGw = mock(ShoonyaBrokerGateway.class);
+        // Broker holds a position the bot never entered (TCS) and none for the confirmed INFY.
+        when(shoonyaGw.getPositions())
+                .thenReturn(
+                        List.of(
+                                com.tradingbot.model.execution.BrokerPosition.of(
+                                        "SHOONYA",
+                                        "NFO",
+                                        "TCS",
+                                        "TCS26MARFUT",
+                                        "MIS",
+                                        175,
+                                        java.math.BigDecimal.valueOf(3800),
+                                        java.math.BigDecimal.ZERO,
+                                        java.math.BigDecimal.ZERO,
+                                        java.math.BigDecimal.ZERO)));
+        when(shoonyaGw.placeOrder(any()))
+                .thenAnswer(
+                        inv ->
+                                com.tradingbot.model.order.OrderResponse.success(
+                                        "SHO-1", inv.getArgument(0), "accepted"));
+        ZerodhaBrokerGateway zerodhaGw = mock(ZerodhaBrokerGateway.class);
+        com.tradingbot.telegram.TelegramService tg =
+                mock(com.tradingbot.telegram.TelegramService.class);
+
+        TradeConsumerManager manager = new TradeConsumerManager(props, bus, shoonyaGw, zerodhaGw);
+        manager.setTelegramService(tg);
+        manager.init();
+
+        // Seed a confirmed ledger entry for INFY so it is non-empty (DRIFT branch active).
+        AbstractTradeExecutionConsumer consumer =
+                (AbstractTradeExecutionConsumer) manager.getConsumer("shoonya-live");
+        consumer.handleLiveExecution(
+                com.tradingbot.strategy.TradeSignal.of(
+                        "LVR_FUTURES",
+                        "INFY",
+                        "INFY26MARFUT",
+                        com.tradingbot.strategy.SignalAction.ENTRY_LONG,
+                        java.math.BigDecimal.valueOf(1500),
+                        java.math.BigDecimal.valueOf(1480),
+                        java.math.BigDecimal.valueOf(1540),
+                        100,
+                        "Entry",
+                        java.util.Map.of("instrumentType", "FUTURES", "exchange", "NFO")),
+                100);
+
+        manager.reconcileBrokerDrift();
+
+        // PNL-7: both drift conditions must reach the operator via Telegram, not just the logs.
+        verify(tg).sendTextMessage(contains("has NO confirmed ENTRY"));
+        verify(tg).sendTextMessage(contains("not present as an open broker position"));
         manager.shutdown();
     }
 }
