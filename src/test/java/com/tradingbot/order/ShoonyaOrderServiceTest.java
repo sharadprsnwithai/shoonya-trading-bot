@@ -190,4 +190,41 @@ class ShoonyaOrderServiceTest {
         assertThat(response.success()).isFalse();
         assertThat(response.message()).contains("502");
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testPlaceOrderDoesNotRetryOnAmbiguousTransportFailure() throws Exception {
+        ShoonyaConfig config = new ShoonyaConfig();
+        config.setEnabled(true);
+        config.setUserId("USER123");
+
+        HttpClient mockClient = mock(HttpClient.class);
+        // The connection dies mid-flight: the order MAY have reached the broker.
+        when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenThrow(new java.io.IOException("connection reset mid-flight"));
+        when(authenticator.getOrAuthenticateToken()).thenReturn("token_1");
+
+        ShoonyaOrderService orderService =
+                new ShoonyaOrderService(config, authenticator, new ObjectMapper(), mockClient);
+
+        OrderRequest request =
+                new OrderRequest(
+                        "NIFTY29SEP26P24000",
+                        "NFO",
+                        TransactionType.SELL,
+                        OrderType.MKT,
+                        ProductType.MIS,
+                        65,
+                        BigDecimal.ZERO,
+                        null,
+                        "TEST_NO_RETRY");
+
+        OrderResponse response = orderService.placeOrder(request);
+
+        assertThat(response.success()).isFalse();
+        // Re-sending after an ambiguous failure could duplicate the order at the broker.
+        verify(mockClient, times(1))
+                .send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+        verify(authenticator, times(0)).invalidateSession();
+    }
 }

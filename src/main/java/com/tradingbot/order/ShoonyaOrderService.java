@@ -160,14 +160,15 @@ public class ShoonyaOrderService {
                 if (e instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                 }
+                // Fail fast on transport errors: after an IO/timeout the request may have reached
+                // the broker (ambiguous outcome), so re-sending could duplicate the order. Only an
+                // explicit session-expired response (handled above) triggers the one retry.
                 log.error(
-                        "[SHOONYA-ORDER] Order placement exception (attempt {}): {}",
+                        "[SHOONYA-ORDER] Order placement failed (attempt {}): {}",
                         attempt,
                         e.getMessage(),
                         e);
-                if (attempt == 2) {
-                    return OrderResponse.failure(request, e.getMessage());
-                }
+                return OrderResponse.failure(request, e.getMessage());
             }
         }
         return OrderResponse.failure(request, "Failed to place order after retries");
