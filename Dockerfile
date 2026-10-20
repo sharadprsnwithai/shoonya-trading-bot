@@ -6,6 +6,7 @@ FROM gradle:9.3.0-jdk21-alpine AS builder
 WORKDIR /app
 COPY gradlew settings.gradle.kts build.gradle.kts ./
 COPY gradle ./gradle
+COPY config ./config
 COPY src ./src
 RUN GRADLE_USER_HOME=/gradle-cache gradle bootJar -x test --no-daemon
 
