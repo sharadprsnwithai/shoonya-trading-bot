@@ -62,7 +62,7 @@ class MonthlyRangeServiceTest {
         Instant now = Instant.now().minus(60, ChronoUnit.DAYS);
         double price = startPrice;
         for (int i = 0; i < 60; i++) {
-            double change = (i % 2 == 0 ? 0.01 : -0.008);
+            double change = i % 2 == 0 ? 0.01 : -0.008;
             double close = price * (1.0 + change);
             candles.add(
                     new Candle(
@@ -176,7 +176,7 @@ class MonthlyRangeServiceTest {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(telegramService, atLeastOnce()).sendTextMessage(captor.capture());
         String msg = captor.getValue();
-        assertThat(msg).contains("RELIANCE").contains("TCS").contains("GARCH + IV + OI FUSION");
+        assertThat(msg).contains("RELIANCE").contains("TCS").contains("MONTHLY OPTION RANGE");
     }
 
     @Test

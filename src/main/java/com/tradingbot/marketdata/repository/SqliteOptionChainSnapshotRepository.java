@@ -76,7 +76,7 @@ public class SqliteOptionChainSnapshotRepository {
 
     private Connection getConnection() throws SQLException {
         Connection conn =
-                (dataSource != null)
+                dataSource != null
                         ? dataSource.getConnection()
                         : DriverManager.getConnection(jdbcUrl);
         try (Statement stmt = conn.createStatement()) {

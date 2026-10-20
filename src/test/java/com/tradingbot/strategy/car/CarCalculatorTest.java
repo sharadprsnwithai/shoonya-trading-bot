@@ -1,6 +1,7 @@
 package com.tradingbot.strategy.car;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tradingbot.model.Candle;
 import com.tradingbot.strategy.car.model.CarAnalysisResult;

@@ -307,7 +307,7 @@ public class YahooFinanceService {
                 BigDecimal high = BigDecimal.valueOf(hNode.asDouble());
                 BigDecimal low = BigDecimal.valueOf(lNode.asDouble());
                 BigDecimal close = BigDecimal.valueOf(cNode.asDouble());
-                long volume = (vNode != null && !vNode.isNull()) ? vNode.asLong() : 0L;
+                long volume = vNode != null && !vNode.isNull() ? vNode.asLong() : 0L;
 
                 candles.add(new Candle(symbol, timeframe, instant, open, high, low, close, volume));
             }

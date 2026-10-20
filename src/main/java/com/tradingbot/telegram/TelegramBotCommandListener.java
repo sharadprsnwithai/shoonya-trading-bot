@@ -48,7 +48,7 @@ public class TelegramBotCommandListener {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ExecutorService pollingExecutor;
-    private long lastUpdateId = 0;
+    private long lastUpdateId;
 
     @Autowired
     public TelegramBotCommandListener(
@@ -175,7 +175,9 @@ public class TelegramBotCommandListener {
     }
 
     public void pollUpdates() {
-        if (shoonyaConfig == null || shoonyaConfig.getTelegramBotToken().isBlank()) return;
+        if (shoonyaConfig == null || shoonyaConfig.getTelegramBotToken().isBlank()) {
+            return;
+        }
 
         try {
             String token = shoonyaConfig.getTelegramBotToken().trim();
@@ -239,7 +241,9 @@ public class TelegramBotCommandListener {
     }
 
     public String processCommand(String fullCommand) {
-        if (fullCommand == null || fullCommand.isBlank()) return "";
+        if (fullCommand == null || fullCommand.isBlank()) {
+            return "";
+        }
 
         String[] parts = fullCommand.trim().split("\\s+");
         String cmd = parts[0].toLowerCase();
@@ -252,7 +256,9 @@ public class TelegramBotCommandListener {
             case "/status":
             case "/lvr":
             case "/lvr_status":
-                if (lvrService == null) return "⚠️ LVR Service not active.";
+                if (lvrService == null) {
+                    return "⚠️ LVR Service not active.";
+                }
                 var sec = lvrService.getSectorState();
                 return String.format(
                         BotLocale.INSTANCE,
@@ -282,18 +288,24 @@ public class TelegramBotCommandListener {
 
             case "/scan":
             case "/lvr_scan":
-                if (lvrService == null) return "⚠️ LVR Service not active.";
+                if (lvrService == null) {
+                    return "⚠️ LVR Service not active.";
+                }
                 lvrService.runCycle();
                 return "🔍 LVR 5-Minute Strategy Cycle executed!\n\n" + processCommand("/status");
 
             case "/morning_scan":
-                if (lvrService == null) return "⚠️ LVR Service not active.";
+                if (lvrService == null) {
+                    return "⚠️ LVR Service not active.";
+                }
                 lvrService.runMorningUniverseScan();
                 return "🌅 LVR Morning Universe Scan executed!\n\n" + processCommand("/status");
 
             case "/car":
             case "/car_status":
-                if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
+                if (carWeeklyService == null) {
+                    return "⚠️ CAR Weekly GTT Service not active.";
+                }
                 var pState = carWeeklyService.getPortfolioState();
                 int investedUnits =
                         pState.getHoldings().values().stream()
@@ -320,7 +332,9 @@ public class TelegramBotCommandListener {
 
             case "/car_run":
             case "/car_weekly":
-                if (carWeeklyService == null) return "⚠️ CAR Weekly GTT Service not active.";
+                if (carWeeklyService == null) {
+                    return "⚠️ CAR Weekly GTT Service not active.";
+                }
                 carWeeklyService.runSundayWeeklyRoutine(true);
                 return "🚀 CAR Weekly GTT Routine executed (forced)! GTT orders placed on Kite.\n\n"
                         + processCommand("/car");
@@ -328,7 +342,9 @@ public class TelegramBotCommandListener {
             case "/monthlyrange":
             case "/monthly_range":
             case "/garch":
-                if (monthlyRangeService == null) return "⚠️ Monthly Range Service not active.";
+                if (monthlyRangeService == null) {
+                    return "⚠️ Monthly Range Service not active.";
+                }
                 var monthlyReport = monthlyRangeService.generateMonthlyReport();
                 return monthlyRangeService.formatTelegramMessage(monthlyReport);
 
@@ -344,17 +360,21 @@ public class TelegramBotCommandListener {
 
             case "/exit":
             case "/squareoff":
-                if (lvrService == null) return "⚠️ LVR Service not active.";
+                if (lvrService == null) {
+                    return "⚠️ LVR Service not active.";
+                }
                 lvrService.executeHardExit(LocalTime.now());
                 return "🛑 Manual hard exit executed. All open LVR positions squared off.";
 
             case "/reset":
-                if (lvrService == null) return "⚠️ LVR Service not active.";
+                if (lvrService == null) {
+                    return "⚠️ LVR Service not active.";
+                }
                 {
                     boolean force =
                             java.util.Arrays.stream(parts)
                                     .skip(1)
-                                    .anyMatch(a -> a.equalsIgnoreCase("force"));
+                                    .anyMatch("force"::equalsIgnoreCase);
                     boolean duringTradingHours = lvrService.isWithinTradingHours();
                     // H6: an intraday /reset flattens live positions — refuse unless forced.
                     if (duringTradingHours && !force) {

@@ -298,7 +298,7 @@ public class KiteRestClient {
         if (tradingSymbol == null || tradingSymbol.isBlank()) {
             return 0.0;
         }
-        String exch = (exchange != null && !exchange.isBlank()) ? exchange : "NSE";
+        String exch = exchange != null && !exchange.isBlank() ? exchange : "NSE";
         String instrument = exch + ":" + tradingSymbol;
         try {
             JsonNode body =

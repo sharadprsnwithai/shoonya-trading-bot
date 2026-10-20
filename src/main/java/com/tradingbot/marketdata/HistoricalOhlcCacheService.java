@@ -142,7 +142,9 @@ public class HistoricalOhlcCacheService {
 
     /** Loads cached OHLC data from the JSON state file. */
     public synchronized void loadFromJsonFile() {
-        if (stateFilePath == null || stateFilePath.isBlank()) return;
+        if (stateFilePath == null || stateFilePath.isBlank()) {
+            return;
+        }
         File file = new File(stateFilePath);
         if (!file.exists()) {
             log.info(
@@ -450,9 +452,13 @@ public class HistoricalOhlcCacheService {
     }
 
     private String normalizeSymbol(String symbol) {
-        if (symbol == null) return "";
+        if (symbol == null) {
+            return "";
+        }
         String clean = symbol.trim().toUpperCase();
-        if (clean.startsWith("NSE:")) clean = clean.substring(4).trim();
+        if (clean.startsWith("NSE:")) {
+            clean = clean.substring(4).trim();
+        }
         if ("NIFTY".equalsIgnoreCase(clean) || "NIFTY50".equalsIgnoreCase(clean)) {
             return "NIFTY 50";
         }

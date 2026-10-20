@@ -151,7 +151,7 @@ public class ShoonyaConfig {
         if (val == null || val.isBlank()) {
             val = System.getenv(key);
         }
-        return (val != null && !val.isBlank()) ? val.trim() : defaultValue;
+        return val != null && !val.isBlank() ? val.trim() : defaultValue;
     }
 
     /** Returns the raw property value (system property, else environment), or null if unset. */

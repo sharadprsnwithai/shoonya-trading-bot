@@ -36,7 +36,7 @@ class MonthlyRangeCalculatorTest {
         double price = startPrice;
 
         for (int i = 0; i < count; i++) {
-            double change = (i % 2 == 0 ? dailyPctVol : -dailyPctVol);
+            double change = i % 2 == 0 ? dailyPctVol : -dailyPctVol;
             double open = price;
             double close = open * (1.0 + change);
             double high = Math.max(open, close) * 1.005;
@@ -223,6 +223,8 @@ class MonthlyRangeCalculatorTest {
         assertThat(forecast.monthlyVolPct()).isGreaterThan(0.0);
         assertThat(forecast.hv30AnnualizedPct()).isGreaterThan(0.0);
         assertThat(forecast.atr22()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(forecast.directionalScore()).isNotNull();
+        assertThat(forecast.directionalScore().butterflyRecommendation()).isNotNull();
     }
 
     @Test

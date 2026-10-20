@@ -69,14 +69,14 @@ public class TechnicalAnalysisService {
             double vwapVal = vwapSeries[i];
             VwapResult vwapRes = VwapResult.of(vwapVal, c.close().doubleValue());
 
-            Double stVal = (st != null && !Double.isNaN(st.value())) ? st.value() : null;
-            String stSignal = (st != null && !Double.isNaN(st.value())) ? st.trend() : "NEUTRAL";
+            Double stVal = st != null && !Double.isNaN(st.value()) ? st.value() : null;
+            String stSignal = st != null && !Double.isNaN(st.value()) ? st.trend() : "NEUTRAL";
 
-            Double rsiOut = !Double.isNaN(rsiRes.value()) ? rsiRes.value() : null;
+            Double rsiOut = Double.isNaN(rsiRes.value()) ? null : rsiRes.value();
             String rsiSignal = rsiRes.signal();
 
-            Double vwapOut = !Double.isNaN(vwapRes.vwap()) ? vwapRes.vwap() : null;
-            Double vwapDiff = !Double.isNaN(vwapRes.vwap()) ? vwapRes.difference() : null;
+            Double vwapOut = Double.isNaN(vwapRes.vwap()) ? null : vwapRes.vwap();
+            Double vwapDiff = Double.isNaN(vwapRes.vwap()) ? null : vwapRes.difference();
 
             snapshots.add(
                     new IndicatorSnapshot(
@@ -268,7 +268,7 @@ public class TechnicalAnalysisService {
             double vol = Math.max(1.0, (double) c.volume());
 
             double typicalPrice = (high + low + close) / 3.0;
-            cumulativeTypicalVolume += (typicalPrice * vol);
+            cumulativeTypicalVolume += typicalPrice * vol;
             cumulativeVolume += vol;
 
             vwap[i] = cumulativeTypicalVolume / cumulativeVolume;

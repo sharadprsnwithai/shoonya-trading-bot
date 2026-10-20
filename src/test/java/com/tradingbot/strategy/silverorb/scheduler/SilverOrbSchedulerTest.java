@@ -69,10 +69,7 @@ class SilverOrbSchedulerTest {
     void exceptionIsSwallowed() {
         doThrow(new RuntimeException("broker down")).when(service).runCycle();
 
-        assertThatCode(
-                        () -> {
-                            scheduler.triggerCycle(LocalTime.of(19, 0));
-                        })
+        assertThatCode(() -> scheduler.triggerCycle(LocalTime.of(19, 0)))
                 .doesNotThrowAnyException();
 
         verify(service, times(1)).runCycle();

@@ -40,8 +40,8 @@ public class OhlcController {
             @RequestParam(defaultValue = "5") int days,
             @RequestParam(required = false) String exchange,
             @RequestParam(required = false) String token) {
-        String exch = (exchange != null && !exchange.isBlank()) ? exchange : DEFAULT_NIFTY_EXCHANGE;
-        String tok = (token != null && !token.isBlank()) ? token : DEFAULT_NIFTY_TOKEN;
+        String exch = exchange != null && !exchange.isBlank() ? exchange : DEFAULT_NIFTY_EXCHANGE;
+        String tok = token != null && !token.isBlank() ? token : DEFAULT_NIFTY_TOKEN;
         String normalizedInterval = normalizeInterval(interval);
 
         List<Candle> candles =

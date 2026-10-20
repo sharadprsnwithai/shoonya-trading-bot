@@ -1,7 +1,8 @@
 package com.tradingbot.strategy.car;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.tradingbot.marketdata.HistoricalOhlcCacheService;
 import com.tradingbot.strategy.car.config.CarWeeklyProperties;

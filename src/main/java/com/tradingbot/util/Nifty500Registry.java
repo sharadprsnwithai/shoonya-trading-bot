@@ -546,12 +546,16 @@ public final class Nifty500Registry {
     }
 
     public static boolean containsSymbol(String symbol) {
-        if (symbol == null || symbol.isBlank()) return false;
+        if (symbol == null || symbol.isBlank()) {
+            return false;
+        }
         return STOCKS.containsKey(symbol.toUpperCase(Locale.ROOT).trim());
     }
 
     public static StockMetadata getMetadata(String symbol) {
-        if (symbol == null || symbol.isBlank()) return null;
+        if (symbol == null || symbol.isBlank()) {
+            return null;
+        }
         return STOCKS.get(symbol.toUpperCase(Locale.ROOT).trim());
     }
 

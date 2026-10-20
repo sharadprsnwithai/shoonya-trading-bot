@@ -39,7 +39,7 @@ public class LowestVolumePaperPosition {
     private final BigDecimal plannedRisk;
     private final Instant entryTime;
 
-    private boolean partialBooked = false;
+    private boolean partialBooked;
     private BigDecimal partialExitPremium;
     private Instant partialExitTime;
     private BigDecimal partialPnl = BigDecimal.ZERO;
@@ -49,7 +49,7 @@ public class LowestVolumePaperPosition {
     private BigDecimal runnerPnl = BigDecimal.ZERO;
     private BigDecimal totalRealizedPnl = BigDecimal.ZERO;
     private String exitReason;
-    private boolean closed = false;
+    private boolean closed;
 
     private BigDecimal trailingSuperTrendValue;
     private String brokerTradingSymbol;
@@ -189,12 +189,12 @@ public class LowestVolumePaperPosition {
         }
 
         int effectiveLots =
-                (this.lots > 0)
+                this.lots > 0
                         ? this.lots
                         : Math.max(1, this.totalQuantity / Math.max(1, this.lotSize));
         int bookedLots = (effectiveLots + 1) / 2; // Ceiling of 50% lots
         int effectiveLotSize =
-                (this.lotSize > 0) ? this.lotSize : (this.totalQuantity / effectiveLots);
+                this.lotSize > 0 ? this.lotSize : (this.totalQuantity / effectiveLots);
         int bookedQty = Math.min(this.totalQuantity, bookedLots * effectiveLotSize);
 
         this.remainingQuantity = this.totalQuantity - bookedQty;
@@ -217,7 +217,7 @@ public class LowestVolumePaperPosition {
         BigDecimal priceDiff;
         if (this.instrumentType == LvrInstrumentType.FUTURES) {
             priceDiff =
-                    (this.direction == LowestVolumeDirection.LONG)
+                    this.direction == LowestVolumeDirection.LONG
                             ? exitPriceOrPremium.subtract(this.stockEntryPrice)
                             : this.stockEntryPrice.subtract(exitPriceOrPremium);
         } else {
@@ -244,7 +244,7 @@ public class LowestVolumePaperPosition {
             BigDecimal priceDiff;
             if (this.instrumentType == LvrInstrumentType.FUTURES) {
                 priceDiff =
-                        (this.direction == LowestVolumeDirection.LONG)
+                        this.direction == LowestVolumeDirection.LONG
                                 ? exitPriceOrPremium.subtract(this.stockEntryPrice)
                                 : this.stockEntryPrice.subtract(exitPriceOrPremium);
             } else {
@@ -264,12 +264,12 @@ public class LowestVolumePaperPosition {
 
     public int getEffectiveBookedQuantityOnTarget() {
         int effectiveLots =
-                (this.lots > 0)
+                this.lots > 0
                         ? this.lots
                         : Math.max(1, this.totalQuantity / Math.max(1, this.lotSize));
         int bookedLots = (effectiveLots + 1) / 2;
         int effectiveLotSize =
-                (this.lotSize > 0) ? this.lotSize : (this.totalQuantity / effectiveLots);
+                this.lotSize > 0 ? this.lotSize : (this.totalQuantity / effectiveLots);
         return Math.min(this.totalQuantity, bookedLots * effectiveLotSize);
     }
 
@@ -468,7 +468,9 @@ public class LowestVolumePaperPosition {
 
     /** M10: captures this position (entry state + mutable trading state) into a snapshot. */
     public static LvrPositionSnapshot snapshotOf(LowestVolumePaperPosition pos) {
-        if (pos == null) return null;
+        if (pos == null) {
+            return null;
+        }
         LvrPositionSnapshot s = new LvrPositionSnapshot();
         s.tradeId = pos.tradeId;
         s.symbol = pos.symbol;
@@ -510,7 +512,9 @@ public class LowestVolumePaperPosition {
 
     /** M10: rebuilds a position (including mutable state) from a persisted snapshot. */
     public static LowestVolumePaperPosition restoreFrom(LvrPositionSnapshot s) {
-        if (s == null || s.symbol == null) return null;
+        if (s == null || s.symbol == null) {
+            return null;
+        }
         LvrInstrumentType type =
                 s.instrumentType != null ? s.instrumentType : LvrInstrumentType.FUTURES;
         LowestVolumePaperPosition pos;

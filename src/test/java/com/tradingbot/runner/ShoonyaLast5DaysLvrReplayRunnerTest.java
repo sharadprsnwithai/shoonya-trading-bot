@@ -151,7 +151,7 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                 if (candles != null && candles.size() >= 2) {
                     double open = candles.get(0).open().doubleValue();
                     double ltp = candles.get(1).close().doubleValue();
-                    double pct = (open > 0) ? ((ltp - open) / open) * 100.0 : 0.0;
+                    double pct = open > 0 ? ((ltp - open) / open) * 100.0 : 0.0;
                     niftyQuotes0925.add(new StockQuoteSnapshot(sym, ltp, open, open, pct));
                 }
             }
@@ -175,7 +175,7 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                     if (candles != null && candles.size() >= 2) {
                         double open = candles.get(0).open().doubleValue();
                         double ltp = candles.get(1).close().doubleValue();
-                        double pct = (open > 0) ? ((ltp - open) / open) * 100.0 : 0.0;
+                        double pct = open > 0 ? ((ltp - open) / open) * 100.0 : 0.0;
                         sQuotes.add(new StockQuoteSnapshot(sym, ltp, open, open, pct));
                     }
                 }
@@ -200,7 +200,7 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
 
             // Step 3: Run 5m Candle Engine for the Day
             List<String> candidateList =
-                    (rankedSectors.isEmpty())
+                    rankedSectors.isEmpty()
                             ? List.of()
                             : scanner.filterCandidateStocks(
                                     sectorQuotes0925.getOrDefault(
@@ -247,7 +247,7 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
         System.out.printf("  Total Wins (>= 1:2)     : %d\n", totalWins);
         System.out.printf("  Total Losses (SL Hit)   : %d\n", totalLosses);
         double winRate =
-                (totalTradesTriggered > 0)
+                totalTradesTriggered > 0
                         ? ((double) totalWins / totalTradesTriggered) * 100.0
                         : 0.0;
         System.out.printf("  Win Rate                : %.1f%%\n", winRate);
@@ -271,7 +271,9 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
         for (Map.Entry<String, List<Candle>> entry : dayStockCandles.entrySet()) {
             String sym = entry.getKey();
             List<Candle> candles = entry.getValue();
-            if (candles == null || candles.size() < 4) continue;
+            if (candles == null || candles.size() < 4) {
+                continue;
+            }
 
             List<LowestVolumePaperPosition> executedTrades =
                     service.replaySession(sym, direction, candles);
@@ -284,7 +286,7 @@ class ShoonyaLast5DaysLvrReplayRunnerTest {
                                 .doubleValue();
                 double pnl = pos.getTotalRealizedPnl().doubleValue();
                 double rValue =
-                        (unitRisk > 0 && pos.getTotalQuantity() > 0)
+                        unitRisk > 0 && pos.getTotalQuantity() > 0
                                 ? pnl / (unitRisk * pos.getTotalQuantity())
                                 : (pnl >= 0 ? 2.0 : -1.0);
 

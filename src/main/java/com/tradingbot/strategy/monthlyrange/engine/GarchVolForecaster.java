@@ -61,15 +61,15 @@ public class GarchVolForecaster {
 
         // 2. 1-step ahead forecast: sigma_{T+1}^2 using the final return shock epsilon_{T-1}
         double lastEps = returns[t - 1] - mean;
-        double sigmaTPlus1_2 = omega + alpha * (lastEps * lastEps) + beta * currentSigma2;
-        dailyVars[0] = Math.max(sigmaTPlus1_2, 1e-10);
+        double sigmaTPlus12 = omega + alpha * (lastEps * lastEps) + beta * currentSigma2;
+        dailyVars[0] = Math.max(sigmaTPlus12, 1e-10);
 
         // 3. Multi-step recursive forecast: sigma_{T+k}^2 = V_L + (alpha + beta)^(k-1) *
         // (sigma_{T+1}^2 - V_L)
         double sumVariance = dailyVars[0];
         for (int k = 1; k < h; k++) {
             double factor = Math.pow(persistence, k);
-            double projectedVar = vl + factor * (sigmaTPlus1_2 - vl);
+            double projectedVar = vl + factor * (sigmaTPlus12 - vl);
             dailyVars[k] = Math.max(projectedVar, 1e-10);
             sumVariance += dailyVars[k];
         }

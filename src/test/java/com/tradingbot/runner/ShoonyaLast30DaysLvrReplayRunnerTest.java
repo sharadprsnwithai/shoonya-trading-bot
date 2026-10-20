@@ -134,7 +134,9 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
 
             for (String sym : universeSymbols) {
                 List<Candle> allCandles = stockCandlesMap.get(sym);
-                if (allCandles == null) continue;
+                if (allCandles == null) {
+                    continue;
+                }
 
                 List<Candle> dayCandles =
                         allCandles.stream()
@@ -144,7 +146,9 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
                                                         .equals(sessionDate))
                                 .toList();
 
-                if (dayCandles.size() < 2) continue;
+                if (dayCandles.size() < 2) {
+                    continue;
+                }
 
                 Candle c1 = dayCandles.get(0);
                 Candle c2 = dayCandles.get(1);
@@ -226,7 +230,9 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
 
             for (String candidate : topCandidates.stream().limit(3).toList()) {
                 List<Candle> allCandles = stockCandlesMap.get(candidate);
-                if (allCandles == null) continue;
+                if (allCandles == null) {
+                    continue;
+                }
 
                 List<Candle> dayCandles =
                         allCandles.stream()
@@ -236,7 +242,9 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
                                                         .equals(sessionDate))
                                 .toList();
 
-                if (dayCandles.size() < 4) continue;
+                if (dayCandles.size() < 4) {
+                    continue;
+                }
 
                 List<LowestVolumePaperPosition> trades =
                         lvrService.replaySession(candidate, sentiment, dayCandles);
@@ -247,8 +255,11 @@ class ShoonyaLast30DaysLvrReplayRunnerTest {
                     sessionPnl += pnl;
                     totalRealizedPnlRs += pnl;
 
-                    if (pnl > 0) totalWins++;
-                    else totalLosses++;
+                    if (pnl > 0) {
+                        totalWins++;
+                    } else {
+                        totalLosses++;
+                    }
 
                     allExecutedTrades.add(t);
 

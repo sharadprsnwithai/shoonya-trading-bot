@@ -51,7 +51,7 @@ public class FiftyTwoHighProperties {
      * When {@code true}, only close-confirmed breakouts are reported (the close must also finish
      * above the prior 52-week high). When {@code false}, a high-only intraday cross qualifies.
      */
-    private boolean requireCloseConfirmation = false;
+    private boolean requireCloseConfirmation;
 
     /**
      * Optional explicit universe. When non-empty, only these symbols are scanned; when empty, the

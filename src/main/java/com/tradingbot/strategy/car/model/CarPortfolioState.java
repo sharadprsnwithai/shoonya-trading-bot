@@ -31,7 +31,9 @@ public class CarPortfolioState {
     }
 
     public synchronized void addFill(String symbol, int quantity, BigDecimal fillPrice) {
-        if (symbol == null || quantity <= 0 || fillPrice == null) return;
+        if (symbol == null || quantity <= 0 || fillPrice == null) {
+            return;
+        }
         CarHolding existing = holdings.get(symbol);
         if (existing == null) {
             holdings.put(symbol, CarHolding.initial(symbol, quantity, fillPrice, profitTargetPct));
@@ -42,7 +44,9 @@ public class CarPortfolioState {
 
     public synchronized BigDecimal closeHoldingAtTarget(String symbol, BigDecimal exitPrice) {
         CarHolding holding = holdings.remove(symbol);
-        if (holding == null) return BigDecimal.ZERO;
+        if (holding == null) {
+            return BigDecimal.ZERO;
+        }
 
         BigDecimal pnl =
                 exitPrice
@@ -77,7 +81,9 @@ public class CarPortfolioState {
 
         int investedUnits = 0;
         for (CarHolding holding : holdings.values()) {
-            if (holding == null || holding.totalQuantity() <= 0) continue;
+            if (holding == null || holding.totalQuantity() <= 0) {
+                continue;
+            }
             investedUnits +=
                     unitsFor(
                             BigDecimal.valueOf(holding.totalQuantity())

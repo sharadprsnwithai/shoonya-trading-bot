@@ -16,17 +16,25 @@ public class MonthlyRangeProperties {
     private List<String> symbols =
             new ArrayList<>(
                     List.of(
+                            "NIFTY50",
                             "RELIANCE",
                             "TCS",
                             "HDFCBANK",
                             "INFY",
                             "ICICIBANK",
                             "SBIN",
-                            "TATAMOTORS",
-                            "NIFTY50"));
+                            "BHARTIARTL",
+                            "ITC",
+                            "LT",
+                            "TATAMOTORS"));
     private int forecastHorizonDays = 22;
     private int historyLookbackDays = 504;
     private boolean telegramAlertsEnabled = true;
+
+    // Monthly Directional Probability & 1x2x1 Broken-Wing Butterfly Tuning
+    private boolean directionalProbabilityEnabled = true;
+    private double strongConvictionThreshold = 65.0;
+    private boolean triggerOnFirstTradingDayOfMonth = true;
 
     // Asymmetric Downside Skew & Event Month Tuning
     private double normalPeMultiplier = 2.10;
@@ -101,6 +109,30 @@ public class MonthlyRangeProperties {
 
     public void setTelegramAlertsEnabled(boolean telegramAlertsEnabled) {
         this.telegramAlertsEnabled = telegramAlertsEnabled;
+    }
+
+    public boolean isDirectionalProbabilityEnabled() {
+        return directionalProbabilityEnabled;
+    }
+
+    public void setDirectionalProbabilityEnabled(boolean directionalProbabilityEnabled) {
+        this.directionalProbabilityEnabled = directionalProbabilityEnabled;
+    }
+
+    public double getStrongConvictionThreshold() {
+        return strongConvictionThreshold;
+    }
+
+    public void setStrongConvictionThreshold(double strongConvictionThreshold) {
+        this.strongConvictionThreshold = strongConvictionThreshold;
+    }
+
+    public boolean isTriggerOnFirstTradingDayOfMonth() {
+        return triggerOnFirstTradingDayOfMonth;
+    }
+
+    public void setTriggerOnFirstTradingDayOfMonth(boolean triggerOnFirstTradingDayOfMonth) {
+        this.triggerOnFirstTradingDayOfMonth = triggerOnFirstTradingDayOfMonth;
     }
 
     public double getNormalPeMultiplier() {

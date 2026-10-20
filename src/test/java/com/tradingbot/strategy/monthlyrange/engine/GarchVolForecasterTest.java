@@ -20,7 +20,7 @@ class GarchVolForecasterTest {
 
         double[] returns = new double[250];
         for (int i = 0; i < returns.length; i++) {
-            returns[i] = (i % 2 == 0 ? 0.01 : -0.01);
+            returns[i] = i % 2 == 0 ? 0.01 : -0.01;
         }
 
         int horizon = 22;

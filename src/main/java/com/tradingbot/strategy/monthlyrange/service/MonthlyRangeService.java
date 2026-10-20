@@ -96,8 +96,18 @@ public class MonthlyRangeService {
                         successCount,
                         failureCount);
 
+        List<com.tradingbot.strategy.monthlyrange.model.MonthlyDirectionalScore> directionalScores =
+                forecasts.stream()
+                        .map(MonthlyRangeForecast::directionalScore)
+                        .filter(java.util.Objects::nonNull)
+                        .toList();
+
+        com.tradingbot.strategy.monthlyrange.model.MonthlyUniverseRanking ranking =
+                com.tradingbot.strategy.monthlyrange.model.MonthlyUniverseRanking.fromScores(
+                        directionalScores, properties.getStrongConvictionThreshold());
+
         MonthlyRangeReport report =
-                new MonthlyRangeReport(Instant.now(), cycle, forecasts, summary);
+                new MonthlyRangeReport(Instant.now(), cycle, forecasts, summary, ranking);
 
         // Dispatch Telegram Notification if enabled
         if (properties.isTelegramAlertsEnabled() && telegramService != null) {
@@ -136,7 +146,7 @@ public class MonthlyRangeService {
      */
     public MonthlyRangeForecast generateForecastForSymbol(
             String symbol, int horizonDays, LocalDate asOfDate) {
-        int yearsBack = (properties.getHistoryLookbackDays() > 252) ? 2 : 1;
+        int yearsBack = properties.getHistoryLookbackDays() > 252 ? 2 : 1;
         List<Candle> dailyCandles = yahooFinanceService.fetchDailyCandles(symbol, yearsBack);
 
         OptionChainResponse optionChain = null;
@@ -160,7 +170,7 @@ public class MonthlyRangeService {
     /** Formats the Monthly Range Report into a crisp Markdown message for Telegram. */
     public String formatTelegramMessage(MonthlyRangeReport report) {
         StringBuilder sb = new StringBuilder();
-        sb.append("📊 *MONTHLY OPTION RANGE FORECAST (GARCH + IV + OI FUSION)*\n");
+        sb.append("📊 *MONTHLY OPTION RANGE & DIRECTIONAL FORECAST*\n");
         sb.append("📅 *Cycle:* `")
                 .append(report.cycle())
                 .append("` | *Horizon:* ")
@@ -182,6 +192,90 @@ public class MonthlyRangeService {
                     .append("σ Multipliers)\n\n");
         }
 
+        // Executive Summary: Top 3 Directional & Top 3 Sideways Rankings
+        if (report.ranking() != null) {
+            sb.append("🏆 *TOP 3 DIRECTIONAL PICKS (1x2x1 Broken-Wing Butterfly)*\n");
+            var dirPicks = report.ranking().topDirectionalPicks();
+            if (dirPicks == null || dirPicks.isEmpty()) {
+                sb.append(" • _No stocks met >= ")
+                        .append(properties.getStrongConvictionThreshold())
+                        .append("% conviction threshold (market in neutral/drift regime)_\n");
+            } else {
+                for (var pick : dirPicks) {
+                    var bwb = pick.butterflyRecommendation();
+                    String icon =
+                            pick.bias()
+                                            == com.tradingbot.strategy.monthlyrange.model.MarketBias
+                                                    .BULLISH
+                                    ? "🐂"
+                                    : "🐻";
+                    sb.append(" • *")
+                            .append(pick.symbol())
+                            .append("* (Spot: ₹")
+                            .append(pick.spotPrice())
+                            .append("): ")
+                            .append(icon)
+                            .append(" *")
+                            .append(pick.bias())
+                            .append("* (`")
+                            .append(
+                                    pick.bias()
+                                                    == com.tradingbot.strategy.monthlyrange.model
+                                                            .MarketBias.BULLISH
+                                            ? pick.bullishProbabilityPct()
+                                            : pick.bearishProbabilityPct())
+                            .append("%` Conf)\n");
+                    if (bwb != null && bwb.actionable()) {
+                        sb.append("   ➡️ *")
+                                .append(bwb.optionType())
+                                .append(" 1x2x1:* Buy 1x `₹")
+                                .append(bwb.wing1Strike())
+                                .append("` (4 OTM) | Sell 2x `₹")
+                                .append(bwb.sellBodyStrike())
+                                .append("` (8 OTM) | Buy 1x `₹")
+                                .append(bwb.wing2Strike())
+                                .append("` (10 OTM)\n");
+                    }
+                }
+            }
+            sb.append("\n");
+
+            sb.append("🛡️ *TOP 3 SIDEWAYS PICKS (GARCH Delta-Neutral Strangle)*\n");
+            var sidePicks = report.ranking().topSidewaysPicks();
+            if (sidePicks == null || sidePicks.isEmpty()) {
+                sb.append(" • _No neutral candidates identified_\n");
+            } else {
+                for (var pick : sidePicks) {
+                    // Find corresponding forecast for safe strikes
+                    var forecast =
+                            report.forecasts().stream()
+                                    .filter(f -> f.symbol().equalsIgnoreCase(pick.symbol()))
+                                    .findFirst()
+                                    .orElse(null);
+                    sb.append(" • *")
+                            .append(pick.symbol())
+                            .append("* (Spot: ₹")
+                            .append(pick.spotPrice())
+                            .append("): ⚖️ *NEUTRAL* (`")
+                            .append(pick.bullishProbabilityPct())
+                            .append("% Bull` / `")
+                            .append(pick.bearishProbabilityPct())
+                            .append("% Bear`)\n");
+                    if (forecast != null
+                            && forecast.safePeStrike() != null
+                            && forecast.safeCeStrike() != null) {
+                        sb.append("   ➡️ *Safe Strangle:* PE `₹")
+                                .append(forecast.safePeStrike())
+                                .append("` - CE `₹")
+                                .append(forecast.safeCeStrike())
+                                .append("`\n");
+                    }
+                }
+            }
+            sb.append("\n═══════════════════════════════════\n\n");
+        }
+
+        // Detailed Symbol Breakdown
         for (MonthlyRangeForecast f : report.forecasts()) {
             if (f.spotPrice().compareTo(BigDecimal.ZERO) <= 0) {
                 sb.append("⚠️ *").append(f.symbol()).append("*: Data Unavailable\n\n");
@@ -200,6 +294,43 @@ public class MonthlyRangeService {
                     .append("* (Spot: ₹")
                     .append(f.spotPrice())
                     .append(")\n");
+
+            if (f.directionalScore() != null) {
+                var ds = f.directionalScore();
+                String dirIcon =
+                        ds.bias() == com.tradingbot.strategy.monthlyrange.model.MarketBias.BULLISH
+                                ? "🐂"
+                                : ds.bias()
+                                                == com.tradingbot.strategy.monthlyrange.model
+                                                        .MarketBias.BEARISH
+                                        ? "🐻"
+                                        : "⚖️";
+                sb.append(" • *Directional Bias:* ")
+                        .append(dirIcon)
+                        .append(" *")
+                        .append(ds.bias())
+                        .append("* (`")
+                        .append(ds.bullishProbabilityPct())
+                        .append("% Bull` / `")
+                        .append(ds.bearishProbabilityPct())
+                        .append("% Bear`) | *Conv:* `")
+                        .append(ds.conviction())
+                        .append("`\n");
+
+                var bwb = ds.butterflyRecommendation();
+                if (bwb != null && bwb.actionable()) {
+                    sb.append(" • 🦋 *1x2x1 ")
+                            .append(bwb.optionType())
+                            .append(" Butterfly:* Buy 1x `₹")
+                            .append(bwb.wing1Strike())
+                            .append("` | Sell 2x `₹")
+                            .append(bwb.sellBodyStrike())
+                            .append("` | Buy 1x `₹")
+                            .append(bwb.wing2Strike())
+                            .append("`\n");
+                }
+            }
+
             sb.append(" • *Regime:* `")
                     .append(badge)
                     .append("` | *Conf:* ")
@@ -246,15 +377,20 @@ public class MonthlyRangeService {
         }
 
         sb.append("💡 *Execution Rules:*\n")
-                .append("1. Sell OTM Strangles / Credit Spreads outside Final Safe Strikes.\n")
-                .append("2. Book profits early at *70%–80% decay*.\n")
                 .append(
-                        "3. ⚠️ *Physical Delivery Risk:* Square off or roll short stock options before Expiry Week Monday to avoid 100% margin spikes.");
+                        "1. **Directional Conviction >= 65%:** Deploy recommended 1x2x1 Broken-Wing Butterfly.\n")
+                .append(
+                        "2. **Neutral / Sideways:** Sell OTM Strangles / Credit Spreads outside Final Safe Strikes.\n")
+                .append("3. Book profits early at *70%–80% decay*.\n")
+                .append(
+                        "4. ⚠️ *Physical Delivery Risk:* Square off or roll short stock options before Expiry Week Monday to avoid 100% margin spikes.");
         return sb.toString();
     }
 
     private double calculateBufferPct(double high, double low) {
-        if (low <= 0) return 0.0;
+        if (low <= 0) {
+            return 0.0;
+        }
         return ((high - low) / low) * 100.0;
     }
 }

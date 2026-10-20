@@ -19,17 +19,23 @@ class MonthlyRangeModelTest {
         assertThat(props.getCron()).isEqualTo("0 0 10 ? * MON-FRI");
         assertThat(props.getSymbols())
                 .containsExactly(
+                        "NIFTY50",
                         "RELIANCE",
                         "TCS",
                         "HDFCBANK",
                         "INFY",
                         "ICICIBANK",
                         "SBIN",
-                        "TATAMOTORS",
-                        "NIFTY50");
+                        "BHARTIARTL",
+                        "ITC",
+                        "LT",
+                        "TATAMOTORS");
         assertThat(props.getForecastHorizonDays()).isEqualTo(22);
         assertThat(props.getHistoryLookbackDays()).isEqualTo(504);
         assertThat(props.isTelegramAlertsEnabled()).isTrue();
+        assertThat(props.isDirectionalProbabilityEnabled()).isTrue();
+        assertThat(props.getStrongConvictionThreshold()).isEqualTo(65.0);
+        assertThat(props.isTriggerOnFirstTradingDayOfMonth()).isTrue();
         assertThat(props.getNormalPeMultiplier()).isEqualTo(2.10);
         assertThat(props.getNormalCeMultiplier()).isEqualTo(1.95);
         assertThat(props.getEventPeMultiplier()).isEqualTo(2.45);

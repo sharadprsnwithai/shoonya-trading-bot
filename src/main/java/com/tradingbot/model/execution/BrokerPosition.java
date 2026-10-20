@@ -48,7 +48,7 @@ public record BrokerPosition(
     public static String resolveSegment(String exchange, String symbolOrContract) {
         if (exchange != null) {
             String ex = exchange.toUpperCase().trim();
-            if (ex.equals("NFO") || ex.equals("BFO") || ex.equals("MCX") || ex.equals("CDS")) {
+            if ("NFO".equals(ex) || "BFO".equals(ex) || "MCX".equals(ex) || "CDS".equals(ex)) {
                 return "DERIVATIVES";
             }
         }

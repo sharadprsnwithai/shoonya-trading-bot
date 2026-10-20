@@ -56,7 +56,9 @@ public class CarWeeklyTriggerGenerator {
                 && triggerPrice.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal rawQty = unitSize.divide(triggerPrice, 4, RoundingMode.HALF_UP);
             quantity = (int) Math.ceil(rawQty.doubleValue());
-            if (quantity <= 0) quantity = 1;
+            if (quantity <= 0) {
+                quantity = 1;
+            }
 
             // No single buy order may exceed one unit of capital (design doc, "Capital
             // Partitioning"). Ceil-sizing alone can overshoot: rounding ₹25,000 / ₹10,000 up to

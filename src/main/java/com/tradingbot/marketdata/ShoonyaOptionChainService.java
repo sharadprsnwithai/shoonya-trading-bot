@@ -67,7 +67,7 @@ public class ShoonyaOptionChainService {
     // the broker's field-drop.
     private static final long QUOTE_MIN_INTERVAL_NANOS = 125_000_000L; // 8 req/s aggregate
     private final Object quoteSlotLock = new Object();
-    private long nextQuoteSlotNanos = 0L;
+    private long nextQuoteSlotNanos;
 
     @Autowired
     public ShoonyaOptionChainService(
@@ -159,8 +159,12 @@ public class ShoonyaOptionChainService {
         long totalPutVolume = 0;
 
         for (OptionStrike strike : chain.strikes()) {
-            if (strike.call() != null) totalCallVolume += strike.call().volume();
-            if (strike.put() != null) totalPutVolume += strike.put().volume();
+            if (strike.call() != null) {
+                totalCallVolume += strike.call().volume();
+            }
+            if (strike.put() != null) {
+                totalPutVolume += strike.put().volume();
+            }
         }
 
         return com.tradingbot.model.PcrResponse.calculate(
@@ -213,7 +217,7 @@ public class ShoonyaOptionChainService {
                     if (quote != null && "Ok".equalsIgnoreCase(quote.path("stat").asText(""))) {
                         String lp = quote.path("lp").asText("");
                         String spot = quote.path("sptprc").asText("");
-                        String raw = !lp.isBlank() ? lp : spot;
+                        String raw = lp.isBlank() ? spot : lp;
                         if (!raw.isBlank()) {
                             try {
                                 underlyingPrice = new BigDecimal(raw);
@@ -753,7 +757,7 @@ public class ShoonyaOptionChainService {
 
         for (int i = -count; i <= count; i++) {
             BigDecimal sp = atmStrike.add(strikeStep.multiply(BigDecimal.valueOf(i)));
-            boolean isAtm = (i == 0);
+            boolean isAtm = i == 0;
 
             BigDecimal callLtp =
                     StockFnoRegistry.estimateTheoreticalPremium(
@@ -762,10 +766,9 @@ public class ShoonyaOptionChainService {
                     StockFnoRegistry.estimateTheoreticalPremium(
                             underlying, atmStrike, sp, "PE", dteDays);
 
-            long callOi =
-                    (i >= 0) ? (50000L + (i * 20000L)) : Math.max(5000L, 50000L + (i * 10000L));
+            long callOi = i >= 0 ? (50000L + (i * 20000L)) : Math.max(5000L, 50000L + (i * 10000L));
             long putOi =
-                    (i <= 0)
+                    i <= 0
                             ? (50000L + (Math.abs(i) * 20000L))
                             : Math.max(5000L, 50000L - (i * 10000L));
 
@@ -826,15 +829,33 @@ public class ShoonyaOptionChainService {
         if ("BANKNIFTY".equalsIgnoreCase(underlying) || "BANK NIFTY".equalsIgnoreCase(underlying)) {
             return new BigDecimal("52000");
         }
-        if ("BSE".equalsIgnoreCase(underlying)) return new BigDecimal("2400");
-        if ("LAURUSLABS".equalsIgnoreCase(underlying)) return new BigDecimal("480");
-        if ("SAIL".equalsIgnoreCase(underlying)) return new BigDecimal("140");
-        if ("POLYCAB".equalsIgnoreCase(underlying)) return new BigDecimal("7000");
-        if ("ADANIENSOL".equalsIgnoreCase(underlying)) return new BigDecimal("980");
-        if ("ADANIGREEN".equalsIgnoreCase(underlying)) return new BigDecimal("1250");
-        if ("TORNTPHARM".equalsIgnoreCase(underlying)) return new BigDecimal("3400");
-        if ("BHEL".equalsIgnoreCase(underlying)) return new BigDecimal("270");
-        if ("HINDALCO".equalsIgnoreCase(underlying)) return new BigDecimal("680");
+        if ("BSE".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("2400");
+        }
+        if ("LAURUSLABS".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("480");
+        }
+        if ("SAIL".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("140");
+        }
+        if ("POLYCAB".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("7000");
+        }
+        if ("ADANIENSOL".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("980");
+        }
+        if ("ADANIGREEN".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("1250");
+        }
+        if ("TORNTPHARM".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("3400");
+        }
+        if ("BHEL".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("270");
+        }
+        if ("HINDALCO".equalsIgnoreCase(underlying)) {
+            return new BigDecimal("680");
+        }
         return new BigDecimal("24000");
     }
 
@@ -854,14 +875,14 @@ public class ShoonyaOptionChainService {
         String optionType;
         BigDecimal strikePrice;
         BigDecimal ltp = BigDecimal.ZERO;
-        long openInterest = 0;
-        long volume = 0;
+        long openInterest;
+        long volume;
         BigDecimal bidPrice = BigDecimal.ZERO;
         BigDecimal askPrice = BigDecimal.ZERO;
         BigDecimal previousClose = BigDecimal.ZERO;
 
         /** Set once this contract's quote came back with a usable (stat-Ok, oi-carrying) row. */
-        volatile boolean quoteReceived = false;
+        volatile boolean quoteReceived;
 
         OptionContractDraft callDraft;
         OptionContractDraft putDraft;

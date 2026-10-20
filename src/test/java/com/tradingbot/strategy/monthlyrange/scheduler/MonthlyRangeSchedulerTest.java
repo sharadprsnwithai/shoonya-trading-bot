@@ -37,14 +37,25 @@ class MonthlyRangeSchedulerTest {
     @DisplayName(
             "Should execute scheduled post-expiry routine when month ends on Tuesday (June 30 -> July 1)")
     void testExecuteOnMonthRolloverPostExpirySession() {
-        LocalDate postExpiryJuly1_2026 = LocalDate.of(2026, 7, 1);
-        scheduler.executeRoutineForDate(postExpiryJuly1_2026);
+        LocalDate postExpiryJuly12026 = LocalDate.of(2026, 7, 1);
+        scheduler.executeRoutineForDate(postExpiryJuly12026);
 
         verify(service, times(1)).generateMonthlyReport();
     }
 
     @Test
-    @DisplayName("Should skip execution if date is not post-expiry session")
+    @DisplayName(
+            "Should execute scheduled routine when date is first trading day of the month (Oct 1)")
+    void testExecuteOnFirstTradingDayOfMonth() {
+        LocalDate firstTradingDayOct2026 = LocalDate.of(2026, 10, 1);
+        scheduler.executeRoutineForDate(firstTradingDayOct2026);
+
+        verify(service, times(1)).generateMonthlyReport();
+    }
+
+    @Test
+    @DisplayName(
+            "Should skip execution if date is not post-expiry session and not first trading day")
     void testSkipIfNotPostExpirySession() {
         LocalDate midWedOct2026 = LocalDate.of(2026, 10, 14);
         scheduler.executeRoutineForDate(midWedOct2026);

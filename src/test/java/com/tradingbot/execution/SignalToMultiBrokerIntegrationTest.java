@@ -1,6 +1,6 @@
 package com.tradingbot.execution;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.tradingbot.bus.ReactiveSignalEventBus;
 import com.tradingbot.execution.config.ExecutionProperties;

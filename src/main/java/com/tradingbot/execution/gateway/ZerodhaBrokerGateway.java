@@ -60,7 +60,7 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
             return OrderResponse.failure(null, "Null OrderRequest");
         }
 
-        int maxAttempts = (kiteAuthService != null) ? 2 : 1;
+        int maxAttempts = kiteAuthService != null ? 2 : 1;
         Exception lastException = null;
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -71,7 +71,7 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
                 if (price > 0) {
                     // Apply 1% marketable buffer
                     double buffered =
-                            (request.transactionType() == TransactionType.BUY)
+                            request.transactionType() == TransactionType.BUY
                                     ? (price * 1.01)
                                     : (price * 0.99);
                     limitPrice = Math.max(0.05, Math.round(buffered * 20.0) / 20.0);
@@ -85,9 +85,9 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
 
                 String orderType;
                 if (triggerPrice != null) {
-                    orderType = (limitPrice != null) ? "SL" : "SL-M";
+                    orderType = limitPrice != null ? "SL" : "SL-M";
                 } else {
-                    orderType = (limitPrice != null) ? "LIMIT" : "MARKET";
+                    orderType = limitPrice != null ? "LIMIT" : "MARKET";
                 }
 
                 KiteRestClient.KiteOrderRequest kiteReq =
@@ -185,7 +185,7 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
 
     @Override
     public OrderResponse cancelOrder(String orderId) {
-        int maxAttempts = (kiteAuthService != null) ? 2 : 1;
+        int maxAttempts = kiteAuthService != null ? 2 : 1;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 boolean cancelled = kiteRestClient.cancelOrder(orderId);
@@ -234,7 +234,7 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
 
     @Override
     public List<BrokerPosition> getPositions() {
-        int maxAttempts = (kiteAuthService != null) ? 2 : 1;
+        int maxAttempts = kiteAuthService != null ? 2 : 1;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             List<BrokerPosition> positions = new ArrayList<>();
             try {
@@ -288,7 +288,7 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
 
     @Override
     public List<BrokerPosition> getHoldings() {
-        int maxAttempts = (kiteAuthService != null) ? 2 : 1;
+        int maxAttempts = kiteAuthService != null ? 2 : 1;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             List<BrokerPosition> holdings = new ArrayList<>();
             try {
@@ -339,7 +339,9 @@ public class ZerodhaBrokerGateway implements BrokerOrderGateway {
     }
 
     private boolean isTokenException(Throwable t) {
-        if (t == null) return false;
+        if (t == null) {
+            return false;
+        }
         String msg = t.getMessage();
         if (msg != null) {
             String lower = msg.toLowerCase();

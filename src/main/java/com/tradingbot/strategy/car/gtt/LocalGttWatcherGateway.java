@@ -41,7 +41,9 @@ public class LocalGttWatcherGateway implements GttExecutionGateway {
 
     @Override
     public boolean cancelGtt(String gttId) {
-        if (gttId == null) return false;
+        if (gttId == null) {
+            return false;
+        }
         activeWatchers.remove(gttId);
         return true;
     }

@@ -62,11 +62,11 @@ public class TelegramService {
         }
 
         String modeBadge =
-                (pos.mode() == ExecutionMode.LIVE)
+                pos.mode() == ExecutionMode.LIVE
                         ? "🔴 *[LIVE TRADE ALERT]* 🔴"
                         : "🧪 *[PAPER TRADE ALERT]* 🧪";
         String hedgeDetails =
-                (pos.hedgeSymbol() != null && !pos.hedgeSymbol().isBlank())
+                pos.hedgeSymbol() != null && !pos.hedgeSymbol().isBlank()
                         ? String.format(
                                 BotLocale.INSTANCE,
                                 "🛡️ *BUY Leg (Hedge):* `%s`\n   • *Premium:* ₹%.2f\n   • *Quantity:* %d",
@@ -116,12 +116,12 @@ public class TelegramService {
         }
 
         String modeBadge =
-                (pos.mode() == ExecutionMode.LIVE)
+                pos.mode() == ExecutionMode.LIVE
                         ? "🏁 *[LIVE TRADE CLOSED]* 🏁"
                         : "🏁 *[PAPER TRADE CLOSED]* 🏁";
         String pnlEmoji =
-                (pos.realizedPnl() != null && pos.realizedPnl().signum() >= 0) ? "🟢" : "🔴";
-        String pnlSign = (pos.realizedPnl() != null && pos.realizedPnl().signum() >= 0) ? "+" : "";
+                pos.realizedPnl() != null && pos.realizedPnl().signum() >= 0 ? "🟢" : "🔴";
+        String pnlSign = pos.realizedPnl() != null && pos.realizedPnl().signum() >= 0 ? "+" : "";
 
         String message =
                 String.format(
@@ -240,7 +240,7 @@ public class TelegramService {
 
         // For Option Selling: PnL Points = Entry Premium - Exit Premium
         BigDecimal premiumDiff =
-                (entryPremium != null && exitPremium != null)
+                entryPremium != null && exitPremium != null
                         ? entryPremium.subtract(exitPremium).setScale(2, RoundingMode.HALF_UP)
                         : BigDecimal.ZERO;
         String pnlEmoji = premiumDiff.signum() >= 0 ? "🟢" : "🔴";
@@ -303,7 +303,7 @@ public class TelegramService {
 
         // For Option Buying: PnL Points = Exit Premium - Entry Premium
         BigDecimal premiumDiff =
-                (entryPremium != null && exitPremium != null)
+                entryPremium != null && exitPremium != null
                         ? exitPremium.subtract(entryPremium).setScale(2, RoundingMode.HALF_UP)
                         : BigDecimal.ZERO;
         String pnlEmoji = premiumDiff.signum() >= 0 ? "🟢" : "🔴";
@@ -342,19 +342,45 @@ public class TelegramService {
     }
 
     private String formatKey(String key) {
-        if ("r1".equalsIgnoreCase(key)) return "Pivot R1 Level";
-        if ("s1".equalsIgnoreCase(key)) return "Pivot S1 Level";
-        if ("supertrend".equalsIgnoreCase(key)) return "SuperTrend (7, 3)";
-        if ("tradeNum".equalsIgnoreCase(key)) return "Daily Trade #";
-        if ("spreadType".equalsIgnoreCase(key)) return "Spread Type";
-        if ("sellLeg".equalsIgnoreCase(key)) return "Sell Leg (ATM)";
-        if ("buyHedgeLeg".equalsIgnoreCase(key)) return "Buy Hedge Leg";
-        if ("netCredit".equalsIgnoreCase(key)) return "Net Credit";
-        if ("maxRisk".equalsIgnoreCase(key)) return "Defined Max Risk";
-        if ("lots".equalsIgnoreCase(key)) return "Position Lots";
-        if ("quantity".equalsIgnoreCase(key)) return "Total Quantity";
-        if ("oiDiff".equalsIgnoreCase(key)) return "OTM OI Difference";
-        if ("exitReason".equalsIgnoreCase(key)) return "Exit Reason";
+        if ("r1".equalsIgnoreCase(key)) {
+            return "Pivot R1 Level";
+        }
+        if ("s1".equalsIgnoreCase(key)) {
+            return "Pivot S1 Level";
+        }
+        if ("supertrend".equalsIgnoreCase(key)) {
+            return "SuperTrend (7, 3)";
+        }
+        if ("tradeNum".equalsIgnoreCase(key)) {
+            return "Daily Trade #";
+        }
+        if ("spreadType".equalsIgnoreCase(key)) {
+            return "Spread Type";
+        }
+        if ("sellLeg".equalsIgnoreCase(key)) {
+            return "Sell Leg (ATM)";
+        }
+        if ("buyHedgeLeg".equalsIgnoreCase(key)) {
+            return "Buy Hedge Leg";
+        }
+        if ("netCredit".equalsIgnoreCase(key)) {
+            return "Net Credit";
+        }
+        if ("maxRisk".equalsIgnoreCase(key)) {
+            return "Defined Max Risk";
+        }
+        if ("lots".equalsIgnoreCase(key)) {
+            return "Position Lots";
+        }
+        if ("quantity".equalsIgnoreCase(key)) {
+            return "Total Quantity";
+        }
+        if ("oiDiff".equalsIgnoreCase(key)) {
+            return "OTM OI Difference";
+        }
+        if ("exitReason".equalsIgnoreCase(key)) {
+            return "Exit Reason";
+        }
         return key;
     }
 
@@ -545,11 +571,11 @@ public class TelegramService {
         }
 
         String pnlEmoji =
-                (pos.getTotalRealizedPnl() != null && pos.getTotalRealizedPnl().signum() >= 0)
+                pos.getTotalRealizedPnl() != null && pos.getTotalRealizedPnl().signum() >= 0
                         ? "🟢"
                         : "🔴";
         String pnlSign =
-                (pos.getTotalRealizedPnl() != null && pos.getTotalRealizedPnl().signum() >= 0)
+                pos.getTotalRealizedPnl() != null && pos.getTotalRealizedPnl().signum() >= 0
                         ? "+"
                         : "";
 
@@ -775,7 +801,9 @@ public class TelegramService {
 
     /** Escapes reserved Markdown v1 characters. */
     public static String escapeMarkdown(String text) {
-        if (text == null) return "";
+        if (text == null) {
+            return "";
+        }
         return text.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[");
     }
 
@@ -789,10 +817,14 @@ public class TelegramService {
         CompletableFuture.runAsync(
                 () -> {
                     try {
-                        if (config == null || !config.isTelegramEnabled()) return;
+                        if (config == null || !config.isTelegramEnabled()) {
+                            return;
+                        }
                         String token = config.getTelegramBotToken().trim();
                         String chatId = config.getTelegramChatId().trim();
-                        if (token.isBlank() || chatId.isBlank()) return;
+                        if (token.isBlank() || chatId.isBlank()) {
+                            return;
+                        }
                         logOutgoing(chatId, text);
 
                         String keyboardJson =
@@ -914,7 +946,9 @@ public class TelegramService {
         CompletableFuture.runAsync(
                 () -> {
                     try {
-                        if (config == null || !config.isTelegramEnabled()) return;
+                        if (config == null || !config.isTelegramEnabled()) {
+                            return;
+                        }
                         String token =
                                 config.getTelegramBotToken() != null
                                         ? config.getTelegramBotToken().trim()

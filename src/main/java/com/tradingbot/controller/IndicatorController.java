@@ -89,7 +89,7 @@ public class IndicatorController {
             @RequestParam(defaultValue = "14") int rsiPeriod) {
         IndicatorResponse response =
                 getNifty50Indicators(interval, days, atrPeriod, multiplier, rsiPeriod).getBody();
-        IndicatorSnapshot latest = (response != null) ? response.latest() : null;
+        IndicatorSnapshot latest = response != null ? response.latest() : null;
 
         if (latest == null) {
             return ResponseEntity.ok(Map.of("symbol", "NIFTY50", "status", "NO_DATA"));
@@ -139,7 +139,9 @@ public class IndicatorController {
     }
 
     private String normalizeInterval(String interval) {
-        if (interval == null || interval.isBlank()) return "5";
+        if (interval == null || interval.isBlank()) {
+            return "5";
+        }
         String clean = interval.trim().toLowerCase();
         return switch (clean) {
             case "1", "1m", "1min" -> "1";

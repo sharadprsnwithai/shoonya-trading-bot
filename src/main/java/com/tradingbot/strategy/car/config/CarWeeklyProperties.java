@@ -18,11 +18,11 @@ public class CarWeeklyProperties {
     private int highLookbackDays = 252;
     private boolean telegramAlerts = true;
     private String stateFilePath = "data/car_portfolio_state.json";
-    private boolean syncDematHoldings = false;
+    private boolean syncDematHoldings;
     private String executionBroker = "ZERODHA";
     private List<String> accumulationOnlySymbols = new ArrayList<>();
     private List<String> watchlistSymbols = new ArrayList<>();
-    private boolean scanOnlyWatchlistAndHoldings = false;
+    private boolean scanOnlyWatchlistAndHoldings;
     private int maxUnitsPerStock = 3;
     private double maxDrawdownPct = 30.0;
 

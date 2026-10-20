@@ -107,7 +107,7 @@ public class BreakoutTradeSetupCalculator {
             marketUptrend = niftySma != null && closeAt(niftyDaily, nli).compareTo(niftySma) > 0;
         }
         BigDecimal relativeStrength =
-                (momentum != null && niftyMomentum != null)
+                momentum != null && niftyMomentum != null
                         ? momentum.subtract(niftyMomentum).setScale(2, RoundingMode.HALF_UP)
                         : null;
         boolean relativeStrengthPositive =

@@ -2,7 +2,8 @@ package com.tradingbot.strategy.car.controller;
 
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tradingbot.strategy.car.CarWeeklyGttService;
 import org.junit.jupiter.api.Test;

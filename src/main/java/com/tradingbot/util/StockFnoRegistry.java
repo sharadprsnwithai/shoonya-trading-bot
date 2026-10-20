@@ -299,13 +299,17 @@ public final class StockFnoRegistry {
     }
 
     public static InstrumentInfo get(String symbol) {
-        if (symbol == null) return null;
+        if (symbol == null) {
+            return null;
+        }
         return INSTRUMENTS.get(symbol.toUpperCase().trim());
     }
 
     /** Returns true if symbol is an Index underlying (NIFTY, SENSEX, BANKNIFTY, etc.). */
     public static boolean isIndex(String symbol) {
-        if (symbol == null) return false;
+        if (symbol == null) {
+            return false;
+        }
         String s = symbol.toUpperCase().replace(" ", "");
         return s.contains("NIFTY") || s.contains("SENSEX") || s.contains("BSESN");
     }
@@ -317,7 +321,7 @@ public final class StockFnoRegistry {
             if (info != null) {
                 // Check for Shoonya native segment mode via system property
                 String soProp = System.getProperty("shoonya.segment.mode");
-                if (soProp != null && soProp.equalsIgnoreCase("native")) {
+                if ("native".equalsIgnoreCase(soProp)) {
                     // In native mode, use Shoonya-native exchange mapping
                     String upper = symbol.toUpperCase();
                     // NIFTY/SENSEX indices still use NSE exchange
@@ -349,7 +353,7 @@ public final class StockFnoRegistry {
             if (info != null) {
                 // Check for Shoonya native segment mode via system property
                 String soProp = System.getProperty("shoonya.segment.mode");
-                if (soProp != null && soProp.equalsIgnoreCase("native")) {
+                if ("native".equalsIgnoreCase(soProp)) {
                     // In native mode, use Shoonya-native segment mapping
                     String upper = symbol.toUpperCase();
                     // NIFTY/SENSEX indices use NFO segment even in native mode
@@ -386,12 +390,24 @@ public final class StockFnoRegistry {
             return BigDecimal.valueOf(50);
         }
         double price = spotPrice.doubleValue();
-        if (price >= 10000.0) return BigDecimal.valueOf(100.0);
-        if (price >= 5000.0) return BigDecimal.valueOf(100.0);
-        if (price >= 2000.0) return BigDecimal.valueOf(50.0);
-        if (price >= 1000.0) return BigDecimal.valueOf(20.0);
-        if (price >= 500.0) return BigDecimal.valueOf(10.0);
-        if (price >= 200.0) return BigDecimal.valueOf(5.0);
+        if (price >= 10000.0) {
+            return BigDecimal.valueOf(100.0);
+        }
+        if (price >= 5000.0) {
+            return BigDecimal.valueOf(100.0);
+        }
+        if (price >= 2000.0) {
+            return BigDecimal.valueOf(50.0);
+        }
+        if (price >= 1000.0) {
+            return BigDecimal.valueOf(20.0);
+        }
+        if (price >= 500.0) {
+            return BigDecimal.valueOf(10.0);
+        }
+        if (price >= 200.0) {
+            return BigDecimal.valueOf(5.0);
+        }
         return BigDecimal.valueOf(2.5);
     }
 
@@ -581,16 +597,16 @@ public final class StockFnoRegistry {
      */
     public static String formatFuturesTradingSymbol(String symbol, LocalDate expiryDate) {
         String cleanUnderlying = symbol != null ? symbol.toUpperCase().replace(" ", "") : "NIFTY";
-        if (cleanUnderlying.equals("NIFTY50") || cleanUnderlying.equals("NIFTY")) {
+        if ("NIFTY50".equals(cleanUnderlying) || "NIFTY".equals(cleanUnderlying)) {
             cleanUnderlying = "NIFTY";
-        } else if (cleanUnderlying.equals("BANKNIFTY") || cleanUnderlying.equals("BANK NIFTY")) {
+        } else if ("BANKNIFTY".equals(cleanUnderlying) || "BANK NIFTY".equals(cleanUnderlying)) {
             cleanUnderlying = "BANKNIFTY";
-        } else if (cleanUnderlying.equals("BSESN") || cleanUnderlying.equals("SENSEX")) {
+        } else if ("BSESN".equals(cleanUnderlying) || "SENSEX".equals(cleanUnderlying)) {
             cleanUnderlying = "SENSEX";
         }
 
         LocalDate resolvedExpiry =
-                (expiryDate != null)
+                expiryDate != null
                         ? expiryDate
                         : calculateTargetExpiry(cleanUnderlying, LocalDate.now(clock), false, 1);
 
@@ -612,11 +628,11 @@ public final class StockFnoRegistry {
             String optionType,
             boolean isWeekly) {
         String cleanUnderlying = symbol != null ? symbol.toUpperCase().replace(" ", "") : "NIFTY";
-        if (cleanUnderlying.equals("NIFTY50") || cleanUnderlying.equals("NIFTY")) {
+        if ("NIFTY50".equals(cleanUnderlying) || "NIFTY".equals(cleanUnderlying)) {
             cleanUnderlying = "NIFTY";
-        } else if (cleanUnderlying.equals("BANKNIFTY") || cleanUnderlying.equals("BANK NIFTY")) {
+        } else if ("BANKNIFTY".equals(cleanUnderlying) || "BANK NIFTY".equals(cleanUnderlying)) {
             cleanUnderlying = "BANKNIFTY";
-        } else if (cleanUnderlying.equals("BSESN") || cleanUnderlying.equals("SENSEX")) {
+        } else if ("BSESN".equals(cleanUnderlying) || "SENSEX".equals(cleanUnderlying)) {
             cleanUnderlying = "SENSEX";
         }
 
@@ -680,9 +696,12 @@ public final class StockFnoRegistry {
 
         // Base annual implied volatility estimate
         double iv = isIndex(symbol) ? 0.135 : 0.28;
-        if ("SENSEX".equalsIgnoreCase(symbol)) iv = 0.145;
-        if ("BANKNIFTY".equalsIgnoreCase(symbol) || "BANK NIFTY".equalsIgnoreCase(symbol))
+        if ("SENSEX".equalsIgnoreCase(symbol)) {
+            iv = 0.145;
+        }
+        if ("BANKNIFTY".equalsIgnoreCase(symbol) || "BANK NIFTY".equalsIgnoreCase(symbol)) {
             iv = 0.165;
+        }
 
         // Black-Scholes ATM time value approximation: ~ 0.4 * Spot * IV * sqrt(T)
         double timeFraction = dte / 365.0;

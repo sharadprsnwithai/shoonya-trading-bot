@@ -123,10 +123,10 @@ public class ZerodhaTradeConsumer extends AbstractTradeExecutionConsumer {
         }
 
         // Futures / Equity: Directional long/short
-        return (signal.action() == SignalAction.ENTRY_LONG
+        return signal.action() == SignalAction.ENTRY_LONG
                         || signal.action() == SignalAction.BUY
                         || signal.action() == SignalAction.EXIT_SHORT
-                        || signal.action() == SignalAction.PARTIAL_EXIT_SHORT)
+                        || signal.action() == SignalAction.PARTIAL_EXIT_SHORT
                 ? TransactionType.BUY
                 : TransactionType.SELL;
     }

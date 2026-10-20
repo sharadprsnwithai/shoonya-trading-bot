@@ -64,7 +64,7 @@ public class SqliteHistoricalOhlcRepository {
 
     public Connection getConnection() throws SQLException {
         Connection conn =
-                (dataSource != null)
+                dataSource != null
                         ? dataSource.getConnection()
                         : DriverManager.getConnection(jdbcUrl);
         try (Statement stmt = conn.createStatement()) {
@@ -119,7 +119,9 @@ public class SqliteHistoricalOhlcRepository {
 
     /** Batch inserts or replaces candles for a specific symbol and timeframe. */
     public void batchUpsertCandles(String symbol, String timeframe, List<Candle> candles) {
-        if (candles == null || candles.isEmpty()) return;
+        if (candles == null || candles.isEmpty()) {
+            return;
+        }
 
         String normalizedTf = normalizeTimeframe(timeframe);
         String sql =
@@ -151,7 +153,9 @@ public class SqliteHistoricalOhlcRepository {
 
     /** Saves all daily, weekly, and monthly candles in a single atomic database transaction. */
     public void saveSymbolBundle(String symbol, SymbolOhlcBundle bundle) {
-        if (bundle == null) return;
+        if (bundle == null) {
+            return;
+        }
 
         String sql =
                 """
@@ -276,20 +280,34 @@ public class SqliteHistoricalOhlcRepository {
     }
 
     public String normalizeTimeframe(String timeframe) {
-        if (timeframe == null) return "D";
+        if (timeframe == null) {
+            return "D";
+        }
         String tf = timeframe.trim().toUpperCase();
-        if ("1W".equals(tf) || "W".equals(tf)) return "W";
-        if ("1M".equals(tf) || "M".equals(tf)) return "M";
-        if ("1D".equals(tf) || "D".equals(tf)) return "D";
-        if ("1H".equals(tf) || "60".equals(tf)) return "60";
-        if ("5M".equals(tf) || "5".equals(tf)) return "5";
+        if ("1W".equals(tf) || "W".equals(tf)) {
+            return "W";
+        }
+        if ("1M".equals(tf) || "M".equals(tf)) {
+            return "M";
+        }
+        if ("1D".equals(tf) || "D".equals(tf)) {
+            return "D";
+        }
+        if ("1H".equals(tf) || "60".equals(tf)) {
+            return "60";
+        }
+        if ("5M".equals(tf) || "5".equals(tf)) {
+            return "5";
+        }
         return tf;
     }
 
     /** Retrieves the full daily, weekly, and monthly bundle for a symbol from SQLite. */
     public SymbolOhlcBundle getSymbolBundle(String symbol) {
         List<Candle> daily = getCandles(symbol, "D");
-        if (daily.isEmpty()) return null;
+        if (daily.isEmpty()) {
+            return null;
+        }
         List<Candle> weekly = getCandles(symbol, "W");
         List<Candle> monthly = getCandles(symbol, "M");
         return new SymbolOhlcBundle(daily, weekly, monthly);

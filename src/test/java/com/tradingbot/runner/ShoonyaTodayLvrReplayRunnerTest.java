@@ -250,14 +250,14 @@ class ShoonyaTodayLvrReplayRunnerTest {
                 boolean isOptions = pos.getInstrumentType() == LvrInstrumentType.OPTIONS;
                 BigDecimal entryPrc = isOptions ? pos.getEntryPremium() : pos.getStockEntryPrice();
                 BigDecimal exitPrc =
-                        (pos.getRunnerExitPrice() != null) ? pos.getRunnerExitPrice() : entryPrc;
+                        pos.getRunnerExitPrice() != null ? pos.getRunnerExitPrice() : entryPrc;
                 double ptsCaptured =
                         isOptions
                                 ? (exitPrc.subtract(entryPrc).doubleValue())
-                                : ((pos.getDirection() == LowestVolumeDirection.LONG)
+                                : (pos.getDirection() == LowestVolumeDirection.LONG
                                         ? (exitPrc.subtract(entryPrc).doubleValue())
                                         : (entryPrc.subtract(exitPrc).doubleValue()));
-                double rValue = (unitRisk > 0 && !isOptions) ? (ptsCaptured / unitRisk) : 0.0;
+                double rValue = unitRisk > 0 && !isOptions ? (ptsCaptured / unitRisk) : 0.0;
 
                 if (pos.getExitReason().contains("TARGET_1_2_FULL_EXIT")) {
                     wins++;
@@ -311,7 +311,9 @@ class ShoonyaTodayLvrReplayRunnerTest {
         System.out.printf(
                 "\n================ %s (Direction: %s | Total Candles: %d) ================\n",
                 symbol, dir, candles.size());
-        if (candles.size() < 3) return;
+        if (candles.size() < 3) {
+            return;
+        }
 
         LowestVolumeSetup initialSetup =
                 lvrService.evaluateCandleSequence(symbol, dir, candles.subList(0, 3));
@@ -328,11 +330,11 @@ class ShoonyaTodayLvrReplayRunnerTest {
             Candle c = candles.get(i);
             String time = TIME_FMT.format(c.timestamp());
             String color = c.isGreen() ? "GREEN" : (c.isRed() ? "RED  " : "DOJI ");
-            boolean isOpposite = (dir == LowestVolumeDirection.LONG) ? c.isRed() : c.isGreen();
+            boolean isOpposite = dir == LowestVolumeDirection.LONG ? c.isRed() : c.isGreen();
             boolean lowVol = (i >= 3) && (c.volume() < rolling);
 
             String tag =
-                    (i < 3)
+                    i < 3
                             ? "[BASELINE IGNORED]"
                             : (isOpposite && lowVol
                                     ? ">>> ARMED TRIGGER <<<"

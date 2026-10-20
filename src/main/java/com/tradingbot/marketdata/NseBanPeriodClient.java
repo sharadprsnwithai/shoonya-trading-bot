@@ -96,10 +96,10 @@ public class NseBanPeriodClient {
     private volatile long retryBackoffMs = 500;
 
     /** Outcome of the most recent successful/failed fetch, surfaced for fail-open/fail-closed. */
-    private volatile boolean lastFetchSuccessful = false;
+    private volatile boolean lastFetchSuccessful;
 
     /** Trade date the current ban list applies to (today's session), or null when unavailable. */
-    private volatile LocalDate lastFetchDate = null;
+    private volatile LocalDate lastFetchDate;
 
     /**
      * Spring constructor: builds a dedicated HttpClient with cookie handling so Akamai {@code

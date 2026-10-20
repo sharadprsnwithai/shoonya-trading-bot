@@ -61,10 +61,16 @@ class ShoonyaOptionChainQualityTest {
 
         assertThat(chain.isSynthetic()).as("a fully quoted window must not be synthetic").isFalse();
         assertThat(chain.strikes()).hasSize(9).as("ATM ± 4 is nine strikes");
-        assertThat(chain.strikes().stream().map(s -> s.strikePrice()).min(BigDecimal::compareTo))
+        assertThat(
+                        chain.strikes().stream()
+                                .map(OptionStrike::strikePrice)
+                                .min(BigDecimal::compareTo))
                 .get()
                 .isEqualTo(new BigDecimal("22650"));
-        assertThat(chain.strikes().stream().map(s -> s.strikePrice()).max(BigDecimal::compareTo))
+        assertThat(
+                        chain.strikes().stream()
+                                .map(OptionStrike::strikePrice)
+                                .max(BigDecimal::compareTo))
                 .get()
                 .isEqualTo(new BigDecimal("23050"));
         assertThat(
@@ -200,7 +206,7 @@ class ShoonyaOptionChainQualityTest {
             allZero.add(
                     new OptionStrike(
                             new BigDecimal(sp),
-                            sp.equals("22850"),
+                            "22850".equals(sp),
                             contract("CE", 0),
                             contract("PE", 0)));
         }

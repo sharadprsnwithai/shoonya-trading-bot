@@ -64,7 +64,7 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
         if (!isValidOrder(order)) {
             return null;
         }
-        int maxAttempts = (kiteAuthService != null) ? 2 : 1;
+        int maxAttempts = kiteAuthService != null ? 2 : 1;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 Map<String, String> form = buildGttForm(order);
@@ -152,7 +152,9 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
 
     @Override
     public boolean cancelGtt(String gttId) {
-        if (gttId == null || gttId.isBlank()) return false;
+        if (gttId == null || gttId.isBlank()) {
+            return false;
+        }
         try {
             log.info("[ZERODHA-GTT] Cancelling GTT trigger {}", gttId);
             return kiteRestClient.cancelGtt(gttId);
@@ -247,7 +249,7 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
 
     @Override
     public List<com.tradingbot.model.execution.BrokerPosition> getHoldings() {
-        int maxAttempts = (kiteAuthService != null) ? 2 : 1;
+        int maxAttempts = kiteAuthService != null ? 2 : 1;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             List<com.tradingbot.model.execution.BrokerPosition> holdings = new ArrayList<>();
             try {
@@ -255,7 +257,9 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
                 if (data != null && data.isArray()) {
                     for (JsonNode row : data) {
                         long qty = row.path("quantity").asLong(0L);
-                        if (qty <= 0L) continue;
+                        if (qty <= 0L) {
+                            continue;
+                        }
                         String tsym = row.path("tradingsymbol").asText("");
                         String exch = row.path("exchange").asText("NSE");
                         double avgPrice = row.path("average_price").asDouble(0.0);
@@ -471,7 +475,9 @@ public class ZerodhaKiteGttGateway implements GttExecutionGateway {
     }
 
     private boolean isTokenException(Throwable t) {
-        if (t == null) return false;
+        if (t == null) {
+            return false;
+        }
         String msg = t.getMessage();
         if (msg != null) {
             String lower = msg.toLowerCase();

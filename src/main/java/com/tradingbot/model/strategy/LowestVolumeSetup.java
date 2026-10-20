@@ -25,8 +25,8 @@ public class LowestVolumeSetup {
     private volatile BigDecimal initialLegMove = BigDecimal.ZERO;
     private volatile long triggerCandleVolume;
     private volatile long dayLowestVolume = Long.MAX_VALUE;
-    private volatile int armedCandlesElapsed = 0;
-    private volatile int tradeAttempts = 0;
+    private volatile int armedCandlesElapsed;
+    private volatile int tradeAttempts;
     private volatile String rejectionReason;
     private volatile Double latestVwap;
     private volatile BigDecimal first15MinHigh;
@@ -46,7 +46,7 @@ public class LowestVolumeSetup {
     private volatile Double sessionHighAtArming;
     private volatile Double sessionLowAtArming;
     // N5/H7: bounded lazy-retry counter for PDH/PDL fetch before permanent exhaustion.
-    private volatile int pdhFetchAttempts = 0;
+    private volatile int pdhFetchAttempts;
 
     public LowestVolumeSetup(String symbol, LowestVolumeDirection direction) {
         this.symbol = symbol;
@@ -99,7 +99,7 @@ public class LowestVolumeSetup {
         this.triggerPrice = triggerPrc;
         this.stopLossPrice = slPrc;
         this.target1Price = targetPrc;
-        this.triggerCandleVolume = (candle != null) ? candle.volume() : 0L;
+        this.triggerCandleVolume = candle != null ? candle.volume() : 0L;
         if (freshArm) {
             this.armedCandlesElapsed = 0;
             this.sessionHighAtArming = null;

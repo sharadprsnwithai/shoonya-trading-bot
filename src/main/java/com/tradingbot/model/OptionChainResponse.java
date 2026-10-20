@@ -79,7 +79,9 @@ public record OptionChainResponse(
      * @return the max-call-OI strike, or {@code null} if the window carries no call OI at all
      */
     public BigDecimal maxCallOiStrike() {
-        if (strikes == null || strikes.isEmpty()) return null;
+        if (strikes == null || strikes.isEmpty()) {
+            return null;
+        }
         BigDecimal maxStrike = null;
         long maxOi = 0;
         for (OptionStrike s : strikes) {
@@ -100,7 +102,9 @@ public record OptionChainResponse(
      * @return the max-put-OI strike, or {@code null} if the window carries no put OI at all
      */
     public BigDecimal maxPutOiStrike() {
-        if (strikes == null || strikes.isEmpty()) return null;
+        if (strikes == null || strikes.isEmpty()) {
+            return null;
+        }
         BigDecimal maxStrike = null;
         long maxOi = 0;
         for (OptionStrike s : strikes) {

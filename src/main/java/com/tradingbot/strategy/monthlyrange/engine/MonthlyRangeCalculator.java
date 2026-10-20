@@ -31,16 +31,28 @@ public class MonthlyRangeCalculator {
 
     private final GjrGarchOptimizer gjrOptimizer;
     private final MonthlyRangeProperties properties;
+    private final MonthlyDirectionalProbabilityEngine directionalEngine;
 
     public MonthlyRangeCalculator(GjrGarchOptimizer gjrOptimizer) {
-        this(gjrOptimizer, new MonthlyRangeProperties());
+        this(gjrOptimizer, new MonthlyRangeProperties(), new MonthlyDirectionalProbabilityEngine());
+    }
+
+    public MonthlyRangeCalculator(
+            GjrGarchOptimizer gjrOptimizer, MonthlyRangeProperties properties) {
+        this(gjrOptimizer, properties, new MonthlyDirectionalProbabilityEngine());
     }
 
     @Autowired
     public MonthlyRangeCalculator(
-            GjrGarchOptimizer gjrOptimizer, MonthlyRangeProperties properties) {
+            GjrGarchOptimizer gjrOptimizer,
+            MonthlyRangeProperties properties,
+            MonthlyDirectionalProbabilityEngine directionalEngine) {
         this.gjrOptimizer = gjrOptimizer;
         this.properties = properties != null ? properties : new MonthlyRangeProperties();
+        this.directionalEngine =
+                directionalEngine != null
+                        ? directionalEngine
+                        : new MonthlyDirectionalProbabilityEngine();
     }
 
     /**
@@ -178,6 +190,19 @@ public class MonthlyRangeCalculator {
         double hv30 = calculateHv30(returns);
         BigDecimal atr22 = calculateAtr(dailyCandles, 22);
 
+        // 9. Monthly Directional Probability Score & Broken-Wing Butterfly
+        com.tradingbot.strategy.monthlyrange.model.MonthlyDirectionalScore directionalScore = null;
+        if (properties.isDirectionalProbabilityEnabled()) {
+            directionalScore =
+                    directionalEngine.evaluateDirectionalScore(
+                            cleanSymbol,
+                            spotPrice,
+                            dailyCandles,
+                            optionChain,
+                            gjrParams,
+                            properties.getStrongConvictionThreshold());
+        }
+
         return new MonthlyRangeForecast(
                 cleanSymbol,
                 spotPrice.setScale(2, RoundingMode.HALF_UP),
@@ -199,17 +224,22 @@ public class MonthlyRangeCalculator {
                 atmStraddleMove,
                 maxCallOiStrike,
                 maxPutOiStrike,
-                Instant.now());
+                Instant.now(),
+                directionalScore);
     }
 
     private boolean isEarningsMonth(LocalDate date) {
-        if (date == null) return false;
+        if (date == null) {
+            return false;
+        }
         int month = date.getMonthValue();
         return properties.getEarningsMonths().contains(month);
     }
 
     private String resolveQuarterName(LocalDate date) {
-        if (date == null) return "Quarterly";
+        if (date == null) {
+            return "Quarterly";
+        }
         int month = date.getMonthValue();
         return switch (month) {
             case 1, 2 -> "Q3";
@@ -239,11 +269,11 @@ public class MonthlyRangeCalculator {
 
         if (nearestStrike != null) {
             BigDecimal callLtp =
-                    (nearestStrike.call() != null && nearestStrike.call().ltp() != null)
+                    nearestStrike.call() != null && nearestStrike.call().ltp() != null
                             ? nearestStrike.call().ltp()
                             : BigDecimal.ZERO;
             BigDecimal putLtp =
-                    (nearestStrike.put() != null && nearestStrike.put().ltp() != null)
+                    nearestStrike.put() != null && nearestStrike.put().ltp() != null
                             ? nearestStrike.put().ltp()
                             : BigDecimal.ZERO;
             BigDecimal sum = callLtp.add(putLtp);

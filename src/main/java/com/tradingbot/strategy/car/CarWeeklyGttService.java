@@ -201,11 +201,15 @@ public class CarWeeklyGttService {
             return;
         }
         for (GttExecutionGateway gw : gttGateways) {
-            if (gw == null) continue;
+            if (gw == null) {
+                continue;
+            }
             try {
                 List<com.tradingbot.model.execution.BrokerPosition> brokerHoldings =
                         gw.getHoldings();
-                if (brokerHoldings == null) continue;
+                if (brokerHoldings == null) {
+                    continue;
+                }
                 for (com.tradingbot.model.execution.BrokerPosition h : brokerHoldings) {
                     String sym = h.symbol();
                     allHeldSymbols.add(sym);
@@ -382,7 +386,9 @@ public class CarWeeklyGttService {
 
         Map<String, List<LiveGttTrigger>> groups = new LinkedHashMap<>();
         for (LiveGttTrigger t : active) {
-            if (t == null || t.symbol() == null || t.symbol().isBlank()) continue;
+            if (t == null || t.symbol() == null || t.symbol().isBlank()) {
+                continue;
+            }
             String groupKey = t.symbol() + "|" + t.transactionType();
             groups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(t);
         }
@@ -509,7 +515,9 @@ public class CarWeeklyGttService {
                 (a, b) -> {
                     if (a.createdAt() != null && b.createdAt() != null) {
                         int cmp = b.createdAt().compareTo(a.createdAt());
-                        if (cmp != 0) return cmp;
+                        if (cmp != 0) {
+                            return cmp;
+                        }
                     } else if (a.createdAt() != null) {
                         return -1;
                     } else if (b.createdAt() != null) {
@@ -563,7 +571,9 @@ public class CarWeeklyGttService {
                         continue;
                     }
                     CarAnalysisResult res = calculator.analyze(symbol, dailyCandles);
-                    if (res == null) continue;
+                    if (res == null) {
+                        continue;
+                    }
                     evaluated.add(symbol);
                     if (res.isCarPositive()) {
                         positives.add(res);
@@ -880,7 +890,9 @@ public class CarWeeklyGttService {
     // ------------------------------------------------------------------ reporting
 
     private void sendSundayTelegramReport(List<CarAnalysisResult> carPositives) {
-        if (!properties.isTelegramAlerts() || telegramService == null) return;
+        if (!properties.isTelegramAlerts() || telegramService == null) {
+            return;
+        }
         StringBuilder sb = new StringBuilder();
         sb.append("📈 *CAR Weekly GTT Sunday Report*\n\n");
         sb.append(
@@ -928,7 +940,9 @@ public class CarWeeklyGttService {
                                                     .getUnitSize()
                                                     .divide(lastWkHigh, 4, RoundingMode.HALF_UP)
                                                     .doubleValue());
-                    if (trigQty <= 0) trigQty = 1;
+                    if (trigQty <= 0) {
+                        trigQty = 1;
+                    }
                 } else {
                     trigQty = 1;
                 }
@@ -960,7 +974,9 @@ public class CarWeeklyGttService {
      * Called once per weekly run after state has been saved.
      */
     private void sendPortfolioMilestoneAlerts() {
-        if (!properties.isTelegramAlerts() || telegramService == null) return;
+        if (!properties.isTelegramAlerts() || telegramService == null) {
+            return;
+        }
         if (portfolioState.getAvailableUnits() == 0) {
             alert(
                     "[CAR] 📊 Portfolio fully deployed — all "
@@ -986,7 +1002,9 @@ public class CarWeeklyGttService {
     }
 
     private void alert(String message) {
-        if (telegramService == null || !properties.isTelegramAlerts()) return;
+        if (telegramService == null || !properties.isTelegramAlerts()) {
+            return;
+        }
         try {
             telegramService.sendTextMessage(message);
         } catch (Exception e) {
@@ -1003,9 +1021,13 @@ public class CarWeeklyGttService {
      */
     private boolean isDrawdownBreached() {
         double threshold = properties.getMaxDrawdownPct();
-        if (threshold <= 0) return false; // 0 disables the circuit breaker
+        if (threshold <= 0) {
+            return false; // 0 disables the circuit breaker
+        }
         BigDecimal initial = portfolioState.getInitialCapital();
-        if (initial == null || initial.signum() <= 0) return false;
+        if (initial == null || initial.signum() <= 0) {
+            return false;
+        }
         BigDecimal drawdownPct =
                 initial.subtract(portfolioState.getTotalCapital())
                         .divide(initial, 4, RoundingMode.HALF_UP)
@@ -1024,7 +1046,9 @@ public class CarWeeklyGttService {
     private void saveState() {
         try {
             File target = new File(properties.getStateFilePath());
-            if (target.getParentFile() != null) target.getParentFile().mkdirs();
+            if (target.getParentFile() != null) {
+                target.getParentFile().mkdirs();
+            }
 
             File temp = new File(target.getAbsolutePath() + ".tmp");
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(temp, portfolioState);

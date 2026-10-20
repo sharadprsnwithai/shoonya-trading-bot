@@ -12,8 +12,8 @@ public record IndicatorResponse(
     public static IndicatorResponse of(
             String symbol, String interval, List<IndicatorSnapshot> data) {
         IndicatorSnapshot latest =
-                (data != null && !data.isEmpty()) ? data.get(data.size() - 1) : null;
-        int count = (data != null) ? data.size() : 0;
+                data != null && !data.isEmpty() ? data.get(data.size() - 1) : null;
+        int count = data != null ? data.size() : 0;
         return new IndicatorResponse(symbol, interval, count, latest, data);
     }
 }

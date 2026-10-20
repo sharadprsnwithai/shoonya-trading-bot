@@ -57,7 +57,7 @@ class ShoonyaTradeConsumerTest {
                 .placeOrder(
                         argThat(
                                 (OrderRequest req) ->
-                                        req.tradingSymbol().equals("RELIANCE26MARFUT")
+                                        "RELIANCE26MARFUT".equals(req.tradingSymbol())
                                                 && req.transactionType() == TransactionType.BUY
                                                 && req.quantity() == 250));
         consumer.stop();
@@ -99,7 +99,7 @@ class ShoonyaTradeConsumerTest {
                 .placeOrder(
                         argThat(
                                 (OrderRequest req) ->
-                                        req.tradingSymbol().equals("RELIANCE26OCT2700PE")
+                                        "RELIANCE26OCT2700PE".equals(req.tradingSymbol())
                                                 && req.transactionType() == TransactionType.BUY
                                                 && req.quantity() == 250));
         consumer.stop();
@@ -141,7 +141,7 @@ class ShoonyaTradeConsumerTest {
                 .placeOrder(
                         argThat(
                                 (OrderRequest req) ->
-                                        req.tradingSymbol().equals("RELIANCE26OCT2700PE")
+                                        "RELIANCE26OCT2700PE".equals(req.tradingSymbol())
                                                 && req.transactionType() == TransactionType.SELL
                                                 && req.quantity() == 250));
         consumer.stop();
@@ -585,7 +585,7 @@ class ShoonyaTradeConsumerTest {
                         argThat(
                                 req ->
                                         req.orderType() == OrderType.SL_LMT
-                                                && req.exchange().equals("NFO")
+                                                && "NFO".equals(req.exchange())
                                                 && req.triggerPrice()
                                                                 .compareTo(
                                                                         BigDecimal.valueOf(35.00))
@@ -967,6 +967,6 @@ class ShoonyaTradeConsumerTest {
                                         req.orderType() == OrderType.LMT
                                                 && req.price().compareTo(BigDecimal.valueOf(113.40))
                                                         == 0
-                                                && req.symbol().equals("PNB FUT")));
+                                                && "PNB FUT".equals(req.symbol())));
     }
 }

@@ -213,11 +213,17 @@ public class ShoonyaMarketDataService {
             return "26000";
         }
         String clean = symbol.toUpperCase().trim();
-        if (clean.startsWith("NSE:")) clean = clean.substring(4);
-        else if (clean.startsWith("NFO:")) clean = clean.substring(4);
-        else if (clean.startsWith("BSE:")) clean = clean.substring(4);
-        else if (clean.startsWith("BFO:")) clean = clean.substring(4);
-        else if (clean.startsWith("MCX:")) clean = clean.substring(4);
+        if (clean.startsWith("NSE:")) {
+            clean = clean.substring(4);
+        } else if (clean.startsWith("NFO:")) {
+            clean = clean.substring(4);
+        } else if (clean.startsWith("BSE:")) {
+            clean = clean.substring(4);
+        } else if (clean.startsWith("BFO:")) {
+            clean = clean.substring(4);
+        } else if (clean.startsWith("MCX:")) {
+            clean = clean.substring(4);
+        }
 
         if ("NIFTY".equalsIgnoreCase(clean)
                 || "NIFTY 50".equalsIgnoreCase(clean)
@@ -305,10 +311,15 @@ public class ShoonyaMarketDataService {
             return null;
         }
         String clean = symbol.toUpperCase().trim();
-        if (clean.startsWith("NSE:")) clean = clean.substring(4);
-        else if (clean.startsWith("NFO:")) clean = clean.substring(4);
-        else if (clean.startsWith("BSE:")) clean = clean.substring(4);
-        else if (clean.startsWith("BFO:")) clean = clean.substring(4);
+        if (clean.startsWith("NSE:")) {
+            clean = clean.substring(4);
+        } else if (clean.startsWith("NFO:")) {
+            clean = clean.substring(4);
+        } else if (clean.startsWith("BSE:")) {
+            clean = clean.substring(4);
+        } else if (clean.startsWith("BFO:")) {
+            clean = clean.substring(4);
+        }
 
         String searchSymbol = clean;
         if ("NIFTY 50".equals(clean) || "NIFTY50".equals(clean)) {
@@ -336,7 +347,7 @@ public class ShoonyaMarketDataService {
         }
 
         String segment = StockFnoRegistry.getSegment(searchSymbol);
-        String exch = (segment != null && !segment.isBlank()) ? segment : "NFO";
+        String exch = segment != null && !segment.isBlank() ? segment : "NFO";
         try {
             JsonNode values = searchScrip(exch, searchSymbol);
             FuturesContract best = selectNearestFuturesContract(searchSymbol, values);
@@ -461,11 +472,21 @@ public class ShoonyaMarketDataService {
             return "NSE";
         }
         String clean = symbol.toUpperCase().trim();
-        if (clean.startsWith("NSE:")) return "NSE";
-        if (clean.startsWith("BSE:")) return "BSE";
-        if (clean.startsWith("MCX:")) return "MCX";
-        if (clean.startsWith("NFO:")) return "NFO";
-        if (clean.startsWith("BFO:")) return "BFO";
+        if (clean.startsWith("NSE:")) {
+            return "NSE";
+        }
+        if (clean.startsWith("BSE:")) {
+            return "BSE";
+        }
+        if (clean.startsWith("MCX:")) {
+            return "MCX";
+        }
+        if (clean.startsWith("NFO:")) {
+            return "NFO";
+        }
+        if (clean.startsWith("BFO:")) {
+            return "BFO";
+        }
 
         // Derivative contract patterns (e.g. RELIANCE26OCTFUT, NIFTY26OCT25000CE,
         // SENSEX26OCT80000CE)

@@ -39,7 +39,9 @@ public final class CandleResamplingUtil {
                     || c.open() == null
                     || c.high() == null
                     || c.low() == null
-                    || c.close() == null) continue;
+                    || c.close() == null) {
+                continue;
+            }
             var localDate = c.timestamp().atZone(IST).toLocalDate();
             int year = localDate.get(WEEK_FIELDS.weekBasedYear());
             int week = localDate.get(WEEK_FIELDS.weekOfWeekBasedYear());
@@ -51,7 +53,9 @@ public final class CandleResamplingUtil {
         List<Candle> weeklyCandles = new ArrayList<>();
 
         for (List<Candle> weekBars : groupedByWeek.values()) {
-            if (weekBars.isEmpty()) continue;
+            if (weekBars.isEmpty()) {
+                continue;
+            }
 
             weekBars.sort(Comparator.comparing(Candle::timestamp));
             Candle first = weekBars.get(0);
@@ -64,8 +68,12 @@ public final class CandleResamplingUtil {
             long totalVolume = 0;
 
             for (Candle b : weekBars) {
-                if (b.high().compareTo(high) > 0) high = b.high();
-                if (b.low().compareTo(low) < 0) low = b.low();
+                if (b.high().compareTo(high) > 0) {
+                    high = b.high();
+                }
+                if (b.low().compareTo(low) < 0) {
+                    low = b.low();
+                }
                 totalVolume += b.volume();
             }
 
@@ -106,7 +114,9 @@ public final class CandleResamplingUtil {
                     || c.open() == null
                     || c.high() == null
                     || c.low() == null
-                    || c.close() == null) continue;
+                    || c.close() == null) {
+                continue;
+            }
             var localDate = c.timestamp().atZone(IST).toLocalDate();
             int year = localDate.getYear();
             int month = localDate.getMonthValue();
@@ -118,7 +128,9 @@ public final class CandleResamplingUtil {
         List<Candle> monthlyCandles = new ArrayList<>();
 
         for (List<Candle> monthBars : groupedByMonth.values()) {
-            if (monthBars.isEmpty()) continue;
+            if (monthBars.isEmpty()) {
+                continue;
+            }
 
             monthBars.sort(Comparator.comparing(Candle::timestamp));
             Candle first = monthBars.get(0);
@@ -131,8 +143,12 @@ public final class CandleResamplingUtil {
             long totalVolume = 0;
 
             for (Candle b : monthBars) {
-                if (b.high().compareTo(high) > 0) high = b.high();
-                if (b.low().compareTo(low) < 0) low = b.low();
+                if (b.high().compareTo(high) > 0) {
+                    high = b.high();
+                }
+                if (b.low().compareTo(low) < 0) {
+                    low = b.low();
+                }
                 totalVolume += b.volume();
             }
 
@@ -171,7 +187,9 @@ public final class CandleResamplingUtil {
                     || c.open() == null
                     || c.high() == null
                     || c.low() == null
-                    || c.close() == null) continue;
+                    || c.close() == null) {
+                continue;
+            }
             // Group by 15-minute slot: epochMinute / 15
             long epochMinutes = c.timestamp().getEpochSecond() / 60;
             long intervalKey = (epochMinutes / 15) * 15;
@@ -180,7 +198,9 @@ public final class CandleResamplingUtil {
 
         List<Candle> resampled = new ArrayList<>();
         for (List<Candle> bucket : groupedBy15Min.values()) {
-            if (bucket.isEmpty()) continue;
+            if (bucket.isEmpty()) {
+                continue;
+            }
             bucket.sort(Comparator.comparing(Candle::timestamp));
             Candle first = bucket.get(0);
             Candle last = bucket.get(bucket.size() - 1);
@@ -192,8 +212,12 @@ public final class CandleResamplingUtil {
             long totalVolume = 0;
 
             for (Candle b : bucket) {
-                if (b.high().compareTo(high) > 0) high = b.high();
-                if (b.low().compareTo(low) < 0) low = b.low();
+                if (b.high().compareTo(high) > 0) {
+                    high = b.high();
+                }
+                if (b.low().compareTo(low) < 0) {
+                    low = b.low();
+                }
                 totalVolume += b.volume();
             }
 
@@ -249,7 +273,9 @@ public final class CandleResamplingUtil {
                     || c.open() == null
                     || c.high() == null
                     || c.low() == null
-                    || c.close() == null) continue;
+                    || c.close() == null) {
+                continue;
+            }
             // Group by 60-minute slot in IST
             long epochMinutes = c.timestamp().getEpochSecond() / 60 + istOffsetMinutes;
             long intervalKey = (epochMinutes / 60) * 60;
@@ -258,7 +284,9 @@ public final class CandleResamplingUtil {
 
         List<Candle> resampled = new ArrayList<>();
         for (List<Candle> bucket : groupedBy1Hour.values()) {
-            if (bucket.isEmpty()) continue;
+            if (bucket.isEmpty()) {
+                continue;
+            }
             bucket.sort(Comparator.comparing(Candle::timestamp));
             Candle first = bucket.get(0);
             Candle last = bucket.get(bucket.size() - 1);
@@ -270,8 +298,12 @@ public final class CandleResamplingUtil {
             long totalVolume = 0;
 
             for (Candle b : bucket) {
-                if (b.high().compareTo(high) > 0) high = b.high();
-                if (b.low().compareTo(low) < 0) low = b.low();
+                if (b.high().compareTo(high) > 0) {
+                    high = b.high();
+                }
+                if (b.low().compareTo(low) < 0) {
+                    low = b.low();
+                }
                 totalVolume += b.volume();
             }
 
@@ -316,7 +348,9 @@ public final class CandleResamplingUtil {
                     || c.open() == null
                     || c.high() == null
                     || c.low() == null
-                    || c.close() == null) continue;
+                    || c.close() == null) {
+                continue;
+            }
             // Group by 240-minute slot in IST
             long epochMinutes = c.timestamp().getEpochSecond() / 60 + istOffsetMinutes;
             long intervalKey = (epochMinutes / 240) * 240;
@@ -325,7 +359,9 @@ public final class CandleResamplingUtil {
 
         List<Candle> resampled = new ArrayList<>();
         for (List<Candle> bucket : groupedBy4Hour.values()) {
-            if (bucket.isEmpty()) continue;
+            if (bucket.isEmpty()) {
+                continue;
+            }
             bucket.sort(Comparator.comparing(Candle::timestamp));
             Candle first = bucket.get(0);
             Candle last = bucket.get(bucket.size() - 1);
@@ -337,8 +373,12 @@ public final class CandleResamplingUtil {
             long totalVolume = 0;
 
             for (Candle b : bucket) {
-                if (b.high().compareTo(high) > 0) high = b.high();
-                if (b.low().compareTo(low) < 0) low = b.low();
+                if (b.high().compareTo(high) > 0) {
+                    high = b.high();
+                }
+                if (b.low().compareTo(low) < 0) {
+                    low = b.low();
+                }
                 totalVolume += b.volume();
             }
 

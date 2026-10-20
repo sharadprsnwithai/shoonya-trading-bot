@@ -130,7 +130,7 @@ public final class BlackScholes {
     }
 
     private static void requirePositive(double value, String name) {
-        if (!(value > 0.0) || Double.isNaN(value)) {
+        if (value <= 0.0 || Double.isNaN(value)) {
             throw new IllegalArgumentException(name + " must be positive but was " + value);
         }
     }

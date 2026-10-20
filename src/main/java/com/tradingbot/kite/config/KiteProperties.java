@@ -50,11 +50,11 @@ public class KiteProperties {
         this.redirectUri = redirectUri;
         this.accessToken = accessToken;
         this.sessionFile =
-                (sessionFile != null && !sessionFile.isBlank())
+                sessionFile != null && !sessionFile.isBlank()
                         ? sessionFile
                         : "data/kite_session.json";
         this.frontendRedirect =
-                (frontendRedirect != null && !frontendRedirect.isBlank())
+                frontendRedirect != null && !frontendRedirect.isBlank()
                         ? frontendRedirect
                         : "https://untaxed-substance-reputably.ngrok-free.dev";
     }
@@ -107,7 +107,7 @@ public class KiteProperties {
         if (val == null || val.isBlank()) {
             val = System.getenv(key);
         }
-        return (val != null && !val.isBlank()) ? val.trim() : defaultValue;
+        return val != null && !val.isBlank() ? val.trim() : defaultValue;
     }
 
     public boolean hasAutoLoginCredentials() {

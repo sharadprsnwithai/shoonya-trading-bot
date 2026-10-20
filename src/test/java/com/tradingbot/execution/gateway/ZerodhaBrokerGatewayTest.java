@@ -44,8 +44,8 @@ class ZerodhaBrokerGatewayTest {
                 .placeOrder(
                         argThat(
                                 req ->
-                                        req.tradingSymbol().equals("RELIANCE26MARFUT")
-                                                && req.transactionType().equals("BUY")
+                                        "RELIANCE26MARFUT".equals(req.tradingSymbol())
+                                                && "BUY".equals(req.transactionType())
                                                 && req.price().equals(2525.00)
                                                 && req.quantity() == 250));
     }
@@ -67,8 +67,8 @@ class ZerodhaBrokerGatewayTest {
                 .placeOrder(
                         argThat(
                                 req ->
-                                        req.tradingSymbol().equals("TCS26MARFUT")
-                                                && req.transactionType().equals("SELL")
+                                        "TCS26MARFUT".equals(req.tradingSymbol())
+                                                && "SELL".equals(req.transactionType())
                                                 && req.price().equals(3762.00)
                                                 && req.quantity() == 175));
     }

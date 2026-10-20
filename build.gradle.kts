@@ -5,6 +5,7 @@ plugins {
     id("com.diffplug.spotless") version "7.0.2"
     id("com.github.spotbugs") version "6.0.26"
     id("pmd")
+    id("org.openrewrite.rewrite") version "6.26.0"
 }
 
 group = "com.tradingbot"
@@ -60,6 +61,19 @@ dependencies {
     annotationProcessor("org.projectlombok:lombok")
     testCompileOnly("org.projectlombok:lombok")
     testAnnotationProcessor("org.projectlombok:lombok")
+
+    // OpenRewrite recipes for clean code and static analysis
+    rewrite("org.openrewrite.recipe:rewrite-static-analysis:1.16.0")
+}
+
+// ==============================================================================
+// OpenRewrite Automated Code Cleanup Configuration
+// ==============================================================================
+rewrite {
+    activeRecipe(
+        "org.openrewrite.staticanalysis.CommonStaticAnalysis",
+        "org.openrewrite.java.RemoveUnusedImports"
+    )
 }
 
 tasks.withType<Test> {
@@ -267,7 +281,13 @@ tasks.register("spotbugsBaselineUpdate") {
     }
 }
 
+// Automatically clean unused imports and format code before compilation
+tasks.named("compileJava") {
+    dependsOn("spotlessApply")
+}
+
 tasks.named("check") {
     dependsOn("spotbugsBaselineCheck")
+    dependsOn("rewriteDryRun")
 }
 

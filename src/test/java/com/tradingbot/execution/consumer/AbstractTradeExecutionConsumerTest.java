@@ -1,6 +1,6 @@
 package com.tradingbot.execution.consumer;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.tradingbot.model.execution.ExecutionMode;
 import com.tradingbot.strategy.SignalAction;

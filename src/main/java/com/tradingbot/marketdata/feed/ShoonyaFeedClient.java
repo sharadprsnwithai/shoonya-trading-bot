@@ -733,7 +733,7 @@ public class ShoonyaFeedClient {
                 if (key == null) {
                     return;
                 }
-                FeedTick tick = ticks.computeIfAbsent(key, k -> tickFromKey(k));
+                FeedTick tick = ticks.computeIfAbsent(key, ShoonyaFeedClient::tickFromKey);
                 if (ShoonyaFeedProtocol.classify(node)
                         == ShoonyaFeedProtocol.MessageKind.KEY_SNAPSHOT) {
                     tick.applyFull(node);

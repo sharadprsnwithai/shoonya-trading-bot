@@ -46,15 +46,29 @@ public class MonthlyRangeScheduler {
             return;
         }
 
-        if (!NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(date)) {
+        boolean isFirstDayOfMonth =
+                properties.isTriggerOnFirstTradingDayOfMonth()
+                        && NseTradingCalendarUtil.isTodayFirstTradingDayOfMonth(date);
+        boolean isPostExpiry =
+                NseTradingCalendarUtil.isFirstTradingDayPostMonthlyTuesdayExpiry(date);
+
+        if (!isFirstDayOfMonth && !isPostExpiry) {
             log.debug(
-                    "[MONTHLY-RANGE-SCHEDULER] Date {} is not the post-expiry trading day. Skipping.",
+                    "[MONTHLY-RANGE-SCHEDULER] Date {} is neither the 1st trading day of the month nor the post-expiry trading day. Skipping.",
                     date);
             return;
         }
 
+        String triggerReason =
+                isFirstDayOfMonth && isPostExpiry
+                        ? "1st Trading Day of Month & Post-Expiry Rollover"
+                        : isFirstDayOfMonth
+                                ? "1st Trading Day of Month"
+                                : "First trading session post-expiry";
+
         log.info(
-                "[MONTHLY-RANGE-SCHEDULER] First trading session post-expiry detected ({}). Executing GARCH monthly range forecast...",
+                "[MONTHLY-RANGE-SCHEDULER] {} detected ({}). Executing GARCH monthly range & directional forecast...",
+                triggerReason,
                 date);
 
         try {

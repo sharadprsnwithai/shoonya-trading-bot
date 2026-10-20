@@ -59,6 +59,6 @@ public class CarWeeklyController {
                         "availableUnits", s.getAvailableUnits(),
                         "totalParts", s.getNumParts(),
                         "capital", s.getTotalCapital(),
-                        "gatewayBroker", String.valueOf(carService.resolveGatewayBrokerName())));
+                        "gatewayBroker", carService.resolveGatewayBrokerName()));
     }
 }
