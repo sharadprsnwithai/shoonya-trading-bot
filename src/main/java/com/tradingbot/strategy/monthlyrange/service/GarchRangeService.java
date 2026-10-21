@@ -1,7 +1,9 @@
 package com.tradingbot.strategy.monthlyrange.service;
 
+import com.tradingbot.marketdata.ShoonyaOptionChainService;
 import com.tradingbot.marketdata.YahooFinanceService;
 import com.tradingbot.model.Candle;
+import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
 import com.tradingbot.strategy.monthlyrange.engine.GarchRangeEngine;
 import com.tradingbot.strategy.monthlyrange.model.GarchRangeBand;
@@ -13,6 +15,7 @@ import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -45,7 +48,16 @@ public class GarchRangeService {
     private final MonthlyRangeProperties properties;
     private final GarchRangeEngine rangeEngine;
     private final YahooFinanceService yahooFinanceService;
+    private final ShoonyaOptionChainService optionChainService;
     private final TelegramService telegramService;
+
+    public GarchRangeService(
+            MonthlyRangeProperties properties,
+            GarchRangeEngine rangeEngine,
+            YahooFinanceService yahooFinanceService,
+            TelegramService telegramService) {
+        this(properties, rangeEngine, yahooFinanceService, null, telegramService);
+    }
 
     @SuppressFBWarnings(
             value = "EI_EXPOSE_REP2",
@@ -55,10 +67,12 @@ public class GarchRangeService {
             MonthlyRangeProperties properties,
             GarchRangeEngine rangeEngine,
             YahooFinanceService yahooFinanceService,
+            @Autowired(required = false) ShoonyaOptionChainService optionChainService,
             @Autowired(required = false) TelegramService telegramService) {
         this.properties = properties;
         this.rangeEngine = rangeEngine;
         this.yahooFinanceService = yahooFinanceService;
+        this.optionChainService = optionChainService;
         this.telegramService = telegramService;
     }
 
@@ -150,8 +164,26 @@ public class GarchRangeService {
             LocalDate referenceSession,
             LocalDate expirySession) {
         List<Candle> dailyCandles = yahooFinanceService.fetchDailyCandles(symbol, 2);
+        OptionChainResponse optionChain = null;
+        if (optionChainService != null) {
+            try {
+                optionChain =
+                        optionChainService.getIndexOptionChain(
+                                symbol, null, properties.getOptionChainStrikeCount(), true);
+            } catch (Exception e) {
+                log.warn(
+                        "[GARCH-RANGE] Option chain unavailable for {}: {}",
+                        symbol,
+                        e.getMessage());
+            }
+        }
         return rangeEngine.forecastRange(
-                symbol, dailyCandles, horizonSessions, referenceSession, expirySession);
+                symbol,
+                dailyCandles,
+                horizonSessions,
+                referenceSession,
+                expirySession,
+                optionChain);
     }
 
     /**
@@ -184,12 +216,12 @@ public class GarchRangeService {
     }
 
     /**
-     * Formats the weekly range report into a crisp 2-sigma & direction Markdown message for
-     * Telegram.
+     * Formats the weekly range report into a crisp Telegram message with 1σ, 2σ, direction, and
+     * strategy.
      */
     public String formatTelegramMessage(GarchRangeReport report) {
         StringBuilder sb = new StringBuilder();
-        sb.append("📈 *WEEKLY GARCH RANGE (2σ)*\n");
+        sb.append("📈 *WEEKLY GARCH RANGE & STRATEGY*\n");
         sb.append("📅 *Expiry:* `")
                 .append(report.expirySession().format(DAY_FMT))
                 .append("` (")
@@ -203,6 +235,12 @@ public class GarchRangeService {
                 sb.append("⚠️ *").append(f.symbol()).append("*: Insufficient history\n\n");
                 continue;
             }
+
+            GarchRangeBand oneSigma =
+                    f.bands().stream()
+                            .filter(b -> Math.abs(b.kSigma() - 1.0) < 0.05)
+                            .findFirst()
+                            .orElse(f.bands().isEmpty() ? null : f.bands().get(0));
 
             GarchRangeBand twoSigma =
                     f.bands().stream()
@@ -223,10 +261,23 @@ public class GarchRangeService {
                     .append("* (Spot: ₹")
                     .append(f.spot())
                     .append(")\n");
+
+            if (oneSigma != null) {
+                BigDecimal halfDiff =
+                        f.spot().subtract(oneSigma.lower()).abs().setScale(0, RoundingMode.HALF_UP);
+                sb.append(" • *Weekly Range (1σ):* `₹")
+                        .append(oneSigma.lower())
+                        .append(" – ₹")
+                        .append(oneSigma.upper())
+                        .append("` (±")
+                        .append(halfDiff)
+                        .append(" pts)\n");
+            }
+
             if (twoSigma != null) {
-                sb.append(" • *2σ Range:* `₹")
+                sb.append(" • *Max Cushion (2σ):* `₹")
                         .append(twoSigma.lower())
-                        .append(" - ₹")
+                        .append(" – ₹")
                         .append(twoSigma.upper())
                         .append("`\n");
             }
@@ -242,7 +293,24 @@ public class GarchRangeService {
                                         BotLocale.INSTANCE, "%.0f%%", f.directionalConfidencePct()))
                         .append("`)");
             }
-            sb.append("\n\n");
+            sb.append("\n");
+
+            var rec = f.recommendation();
+            if (rec != null) {
+                sb.append(" • 💡 *Recommended Trade:* *")
+                        .append(rec.strategyName())
+                        .append("*\n")
+                        .append("    ➡️ `")
+                        .append(rec.actionSummary())
+                        .append("`\n")
+                        .append("    🛡️ _Edge:_ ")
+                        .append(rec.edgeSummary())
+                        .append("\n")
+                        .append("    🎯 _Exit:_ ")
+                        .append(rec.exitRule())
+                        .append("\n");
+            }
+            sb.append("\n");
         }
 
         return sb.toString().trim();

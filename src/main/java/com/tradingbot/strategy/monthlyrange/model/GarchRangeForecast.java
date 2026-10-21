@@ -37,6 +37,7 @@ import java.util.List;
  * @param generatedAt when the forecast was produced
  * @param directionalBias macro trend and factor-derived bias (BULLISH, BEARISH, NEUTRAL)
  * @param directionalConfidencePct conviction probability percentage for the directional bias
+ * @param recommendation recommended options trade based on 1.0σ, direction, and OI confluence
  */
 public record GarchRangeForecast(
         String symbol,
@@ -58,14 +59,18 @@ public record GarchRangeForecast(
         String garchStatus,
         Instant generatedAt,
         MarketBias directionalBias,
-        Double directionalConfidencePct) {
+        Double directionalConfidencePct,
+        WeeklyStrategyRecommendation recommendation) {
 
     public GarchRangeForecast {
         bands = bands == null ? null : new ArrayList<>(bands);
         gjrBands = gjrBands == null ? null : new ArrayList<>(gjrBands);
     }
 
-    /** Backward-compatible constructor for callers omitting directional parameters. */
+    /**
+     * Backward-compatible constructor for callers omitting directional and recommendation
+     * parameters.
+     */
     public GarchRangeForecast(
             String symbol,
             BigDecimal spot,
@@ -105,6 +110,53 @@ public record GarchRangeForecast(
                 garchStatus,
                 generatedAt,
                 MarketBias.NEUTRAL,
+                null,
+                null);
+    }
+
+    /** Backward-compatible constructor for callers omitting recommendation. */
+    public GarchRangeForecast(
+            String symbol,
+            BigDecimal spot,
+            int horizonSessions,
+            BigDecimal horizonSigmaPct,
+            BigDecimal annualizedVolPct,
+            BigDecimal terminalDailyVolPct,
+            double persistence,
+            LocalDate referenceSession,
+            LocalDate expirySession,
+            List<GarchRangeBand> bands,
+            BigDecimal gjrHorizonSigmaPct,
+            List<GarchRangeBand> gjrBands,
+            WingZoneForecast wingZone,
+            ModelComparison modelComparison,
+            int calibrationWindows,
+            int trainSplitIndex,
+            String garchStatus,
+            Instant generatedAt,
+            MarketBias directionalBias,
+            Double directionalConfidencePct) {
+        this(
+                symbol,
+                spot,
+                horizonSessions,
+                horizonSigmaPct,
+                annualizedVolPct,
+                terminalDailyVolPct,
+                persistence,
+                referenceSession,
+                expirySession,
+                bands,
+                gjrHorizonSigmaPct,
+                gjrBands,
+                wingZone,
+                modelComparison,
+                calibrationWindows,
+                trainSplitIndex,
+                garchStatus,
+                generatedAt,
+                directionalBias,
+                directionalConfidencePct,
                 null);
     }
 

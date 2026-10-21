@@ -13,6 +13,7 @@ import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -213,9 +214,23 @@ public class MonthlyRangeService {
                     .append("* (Spot: ₹")
                     .append(f.spotPrice())
                     .append(")\n");
-            sb.append(" • *2σ Range:* `₹")
+            if (f.lower1Sd() != null && f.upper1Sd() != null) {
+                BigDecimal halfDiff =
+                        f.spotPrice()
+                                .subtract(f.lower1Sd())
+                                .abs()
+                                .setScale(0, RoundingMode.HALF_UP);
+                sb.append(" • *Monthly Range (1σ):* `₹")
+                        .append(f.lower1Sd())
+                        .append(" – ₹")
+                        .append(f.upper1Sd())
+                        .append("` (±")
+                        .append(halfDiff)
+                        .append(" pts)\n");
+            }
+            sb.append(" • *Max Boundary (2σ):* `₹")
                     .append(f.lower2Sd())
-                    .append(" - ₹")
+                    .append(" – ₹")
                     .append(f.upper2Sd())
                     .append("`\n");
             sb.append(" • *Direction:* ")
@@ -232,6 +247,46 @@ public class MonthlyRangeService {
                         .append("` | CE `₹")
                         .append(f.safeCeStrike())
                         .append("`\n");
+            }
+
+            BigDecimal step =
+                    f.strikeStep() != null && f.strikeStep().compareTo(BigDecimal.ZERO) > 0
+                            ? f.strikeStep()
+                            : BigDecimal.valueOf(50);
+            BigDecimal wingOffset = step.multiply(BigDecimal.valueOf(2));
+
+            if (ds != null && ds.bias() == MarketBias.BULLISH && f.safePeStrike() != null) {
+                BigDecimal longPe = f.safePeStrike().subtract(wingOffset);
+                sb.append(" • 💡 *Recommended Trade:* *Bull Put Spread*\n")
+                        .append("    ➡️ `Sell PE ₹")
+                        .append(f.safePeStrike())
+                        .append(" | Buy PE ₹")
+                        .append(longPe)
+                        .append("`\n")
+                        .append("    🎯 _Exit:_ Book profit at 60%–70% decay.\n");
+            } else if (ds != null && ds.bias() == MarketBias.BEARISH && f.safeCeStrike() != null) {
+                BigDecimal longCe = f.safeCeStrike().add(wingOffset);
+                sb.append(" • 💡 *Recommended Trade:* *Bear Call Spread*\n")
+                        .append("    ➡️ `Sell CE ₹")
+                        .append(f.safeCeStrike())
+                        .append(" | Buy CE ₹")
+                        .append(longCe)
+                        .append("`\n")
+                        .append("    🎯 _Exit:_ Book profit at 60%–70% decay.\n");
+            } else if (f.safePeStrike() != null && f.safeCeStrike() != null) {
+                BigDecimal longPe = f.safePeStrike().subtract(wingOffset);
+                BigDecimal longCe = f.safeCeStrike().add(wingOffset);
+                sb.append(" • 💡 *Recommended Trade:* *Iron Condor*\n")
+                        .append("    ➡️ `Sell PE ₹")
+                        .append(f.safePeStrike())
+                        .append("/Buy PE ₹")
+                        .append(longPe)
+                        .append(" & Sell CE ₹")
+                        .append(f.safeCeStrike())
+                        .append("/Buy CE ₹")
+                        .append(longCe)
+                        .append("`\n")
+                        .append("    🎯 _Exit:_ Book profit at 50%–60% decay.\n");
             }
             sb.append("\n");
         }

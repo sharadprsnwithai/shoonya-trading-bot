@@ -1,6 +1,7 @@
 package com.tradingbot.strategy.monthlyrange.engine;
 
 import com.tradingbot.model.Candle;
+import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
 import com.tradingbot.strategy.monthlyrange.model.GarchModelParams;
 import com.tradingbot.strategy.monthlyrange.model.GarchRangeBand;
@@ -8,7 +9,9 @@ import com.tradingbot.strategy.monthlyrange.model.GarchRangeForecast;
 import com.tradingbot.strategy.monthlyrange.model.GjrGarchModelParams;
 import com.tradingbot.strategy.monthlyrange.model.MarketBias;
 import com.tradingbot.strategy.monthlyrange.model.ModelComparison;
+import com.tradingbot.strategy.monthlyrange.model.WeeklyStrategyRecommendation;
 import com.tradingbot.strategy.monthlyrange.model.WingZoneForecast;
+import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -109,6 +112,29 @@ public class GarchRangeEngine {
             int horizonSessions,
             LocalDate referenceSession,
             LocalDate expirySession) {
+        return forecastRange(
+                symbol, dailyCandles, horizonSessions, referenceSession, expirySession, null);
+    }
+
+    /**
+     * Produces a horizon-scoped volatility forecast for a symbol, calibrating each band against the
+     * realised excursion path and scoring against the levered GJR model.
+     *
+     * @param symbol canonical symbol being forecast
+     * @param dailyCandles historical daily candles in chronological order
+     * @param horizonSessions trading sessions to project forward
+     * @param referenceSession last completed session the spot was struck from
+     * @param expirySession contractual expiry the horizon runs through
+     * @param optionChain optional live or cached option chain for institutional OI walls
+     * @return the forecast, or a NO_DATA shell when the candle series is too short to fit
+     */
+    public GarchRangeForecast forecastRange(
+            String symbol,
+            List<Candle> dailyCandles,
+            int horizonSessions,
+            LocalDate referenceSession,
+            LocalDate expirySession,
+            OptionChainResponse optionChain) {
         int horizon = Math.max(horizonSessions, 1);
         Instant now = Instant.now();
 
@@ -194,6 +220,10 @@ public class GarchRangeEngine {
             }
         }
 
+        WeeklyStrategyRecommendation recommendation =
+                buildWeeklyRecommendation(
+                        symbol, round2(spot), bands, directionalBias, optionChain);
+
         return new GarchRangeForecast(
                 symbol,
                 round2(spot),
@@ -214,7 +244,8 @@ public class GarchRangeEngine {
                 params.statusMessage(),
                 now,
                 directionalBias,
-                directionalConfidence);
+                directionalConfidence,
+                recommendation);
     }
 
     private List<GarchRangeBand> buildBands(
@@ -801,7 +832,153 @@ public class GarchRangeEngine {
                 0,
                 0,
                 "NO_DATA",
-                now);
+                now,
+                MarketBias.NEUTRAL,
+                null,
+                null);
+    }
+
+    public WeeklyStrategyRecommendation buildWeeklyRecommendation(
+            String symbol,
+            BigDecimal spot,
+            List<GarchRangeBand> bands,
+            MarketBias bias,
+            OptionChainResponse optionChain) {
+        if (bands == null
+                || bands.isEmpty()
+                || spot == null
+                || spot.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        GarchRangeBand oneSigma =
+                bands.stream()
+                        .filter(b -> Math.abs(b.kSigma() - 1.0) < 0.05)
+                        .findFirst()
+                        .orElse(bands.get(0));
+
+        BigDecimal strikeStep = StockFnoRegistry.getStrikeStep(symbol, spot);
+        if (strikeStep == null || strikeStep.compareTo(BigDecimal.ZERO) <= 0) {
+            strikeStep =
+                    spot.compareTo(BigDecimal.valueOf(10000)) > 0
+                            ? BigDecimal.valueOf(50)
+                            : (spot.compareTo(BigDecimal.valueOf(1000)) > 0
+                                    ? BigDecimal.valueOf(20)
+                                    : BigDecimal.valueOf(10));
+        }
+
+        BigDecimal maxPutOi =
+                optionChain != null && !optionChain.synthetic()
+                        ? optionChain.maxPutOiStrike()
+                        : null;
+        BigDecimal maxCallOi =
+                optionChain != null && !optionChain.synthetic()
+                        ? optionChain.maxCallOiStrike()
+                        : null;
+
+        BigDecimal baseLower = oneSigma.lower();
+        BigDecimal baseUpper = oneSigma.upper();
+
+        String strategyName;
+        String actionSummary;
+        BigDecimal shortStrike;
+        BigDecimal longStrike;
+        BigDecimal secondShort = null;
+        BigDecimal secondLong = null;
+        String edge;
+        String exitRule = "Book profit at 60% decay. Stop out if underlying breaches 1.0σ range.";
+
+        BigDecimal wingWidth =
+                strikeStep.multiply(
+                        BigDecimal.valueOf(spot.compareTo(BigDecimal.valueOf(10000)) > 0 ? 4 : 2));
+
+        if (bias == MarketBias.BULLISH) {
+            strategyName = "Bull Put Spread";
+            BigDecimal candidateShort = baseLower;
+            if (maxPutOi != null
+                    && maxPutOi.compareTo(BigDecimal.ZERO) > 0
+                    && maxPutOi.compareTo(spot) < 0) {
+                candidateShort = candidateShort.min(maxPutOi);
+            }
+            shortStrike = snapDown(candidateShort, strikeStep);
+            longStrike = shortStrike.subtract(wingWidth);
+            actionSummary = String.format("Sell PE ₹%s | Buy PE ₹%s", shortStrike, longStrike);
+            edge =
+                    maxPutOi != null && maxPutOi.compareTo(BigDecimal.ZERO) > 0
+                            ? String.format(
+                                    "Short PE sits outside 1.0σ (₹%s) & Max Put OI Wall (₹%s)",
+                                    baseLower, maxPutOi)
+                            : String.format("Short PE sits below 1.0σ floor (₹%s)", baseLower);
+        } else if (bias == MarketBias.BEARISH) {
+            strategyName = "Bear Call Spread";
+            BigDecimal candidateShort = baseUpper;
+            if (maxCallOi != null
+                    && maxCallOi.compareTo(BigDecimal.ZERO) > 0
+                    && maxCallOi.compareTo(spot) > 0) {
+                candidateShort = candidateShort.max(maxCallOi);
+            }
+            shortStrike = snapUp(candidateShort, strikeStep);
+            longStrike = shortStrike.add(wingWidth);
+            actionSummary = String.format("Sell CE ₹%s | Buy CE ₹%s", shortStrike, longStrike);
+            edge =
+                    maxCallOi != null && maxCallOi.compareTo(BigDecimal.ZERO) > 0
+                            ? String.format(
+                                    "Short CE sits outside 1.0σ (₹%s) & Max Call OI Wall (₹%s)",
+                                    baseUpper, maxCallOi)
+                            : String.format("Short CE sits above 1.0σ ceiling (₹%s)", baseUpper);
+        } else {
+            strategyName = "Iron Condor";
+            BigDecimal candidatePut = baseLower;
+            if (maxPutOi != null
+                    && maxPutOi.compareTo(BigDecimal.ZERO) > 0
+                    && maxPutOi.compareTo(spot) < 0) {
+                candidatePut = candidatePut.min(maxPutOi);
+            }
+            shortStrike = snapDown(candidatePut, strikeStep);
+            longStrike = shortStrike.subtract(wingWidth);
+
+            BigDecimal candidateCall = baseUpper;
+            if (maxCallOi != null
+                    && maxCallOi.compareTo(BigDecimal.ZERO) > 0
+                    && maxCallOi.compareTo(spot) > 0) {
+                candidateCall = candidateCall.max(maxCallOi);
+            }
+            secondShort = snapUp(candidateCall, strikeStep);
+            secondLong = secondShort.add(wingWidth);
+
+            actionSummary =
+                    String.format(
+                            "Sell PE ₹%s/Buy PE ₹%s & Sell CE ₹%s/Buy CE ₹%s",
+                            shortStrike, longStrike, secondShort, secondLong);
+            edge = "Delta-neutral theta capture outside 1.0σ range on both sides";
+            exitRule = "Book profit at 50% decay. Manage or roll tested side if 1.0σ is touched.";
+        }
+
+        return new WeeklyStrategyRecommendation(
+                strategyName,
+                actionSummary,
+                shortStrike,
+                longStrike,
+                secondShort,
+                secondLong,
+                maxPutOi,
+                maxCallOi,
+                edge,
+                exitRule);
+    }
+
+    public static BigDecimal snapDown(BigDecimal price, BigDecimal step) {
+        if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
+            return price;
+        }
+        return price.divide(step, 0, RoundingMode.FLOOR).multiply(step);
+    }
+
+    public static BigDecimal snapUp(BigDecimal price, BigDecimal step) {
+        if (price == null || step == null || step.compareTo(BigDecimal.ZERO) <= 0) {
+            return price;
+        }
+        return price.divide(step, 0, RoundingMode.CEILING).multiply(step);
     }
 
     private static BigDecimal round2(double value) {
