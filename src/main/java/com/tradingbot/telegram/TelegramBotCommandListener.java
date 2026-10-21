@@ -41,6 +41,7 @@ public class TelegramBotCommandListener {
             monthlyRangeService;
     private final com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService
             fiftyTwoHighService;
+    private final com.tradingbot.strategy.monthlyrange.service.GarchRangeService garchRangeService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -61,6 +62,9 @@ public class TelegramBotCommandListener {
             @Autowired(required = false)
                     com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService
                             fiftyTwoHighService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.monthlyrange.service.GarchRangeService
+                            garchRangeService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
@@ -69,6 +73,7 @@ public class TelegramBotCommandListener {
                 carWeeklyService,
                 monthlyRangeService,
                 fiftyTwoHighService,
+                garchRangeService,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -86,6 +91,7 @@ public class TelegramBotCommandListener {
                 null,
                 null,
                 null,
+                null,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -104,6 +110,7 @@ public class TelegramBotCommandListener {
                 carWeeklyService,
                 null,
                 null,
+                null,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -115,6 +122,7 @@ public class TelegramBotCommandListener {
             com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
             com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyRangeService,
             com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService fiftyTwoHighService,
+            com.tradingbot.strategy.monthlyrange.service.GarchRangeService garchRangeService,
             TelegramService telegramService,
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
@@ -123,6 +131,7 @@ public class TelegramBotCommandListener {
         this.carWeeklyService = carWeeklyService;
         this.monthlyRangeService = monthlyRangeService;
         this.fiftyTwoHighService = fiftyTwoHighService;
+        this.garchRangeService = garchRangeService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
@@ -348,6 +357,15 @@ public class TelegramBotCommandListener {
                 var monthlyReport = monthlyRangeService.generateMonthlyReport();
                 return monthlyRangeService.formatTelegramMessage(monthlyReport);
 
+            case "/garch_weekly":
+                if (garchRangeService == null) {
+                    return "⚠️ GARCH Weekly Range Service not active.";
+                }
+                // generateWeeklyReport already dispatches the full report to this chat;
+                // the reply carries only the completion summary to avoid a duplicate post.
+                var weeklyReport = garchRangeService.generateWeeklyReport();
+                return "✅ " + weeklyReport.summary();
+
             case "/52wh":
             case "/52week":
             case "/52weekhigh":
@@ -405,6 +423,8 @@ public class TelegramBotCommandListener {
                         + "• `/car` - Live CAR Weekly GTT Portfolio Status\n"
                         + "• `/car_run` - Force execute CAR Weekly GTT Sunday routine & place orders\n"
                         + "• `/monthlyrange` - Calculate GARCH Monthly Option Range & Safe Strikes\n"
+                        + "• `/garch_weekly` - Force the weekly GARCH range forecast for the"
+                        + " coming week\n"
                         + "• `/52wh` - NSE F&O equities that crossed their 52-week high\n"
                         + "• `/help` - Show this command menu";
         }

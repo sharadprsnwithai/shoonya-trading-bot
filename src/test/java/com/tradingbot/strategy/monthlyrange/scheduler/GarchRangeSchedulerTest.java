@@ -1,5 +1,7 @@
 package com.tradingbot.strategy.monthlyrange.scheduler;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -8,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
 import com.tradingbot.strategy.monthlyrange.service.GarchRangeService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -118,5 +121,53 @@ class GarchRangeSchedulerTest {
         scheduler.executeRoutineForDate(LocalDate.of(2026, 10, 7));
 
         verify(service, times(1)).generateWeeklyReport();
+    }
+
+    @Test
+    @DisplayName("startup after the Wednesday fire was missed runs the routine immediately")
+    void testStartupCatchUpRunsAfterMissedFire() {
+        scheduler.catchUpMissedRunFor(
+                LocalDate.of(2026, 10, 21), LocalDateTime.of(2026, 10, 21, 8, 8));
+
+        verify(service, times(1)).generateWeeklyReport();
+    }
+
+    @Test
+    @DisplayName("startup before the Wednesday fire waits for the cron instead of running early")
+    void testStartupWaitsWhenFireStillAhead() {
+        scheduler.catchUpMissedRunFor(
+                LocalDate.of(2026, 10, 21), LocalDateTime.of(2026, 10, 21, 7, 30));
+
+        verify(service, never()).generateWeeklyReport();
+    }
+
+    @Test
+    @DisplayName("startup on a non-deployment day leaves the routine to its own weekday gate")
+    void testStartupSkipsNonDeploymentDay() {
+        scheduler.catchUpMissedRunFor(
+                LocalDate.of(2026, 10, 22), LocalDateTime.of(2026, 10, 22, 9, 0));
+
+        verify(service, never()).generateWeeklyReport();
+    }
+
+    @Test
+    @DisplayName("an unparseable weekly cron skips the catch-up instead of failing startup")
+    void testStartupCatchUpSurvivesUnparseableCron() {
+        properties.setWeeklyCron("not-a-cron");
+
+        assertDoesNotThrow(
+                () ->
+                        scheduler.catchUpMissedRunFor(
+                                LocalDate.of(2026, 10, 21), LocalDateTime.of(2026, 10, 21, 9, 0)));
+        verify(service, never()).generateWeeklyReport();
+    }
+
+    @Test
+    @DisplayName("the catch-up is wired to the application-ready event")
+    void testCatchUpIsWiredToApplicationReady() throws NoSuchMethodException {
+        assertNotNull(
+                GarchRangeScheduler.class
+                        .getMethod("catchUpMissedRun")
+                        .getAnnotation(org.springframework.context.event.EventListener.class));
     }
 }

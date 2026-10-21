@@ -5,9 +5,13 @@ import com.tradingbot.strategy.monthlyrange.service.GarchRangeService;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
 /**
@@ -85,5 +89,41 @@ public class GarchRangeScheduler {
                     e.getMessage(),
                     e);
         }
+    }
+
+    /** Evaluates at startup whether a scheduled fire was missed while the app was down. */
+    @EventListener(ApplicationReadyEvent.class)
+    public void catchUpMissedRun() {
+        LocalDate today = LocalDate.now(NseTradingCalendarUtil.IST_ZONE);
+        catchUpMissedRunFor(today, LocalDateTime.now(NseTradingCalendarUtil.IST_ZONE));
+    }
+
+    /**
+     * Runs the routine for the given date only when today's scheduled fire is no longer ahead. When
+     * the cron still fires later today, the scheduled job owns the run so startup after a
+     * pre-market restart does not strike the forecast hours early.
+     *
+     * @param date the startup date
+     * @param now the startup timestamp
+     */
+    void catchUpMissedRunFor(LocalDate date, LocalDateTime now) {
+        java.time.ZonedDateTime nextFire;
+        try {
+            nextFire =
+                    CronExpression.parse(properties.getWeeklyCron())
+                            .next(now.atZone(NseTradingCalendarUtil.IST_ZONE));
+        } catch (RuntimeException e) {
+            log.warn(
+                    "[GARCH-RANGE-SCHEDULER] Unparseable weekly cron '{}'; skipping startup"
+                            + " catch-up: {}",
+                    properties.getWeeklyCron(),
+                    e.getMessage());
+            return;
+        }
+        // Today's fire is still ahead: let the scheduled job own the run and its strike time.
+        if (nextFire != null && nextFire.toLocalDate().equals(date)) {
+            return;
+        }
+        executeRoutineForDate(date);
     }
 }
