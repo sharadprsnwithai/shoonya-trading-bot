@@ -49,7 +49,7 @@ Intraday stock futures and options momentum reversal on 5‑minute candles (`NSE
 
 1. **Morning Universe Scan (09:25 IST, two-phase):** the 09:25:00 job fetches NSE's live OI spurts feed (`LVR_NSE_OI_*` keys); the 09:25:20 scan fixes the sector watchlist (top 3 of the winning sectoral index), then merges the top 3 OI-spurt stocks at scan completion — a 6-stock `HYBRID` watchlist (`OI_SPURTS` mode leads with OI picks and demotes sector picks to the reservoir). NSE fetch failures degrade to sector-only selection.
 2. **Direction & Lowest Volume Candle (≥ 09:30 IST):** Strategy direction is determined by the 1st 5-minute candle (Green → LONG, Red → SHORT). Evaluates completed 5m candles after 09:30 AM to find the lowest volume opposite-color candle as the trigger.
-3. **Entry Cutoff:** Hard cutoff at **11:00 AM / 11:30 AM IST** — no new setups or armed triggers after cutoff; open trades continue to target / stop-loss / trailing exit.
+3. **Entry Cutoff:** Hard cutoff at **14:30 IST (2:30 PM)** — no new setups or armed triggers after cutoff; open trades continue to target / stop-loss / trailing exit until 15:00 hard exit.
 4. **Execution:** Futures or ATM options bought via decoupled execution consumers with 1:2 risk-reward, cost floor, and 10 EMA trailing.
 
 ---
@@ -151,6 +151,7 @@ The bot provides a bidirectional polling listener supporting the following comma
 | Command | Description |
 | :--- | :--- |
 | `/monthlyrange`, `/monthly_range`, `/garch` | **Calculate GARCH(1,1) Monthly Option Range & Safe CE/PE Strikes** for `RELIANCE`, `TCS`, `HDFCBANK`, `INFY`, `ICICIBANK`, `SBIN`, `TATAMOTORS`, `NIFTY50`. |
+| `/garch_weekly` | **Force the weekly GARCH range forecast for the coming week** — runs the same routine as the Wednesday 08:00 scheduler and posts the full report to the chat (handy after a missed scheduled run). |
 | `/52wh`, `/52weekhigh`, `/breakout` | **NSE F&O 52-Week-High Breakout Scan** — reports F&O equities whose latest completed daily candle crossed their 52-week high, plus the NIFTY 50 index's last-session Heikin-Ashi color (green/red). Highlights any **trade-ready setups** that also cleared all five research filters, with the recommended bull-call-spread strikes. |
 | `/status`, `/lvr`, `/lvr_status` | View live LVR strategy state, market sentiment breadth, winning sector, candidates, and open positions. |
 | `/scan`, `/lvr_scan` | Force execute an immediate 5-minute LVR strategy cycle. |

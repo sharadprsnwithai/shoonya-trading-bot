@@ -66,7 +66,7 @@ public class LowestVolumeReversalService {
     public static final LocalTime TIME_SCANNER_START = LocalTime.of(9, 25);
     public static final LocalTime TIME_SCANNER_CUTOFF = LocalTime.of(10, 0);
     public static final LocalTime TIME_EVALUATION_START = LocalTime.of(9, 30);
-    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(11, 30);
+    public static final LocalTime TIME_ENTRY_CUTOFF = LocalTime.of(14, 30);
     public static final LocalTime TIME_HARD_EXIT = LocalTime.of(15, 0);
 
     public static final String STRATEGY_ID = "LOWEST_VOLUME_REVERSAL";
@@ -218,7 +218,7 @@ public class LowestVolumeReversalService {
     @Setter
     private volatile double optionSrBufferPct = 0.0;
 
-    @Value("${trading-bot.strategy.lowest-volume.entry-cutoff:11:30}")
+    @Value("${trading-bot.strategy.lowest-volume.entry-cutoff:14:30}")
     @Getter
     private volatile LocalTime entryCutoffTime = TIME_ENTRY_CUTOFF;
 

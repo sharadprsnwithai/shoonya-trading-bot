@@ -1871,10 +1871,10 @@ class LowestVolumeReversalServiceTest {
 
     @Test
     @DisplayName(
-            "evaluateLivePriceActions skips trigger entry checks when time is past 11:30 IST cutoff")
-    void testEvaluateLivePriceActionsBlocksTriggerEntryPast1130Cutoff() {
-        // Clock at 11:35 IST (past 11:30 cutoff)
-        Clock postCutoffClock = Clock.fixed(Instant.parse("2026-09-18T06:05:00Z"), IST);
+            "evaluateLivePriceActions skips trigger entry checks when time is past 14:30 IST cutoff")
+    void testEvaluateLivePriceActionsBlocksTriggerEntryPast1430Cutoff() {
+        // Clock at 14:35 IST (past 14:30 cutoff)
+        Clock postCutoffClock = Clock.fixed(Instant.parse("2026-09-18T09:05:00Z"), IST);
         service.setClock(postCutoffClock);
 
         LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
@@ -1902,9 +1902,46 @@ class LowestVolumeReversalServiceTest {
 
         service.evaluateLivePriceActions();
 
-        // No trade entry should be taken past 11:30 cutoff
+        // No trade entry should be taken past 14:30 cutoff
         assertThat(service.getOpenPositions()).isEmpty();
         assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.TRIGGER_ARMED);
+    }
+
+    @Test
+    @DisplayName(
+            "evaluateLivePriceActions allows trigger entry at 12:00 IST (under extended 14:30 cutoff)")
+    void testEvaluateLivePriceActionsAllowsTriggerEntryBefore1430Cutoff() {
+        // Clock at 12:00 IST (past old 11:30 cutoff, but well before extended 14:30 cutoff)
+        Clock clock1200 = Clock.fixed(Instant.parse("2026-09-18T06:30:00Z"), IST);
+        service.setClock(clock1200);
+
+        LowestVolumeSetup setup = new LowestVolumeSetup("SUNPHARMA", LowestVolumeDirection.LONG);
+        setup.setTriggerCandle(
+                Candle.of5m(
+                        "SUNPHARMA",
+                        Instant.now(),
+                        BigDecimal.valueOf(1870),
+                        BigDecimal.valueOf(1875),
+                        BigDecimal.valueOf(1869),
+                        BigDecimal.valueOf(1874),
+                        5000),
+                BigDecimal.valueOf(1875.05),
+                BigDecimal.valueOf(1868.95),
+                BigDecimal.valueOf(1899.45));
+        setup.transitionTo(LowestVolumeSetupState.TRIGGER_ARMED, "Armed trigger");
+        service.getActiveSetups().put("SUNPHARMA", setup);
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        when(marketDataService.fetchQuote(any(), any()))
+                .thenReturn(mapper.createObjectNode().put("lp", "1876.00").put("ap", "1870.00"));
+        when(marketDataService.resolveToken("SUNPHARMA")).thenReturn("3351");
+
+        service.evaluateLivePriceActions();
+
+        // Under 14:30 cutoff, entry proceeds at 12:00 IST
+        assertThat(service.getOpenPositions()).containsKey("SUNPHARMA");
+        assertThat(setup.getState()).isEqualTo(LowestVolumeSetupState.IN_POSITION);
     }
 
     @Test
