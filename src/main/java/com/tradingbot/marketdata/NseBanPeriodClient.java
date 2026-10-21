@@ -53,9 +53,8 @@ public class NseBanPeriodClient {
 
     private static final Logger log = LoggerFactory.getLogger(NseBanPeriodClient.class);
 
-    /** Default NSE archive URL; the {@code {date}} placeholder is filled with ddMMyyyy. */
-    static final String DEFAULT_URL =
-            "https://nsearchives.nseindia.com/content/fo/ban_list_{date}.csv";
+    /** Default NSE archive URL; the current rolling ban file is fo_secban.csv. */
+    static final String DEFAULT_URL = "https://nsearchives.nseindia.com/content/fo/fo_secban.csv";
 
     private static final String HOMEPAGE_URL = "https://www.nseindia.com";
     private static final String REFERER = "https://www.nseindia.com/report-detail/eq_secban";
@@ -185,18 +184,19 @@ public class NseBanPeriodClient {
             if (cells.isEmpty()) {
                 continue;
             }
-            // NSE's ban list is "<Sr>,<Symbol>,<details>…". The header is identified from the
-            // symbol column alone — the free-text details column legitimately contains the word
-            // "symbol" ("…have crossed 95% of the market-wide position limit"), and treating a
-            // data row as a header would silently drop the entire list.
+            String cell0 = cells.get(0).trim().toUpperCase(Locale.ROOT);
             String symbolCell = (cells.size() >= 2 ? cells.get(1) : cells.get(0)).trim();
-            if (symbolCell.toUpperCase(Locale.ROOT).contains("SYMBOL")) {
+            String symbolUpper = symbolCell.toUpperCase(Locale.ROOT);
+            if (symbolUpper.contains("SYMBOL")
+                    || cell0.contains("SECURITIES IN BAN")
+                    || cell0.contains("TRADE DATE")
+                    || (cell0.contains("BAN") && cell0.contains("DATE"))) {
                 headerSeen = true;
                 continue;
             }
             // The underlying is the second column, so the details column can never be read as a
             // symbol. A single-column payload is treated as one symbol per row.
-            String token = symbolCell.toUpperCase(Locale.ROOT);
+            String token = symbolUpper;
             if (NON_SYMBOL_TOKENS.contains(token) || !SYMBOL_PATTERN.matcher(token).matches()) {
                 continue;
             }
@@ -229,7 +229,10 @@ public class NseBanPeriodClient {
     /** Builds the request URL for the given trade date, filling the {@code {date}} placeholder. */
     String buildUrl(LocalDate tradeDate) {
         String template = url != null && !url.isBlank() ? url : DEFAULT_URL;
-        return template.replace("{date}", URL_DATE_FMT.format(tradeDate));
+        if (template.contains("{date}")) {
+            return template.replace("{date}", URL_DATE_FMT.format(tradeDate));
+        }
+        return template;
     }
 
     /** Single HTTP attempt; records success/failure on {@link #lastFetchSuccessful}. */
@@ -365,6 +368,11 @@ public class NseBanPeriodClient {
     /** Test hook: pin the clock used to resolve today's ban-list file. */
     public void setClock(Clock clock) {
         this.clock = clock != null ? clock : Clock.system(ZoneId.of("Asia/Kolkata"));
+    }
+
+    /** Test hook / tuning: set the URL template. */
+    public void setUrl(String url) {
+        this.url = url;
     }
 
     /** Test hook / tuning: base retry backoff in milliseconds (0 disables sleeping). */

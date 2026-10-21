@@ -1,13 +1,18 @@
 package com.tradingbot.marketdata.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
 
 import com.tradingbot.auth.ShoonyaAuthenticator;
 import com.tradingbot.config.ShoonyaConfig;
 import com.tradingbot.config.ShoonyaFeedProperties;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +40,7 @@ class ShoonyaFeedClientTest {
     void setUp() {
         properties = new ShoonyaFeedProperties();
         properties.setEnabled(false);
+        properties.setOperatingWindowEnabled(false);
         properties.setSnapshotMaxAgeMs(60000);
         properties.setWarmupTimeoutMs(500);
 
@@ -451,6 +457,79 @@ class ShoonyaFeedClientTest {
         sleep(2000);
 
         assertThat(client.scheduledReconnects()).isZero();
+    }
+
+    @Test
+    @DisplayName("markDisconnected clears webSocket reference")
+    void testMarkDisconnectedClearsWebSocketReference() {
+        WebSocket ws = mock(WebSocket.class);
+        client.webSocket = ws;
+
+        client.markDisconnected();
+
+        assertThat(client.webSocket).isNull();
+    }
+
+    @Test
+    @DisplayName("sendKeepAlive does not send when session is not authenticated")
+    void testSendKeepAliveSkipsWhenNotAuthenticated() {
+        WebSocket ws = mock(WebSocket.class);
+        client.webSocket = ws;
+        client.running = true;
+        // authenticated is false
+
+        client.sendKeepAlive();
+
+        verifyNoInteractions(ws);
+    }
+
+    @Test
+    @DisplayName("scheduleReconnect returns false outside operating window")
+    void testScheduleReconnectDeclinedOutsideOperatingWindow() {
+        properties.setOperatingWindowEnabled(true);
+        // 05:25:00 IST is 23:55:00 UTC previous day (outside 08:30-23:10 IST)
+        client.setClock(
+                Clock.fixed(Instant.parse("2026-10-18T23:55:00Z"), ZoneId.of("Asia/Kolkata")));
+        armReconnect();
+
+        boolean scheduled = client.scheduleReconnect();
+
+        assertThat(scheduled).isFalse();
+        assertThat(client.scheduledReconnects()).isZero();
+    }
+
+    @Test
+    @DisplayName("checkOperatingWindow closes active socket outside operating window")
+    void testOperatingWindowWatchdogClosesActiveSocketOutsideWindow() {
+        properties.setOperatingWindowEnabled(true);
+        // 23:15:00 IST is 17:45:00 UTC (outside 08:30-23:10 IST)
+        client.setClock(
+                Clock.fixed(Instant.parse("2026-10-19T17:45:00Z"), ZoneId.of("Asia/Kolkata")));
+        client.running = true;
+        WebSocket ws = mock(WebSocket.class);
+        client.webSocket = ws;
+
+        client.checkOperatingWindow();
+
+        assertThat(client.webSocket).isNull();
+        verify(ws).sendClose(WebSocket.NORMAL_CLOSURE, "operating-window-closed");
+    }
+
+    @Test
+    @DisplayName("checkOperatingWindow initiates connect inside operating window when disconnected")
+    void testOperatingWindowWatchdogInitiatesConnectInsideWindow() {
+        properties.setOperatingWindowEnabled(true);
+        // 09:30:00 IST is 04:00:00 UTC (inside 08:30-23:10 IST)
+        client.setClock(
+                Clock.fixed(Instant.parse("2026-10-19T04:00:00Z"), ZoneId.of("Asia/Kolkata")));
+        client.running = true;
+        client.webSocket = null;
+        long prevConnectionId = client.currentConnectionId;
+
+        client.checkOperatingWindow();
+
+        // Increment of currentConnectionId confirms connect() was triggered
+        assertThat(client.currentConnectionId).isGreaterThan(prevConnectionId);
     }
 
     /**

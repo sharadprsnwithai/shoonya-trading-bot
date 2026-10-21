@@ -46,6 +46,21 @@ class NseBanPeriodClientTest {
     /** A header-only payload: a legitimately empty ban list, NOT a failure. */
     private static final String EMPTY_CSV_FIXTURE = "Sr,Symbol,Scrip Name,Details\n";
 
+    /** Live NSE archives fo_secban.csv format. */
+    private static final String LIVE_NSE_FIXTURE =
+            """
+            Securities in Ban For Trade Date 21-OCT-2026:
+            1,AMBUJACEM
+            2,KAYNES
+            3,SAIL
+            """;
+
+    /** Live NSE archives empty ban format. */
+    private static final String LIVE_NSE_EMPTY_FIXTURE =
+            """
+            Securities in Ban For Trade Date 21-OCT-2026:
+            """;
+
     /** An Akamai interstitial / error page: carries no ban-list header, so it is not a list. */
     private static final String ERROR_PAGE_FIXTURE =
             "<html><head><title>Access Denied</title></head><body>Reference #18.6b2c</body></html>";
@@ -97,6 +112,26 @@ class NseBanPeriodClientTest {
     }
 
     @Test
+    @DisplayName("Live NSE fo_secban.csv format parses the symbols successfully")
+    void parsesLiveNseSecbanFormat() {
+        NseBanPeriodClient.BanListResult result =
+                client(mock(HttpClient.class)).parseBanList(LIVE_NSE_FIXTURE);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.symbols()).containsExactly("AMBUJACEM", "KAYNES", "SAIL");
+    }
+
+    @Test
+    @DisplayName("Live NSE fo_secban.csv with no banned securities reports valid empty list")
+    void parsesLiveNseEmptySecban() {
+        NseBanPeriodClient.BanListResult result =
+                client(mock(HttpClient.class)).parseBanList(LIVE_NSE_EMPTY_FIXTURE);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.symbols()).isEmpty();
+    }
+
+    @Test
     @DisplayName("An error page / interstitial is invalid, so the caller can fail deliberately")
     void errorPageIsInvalid() {
         NseBanPeriodClient client = client(mock(HttpClient.class));
@@ -122,7 +157,7 @@ class NseBanPeriodClientTest {
                 .send(
                         argThat(
                                 (HttpRequest req) ->
-                                        req.uri().toString().contains("ban_list_13102026.csv")),
+                                        req.uri().toString().contains("fo_secban.csv")),
                         any());
     }
 
@@ -153,7 +188,9 @@ class NseBanPeriodClientTest {
 
         verify(http, times(3))
                 .send(
-                        argThat((HttpRequest req) -> req.uri().toString().contains("ban_list_")),
+                        argThat(
+                                (HttpRequest req) ->
+                                        req.uri().toString().contains("fo_secban.csv")),
                         any());
         // Cookie warm-up fires between attempts (before the last one), never on the final try.
         verify(http, times(2))
@@ -169,6 +206,10 @@ class NseBanPeriodClientTest {
     void buildUrlFillsDatePlaceholder() {
         NseBanPeriodClient client = client(mock(HttpClient.class));
 
+        assertThat(client.buildUrl(LocalDate.of(2026, 1, 5)))
+                .isEqualTo("https://nsearchives.nseindia.com/content/fo/fo_secban.csv");
+
+        client.setUrl("https://nsearchives.nseindia.com/content/fo/ban_list_{date}.csv");
         assertThat(client.buildUrl(LocalDate.of(2026, 1, 5)))
                 .isEqualTo("https://nsearchives.nseindia.com/content/fo/ban_list_05012026.csv");
     }

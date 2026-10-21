@@ -5,6 +5,7 @@ import com.tradingbot.config.ShoonyaFeedProperties;
 import com.tradingbot.telegram.TelegramService;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import org.slf4j.Logger;
@@ -97,6 +98,14 @@ public class ShoonyaFeedHealthAlerter {
                 || !properties.isEnabled()
                 || !shoonyaConfig.isEnabled()) {
             // Feed or alerting intentionally off: never report, and clear any pending state.
+            alertedDown = false;
+            downSince = null;
+            return;
+        }
+
+        LocalTime timeNow = LocalTime.ofInstant(now, ZoneId.of("Asia/Kolkata"));
+        if (!properties.isWithinOperatingWindow(timeNow)) {
+            // Outside operating window: feed is expected to be inactive; suppress down alerts.
             alertedDown = false;
             downSince = null;
             return;

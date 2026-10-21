@@ -9,9 +9,14 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
+import java.net.http.WebSocketHandshakeException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -29,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
@@ -82,7 +88,14 @@ public class ShoonyaFeedClient {
     /** Reassembles text frames, which the JDK may deliver split across chunks. */
     private final StringBuilder inboundBuffer = new StringBuilder();
 
-    private volatile WebSocket webSocket;
+    /** Source of wall-clock time; defaults to Asia/Kolkata and is overridden by tests. */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    private volatile Clock clock = Clock.system(IST);
+
+    /** Live WebSocket connection, or null when closed or reconnecting. */
+    volatile WebSocket webSocket;
+
     private volatile int reconnectAttempts;
 
     /**
@@ -119,7 +132,7 @@ public class ShoonyaFeedClient {
     private final AtomicLong connectionIds = new AtomicLong();
 
     /** Id of the connection that currently owns the socket and the session state. */
-    private volatile long currentConnectionId;
+    volatile long currentConnectionId;
 
     /** Session token handed to the feed on connect, refreshed on every connection attempt. */
     private volatile String sessionToken = "";
@@ -178,7 +191,64 @@ public class ShoonyaFeedClient {
                             return t;
                         });
         scheduleKeepAlive();
-        connect();
+        scheduleOperatingWindowWatchdog();
+        checkOperatingWindow();
+    }
+
+    /** Schedules the periodic watchdog checking operating window transitions. */
+    private void scheduleOperatingWindowWatchdog() {
+        scheduler.scheduleWithFixedDelay(this::checkOperatingWindow, 15, 15, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Verifies the feed state against the configured operating window.
+     *
+     * <p>Connects if inside the window and currently disconnected; cleanly closes and stands down
+     * if outside the window and currently connected.
+     */
+    void checkOperatingWindow() {
+        if (!running) {
+            return;
+        }
+        LocalTime now = LocalTime.now(clock);
+        boolean inWindow = properties.isWithinOperatingWindow(now);
+        if (inWindow) {
+            if (this.webSocket == null && !reconnectPending.get()) {
+                log.info(
+                        "[FEED] Within operating window ({}-{} IST); establishing feed connection.",
+                        properties.getOperatingWindowStart(),
+                        properties.getOperatingWindowEnd());
+                connect();
+            }
+        } else {
+            if (this.webSocket != null) {
+                log.info(
+                        "[FEED] Operating window closed ({}-{} IST); disconnecting feed cleanly.",
+                        properties.getOperatingWindowStart(),
+                        properties.getOperatingWindowEnd());
+                WebSocket ws = this.webSocket;
+                this.webSocket = null;
+                markDisconnected();
+                try {
+                    ws.sendClose(WebSocket.NORMAL_CLOSURE, "operating-window-closed");
+                } catch (Exception e) {
+                    log.debug("[FEED] Error closing socket at window end: {}", e.getMessage());
+                }
+            }
+            if (reconnectPending.get()) {
+                reconnectPending.set(false);
+                reconnectAttempts = 0;
+            }
+        }
+    }
+
+    /**
+     * Overrides the clock (unit tests only).
+     *
+     * @param clock clock to use
+     */
+    void setClock(Clock clock) {
+        this.clock = clock != null ? clock : Clock.system(IST);
     }
 
     /**
@@ -206,9 +276,9 @@ public class ShoonyaFeedClient {
      * the market produces no ticks for the subscribed set - so without this the feed reconnects
      * every minute for as long as it stays idle, each cycle costing a REST session validation.
      */
-    private void sendKeepAlive() {
+    void sendKeepAlive() {
         WebSocket ws = this.webSocket;
-        if (ws == null || !running) {
+        if (ws == null || !running || !authenticated) {
             return;
         }
         try {
@@ -505,6 +575,16 @@ public class ShoonyaFeedClient {
         if (!running) {
             return;
         }
+        LocalTime now = LocalTime.now(clock);
+        if (!properties.isWithinOperatingWindow(now)) {
+            log.info(
+                    "[FEED] Outside operating window ({}-{} IST); standing down.",
+                    properties.getOperatingWindowStart(),
+                    properties.getOperatingWindowEnd());
+            reconnectPending.set(false);
+            reconnectAttempts = 0;
+            return;
+        }
         // Claim the new id before anything else: a socket handed over by an earlier attempt becomes
         // stale from this moment, so its open, close and frame callbacks can be told apart from the
         // connection that is about to take over.
@@ -526,10 +606,27 @@ public class ShoonyaFeedClient {
                     .thenAccept(ws -> log.info("[FEED] Connected to {}", uri))
                     .exceptionally(
                             error -> {
-                                log.warn(
-                                        "[FEED] Connection to {} failed: {}",
-                                        uri,
-                                        error.getMessage());
+                                Throwable cause =
+                                        error.getCause() != null ? error.getCause() : error;
+                                if (cause instanceof WebSocketHandshakeException wshe
+                                        && wshe.getResponse() != null) {
+                                    HttpResponse<?> resp = wshe.getResponse();
+                                    HttpStatus status = HttpStatus.resolve(resp.statusCode());
+                                    String reason =
+                                            status != null ? " " + status.getReasonPhrase() : "";
+                                    log.warn(
+                                            "[FEED] Connection to {} failed: HTTP {}{} (handshake rejected)",
+                                            uri,
+                                            resp.statusCode(),
+                                            reason);
+                                } else {
+                                    log.warn(
+                                            "[FEED] Connection to {} failed: {}",
+                                            uri,
+                                            cause.getMessage() != null
+                                                    ? cause.getMessage()
+                                                    : cause.getClass().getSimpleName());
+                                }
                                 scheduleReconnect();
                                 return null;
                             });
@@ -572,6 +669,16 @@ public class ShoonyaFeedClient {
      */
     boolean scheduleReconnect() {
         if (!running || scheduler == null || scheduler.isShutdown()) {
+            return false;
+        }
+        LocalTime now = LocalTime.now(clock);
+        if (!properties.isWithinOperatingWindow(now)) {
+            log.info(
+                    "[FEED] Outside operating window ({}-{} IST); skipping reconnect.",
+                    properties.getOperatingWindowStart(),
+                    properties.getOperatingWindowEnd());
+            reconnectPending.set(false);
+            reconnectAttempts = 0;
             return false;
         }
         if (!reconnectPending.compareAndSet(false, true)) {
@@ -653,6 +760,10 @@ public class ShoonyaFeedClient {
         WebSocket ws = this.webSocket;
         if (ws == null) {
             log.debug("[FEED] {} frame(s) not sent; socket is not open.", frames.size());
+            return;
+        }
+        if (ws.isOutputClosed() || ws.isInputClosed()) {
+            log.debug("[FEED] {} frame(s) not sent; socket is closed.", frames.size());
             return;
         }
         for (String frame : frames) {
@@ -776,6 +887,7 @@ public class ShoonyaFeedClient {
      * and permanent fallback to REST for the rest of the process.
      */
     void markDisconnected() {
+        this.webSocket = null;
         this.authenticated = false;
         this.subscribedKeys.clear();
     }

@@ -1,5 +1,6 @@
 package com.tradingbot.config;
 
+import java.time.LocalTime;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -103,6 +104,15 @@ public class ShoonyaFeedProperties {
      * out transient reconnect blips while still catching a genuine outage quickly.
      */
     private long healthDownThresholdSeconds = 60;
+
+    /** Whether the feed connection is restricted to the configured operating window. */
+    private boolean operatingWindowEnabled = true;
+
+    /** Earliest IST time the WebSocket feed is permitted to connect (default 08:30 IST). */
+    private LocalTime operatingWindowStart = LocalTime.of(8, 30);
+
+    /** Latest IST time the WebSocket feed is permitted to remain connected (default 23:10 IST). */
+    private LocalTime operatingWindowEnd = LocalTime.of(23, 10);
 
     // Getters and setters
 
@@ -329,5 +339,67 @@ public class ShoonyaFeedProperties {
      */
     public void setHealthDownThresholdSeconds(long healthDownThresholdSeconds) {
         this.healthDownThresholdSeconds = healthDownThresholdSeconds;
+    }
+
+    /**
+     * @return true when feed connections are restricted to the configured operating window
+     */
+    public boolean isOperatingWindowEnabled() {
+        return operatingWindowEnabled;
+    }
+
+    /**
+     * @param operatingWindowEnabled whether feed connections are restricted to the operating window
+     */
+    public void setOperatingWindowEnabled(boolean operatingWindowEnabled) {
+        this.operatingWindowEnabled = operatingWindowEnabled;
+    }
+
+    /**
+     * @return earliest time the WebSocket feed is permitted to connect
+     */
+    public LocalTime getOperatingWindowStart() {
+        return operatingWindowStart;
+    }
+
+    /**
+     * @param operatingWindowStart earliest time the WebSocket feed is permitted to connect
+     */
+    public void setOperatingWindowStart(LocalTime operatingWindowStart) {
+        this.operatingWindowStart = operatingWindowStart;
+    }
+
+    /**
+     * @return latest time the WebSocket feed is permitted to remain connected
+     */
+    public LocalTime getOperatingWindowEnd() {
+        return operatingWindowEnd;
+    }
+
+    /**
+     * @param operatingWindowEnd latest time the WebSocket feed is permitted to remain connected
+     */
+    public void setOperatingWindowEnd(LocalTime operatingWindowEnd) {
+        this.operatingWindowEnd = operatingWindowEnd;
+    }
+
+    /**
+     * Checks whether the given time falls within the configured operating window.
+     *
+     * @param time time to check
+     * @return true when within operating window or when operating window check is disabled
+     */
+    public boolean isWithinOperatingWindow(LocalTime time) {
+        if (!operatingWindowEnabled
+                || time == null
+                || operatingWindowStart == null
+                || operatingWindowEnd == null) {
+            return true;
+        }
+        if (!operatingWindowStart.isAfter(operatingWindowEnd)) {
+            return !time.isBefore(operatingWindowStart) && !time.isAfter(operatingWindowEnd);
+        } else {
+            return !time.isBefore(operatingWindowStart) || !time.isAfter(operatingWindowEnd);
+        }
     }
 }

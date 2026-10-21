@@ -117,4 +117,13 @@ class ShoonyaFeedHealthAlerterTest {
         alerter.evaluate(true, T0.plusSeconds(45)); // recovered under threshold
         verifyNoInteractions(telegram);
     }
+
+    @Test
+    void outsideOperatingWindow_suppressesDownAlerts() {
+        // 05:25:00 IST is 23:55:00 UTC previous day (outside 08:30-23:10 IST)
+        Instant earlyMorningIst = Instant.parse("2026-10-18T23:55:00Z");
+        alerter.evaluate(false, earlyMorningIst);
+        alerter.evaluate(false, earlyMorningIst.plusSeconds(120));
+        verifyNoInteractions(telegram);
+    }
 }

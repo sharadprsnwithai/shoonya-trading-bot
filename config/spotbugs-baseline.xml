@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<BugCollection version="4.8.6" sequence="0" timestamp="1792438173369" analysisTimestamp="1792438173369" release="">
+<BugCollection version="4.8.6" sequence="0" timestamp="1792544464257" analysisTimestamp="1792544464257" release="">
   <Project projectName="shoonya-trading-bot (spotbugsMain)">
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\auth\ShoonyaAuthenticator.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\backtest\BacktestResult.class</Jar>
@@ -171,16 +171,22 @@
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\engine\GjrGarchOptimizer.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\engine\IvSolver$Solved.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\engine\IvSolver.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\engine\MonthlyDirectionalProbabilityEngine.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\engine\MonthlyRangeCalculator.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\BrokenWingButterflyRecommendation.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\ConvictionLevel.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\GarchModelParams.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\GarchRangeBand.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\GarchRangeForecast.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\GarchRangeReport.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\GjrGarchModelParams.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\ImpliedVolSmile.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\MarketBias.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\ModelComparison.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\MonthlyDirectionalScore.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeForecast.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\MonthlyUniverseRanking.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\SmilePoint.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\WingZoneForecast.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\scheduler\GarchRangeScheduler.class</Jar>
@@ -1456,13 +1462,13 @@
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
     <LongMessage>new com.tradingbot.marketdata.feed.ShoonyaFeedClient(ShoonyaFeedProperties, ShoonyaConfig, ShoonyaAuthenticator, HttpClient) may expose internal representation by storing an externally mutable object into ShoonyaFeedClient.properties</LongMessage>
     <Class classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" primary="true" classAnnotationNames="org.springframework.stereotype.Component">
-      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="66" end="804" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
-        <Message>At ShoonyaFeedClient.java:[lines 66-804]</Message>
+      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="72" end="916" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
+        <Message>At ShoonyaFeedClient.java:[lines 72-916]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.marketdata.feed.ShoonyaFeedClient</Message>
     </Class>
     <Method classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" name="&lt;init&gt;" signature="(Lcom/tradingbot/config/ShoonyaFeedProperties;Lcom/tradingbot/config/ShoonyaConfig;Lcom/tradingbot/auth/ShoonyaAuthenticator;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component">
-      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="157" end="162" startBytecode="0" endBytecode="224" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java"/>
+      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="170" end="175" startBytecode="0" endBytecode="238" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java"/>
       <Message>In method new com.tradingbot.marketdata.feed.ShoonyaFeedClient(ShoonyaFeedProperties, ShoonyaConfig, ShoonyaAuthenticator, HttpClient)</Message>
     </Method>
     <Field classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" name="properties" signature="Lcom/tradingbot/config/ShoonyaFeedProperties;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component">
@@ -1471,24 +1477,24 @@
       </SourceLine>
       <Message>Field com.tradingbot.marketdata.feed.ShoonyaFeedClient.properties</Message>
     </Field>
-    <LocalVariable name="properties" register="1" pc="75" role="LOCAL_VARIABLE_NAMED">
+    <LocalVariable name="properties" register="1" pc="85" role="LOCAL_VARIABLE_NAMED">
       <Message>Local variable named properties</Message>
     </LocalVariable>
-    <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" primary="true" start="158" end="158" startBytecode="75" endBytecode="75" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
-      <Message>At ShoonyaFeedClient.java:[line 158]</Message>
+    <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" primary="true" start="171" end="171" startBytecode="85" endBytecode="85" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
+      <Message>At ShoonyaFeedClient.java:[line 171]</Message>
     </SourceLine>
   </BugInstance>
   <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="541c991f8ce37d2827eb85c57a1d94f9" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
     <LongMessage>new com.tradingbot.marketdata.feed.ShoonyaFeedClient(ShoonyaFeedProperties, ShoonyaConfig, ShoonyaAuthenticator, HttpClient) may expose internal representation by storing an externally mutable object into ShoonyaFeedClient.shoonyaConfig</LongMessage>
     <Class classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" primary="true" classAnnotationNames="org.springframework.stereotype.Component">
-      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="66" end="804" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
-        <Message>At ShoonyaFeedClient.java:[lines 66-804]</Message>
+      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="72" end="916" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
+        <Message>At ShoonyaFeedClient.java:[lines 72-916]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.marketdata.feed.ShoonyaFeedClient</Message>
     </Class>
     <Method classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" name="&lt;init&gt;" signature="(Lcom/tradingbot/config/ShoonyaFeedProperties;Lcom/tradingbot/config/ShoonyaConfig;Lcom/tradingbot/auth/ShoonyaAuthenticator;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component">
-      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="157" end="162" startBytecode="0" endBytecode="224" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java"/>
+      <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" start="170" end="175" startBytecode="0" endBytecode="238" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java"/>
       <Message>In method new com.tradingbot.marketdata.feed.ShoonyaFeedClient(ShoonyaFeedProperties, ShoonyaConfig, ShoonyaAuthenticator, HttpClient)</Message>
     </Method>
     <Field classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" name="shoonyaConfig" signature="Lcom/tradingbot/config/ShoonyaConfig;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component">
@@ -1497,11 +1503,11 @@
       </SourceLine>
       <Message>Field com.tradingbot.marketdata.feed.ShoonyaFeedClient.shoonyaConfig</Message>
     </Field>
-    <LocalVariable name="shoonyaConfig" register="2" pc="80" role="LOCAL_VARIABLE_NAMED">
+    <LocalVariable name="shoonyaConfig" register="2" pc="90" role="LOCAL_VARIABLE_NAMED">
       <Message>Local variable named shoonyaConfig</Message>
     </LocalVariable>
-    <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" primary="true" start="159" end="159" startBytecode="80" endBytecode="80" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
-      <Message>At ShoonyaFeedClient.java:[line 159]</Message>
+    <SourceLine classname="com.tradingbot.marketdata.feed.ShoonyaFeedClient" primary="true" start="172" end="172" startBytecode="90" endBytecode="90" sourcefile="ShoonyaFeedClient.java" sourcepath="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" relSourcepath="java\com\tradingbot\marketdata\feed\ShoonyaFeedClient.java">
+      <Message>At ShoonyaFeedClient.java:[line 172]</Message>
     </SourceLine>
   </BugInstance>
   <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="3e5791cf2ffb3639afd3330998b234ce" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
@@ -2776,6 +2782,32 @@
     </LocalVariable>
     <SourceLine classname="com.tradingbot.service.LowestVolumeReversalService" primary="true" start="575" end="575" startBytecode="643" endBytecode="643" sourcefile="LowestVolumeReversalService.java" sourcepath="com/tradingbot/service/LowestVolumeReversalService.java" relSourcepath="java\com\tradingbot\service\LowestVolumeReversalService.java">
       <Message>At LowestVolumeReversalService.java:[line 575]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="f160bffee03851f0d08930bee73cfd5a" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.service.LowestVolumeReversalService(ShoonyaMarketDataService, TechnicalAnalysisService, TelegramService, ShoonyaConfig, ShoonyaOptionChainService, LowestVolumeReversalScanner, SignalPublisher, HistoricalOhlcCacheService, ShoonyaFeedClient) may expose internal representation by storing an externally mutable object into LowestVolumeReversalService.feedClient</LongMessage>
+    <Class classname="com.tradingbot.service.LowestVolumeReversalService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.service.LowestVolumeReversalService" start="62" end="6255" sourcefile="LowestVolumeReversalService.java" sourcepath="com/tradingbot/service/LowestVolumeReversalService.java" relSourcepath="java\com\tradingbot\service\LowestVolumeReversalService.java">
+        <Message>At LowestVolumeReversalService.java:[lines 62-6255]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.service.LowestVolumeReversalService</Message>
+    </Class>
+    <Method classname="com.tradingbot.service.LowestVolumeReversalService" name="&lt;init&gt;" signature="(Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/indicator/TechnicalAnalysisService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/tradingbot/marketdata/ShoonyaOptionChainService;Lcom/tradingbot/service/LowestVolumeReversalScanner;Lcom/tradingbot/bus/SignalPublisher;Lcom/tradingbot/marketdata/HistoricalOhlcCacheService;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.service.LowestVolumeReversalService" start="571" end="581" startBytecode="0" endBytecode="1290" sourcefile="LowestVolumeReversalService.java" sourcepath="com/tradingbot/service/LowestVolumeReversalService.java" relSourcepath="java\com\tradingbot\service\LowestVolumeReversalService.java"/>
+      <Message>In method new com.tradingbot.service.LowestVolumeReversalService(ShoonyaMarketDataService, TechnicalAnalysisService, TelegramService, ShoonyaConfig, ShoonyaOptionChainService, LowestVolumeReversalScanner, SignalPublisher, HistoricalOhlcCacheService, ShoonyaFeedClient)</Message>
+    </Method>
+    <Field classname="com.tradingbot.service.LowestVolumeReversalService" name="feedClient" signature="Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.service.LowestVolumeReversalService" sourcefile="LowestVolumeReversalService.java" sourcepath="com/tradingbot/service/LowestVolumeReversalService.java" relSourcepath="java\com\tradingbot\service\LowestVolumeReversalService.java">
+        <Message>In LowestVolumeReversalService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.service.LowestVolumeReversalService.feedClient</Message>
+    </Field>
+    <LocalVariable name="feedClient" register="9" pc="688" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named feedClient</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.service.LowestVolumeReversalService" primary="true" start="580" end="580" startBytecode="688" endBytecode="688" sourcefile="LowestVolumeReversalService.java" sourcepath="com/tradingbot/service/LowestVolumeReversalService.java" relSourcepath="java\com\tradingbot\service\LowestVolumeReversalService.java">
+      <Message>At LowestVolumeReversalService.java:[line 580]</Message>
     </SourceLine>
   </BugInstance>
   <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="9766b3bed66873daa81cc5c69ef7c876" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
@@ -4109,61 +4141,12 @@
       <Message>At GarchVolForecaster.java:[line 13]</Message>
     </SourceLine>
   </BugInstance>
-  <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="b341a23352d0f0935c4287238d90e715" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
-    <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
-    <LongMessage>com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport.forecasts() may expose internal representation by returning MonthlyRangeReport.forecasts</LongMessage>
-    <Class classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" primary="true">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" start="7" end="7" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java">
-        <Message>At MonthlyRangeReport.java:[line 7]</Message>
-      </SourceLine>
-      <Message>In class com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport</Message>
-    </Class>
-    <Method classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" name="forecasts" signature="()Ljava/util/List;" isStatic="false" primary="true">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" start="7" end="7" startBytecode="0" endBytecode="46" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java"/>
-      <Message>In method com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport.forecasts()</Message>
-    </Method>
-    <Field classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" name="forecasts" signature="Ljava/util/List;" isStatic="false" primary="true">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java">
-        <Message>In MonthlyRangeReport.java</Message>
-      </SourceLine>
-      <Message>Field com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport.forecasts</Message>
-    </Field>
-    <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" primary="true" start="7" end="7" startBytecode="4" endBytecode="4" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java">
-      <Message>At MonthlyRangeReport.java:[line 7]</Message>
-    </SourceLine>
-  </BugInstance>
-  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="1bcff9cf4e3856bf4b2c898c88ae15b" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
-    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
-    <LongMessage>new com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport(Instant, String, List, String) may expose internal representation by storing an externally mutable object into MonthlyRangeReport.forecasts</LongMessage>
-    <Class classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" primary="true">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" start="7" end="7" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java">
-        <Message>At MonthlyRangeReport.java:[line 7]</Message>
-      </SourceLine>
-      <Message>In class com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport</Message>
-    </Class>
-    <Method classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" name="&lt;init&gt;" signature="(Ljava/time/Instant;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;)V" isStatic="false" primary="true">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" start="7" end="7" startBytecode="0" endBytecode="125" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java"/>
-      <Message>In method new com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport(Instant, String, List, String)</Message>
-    </Method>
-    <Field classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" name="forecasts" signature="Ljava/util/List;" isStatic="false" primary="true">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java">
-        <Message>In MonthlyRangeReport.java</Message>
-      </SourceLine>
-      <Message>Field com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport.forecasts</Message>
-    </Field>
-    <LocalVariable name="forecasts" register="3" pc="16" role="LOCAL_VARIABLE_NAMED">
-      <Message>Local variable named forecasts</Message>
-    </LocalVariable>
-    <SourceLine classname="com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport" primary="true" start="7" end="7" startBytecode="16" endBytecode="16" sourcefile="MonthlyRangeReport.java" sourcepath="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.java">
-      <Message>At MonthlyRangeReport.java:[line 7]</Message>
-    </SourceLine>
-  </BugInstance>
   <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="d01e34d17d5833c48380b143f6f88250" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
     <LongMessage>new com.tradingbot.strategy.monthlyrange.scheduler.MonthlyRangeScheduler(MonthlyRangeProperties, MonthlyRangeService) may expose internal representation by storing an externally mutable object into MonthlyRangeScheduler.properties</LongMessage>
     <Class classname="com.tradingbot.strategy.monthlyrange.scheduler.MonthlyRangeScheduler" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.scheduler.MonthlyRangeScheduler" start="20" end="68" sourcefile="MonthlyRangeScheduler.java" sourcepath="com/tradingbot/strategy/monthlyrange/scheduler/MonthlyRangeScheduler.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\scheduler\MonthlyRangeScheduler.java">
-        <Message>At MonthlyRangeScheduler.java:[lines 20-68]</Message>
+      <SourceLine classname="com.tradingbot.strategy.monthlyrange.scheduler.MonthlyRangeScheduler" start="20" end="82" sourcefile="MonthlyRangeScheduler.java" sourcepath="com/tradingbot/strategy/monthlyrange/scheduler/MonthlyRangeScheduler.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\scheduler\MonthlyRangeScheduler.java">
+        <Message>At MonthlyRangeScheduler.java:[lines 20-82]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.strategy.monthlyrange.scheduler.MonthlyRangeScheduler</Message>
     </Class>
@@ -4188,8 +4171,8 @@
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
     <LongMessage>new com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService(MonthlyRangeProperties, MonthlyRangeCalculator, YahooFinanceService, ShoonyaOptionChainService, TelegramService) may expose internal representation by storing an externally mutable object into MonthlyRangeService.properties</LongMessage>
     <Class classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" start="32" end="260" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java">
-        <Message>At MonthlyRangeService.java:[lines 32-260]</Message>
+      <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" start="32" end="394" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java">
+        <Message>At MonthlyRangeService.java:[lines 32-394]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService</Message>
     </Class>
@@ -5617,7 +5600,7 @@ signals unexpected behavior by returning an atypical return value.
     <Description>Redundant comparison to null</Description>
   </BugCode>
   <Errors errors="0" missingClasses="0"></Errors>
-  <FindBugsSummary timestamp="Tue, 20 Oct 2026 00:59:33 +0530" total_classes="0" referenced_classes="0" total_bugs="202" total_size="0" num_packages="38" java_version="21.0.11" vm_version="21.0.11+10-LTS" cpu_seconds="271.58" clock_seconds="60.09" peak_mbytes="512.72" alloc_mbytes="3952.00" gc_seconds="0.76" priority_2="199" priority_1="3">
+  <FindBugsSummary timestamp="Wed, 21 Oct 2026 06:31:04 +0530" total_classes="0" referenced_classes="0" total_bugs="201" total_size="0" num_packages="37" java_version="21.0.11" vm_version="21.0.11+10-LTS" cpu_seconds="231.34" clock_seconds="60.92" peak_mbytes="501.75" alloc_mbytes="3952.00" gc_seconds="0.68" priority_2="198" priority_1="3">
     <FileStats path="com/tradingbot/auth/ShoonyaAuthenticator.java" bugCount="4" size="0" bugHash="65d352d89aa0dd492eb0d8e5bb94c8e8"/>
     <FileStats path="com/tradingbot/backtest/BacktestResult.java" bugCount="2" size="0" bugHash="8a093113d0fb60150996cd47de3331d7"/>
     <FileStats path="com/tradingbot/config/ShoonyaConfig.java" bugCount="1" size="0" bugHash="5793b3b0b49e4520fbc2e49abf67b460"/>
@@ -5640,7 +5623,7 @@ signals unexpected behavior by returning an atypical return value.
     <FileStats path="com/tradingbot/marketdata/ShoonyaMarketDataService.java" bugCount="4" size="0" bugHash="bcec833059eabc22d604755dd733214d"/>
     <FileStats path="com/tradingbot/marketdata/ShoonyaOptionChainService.java" bugCount="3" size="0" bugHash="14c2d73159416b57d2e518de6699931d"/>
     <FileStats path="com/tradingbot/marketdata/YahooFinanceService.java" bugCount="1" size="0" bugHash="534ff54b507ae2c96e82301cae59fbc9"/>
-    <FileStats path="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" bugCount="2" size="0" bugHash="7935483a4185fc2903016ca464adee9a"/>
+    <FileStats path="com/tradingbot/marketdata/feed/ShoonyaFeedClient.java" bugCount="2" size="0" bugHash="b4796a230ff7e747789a6d0bb4e13b4d"/>
     <FileStats path="com/tradingbot/marketdata/model/HistoricalOhlcData.java" bugCount="2" size="0" bugHash="be8674c143931100afae5a701ff8a3b5"/>
     <FileStats path="com/tradingbot/marketdata/model/SymbolOhlcBundle.java" bugCount="3" size="0" bugHash="c165099aad8c1ab893d9f53d6e1224d8"/>
     <FileStats path="com/tradingbot/marketdata/repository/SqliteBackupService.java" bugCount="5" size="0" bugHash="4c2100c8ced98757e893c5ed214c18eb"/>
@@ -5656,7 +5639,7 @@ signals unexpected behavior by returning an atypical return value.
     <FileStats path="com/tradingbot/scheduler/HistoricalOhlcScheduler.java" bugCount="2" size="0" bugHash="0ea1b56d32ed24442d08530360e3d00a"/>
     <FileStats path="com/tradingbot/scheduler/LowestVolumeReversalScheduler.java" bugCount="1" size="0" bugHash="e3625352c3bffbbf24f351cd78fe73f0"/>
     <FileStats path="com/tradingbot/scheduler/PostCloseDataScheduler.java" bugCount="1" size="0" bugHash="a4749eef0c91dc1d83d57e9500778c58"/>
-    <FileStats path="com/tradingbot/service/LowestVolumeReversalService.java" bugCount="39" size="0" bugHash="46d2f77678d8e38d3104a21342094637"/>
+    <FileStats path="com/tradingbot/service/LowestVolumeReversalService.java" bugCount="40" size="0" bugHash="8932afb4674d94eafaa97beccdce6e80"/>
     <FileStats path="com/tradingbot/strategy/TradeSignal.java" bugCount="2" size="0" bugHash="f17e25ac04c2c2cb6b9256e93fcda268"/>
     <FileStats path="com/tradingbot/strategy/car/CarWeeklyGttService.java" bugCount="10" size="0" bugHash="4c0d5ddf27943feb5d19ff6c21853c25"/>
     <FileStats path="com/tradingbot/strategy/car/config/CarExecutionGate.java" bugCount="1" size="0" bugHash="81c2cc554446909a4acd17fa6750ff15"/>
@@ -5664,7 +5647,6 @@ signals unexpected behavior by returning an atypical return value.
     <FileStats path="com/tradingbot/strategy/car/gtt/ZerodhaKiteGttGateway.java" bugCount="1" size="0" bugHash="96931aed1f49009fd20073bc7148f3b6"/>
     <FileStats path="com/tradingbot/strategy/car/model/CarPortfolioState.java" bugCount="3" size="0" bugHash="9f695fe0858ee1814b7be8ceaaf0edb7"/>
     <FileStats path="com/tradingbot/strategy/monthlyrange/engine/GarchVolForecaster.java" bugCount="2" size="0" bugHash="325002c37a512d6658656b98fdb176a7"/>
-    <FileStats path="com/tradingbot/strategy/monthlyrange/model/MonthlyRangeReport.java" bugCount="2" size="0" bugHash="da2436763b635c74833e5dd6ba4f69e8"/>
     <FileStats path="com/tradingbot/strategy/monthlyrange/scheduler/MonthlyRangeScheduler.java" bugCount="1" size="0" bugHash="263f0c630f7d99d30b421335b162b339"/>
     <FileStats path="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" bugCount="1" size="0" bugHash="d678c14a191dbdec7af8e08ca17486e4"/>
     <FileStats path="com/tradingbot/strategy/silverorb/controller/SilverOrbController.java" bugCount="2" size="0" bugHash="efad3f2d594b972f039f94cb96e24761"/>
