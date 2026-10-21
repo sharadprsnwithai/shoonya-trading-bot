@@ -35,6 +35,8 @@ import java.util.List;
  * @param trainSplitIndex return index at which the out-of-sample segment begins
  * @param garchStatus fitter status message, including any fallback reason
  * @param generatedAt when the forecast was produced
+ * @param directionalBias macro trend and factor-derived bias (BULLISH, BEARISH, NEUTRAL)
+ * @param directionalConfidencePct conviction probability percentage for the directional bias
  */
 public record GarchRangeForecast(
         String symbol,
@@ -54,11 +56,56 @@ public record GarchRangeForecast(
         int calibrationWindows,
         int trainSplitIndex,
         String garchStatus,
-        Instant generatedAt) {
+        Instant generatedAt,
+        MarketBias directionalBias,
+        Double directionalConfidencePct) {
 
     public GarchRangeForecast {
         bands = bands == null ? null : new ArrayList<>(bands);
         gjrBands = gjrBands == null ? null : new ArrayList<>(gjrBands);
+    }
+
+    /** Backward-compatible constructor for callers omitting directional parameters. */
+    public GarchRangeForecast(
+            String symbol,
+            BigDecimal spot,
+            int horizonSessions,
+            BigDecimal horizonSigmaPct,
+            BigDecimal annualizedVolPct,
+            BigDecimal terminalDailyVolPct,
+            double persistence,
+            LocalDate referenceSession,
+            LocalDate expirySession,
+            List<GarchRangeBand> bands,
+            BigDecimal gjrHorizonSigmaPct,
+            List<GarchRangeBand> gjrBands,
+            WingZoneForecast wingZone,
+            ModelComparison modelComparison,
+            int calibrationWindows,
+            int trainSplitIndex,
+            String garchStatus,
+            Instant generatedAt) {
+        this(
+                symbol,
+                spot,
+                horizonSessions,
+                horizonSigmaPct,
+                annualizedVolPct,
+                terminalDailyVolPct,
+                persistence,
+                referenceSession,
+                expirySession,
+                bands,
+                gjrHorizonSigmaPct,
+                gjrBands,
+                wingZone,
+                modelComparison,
+                calibrationWindows,
+                trainSplitIndex,
+                garchStatus,
+                generatedAt,
+                MarketBias.NEUTRAL,
+                null);
     }
 
     @Override

@@ -238,19 +238,17 @@ class GarchRangeServiceTest {
     }
 
     @Test
-    @DisplayName("telegram message carries both the nominal and the measured figures")
-    void testTelegramMessageCarriesCalibration() {
+    @DisplayName("telegram message carries 2 sigma range and direction")
+    void testTelegramMessageCarries2SigmaRangeAndDirection() {
         String msg =
                 service.formatTelegramMessage(
                         report(List.of(calibratedForecast("NIFTY50", 24000.0))));
 
-        assertThat(msg).contains("WEEKLY RANGE FORECAST");
+        assertThat(msg).contains("WEEKLY GARCH RANGE (2σ)");
         assertThat(msg).contains("NIFTY50");
         assertThat(msg).contains("5 sessions");
-        assertThat(msg).contains("measured");
-        assertThat(msg).contains("41.2");
-        assertThat(msg).contains("Wing zone");
-        assertThat(msg).contains("Read this correctly");
+        assertThat(msg).contains("2σ Range");
+        assertThat(msg).contains("Direction");
     }
 
     @Test

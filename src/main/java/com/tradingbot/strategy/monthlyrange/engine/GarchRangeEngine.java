@@ -6,6 +6,7 @@ import com.tradingbot.strategy.monthlyrange.model.GarchModelParams;
 import com.tradingbot.strategy.monthlyrange.model.GarchRangeBand;
 import com.tradingbot.strategy.monthlyrange.model.GarchRangeForecast;
 import com.tradingbot.strategy.monthlyrange.model.GjrGarchModelParams;
+import com.tradingbot.strategy.monthlyrange.model.MarketBias;
 import com.tradingbot.strategy.monthlyrange.model.ModelComparison;
 import com.tradingbot.strategy.monthlyrange.model.WingZoneForecast;
 import java.math.BigDecimal;
@@ -48,6 +49,7 @@ public class GarchRangeEngine {
     private final GjrGarchOptimizer gjrOptimizer;
     private final GarchVolForecaster volForecaster;
     private final MonthlyRangeProperties properties;
+    private final MonthlyDirectionalProbabilityEngine directionalEngine;
 
     /** Result of a walk-forward calibration pass for a single volatility model. */
     record Calibration(double[] measuredCoverage, double measuredZoneStayPct, int windows) {}
@@ -65,7 +67,15 @@ public class GarchRangeEngine {
             Garch11Optimizer garchOptimizer,
             GjrGarchOptimizer gjrOptimizer,
             GarchVolForecaster volForecaster) {
-        this(garchOptimizer, gjrOptimizer, volForecaster, new MonthlyRangeProperties());
+        this(garchOptimizer, gjrOptimizer, volForecaster, new MonthlyRangeProperties(), null);
+    }
+
+    public GarchRangeEngine(
+            Garch11Optimizer garchOptimizer,
+            GjrGarchOptimizer gjrOptimizer,
+            GarchVolForecaster volForecaster,
+            MonthlyRangeProperties properties) {
+        this(garchOptimizer, gjrOptimizer, volForecaster, properties, null);
     }
 
     @Autowired
@@ -73,11 +83,13 @@ public class GarchRangeEngine {
             Garch11Optimizer garchOptimizer,
             GjrGarchOptimizer gjrOptimizer,
             GarchVolForecaster volForecaster,
-            MonthlyRangeProperties properties) {
+            MonthlyRangeProperties properties,
+            @Autowired(required = false) MonthlyDirectionalProbabilityEngine directionalEngine) {
         this.garchOptimizer = garchOptimizer;
         this.gjrOptimizer = gjrOptimizer;
         this.volForecaster = volForecaster;
         this.properties = properties != null ? properties : new MonthlyRangeProperties();
+        this.directionalEngine = directionalEngine;
     }
 
     /**
@@ -156,6 +168,32 @@ public class GarchRangeEngine {
                             gjrSigmaPct.doubleValue() > 0.0 && gjrParams.converged());
         }
 
+        MarketBias directionalBias = MarketBias.NEUTRAL;
+        Double directionalConfidence = null;
+        if (directionalEngine != null) {
+            try {
+                var ds =
+                        directionalEngine.evaluateDirectionalScore(
+                                symbol, BigDecimal.valueOf(spot), dailyCandles, null, null, 65.0);
+                if (ds != null) {
+                    directionalBias = ds.bias();
+                    directionalConfidence =
+                            ds.bias() == MarketBias.BULLISH
+                                    ? ds.bullishProbabilityPct()
+                                    : (ds.bias() == MarketBias.BEARISH
+                                            ? ds.bearishProbabilityPct()
+                                            : Math.max(
+                                                    ds.bullishProbabilityPct(),
+                                                    ds.bearishProbabilityPct()));
+                }
+            } catch (Exception e) {
+                log.warn(
+                        "[GARCH-RANGE] Directional evaluation failed for {}: {}",
+                        symbol,
+                        e.getMessage());
+            }
+        }
+
         return new GarchRangeForecast(
                 symbol,
                 round2(spot),
@@ -174,7 +212,9 @@ public class GarchRangeEngine {
                 garchCal.windows(),
                 (int) Math.floor(returns.length * properties.getCalibrationTrainPct()),
                 params.statusMessage(),
-                now);
+                now,
+                directionalBias,
+                directionalConfidence);
     }
 
     private List<GarchRangeBand> buildBands(

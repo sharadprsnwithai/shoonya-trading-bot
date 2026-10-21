@@ -7,7 +7,7 @@ import com.tradingbot.strategy.monthlyrange.engine.GarchRangeEngine;
 import com.tradingbot.strategy.monthlyrange.model.GarchRangeBand;
 import com.tradingbot.strategy.monthlyrange.model.GarchRangeForecast;
 import com.tradingbot.strategy.monthlyrange.model.GarchRangeReport;
-import com.tradingbot.strategy.monthlyrange.model.WingZoneForecast;
+import com.tradingbot.strategy.monthlyrange.model.MarketBias;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.BotLocale;
 import com.tradingbot.util.NseTradingCalendarUtil;
@@ -183,17 +183,20 @@ public class GarchRangeService {
         return candidate;
     }
 
-    /** Formats the weekly range report into a Markdown message for Telegram. */
+    /**
+     * Formats the weekly range report into a crisp 2-sigma & direction Markdown message for
+     * Telegram.
+     */
     public String formatTelegramMessage(GarchRangeReport report) {
         StringBuilder sb = new StringBuilder();
-        sb.append("📈 *WEEKLY RANGE FORECAST (GARCH 1,1, CALIBRATED)*\n");
-        sb.append("📅 *Reference close:* `")
-                .append(report.referenceSession().format(DAY_FMT))
-                .append("` → *Expiry:* `")
+        sb.append("📈 *WEEKLY GARCH RANGE (2σ)*\n");
+        sb.append("📅 *Expiry:* `")
                 .append(report.expirySession().format(DAY_FMT))
                 .append("` (")
                 .append(report.horizonSessions())
-                .append(" sessions)\n\n");
+                .append(" sessions | Ref: `")
+                .append(report.referenceSession().format(DAY_FMT))
+                .append("`)\n\n");
 
         for (GarchRangeForecast f : report.forecasts()) {
             if (f.spot().compareTo(BigDecimal.ZERO) <= 0) {
@@ -201,67 +204,47 @@ public class GarchRangeService {
                 continue;
             }
 
+            GarchRangeBand twoSigma =
+                    f.bands().stream()
+                            .filter(b -> Math.abs(b.kSigma() - 2.0) < 0.05)
+                            .findFirst()
+                            .orElse(
+                                    f.bands().isEmpty()
+                                            ? null
+                                            : f.bands().get(f.bands().size() - 1));
+
+            String dirIcon =
+                    f.directionalBias() == MarketBias.BULLISH
+                            ? "🐂"
+                            : f.directionalBias() == MarketBias.BEARISH ? "🐻" : "⚖️";
+
             sb.append("🔹 *")
                     .append(f.symbol())
                     .append("* (Spot: ₹")
                     .append(f.spot())
                     .append(")\n");
-            sb.append(" • *Horizon σ:* `")
-                    .append(f.horizonSigmaPct())
-                    .append("%` (Ann ")
-                    .append(f.annualizedVolPct())
-                    .append("%, τ ")
-                    .append(f.persistence())
-                    .append(")\n");
-            sb.append(" • *Calibration:* ")
-                    .append(f.calibrationWindows())
-                    .append(" out-of-sample windows\n");
-
-            for (GarchRangeBand b : f.bands()) {
-                sb.append(" • *")
-                        .append(b.label())
-                        .append(":* ₹")
-                        .append(b.lower())
+            if (twoSigma != null) {
+                sb.append(" • *2σ Range:* `₹")
+                        .append(twoSigma.lower())
                         .append(" - ₹")
-                        .append(b.upper())
-                        .append("  (nominal ")
-                        .append(b.nominalTerminalConfidencePct())
-                        .append("% → measured ");
-                if (b.measuredWindows() > 0) {
-                    sb.append(b.measuredCoveragePct()).append("%");
-                } else {
-                    sb.append("n/a");
-                }
-                sb.append(")\n");
+                        .append(twoSigma.upper())
+                        .append("`\n");
             }
-
-            WingZoneForecast w = f.wingZone();
-            if (w.measuredWindows() > 0) {
-                sb.append(" • 🎯 *Wing zone* (")
-                        .append(w.label())
-                        .append("): ₹")
-                        .append(w.lowerBreakeven())
-                        .append(" - ₹")
-                        .append(w.upperBreakeven())
-                        .append("\n");
-                sb.append(" • *Stays inside:* `")
-                        .append(w.measuredStayPct())
-                        .append("%` measured (")
-                        .append(w.gaussianTerminalStayPct())
-                        .append("% Gaussian terminal)\n");
+            sb.append(" • *Direction:* ")
+                    .append(dirIcon)
+                    .append(" *")
+                    .append(f.directionalBias() != null ? f.directionalBias() : MarketBias.NEUTRAL)
+                    .append("*");
+            if (f.directionalConfidencePct() != null && f.directionalConfidencePct() > 0) {
+                sb.append(" (`")
+                        .append(
+                                String.format(
+                                        BotLocale.INSTANCE, "%.0f%%", f.directionalConfidencePct()))
+                        .append("`)");
             }
-            sb.append("\n");
+            sb.append("\n\n");
         }
 
-        sb.append("💡 *Read this correctly:*\n")
-                .append("1. \"Measured\" counts windows whose full high/low never left the band —")
-                .append(" the number that matters for a hold-to-expiry structure.\n")
-                .append("2. \"Nominal/Gaussian\" covers the closing return only and overstates the")
-                .append(" true probability of staying inside.\n")
-                .append("3. The wing zone is bounded by 2×short − wing, not by the short strike;")
-                .append(" touching either breakeven during the hold is what costs money.\n")
-                .append("4. GARCH sees volatility clustering, not expiry pinning or the")
-                .append(" post-expiry IV reset that a Wednesday entry sits on.\n");
-        return sb.toString();
+        return sb.toString().trim();
     }
 }

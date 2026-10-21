@@ -6,6 +6,7 @@ import com.tradingbot.model.Candle;
 import com.tradingbot.model.OptionChainResponse;
 import com.tradingbot.strategy.monthlyrange.config.MonthlyRangeProperties;
 import com.tradingbot.strategy.monthlyrange.engine.MonthlyRangeCalculator;
+import com.tradingbot.strategy.monthlyrange.model.MarketBias;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeForecast;
 import com.tradingbot.strategy.monthlyrange.model.MonthlyRangeReport;
 import com.tradingbot.telegram.TelegramService;
@@ -167,230 +168,74 @@ public class MonthlyRangeService {
         return calculator.calculate(symbol, dailyCandles, horizonDays, asOfDate, optionChain);
     }
 
-    /** Formats the Monthly Range Report into a crisp Markdown message for Telegram. */
+    /**
+     * Formats the Monthly Range Report into a crisp 2-sigma & direction Markdown message for
+     * Telegram.
+     */
     public String formatTelegramMessage(MonthlyRangeReport report) {
         StringBuilder sb = new StringBuilder();
-        sb.append("📊 *MONTHLY OPTION RANGE & DIRECTIONAL FORECAST*\n");
+        sb.append("📊 *MONTHLY OPTION RANGE (2σ)*\n");
         sb.append("📅 *Cycle:* `")
                 .append(report.cycle())
                 .append("` | *Horizon:* ")
                 .append(properties.getForecastHorizonDays())
-                .append(" Trading Days\n");
+                .append(" Trading Days\n\n");
 
-        boolean hasEvent = report.forecasts().stream().anyMatch(MonthlyRangeForecast::isEventMonth);
-        if (hasEvent) {
-            sb.append("⚡ *Regime:* ⚠️ *EARNINGS MONTH* (Asymmetric Multiplier: PE ")
-                    .append(properties.getEventPeMultiplier())
-                    .append("σ / CE ")
-                    .append(properties.getEventCeMultiplier())
-                    .append("σ Applied)\n\n");
-        } else {
-            sb.append("⚡ *Regime:* ✅ *NORMAL MONTH* (PE ")
-                    .append(properties.getNormalPeMultiplier())
-                    .append("σ / CE ")
-                    .append(properties.getNormalCeMultiplier())
-                    .append("σ Multipliers)\n\n");
-        }
-
-        // Executive Summary: Top 3 Directional & Top 3 Sideways Rankings
-        if (report.ranking() != null) {
-            sb.append("🏆 *TOP 3 DIRECTIONAL PICKS (1x2x1 Broken-Wing Butterfly)*\n");
-            var dirPicks = report.ranking().topDirectionalPicks();
-            if (dirPicks == null || dirPicks.isEmpty()) {
-                sb.append(" • _No stocks met >= ")
-                        .append(properties.getStrongConvictionThreshold())
-                        .append("% conviction threshold (market in neutral/drift regime)_\n");
-            } else {
-                for (var pick : dirPicks) {
-                    var bwb = pick.butterflyRecommendation();
-                    String icon =
-                            pick.bias()
-                                            == com.tradingbot.strategy.monthlyrange.model.MarketBias
-                                                    .BULLISH
-                                    ? "🐂"
-                                    : "🐻";
-                    sb.append(" • *")
-                            .append(pick.symbol())
-                            .append("* (Spot: ₹")
-                            .append(pick.spotPrice())
-                            .append("): ")
-                            .append(icon)
-                            .append(" *")
-                            .append(pick.bias())
-                            .append("* (`")
-                            .append(
-                                    pick.bias()
-                                                    == com.tradingbot.strategy.monthlyrange.model
-                                                            .MarketBias.BULLISH
-                                            ? pick.bullishProbabilityPct()
-                                            : pick.bearishProbabilityPct())
-                            .append("%` Conf)\n");
-                    if (bwb != null && bwb.actionable()) {
-                        sb.append("   ➡️ *")
-                                .append(bwb.optionType())
-                                .append(" 1x2x1:* Buy 1x `₹")
-                                .append(bwb.wing1Strike())
-                                .append("` (4 OTM) | Sell 2x `₹")
-                                .append(bwb.sellBodyStrike())
-                                .append("` (8 OTM) | Buy 1x `₹")
-                                .append(bwb.wing2Strike())
-                                .append("` (10 OTM)\n");
-                    }
-                }
-            }
-            sb.append("\n");
-
-            sb.append("🛡️ *TOP 3 SIDEWAYS PICKS (GARCH Delta-Neutral Strangle)*\n");
-            var sidePicks = report.ranking().topSidewaysPicks();
-            if (sidePicks == null || sidePicks.isEmpty()) {
-                sb.append(" • _No neutral candidates identified_\n");
-            } else {
-                for (var pick : sidePicks) {
-                    // Find corresponding forecast for safe strikes
-                    var forecast =
-                            report.forecasts().stream()
-                                    .filter(f -> f.symbol().equalsIgnoreCase(pick.symbol()))
-                                    .findFirst()
-                                    .orElse(null);
-                    sb.append(" • *")
-                            .append(pick.symbol())
-                            .append("* (Spot: ₹")
-                            .append(pick.spotPrice())
-                            .append("): ⚖️ *NEUTRAL* (`")
-                            .append(pick.bullishProbabilityPct())
-                            .append("% Bull` / `")
-                            .append(pick.bearishProbabilityPct())
-                            .append("% Bear`)\n");
-                    if (forecast != null
-                            && forecast.safePeStrike() != null
-                            && forecast.safeCeStrike() != null) {
-                        sb.append("   ➡️ *Safe Strangle:* PE `₹")
-                                .append(forecast.safePeStrike())
-                                .append("` - CE `₹")
-                                .append(forecast.safeCeStrike())
-                                .append("`\n");
-                    }
-                }
-            }
-            sb.append("\n═══════════════════════════════════\n\n");
-        }
-
-        // Detailed Symbol Breakdown
         for (MonthlyRangeForecast f : report.forecasts()) {
             if (f.spotPrice().compareTo(BigDecimal.ZERO) <= 0) {
                 sb.append("⚠️ *").append(f.symbol()).append("*: Data Unavailable\n\n");
                 continue;
             }
 
-            double peBuffer =
-                    calculateBufferPct(f.spotPrice().doubleValue(), f.safePeStrike().doubleValue());
-            double ceBuffer =
-                    calculateBufferPct(f.safeCeStrike().doubleValue(), f.spotPrice().doubleValue());
-
-            String badge = f.isEventMonth() ? "⚠️ " + f.eventReason() : "✅ Normal";
+            var ds = f.directionalScore();
+            String dirIcon = "⚖️";
+            String biasStr = "NEUTRAL";
+            String confStr = "";
+            if (ds != null) {
+                dirIcon =
+                        ds.bias() == MarketBias.BULLISH
+                                ? "🐂"
+                                : ds.bias() == MarketBias.BEARISH ? "🐻" : "⚖️";
+                biasStr = ds.bias().name();
+                double conf =
+                        ds.bias() == MarketBias.BULLISH
+                                ? ds.bullishProbabilityPct()
+                                : (ds.bias() == MarketBias.BEARISH
+                                        ? ds.bearishProbabilityPct()
+                                        : Math.max(
+                                                ds.bullishProbabilityPct(),
+                                                ds.bearishProbabilityPct()));
+                confStr = String.format(BotLocale.INSTANCE, " (`%.0f%%`)", conf);
+            }
 
             sb.append("🔹 *")
                     .append(f.symbol())
                     .append("* (Spot: ₹")
                     .append(f.spotPrice())
                     .append(")\n");
-
-            if (f.directionalScore() != null) {
-                var ds = f.directionalScore();
-                String dirIcon =
-                        ds.bias() == com.tradingbot.strategy.monthlyrange.model.MarketBias.BULLISH
-                                ? "🐂"
-                                : ds.bias()
-                                                == com.tradingbot.strategy.monthlyrange.model
-                                                        .MarketBias.BEARISH
-                                        ? "🐻"
-                                        : "⚖️";
-                sb.append(" • *Directional Bias:* ")
-                        .append(dirIcon)
-                        .append(" *")
-                        .append(ds.bias())
-                        .append("* (`")
-                        .append(ds.bullishProbabilityPct())
-                        .append("% Bull` / `")
-                        .append(ds.bearishProbabilityPct())
-                        .append("% Bear`) | *Conv:* `")
-                        .append(ds.conviction())
-                        .append("`\n");
-
-                var bwb = ds.butterflyRecommendation();
-                if (bwb != null && bwb.actionable()) {
-                    sb.append(" • 🦋 *1x2x1 ")
-                            .append(bwb.optionType())
-                            .append(" Butterfly:* Buy 1x `₹")
-                            .append(bwb.wing1Strike())
-                            .append("` | Sell 2x `₹")
-                            .append(bwb.sellBodyStrike())
-                            .append("` | Buy 1x `₹")
-                            .append(bwb.wing2Strike())
-                            .append("`\n");
-                }
-            }
-
-            sb.append(" • *Regime:* `")
-                    .append(badge)
-                    .append("` | *Conf:* ")
-                    .append(f.confidenceMultiplier())
-                    .append("σ\n");
-            sb.append(" • *GARCH Monthly Vol:* `")
-                    .append(f.monthlyVolPct())
-                    .append("%` (Ann: ")
-                    .append(f.annualizedVolPct())
-                    .append("%)\n");
-            sb.append(" • *GARCH Band:* ₹")
+            sb.append(" • *2σ Range:* `₹")
                     .append(f.lower2Sd())
                     .append(" - ₹")
                     .append(f.upper2Sd())
+                    .append("`\n");
+            sb.append(" • *Direction:* ")
+                    .append(dirIcon)
+                    .append(" *")
+                    .append(biasStr)
+                    .append("*")
+                    .append(confStr)
                     .append("\n");
-            if (f.atmStraddleMove() != null && f.atmStraddleMove().compareTo(BigDecimal.ZERO) > 0) {
-                sb.append(" • *ATM Straddle Move:* ±₹").append(f.atmStraddleMove()).append("\n");
+
+            if (f.safePeStrike() != null && f.safeCeStrike() != null) {
+                sb.append(" • *Safe Strikes:* PE `₹")
+                        .append(f.safePeStrike())
+                        .append("` | CE `₹")
+                        .append(f.safeCeStrike())
+                        .append("`\n");
             }
-            if (f.maxPutOiStrike() != null && f.maxPutOiStrike().compareTo(BigDecimal.ZERO) > 0) {
-                sb.append(" • 🛡️ *OI Support (Max Put):* ₹")
-                        .append(f.maxPutOiStrike())
-                        .append("\n");
-            }
-            if (f.maxCallOiStrike() != null && f.maxCallOiStrike().compareTo(BigDecimal.ZERO) > 0) {
-                sb.append(" • 🛡️ *OI Resistance (Max Call):* ₹")
-                        .append(f.maxCallOiStrike())
-                        .append("\n");
-            }
-            sb.append(" • 🎯 *FINAL SAFE PE STRIKE:* `₹")
-                    .append(f.safePeStrike())
-                    .append("` [ -")
-                    .append(String.format(BotLocale.INSTANCE, "%.1f", peBuffer))
-                    .append("% ]\n");
-            sb.append(" • 🎯 *FINAL SAFE CE STRIKE:* `₹")
-                    .append(f.safeCeStrike())
-                    .append("` [ +")
-                    .append(String.format(BotLocale.INSTANCE, "%.1f", ceBuffer))
-                    .append("% ]\n");
-            sb.append(" • *ATR-22:* ₹")
-                    .append(f.atr22())
-                    .append(" | *HV-30:* ")
-                    .append(f.hv30AnnualizedPct())
-                    .append("%\n\n");
+            sb.append("\n");
         }
 
-        sb.append("💡 *Execution Rules:*\n")
-                .append(
-                        "1. **Directional Conviction >= 65%:** Deploy recommended 1x2x1 Broken-Wing Butterfly.\n")
-                .append(
-                        "2. **Neutral / Sideways:** Sell OTM Strangles / Credit Spreads outside Final Safe Strikes.\n")
-                .append("3. Book profits early at *70%–80% decay*.\n")
-                .append(
-                        "4. ⚠️ *Physical Delivery Risk:* Square off or roll short stock options before Expiry Week Monday to avoid 100% margin spikes.");
-        return sb.toString();
-    }
-
-    private double calculateBufferPct(double high, double low) {
-        if (low <= 0) {
-            return 0.0;
-        }
-        return ((high - low) / low) * 100.0;
+        return sb.toString().trim();
     }
 }
