@@ -161,6 +161,19 @@ public abstract class AbstractTradeExecutionConsumer implements TradeExecutionCo
 
     private void processSignalSafe(TradeSignal signal) {
         try {
+            // Lane isolation: a mapped consumer only executes its own strategies. Without this,
+            // resolveMode's fallback let unmapped strategyIds run in the consumer's default mode,
+            // so a new strategy would silently share every existing lane.
+            if (!strategyModes.isEmpty()
+                    && (signal.strategyId() == null
+                            || !strategyModes.containsKey(signal.strategyId()))) {
+                log.debug(
+                        "[CONSUMER:{}] Ignoring signal {} from unmapped strategy {}",
+                        consumerId,
+                        signal.signalId(),
+                        signal.strategyId());
+                return;
+            }
             int targetQty = calculateQuantity(signal.baseQuantity());
             if (targetQty <= 0) {
                 log.warn(
