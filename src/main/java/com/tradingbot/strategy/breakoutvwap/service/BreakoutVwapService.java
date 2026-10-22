@@ -2,9 +2,11 @@ package com.tradingbot.strategy.breakoutvwap.service;
 
 import com.tradingbot.bus.SignalPublisher;
 import com.tradingbot.indicator.TechnicalAnalysisService;
+import com.tradingbot.marketdata.NseOiSpurtClient;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.marketdata.feed.ShoonyaFeedClient;
 import com.tradingbot.model.Candle;
+import com.tradingbot.model.NseOiSpurtItem;
 import com.tradingbot.model.strategy.StockQuoteSnapshot;
 import com.tradingbot.strategy.SignalAction;
 import com.tradingbot.strategy.TradeSignal;
@@ -67,6 +69,7 @@ public class BreakoutVwapService {
     private final BvsProperties properties;
     private final TechnicalAnalysisService technicalAnalysisService;
     private final ShoonyaMarketDataService marketDataService;
+    private final NseOiSpurtClient oiSpurtClient;
     private final BvsUniverseScanner scanner;
     private final ShoonyaFeedClient feedClient;
     private final TelegramService telegramService;
@@ -93,6 +96,7 @@ public class BreakoutVwapService {
             BvsProperties properties,
             TechnicalAnalysisService technicalAnalysisService,
             ShoonyaMarketDataService marketDataService,
+            NseOiSpurtClient oiSpurtClient,
             BvsUniverseScanner scanner,
             ShoonyaFeedClient feedClient,
             TelegramService telegramService,
@@ -100,6 +104,7 @@ public class BreakoutVwapService {
         this.properties = properties;
         this.technicalAnalysisService = technicalAnalysisService;
         this.marketDataService = marketDataService;
+        this.oiSpurtClient = oiSpurtClient;
         this.scanner = scanner;
         this.feedClient = feedClient;
         this.telegramService = telegramService;
@@ -108,6 +113,23 @@ public class BreakoutVwapService {
 
     void setClock(Clock clock) {
         this.clock = clock;
+    }
+
+    /**
+     * Staggered OI-spurt prefetch (09:25:05, twenty seconds before the 09:25:25 scan — spec rule
+     * 4): stages the result for the scanner. A failed prefetch stages nothing, so the scan falls
+     * back to its own fetch.
+     */
+    public void prefetchOiSpurts() {
+        try {
+            List<NseOiSpurtItem> items =
+                    oiSpurtClient.fetchTopUnderlyings(properties.getBucketSize() * 2);
+            scanner.stageOiItems(items != null ? items : List.of());
+        } catch (RuntimeException e) {
+            log.warn(
+                    "BVS OI prefetch failed ({}); the scan will fetch its own list",
+                    e.getMessage());
+        }
     }
 
     // --- lifecycle ---
@@ -724,10 +746,19 @@ public class BreakoutVwapService {
                 feedClient == null
                         ? Map.of()
                         : feedClient.snapshots(openPositions.keySet(), QUOTE_MAX_AGE);
+        int squared = 0;
         for (BvsPosition position : List.copyOf(openPositions.values())) {
             StockQuoteSnapshot quote = quotes.get(position.getSymbol());
             double price = quote != null ? quote.ltp() : position.getEntryPrice();
             executeFullExit(position, price, "HARD_EXIT_1500", SignalAction.SQUARE_OFF);
+            squared++;
+        }
+        if (squared > 0) {
+            notifyTelegram(
+                    "BVS | hard exit: "
+                            + squared
+                            + " position(s) squared off at "
+                            + properties.getHardExit());
         }
     }
 

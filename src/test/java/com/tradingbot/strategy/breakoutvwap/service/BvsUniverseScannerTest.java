@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.tradingbot.marketdata.HistoricalOhlcCacheService;
@@ -318,6 +320,41 @@ class BvsUniverseScannerTest {
 
         assertThat(universe.allSymbols()).hasSize(9);
         assertThat(universe.byBucket().getOrDefault(BvsBucket.OI_SPURT, List.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "a staged prefetch list is consumed once, then the scanner falls back to its own fetch")
+    void scanConsumesStagedOiListOnce() {
+        stubUniverse("G1", "G2", "G3", "L1", "L2", "L3", "O1", "O2", "O3");
+        Map<String, Double> pct = new LinkedHashMap<>();
+        pct.put("G1", 5.0);
+        pct.put("G2", 4.0);
+        pct.put("G3", 3.0);
+        pct.put("L1", -1.0);
+        pct.put("L2", -2.0);
+        pct.put("L3", -3.0);
+        pct.put("O1", 0.0);
+        pct.put("O2", 0.0);
+        pct.put("O3", 0.0);
+        stubQuotes(pct);
+        when(banPeriodClient.fetchBanList()).thenReturn(Set.of());
+        when(banPeriodClient.isLastFetchSuccessful()).thenReturn(true);
+        when(ohlcCacheService.getDailyCandles(any())).thenReturn(threeSessionSeries());
+        // nothing stubbed for fetchTopUnderlyings — a staged list must prevent the call
+        BvsUniverseScanner uut = scanner();
+        uut.stageOiItems(List.of(oiItem("O1"), oiItem("O2"), oiItem("O3")));
+
+        BvsUniverse stagedScan = uut.scan();
+
+        verify(oiSpurtClient, never()).fetchTopUnderlyings(anyInt());
+        assertThat(stagedScan.byBucket().get(BvsBucket.OI_SPURT)).containsExactly("O1", "O2", "O3");
+
+        // second scan: the staged list was consumed once -> falls back to the (empty) own fetch
+        BvsUniverse fallbackScan = uut.scan();
+
+        verify(oiSpurtClient).fetchTopUnderlyings(anyInt());
+        assertThat(fallbackScan.byBucket().getOrDefault(BvsBucket.OI_SPURT, List.of())).isEmpty();
     }
 
     private static NseOiSpurtItem oiItem(String symbol) {

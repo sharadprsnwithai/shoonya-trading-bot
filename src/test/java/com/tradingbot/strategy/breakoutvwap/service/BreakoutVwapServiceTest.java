@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.tradingbot.bus.SignalPublisher;
 import com.tradingbot.indicator.TechnicalAnalysisService;
+import com.tradingbot.marketdata.NseOiSpurtClient;
 import com.tradingbot.marketdata.ShoonyaMarketDataService;
 import com.tradingbot.marketdata.feed.ShoonyaFeedClient;
 import com.tradingbot.model.Candle;
@@ -85,6 +86,7 @@ class BreakoutVwapServiceTest {
                         properties,
                         new TechnicalAnalysisService(),
                         marketDataService,
+                        mock(NseOiSpurtClient.class),
                         scanner,
                         feedClient,
                         telegramService,

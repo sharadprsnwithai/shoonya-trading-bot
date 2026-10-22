@@ -42,6 +42,9 @@ public class BvsUniverseScanner {
     private final NseBanPeriodClient banPeriodClient;
     private final HistoricalOhlcCacheService ohlcCacheService;
 
+    /** One-shot OI-spurt list staged by the 09:25:05 prefetch and consumed by the 09:25:25 scan. */
+    private volatile List<NseOiSpurtItem> stagedOiItems;
+
     public BvsUniverseScanner(
             BvsProperties properties,
             ShoonyaFeedClient feedClient,
@@ -55,6 +58,11 @@ public class BvsUniverseScanner {
         this.oiSpurtClient = oiSpurtClient;
         this.banPeriodClient = banPeriodClient;
         this.ohlcCacheService = ohlcCacheService;
+    }
+
+    /** Stages the staggered prefetch result; the next scan consumes it once, then falls back. */
+    void stageOiItems(List<NseOiSpurtItem> items) {
+        this.stagedOiItems = items;
     }
 
     /**
@@ -99,21 +107,25 @@ public class BvsUniverseScanner {
                     e.getMessage());
         }
 
+        List<NseOiSpurtItem> oiItems = stagedOiItems;
+        stagedOiItems = null; // one-shot: a staged prefetch serves exactly one scan
+        if (oiItems == null) {
+            try {
+                oiItems = oiSpurtClient.fetchTopUnderlyings(properties.getBucketSize() * 2);
+            } catch (RuntimeException e) {
+                log.warn(
+                        "BVS degrade: OI-spurt fetch failed ({}), OI_SPURT bucket empty",
+                        e.getMessage());
+                oiItems = List.of();
+            }
+        }
         List<String> rankedOi = new ArrayList<>();
-        try {
-            List<NseOiSpurtItem> oiItems =
-                    oiSpurtClient.fetchTopUnderlyings(properties.getBucketSize() * 2);
-            if (oiItems != null) {
-                for (NseOiSpurtItem item : oiItems) {
-                    if (item != null && candidateSet.contains(item.symbol())) {
-                        rankedOi.add(item.symbol());
-                    }
+        if (oiItems != null) {
+            for (NseOiSpurtItem item : oiItems) {
+                if (item != null && candidateSet.contains(item.symbol())) {
+                    rankedOi.add(item.symbol());
                 }
             }
-        } catch (RuntimeException e) {
-            log.warn(
-                    "BVS degrade: OI-spurt fetch failed ({}), OI_SPURT bucket empty",
-                    e.getMessage());
         }
 
         List<String> squeezePool = squeezeCandidates(candidates);
