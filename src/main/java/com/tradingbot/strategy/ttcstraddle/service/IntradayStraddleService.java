@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Core Execution Engine for the 10:00 AM Intraday Straddle Strategy with 30% Stop-Loss. Execution:
- * - 09:16 AM: Buy 20-strikes OTM Call and Put hedges - 10:00 AM: Sell ATM Call and ATM Put with
+ * - 09:30 AM: Buy 20-strikes OTM Call and Put hedges - 10:00 AM: Sell ATM Call and ATM Put with
  * independent 30% Stop-Loss - 10:00 AM - 15:00 PM: Monitor 30% SL breaches (if other leg rises 30%,
  * exit that as well) - 15:00 PM: Square off all remaining positions (surviving short leg + hedges)
  */
@@ -84,7 +84,7 @@ public class IntradayStraddleService {
         return null;
     }
 
-    /** 09:16 AM: Buys 20 strikes OTM Call and Put protection wings. */
+    /** 09:30 AM: Buys 20 strikes OTM Call and Put protection wings. */
     public synchronized void executeHedgeWingEntry(LocalTime now) {
         if (!isEligibleToTrade()) {
             return;
@@ -97,7 +97,7 @@ public class IntradayStraddleService {
         BigDecimal spot = fetchSpotPrice(instrument);
         if (spot.compareTo(BigDecimal.ZERO) <= 0) {
             log.warn(
-                    "[STRADDLE] Unable to resolve spot price for {} at 09:16. Skipping hedge entry.",
+                    "[STRADDLE] Unable to resolve spot price for {} at 09:30. Skipping hedge entry.",
                     instrument);
             return;
         }
@@ -131,7 +131,7 @@ public class IntradayStraddleService {
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
                 qty,
-                "09:16 20-OTM Hedge Buy");
+                "09:30 20-OTM Hedge Buy");
         publishSignal(
                 instrument,
                 peTradingSymbol,
@@ -140,7 +140,7 @@ public class IntradayStraddleService {
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
                 qty,
-                "09:16 20-OTM Hedge Buy");
+                "09:30 20-OTM Hedge Buy");
 
         StraddleLeg ceLeg =
                 new StraddleLeg(

@@ -62,16 +62,15 @@ Non-directional clock-driven intraday option selling on NIFTY (Mon 1-DTE / Tue 0
    - **Monday:** NIFTY (1-DTE, Tuesday expiry) — 81.8% historical win rate.
    - **Tuesday:** NIFTY (0-DTE, same-day expiry).
    - **Wednesday:** SENSEX (1-DTE, Thursday expiry).
-   - *Thursday & Friday:* Cash-protected (Thursday Sensex 0-DTE disabled by default to avoid gamma whipsaws).
-2. **Double-Session Framework:**
-   - **09:16 AM:** Buy deep OTM protection wings (margin drop from ~₹1.3L to ~₹50k/lot).
-   - **09:22 AM:** Sell morning ATM straddle with 50% independent leg stop loss.
-   - **10:16 AM (NIFTY) / 10:30 AM (SENSEX):** Square off morning short legs (lock morning theta, keep hedges open).
-   - **14:17 PM:** Sell fresh afternoon ATM straddle with 50% SL.
-   - **15:35 PM:** Final hard square-off of all 4 open legs (flat EOD, zero overnight risk).
+   - **Thursday:** SENSEX (0-DTE, same-day expiry).
+   - *Friday:* Cash-protected (off).
+2. **Execution Framework:**
+   - **09:30 AM:** Buy 20-strikes OTM protection wings (`ATM ± 1,000 pts` on Nifty, `ATM ± 2,000 pts` on Sensex) to drop exchange margin from ~₹1.3L to ~₹50,000/lot.
+   - **10:00 AM:** Sell ATM Call & ATM Put (1x CE, 1x PE) at 10:00 AM spot.
+   - **30% Independent Stop Loss:** If either leg rises by 30%, exit that leg immediately. Surviving leg continues running. If other leg ALSO rises by 30% from entry, exit it as well.
+   - **15:00 PM:** Hard square-off of surviving short leg and hedges (flat EOD, zero overnight risk).
 3. **Institutional Armor:**
-   - 50% Stop loss per short leg (surviving leg continues running; no re-entry).
-   - Hard daily loss kill-switch (default ₹8,000) that automatically latches the strategy OFF on bad whipsaw days.
+   - Hard daily loss kill-switch (default ₹8,000 on 10 lots) that automatically latches the strategy OFF on bad whipsaw days.
    - Telegram commands: `/straddle_status` for live positions and `/straddle_exit` for manual emergency square-off.
 
 ---

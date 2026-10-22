@@ -27,7 +27,7 @@ class IntradayStraddleSchedulerTest {
 
     @Test
     @DisplayName(
-            "Scheduler delegates daily reset, 09:16 hedge entry, 10:00 straddle entry, and 15:00 hard exit")
+            "Scheduler delegates daily reset, 09:30 hedge entry, 10:00 straddle entry, and 15:00 hard exit")
     void testSchedulerLifecycleDelegation() {
         scheduler.scheduledDailyReset();
         verify(service, times(1)).resetDaily();
