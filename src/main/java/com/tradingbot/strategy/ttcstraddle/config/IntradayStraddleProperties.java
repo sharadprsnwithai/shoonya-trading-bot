@@ -13,7 +13,6 @@ public class IntradayStraddleProperties {
     private int lots = 1;
     private double maxDailyLoss = 8000.0;
     private double slPercentage = 30.0;
-    private boolean thursdayEnabled = true; // Monday-Thursday active
     private boolean telegramAlerts = true;
     private String stateFile = "./data/straddle-state.json";
 
@@ -55,14 +54,6 @@ public class IntradayStraddleProperties {
 
     public void setSlPercentage(double slPercentage) {
         this.slPercentage = slPercentage;
-    }
-
-    public boolean isThursdayEnabled() {
-        return thursdayEnabled;
-    }
-
-    public void setThursdayEnabled(boolean thursdayEnabled) {
-        this.thursdayEnabled = thursdayEnabled;
     }
 
     public boolean isTelegramAlerts() {

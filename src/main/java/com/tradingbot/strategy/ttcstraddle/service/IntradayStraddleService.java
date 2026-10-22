@@ -76,9 +76,7 @@ public class IntradayStraddleService {
         DayOfWeek dow = date.getDayOfWeek();
         if (dow == DayOfWeek.MONDAY || dow == DayOfWeek.TUESDAY) {
             return "NIFTY";
-        } else if (dow == DayOfWeek.WEDNESDAY) {
-            return "SENSEX";
-        } else if (dow == DayOfWeek.THURSDAY && properties.isThursdayEnabled()) {
+        } else if (dow == DayOfWeek.WEDNESDAY || dow == DayOfWeek.THURSDAY) {
             return "SENSEX";
         }
         return null;

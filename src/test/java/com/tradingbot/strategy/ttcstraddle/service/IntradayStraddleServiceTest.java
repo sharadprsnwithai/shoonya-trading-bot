@@ -37,7 +37,6 @@ class IntradayStraddleServiceTest {
         properties.setLots(1);
         properties.setMaxDailyLoss(8000.0);
         properties.setSlPercentage(30.0);
-        properties.setThursdayEnabled(true);
 
         marketDataService = mock(ShoonyaMarketDataService.class);
         signalPublisher = mock(SignalPublisher.class);
