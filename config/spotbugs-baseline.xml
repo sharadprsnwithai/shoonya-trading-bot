@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<BugCollection version="4.8.6" sequence="0" timestamp="1792544464257" analysisTimestamp="1792544464257" release="">
+<BugCollection version="4.8.6" sequence="0" timestamp="1792698299295" analysisTimestamp="1792698299295" release="">
   <Project projectName="shoonya-trading-bot (spotbugsMain)">
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\auth\ShoonyaAuthenticator.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\backtest\BacktestResult.class</Jar>
@@ -120,6 +120,20 @@
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\service\LvrEntryGate$EntryGateInput.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\service\LvrEntryGate.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\ShoonyaTradingBotApp.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\config\BvsProperties.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\model\BvsBias.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\model\BvsBucket.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\model\BvsPosition.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\model\BvsSetup.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\model\BvsSetupState.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\model\BvsUniverse.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\persistence\BvsDailyState.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\persistence\BvsPositionSnapshot.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\persistence\BvsSetupSnapshot.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\persistence\BvsStateStore.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\car\CarCalculator.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\car\CarWeekCalendar.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\car\CarWeeklyGttService$ScanResult.class</Jar>
@@ -188,6 +202,7 @@
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\MonthlyRangeReport.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\MonthlyUniverseRanking.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\SmilePoint.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\WeeklyStrategyRecommendation.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\model\WingZoneForecast.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\scheduler\GarchRangeScheduler.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\monthlyrange\scheduler\MonthlyRangeScheduler.class</Jar>
@@ -206,6 +221,12 @@
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\silverorb\scheduler\SilverOrbScheduler.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\silverorb\service\SilverOrbService.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\TradeSignal.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\ttcstraddle\config\IntradayStraddleProperties.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\ttcstraddle\model\StraddleLeg.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\ttcstraddle\model\StraddleSessionPhase.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.class</Jar>
+    <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\telegram\TelegramBotCommandListener.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\telegram\TelegramService.class</Jar>
     <Jar>D:\code\shoonya-trading-bot\build\classes\java\main\com\tradingbot\util\BotLocale.class</Jar>
@@ -720,8 +741,8 @@
     <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
     <LongMessage>com.tradingbot.execution.consumer.AbstractTradeExecutionConsumer.getStrategyModes() may expose internal representation by returning AbstractTradeExecutionConsumer.strategyModes</LongMessage>
     <Class classname="com.tradingbot.execution.consumer.AbstractTradeExecutionConsumer" primary="true">
-      <SourceLine classname="com.tradingbot.execution.consumer.AbstractTradeExecutionConsumer" start="28" end="942" sourcefile="AbstractTradeExecutionConsumer.java" sourcepath="com/tradingbot/execution/consumer/AbstractTradeExecutionConsumer.java" relSourcepath="java\com\tradingbot\execution\consumer\AbstractTradeExecutionConsumer.java">
-        <Message>At AbstractTradeExecutionConsumer.java:[lines 28-942]</Message>
+      <SourceLine classname="com.tradingbot.execution.consumer.AbstractTradeExecutionConsumer" start="28" end="955" sourcefile="AbstractTradeExecutionConsumer.java" sourcepath="com/tradingbot/execution/consumer/AbstractTradeExecutionConsumer.java" relSourcepath="java\com\tradingbot\execution\consumer\AbstractTradeExecutionConsumer.java">
+        <Message>At AbstractTradeExecutionConsumer.java:[lines 28-955]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.execution.consumer.AbstractTradeExecutionConsumer</Message>
     </Class>
@@ -3478,6 +3499,315 @@
       <Message>At TradeSignal.java:[line 10]</Message>
     </SourceLine>
   </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="94418269565139de0cefe44e384fbaa4" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler(BreakoutVwapService, BvsProperties) may expose internal representation by storing an externally mutable object into BreakoutVwapScheduler.properties</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" start="16" end="88" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java">
+        <Message>At BreakoutVwapScheduler.java:[lines 16-88]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService;Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" start="22" end="25" startBytecode="0" endBytecode="88" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler(BreakoutVwapService, BvsProperties)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" name="properties" signature="Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java">
+        <Message>In BreakoutVwapScheduler.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler.properties</Message>
+    </Field>
+    <LocalVariable name="properties" register="2" pc="11" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named properties</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" primary="true" start="24" end="24" startBytecode="11" endBytecode="11" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java">
+      <Message>At BreakoutVwapScheduler.java:[line 24]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="3eddba103cca3538008b30fe84e229d1" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler(BreakoutVwapService, BvsProperties) may expose internal representation by storing an externally mutable object into BreakoutVwapScheduler.service</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" start="16" end="88" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java">
+        <Message>At BreakoutVwapScheduler.java:[lines 16-88]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService;Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" start="22" end="25" startBytecode="0" endBytecode="88" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler(BreakoutVwapService, BvsProperties)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" name="service" signature="Lcom/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java">
+        <Message>In BreakoutVwapScheduler.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler.service</Message>
+    </Field>
+    <LocalVariable name="service" register="1" pc="6" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named service</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.scheduler.BreakoutVwapScheduler" primary="true" start="23" end="23" startBytecode="6" endBytecode="6" sourcefile="BreakoutVwapScheduler.java" sourcepath="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\scheduler\BreakoutVwapScheduler.java">
+      <Message>At BreakoutVwapScheduler.java:[line 23]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="2eea1fa3d02c4505859b78c1e4d8e121" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService(BvsProperties, TechnicalAnalysisService, ShoonyaMarketDataService, NseOiSpurtClient, BvsUniverseScanner, ShoonyaFeedClient, TelegramService, SignalPublisher) may expose internal representation by storing an externally mutable object into BreakoutVwapService.feedClient</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="57" end="1043" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>At BreakoutVwapService.java:[lines 57-1043]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/indicator/TechnicalAnalysisService;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/bus/SignalPublisher;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="103" end="112" startBytecode="0" endBytecode="292" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService(BvsProperties, TechnicalAnalysisService, ShoonyaMarketDataService, NseOiSpurtClient, BvsUniverseScanner, ShoonyaFeedClient, TelegramService, SignalPublisher)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" name="feedClient" signature="Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>In BreakoutVwapService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService.feedClient</Message>
+    </Field>
+    <LocalVariable name="feedClient" register="6" pc="95" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named feedClient</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" start="109" end="109" startBytecode="95" endBytecode="95" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+      <Message>At BreakoutVwapService.java:[line 109]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="e0f8024df3f9e494a20ce2e4ab4107f5" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService(BvsProperties, TechnicalAnalysisService, ShoonyaMarketDataService, NseOiSpurtClient, BvsUniverseScanner, ShoonyaFeedClient, TelegramService, SignalPublisher) may expose internal representation by storing an externally mutable object into BreakoutVwapService.oiSpurtClient</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="57" end="1043" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>At BreakoutVwapService.java:[lines 57-1043]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/indicator/TechnicalAnalysisService;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/bus/SignalPublisher;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="103" end="112" startBytecode="0" endBytecode="292" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService(BvsProperties, TechnicalAnalysisService, ShoonyaMarketDataService, NseOiSpurtClient, BvsUniverseScanner, ShoonyaFeedClient, TelegramService, SignalPublisher)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" name="oiSpurtClient" signature="Lcom/tradingbot/marketdata/NseOiSpurtClient;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>In BreakoutVwapService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService.oiSpurtClient</Message>
+    </Field>
+    <LocalVariable name="oiSpurtClient" register="4" pc="83" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named oiSpurtClient</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" start="107" end="107" startBytecode="83" endBytecode="83" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+      <Message>At BreakoutVwapService.java:[line 107]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="697b2744233318cb3f6103527fb9d7ba" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService(BvsProperties, TechnicalAnalysisService, ShoonyaMarketDataService, NseOiSpurtClient, BvsUniverseScanner, ShoonyaFeedClient, TelegramService, SignalPublisher) may expose internal representation by storing an externally mutable object into BreakoutVwapService.properties</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="57" end="1043" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>At BreakoutVwapService.java:[lines 57-1043]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/indicator/TechnicalAnalysisService;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/bus/SignalPublisher;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="103" end="112" startBytecode="0" endBytecode="292" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService(BvsProperties, TechnicalAnalysisService, ShoonyaMarketDataService, NseOiSpurtClient, BvsUniverseScanner, ShoonyaFeedClient, TelegramService, SignalPublisher)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" name="properties" signature="Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>In BreakoutVwapService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService.properties</Message>
+    </Field>
+    <LocalVariable name="properties" register="1" pc="67" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named properties</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" start="104" end="104" startBytecode="67" endBytecode="67" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+      <Message>At BreakoutVwapService.java:[line 104]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="IS2_INCONSISTENT_SYNC" priority="2" rank="17" abbrev="IS" category="MT_CORRECTNESS" instanceHash="ed86a3f22c98edae3fe1ac8140fef06b" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="366">
+    <ShortMessage>Inconsistent synchronization</ShortMessage>
+    <LongMessage>Inconsistent synchronization of com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService.clock; locked 60% of time</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="57" end="1043" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>At BreakoutVwapService.java:[lines 57-1043]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService</Message>
+    </Class>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" name="clock" signature="Ljava/time/Clock;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java">
+        <Message>In BreakoutVwapService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService.clock</Message>
+    </Field>
+    <Int value="60" role="INT_SYNC_PERCENT">
+      <Message>Synchronized 60% of the time</Message>
+    </Int>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" primary="true" start="115" end="115" startBytecode="2" endBytecode="2" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_UNSYNC_ACCESS">
+      <Message>Unsynchronized access at BreakoutVwapService.java:[line 115]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="200" end="200" startBytecode="1" endBytecode="1" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_UNSYNC_ACCESS">
+      <Message>Unsynchronized access at BreakoutVwapService.java:[line 200]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="328" end="328" startBytecode="1" endBytecode="1" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_UNSYNC_ACCESS">
+      <Message>Unsynchronized access at BreakoutVwapService.java:[line 328]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="345" end="345" startBytecode="106" endBytecode="106" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_UNSYNC_ACCESS">
+      <Message>Unsynchronized access at BreakoutVwapService.java:[line 345]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="578" end="578" startBytecode="1" endBytecode="1" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_SYNC_ACCESS">
+      <Message>Synchronized access at BreakoutVwapService.java:[line 578]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="617" end="617" startBytecode="302" endBytecode="302" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_SYNC_ACCESS">
+      <Message>Synchronized access at BreakoutVwapService.java:[line 617]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="154" end="154" startBytecode="66" endBytecode="66" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_SYNC_ACCESS">
+      <Message>Synchronized access at BreakoutVwapService.java:[line 154]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="809" end="809" startBytecode="35" endBytecode="35" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_SYNC_ACCESS">
+      <Message>Synchronized access at BreakoutVwapService.java:[line 809]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="777" end="777" startBytecode="21" endBytecode="21" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_SYNC_ACCESS">
+      <Message>Synchronized access at BreakoutVwapService.java:[line 777]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BreakoutVwapService" start="778" end="778" startBytecode="32" endBytecode="32" sourcefile="BreakoutVwapService.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BreakoutVwapService.java" role="SOURCE_LINE_SYNC_ACCESS">
+      <Message>Synchronized access at BreakoutVwapService.java:[line 778]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="ab82807ccd9a21dff03c2bfd69b09805" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService) may expose internal representation by storing an externally mutable object into BvsUniverseScanner.banPeriodClient</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="35" end="259" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>At BvsUniverseScanner.java:[lines 35-259]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/marketdata/NseBanPeriodClient;Lcom/tradingbot/marketdata/HistoricalOhlcCacheService;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="54" end="61" startBytecode="0" endBytecode="167" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="banPeriodClient" signature="Lcom/tradingbot/marketdata/NseBanPeriodClient;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>In BvsUniverseScanner.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner.banPeriodClient</Message>
+    </Field>
+    <LocalVariable name="banPeriodClient" register="5" pc="28" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named banPeriodClient</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" start="59" end="59" startBytecode="28" endBytecode="28" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+      <Message>At BvsUniverseScanner.java:[line 59]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="36eaecadf17c20d3b7e8bb646406b609" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService) may expose internal representation by storing an externally mutable object into BvsUniverseScanner.feedClient</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="35" end="259" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>At BvsUniverseScanner.java:[lines 35-259]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/marketdata/NseBanPeriodClient;Lcom/tradingbot/marketdata/HistoricalOhlcCacheService;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="54" end="61" startBytecode="0" endBytecode="167" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="feedClient" signature="Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>In BvsUniverseScanner.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner.feedClient</Message>
+    </Field>
+    <LocalVariable name="feedClient" register="2" pc="11" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named feedClient</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" start="56" end="56" startBytecode="11" endBytecode="11" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+      <Message>At BvsUniverseScanner.java:[line 56]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="1846a00bb51cf0fda95093f7c8be5a16" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService) may expose internal representation by storing an externally mutable object into BvsUniverseScanner.ohlcCacheService</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="35" end="259" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>At BvsUniverseScanner.java:[lines 35-259]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/marketdata/NseBanPeriodClient;Lcom/tradingbot/marketdata/HistoricalOhlcCacheService;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="54" end="61" startBytecode="0" endBytecode="167" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="ohlcCacheService" signature="Lcom/tradingbot/marketdata/HistoricalOhlcCacheService;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>In BvsUniverseScanner.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner.ohlcCacheService</Message>
+    </Field>
+    <LocalVariable name="ohlcCacheService" register="6" pc="34" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named ohlcCacheService</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" start="60" end="60" startBytecode="34" endBytecode="34" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+      <Message>At BvsUniverseScanner.java:[line 60]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="fa362f42602fb6ee240db0603b1485cf" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService) may expose internal representation by storing an externally mutable object into BvsUniverseScanner.oiSpurtClient</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="35" end="259" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>At BvsUniverseScanner.java:[lines 35-259]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/marketdata/NseBanPeriodClient;Lcom/tradingbot/marketdata/HistoricalOhlcCacheService;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="54" end="61" startBytecode="0" endBytecode="167" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="oiSpurtClient" signature="Lcom/tradingbot/marketdata/NseOiSpurtClient;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>In BvsUniverseScanner.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner.oiSpurtClient</Message>
+    </Field>
+    <LocalVariable name="oiSpurtClient" register="4" pc="22" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named oiSpurtClient</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" start="58" end="58" startBytecode="22" endBytecode="22" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+      <Message>At BvsUniverseScanner.java:[line 58]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="62257726dc1cde7241712429b3de23cb" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService) may expose internal representation by storing an externally mutable object into BvsUniverseScanner.properties</LongMessage>
+    <Class classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="35" end="259" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>At BvsUniverseScanner.java:[lines 35-259]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;Lcom/tradingbot/marketdata/feed/ShoonyaFeedClient;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/marketdata/NseOiSpurtClient;Lcom/tradingbot/marketdata/NseBanPeriodClient;Lcom/tradingbot/marketdata/HistoricalOhlcCacheService;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" start="54" end="61" startBytecode="0" endBytecode="167" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java"/>
+      <Message>In method new com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner(BvsProperties, ShoonyaFeedClient, ShoonyaMarketDataService, NseOiSpurtClient, NseBanPeriodClient, HistoricalOhlcCacheService)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" name="properties" signature="Lcom/tradingbot/strategy/breakoutvwap/config/BvsProperties;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+        <Message>In BvsUniverseScanner.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner.properties</Message>
+    </Field>
+    <LocalVariable name="properties" register="1" pc="6" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named properties</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.breakoutvwap.service.BvsUniverseScanner" primary="true" start="55" end="55" startBytecode="6" endBytecode="6" sourcefile="BvsUniverseScanner.java" sourcepath="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" relSourcepath="java\com\tradingbot\strategy\breakoutvwap\service\BvsUniverseScanner.java">
+      <Message>At BvsUniverseScanner.java:[line 55]</Message>
+    </SourceLine>
+  </BugInstance>
   <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="c847386281d3ca55bccab1fb25b39bd8" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
     <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
     <LongMessage>com.tradingbot.strategy.car.CarWeeklyGttService.getPortfolioState() may expose internal representation by returning CarWeeklyGttService.portfolioState</LongMessage>
@@ -4171,13 +4501,13 @@
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
     <LongMessage>new com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService(MonthlyRangeProperties, MonthlyRangeCalculator, YahooFinanceService, ShoonyaOptionChainService, TelegramService) may expose internal representation by storing an externally mutable object into MonthlyRangeService.properties</LongMessage>
     <Class classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" start="32" end="394" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java">
-        <Message>At MonthlyRangeService.java:[lines 32-394]</Message>
+      <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" start="34" end="294" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java">
+        <Message>At MonthlyRangeService.java:[lines 34-294]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService</Message>
     </Class>
     <Method classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/monthlyrange/config/MonthlyRangeProperties;Lcom/tradingbot/strategy/monthlyrange/engine/MonthlyRangeCalculator;Lcom/tradingbot/marketdata/YahooFinanceService;Lcom/tradingbot/marketdata/ShoonyaOptionChainService;Lcom/tradingbot/telegram/TelegramService;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
-      <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" start="47" end="53" startBytecode="0" endBytecode="147" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java"/>
+      <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" start="49" end="55" startBytecode="0" endBytecode="147" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java"/>
       <Message>In method new com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService(MonthlyRangeProperties, MonthlyRangeCalculator, YahooFinanceService, ShoonyaOptionChainService, TelegramService)</Message>
     </Method>
     <Field classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" name="properties" signature="Lcom/tradingbot/strategy/monthlyrange/config/MonthlyRangeProperties;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
@@ -4189,8 +4519,8 @@
     <LocalVariable name="properties" register="1" pc="6" role="LOCAL_VARIABLE_NAMED">
       <Message>Local variable named properties</Message>
     </LocalVariable>
-    <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" primary="true" start="48" end="48" startBytecode="6" endBytecode="6" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java">
-      <Message>At MonthlyRangeService.java:[line 48]</Message>
+    <SourceLine classname="com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService" primary="true" start="50" end="50" startBytecode="6" endBytecode="6" sourcefile="MonthlyRangeService.java" sourcepath="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" relSourcepath="java\com\tradingbot\strategy\monthlyrange\service\MonthlyRangeService.java">
+      <Message>At MonthlyRangeService.java:[line 50]</Message>
     </SourceLine>
   </BugInstance>
   <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="5fb9c9593a165932c21eca5fae1b4cd1" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
@@ -4639,18 +4969,436 @@
       <Message>At SilverOrbService.java:[line 317]</Message>
     </SourceLine>
   </BugInstance>
-  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="d76a55f923565c00106d686d4410f51a" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+  <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="f6bba351ae812c30ab14ce34a0419d3f" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getHedgeLongCe() may expose internal representation by returning StraddleDailyState.hedgeLongCe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="getHedgeLongCe" signature="()Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="60" end="60" startBytecode="0" endBytecode="46" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getHedgeLongCe()</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="hedgeLongCe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.hedgeLongCe</Message>
+    </Field>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="60" end="60" startBytecode="4" endBytecode="4" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 60]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="ccfc43d427de87938541d9046818f051" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getHedgeLongPe() may expose internal representation by returning StraddleDailyState.hedgeLongPe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="getHedgeLongPe" signature="()Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="68" end="68" startBytecode="0" endBytecode="46" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getHedgeLongPe()</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="hedgeLongPe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.hedgeLongPe</Message>
+    </Field>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="68" end="68" startBytecode="4" endBytecode="4" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 68]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="7b2f2d066a7b4f0dbce83497436dca06" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getShortCe() may expose internal representation by returning StraddleDailyState.shortCe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="getShortCe" signature="()Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="76" end="76" startBytecode="0" endBytecode="46" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getShortCe()</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="shortCe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.shortCe</Message>
+    </Field>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="76" end="76" startBytecode="4" endBytecode="4" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 76]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="416887f4a34998cdcf1d3904ce6e9e77" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getShortPe() may expose internal representation by returning StraddleDailyState.shortPe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="getShortPe" signature="()Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="84" end="84" startBytecode="0" endBytecode="46" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.getShortPe()</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="shortPe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.shortPe</Message>
+    </Field>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="84" end="84" startBytecode="4" endBytecode="4" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 84]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="edbd40a0f24b0a506266ad614b9acbc3" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
-    <LongMessage>new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient) may expose internal representation by storing an externally mutable object into TelegramBotCommandListener.lvrService</LongMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setHedgeLongCe(StraddleLeg) may expose internal representation by storing an externally mutable object into StraddleDailyState.hedgeLongCe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="setHedgeLongCe" signature="(Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;)V" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="64" end="65" startBytecode="0" endBytecode="61" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setHedgeLongCe(StraddleLeg)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="hedgeLongCe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.hedgeLongCe</Message>
+    </Field>
+    <LocalVariable name="hedgeLongCe" register="1" pc="2" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named hedgeLongCe</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="64" end="64" startBytecode="2" endBytecode="2" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 64]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="bf45f7c2e930a22cb6af4389bfee3b78" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setHedgeLongPe(StraddleLeg) may expose internal representation by storing an externally mutable object into StraddleDailyState.hedgeLongPe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="setHedgeLongPe" signature="(Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;)V" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="72" end="73" startBytecode="0" endBytecode="61" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setHedgeLongPe(StraddleLeg)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="hedgeLongPe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.hedgeLongPe</Message>
+    </Field>
+    <LocalVariable name="hedgeLongPe" register="1" pc="2" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named hedgeLongPe</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="72" end="72" startBytecode="2" endBytecode="2" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 72]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="50eef28e017a676eda32bfd596c1f50e" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setShortCe(StraddleLeg) may expose internal representation by storing an externally mutable object into StraddleDailyState.shortCe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="setShortCe" signature="(Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;)V" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="80" end="81" startBytecode="0" endBytecode="61" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setShortCe(StraddleLeg)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="shortCe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.shortCe</Message>
+    </Field>
+    <LocalVariable name="shortCe" register="1" pc="2" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named shortCe</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="80" end="80" startBytecode="2" endBytecode="2" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 80]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="565c347d96b43b1898f925f4f01749fb" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setShortPe(StraddleLeg) may expose internal representation by storing an externally mutable object into StraddleDailyState.shortPe</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="11" end="89" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>At StraddleDailyState.java:[lines 11-89]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="setShortPe" signature="(Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;)V" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" start="88" end="89" startBytecode="0" endBytecode="61" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.setShortPe(StraddleLeg)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" name="shortPe" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;" isStatic="false" primary="true">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+        <Message>In StraddleDailyState.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState.shortPe</Message>
+    </Field>
+    <LocalVariable name="shortPe" register="1" pc="2" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named shortPe</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.model.StraddleDailyState" primary="true" start="88" end="88" startBytecode="2" endBytecode="2" sourcefile="StraddleDailyState.java" sourcepath="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\model\StraddleDailyState.java">
+      <Message>At StraddleDailyState.java:[line 88]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="dac7873768454f3dfe8e9a40299aef1f" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler(IntradayStraddleService, IntradayStraddleProperties) may expose internal representation by storing an externally mutable object into IntradayStraddleScheduler.properties</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" start="17" end="85" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java">
+        <Message>At IntradayStraddleScheduler.java:[lines 17-85]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;Lcom/tradingbot/strategy/ttcstraddle/config/IntradayStraddleProperties;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" start="25" end="28" startBytecode="0" endBytecode="88" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java"/>
+      <Message>In method new com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler(IntradayStraddleService, IntradayStraddleProperties)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" name="properties" signature="Lcom/tradingbot/strategy/ttcstraddle/config/IntradayStraddleProperties;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java">
+        <Message>In IntradayStraddleScheduler.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler.properties</Message>
+    </Field>
+    <LocalVariable name="properties" register="2" pc="11" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named properties</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" primary="true" start="27" end="27" startBytecode="11" endBytecode="11" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java">
+      <Message>At IntradayStraddleScheduler.java:[line 27]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="eccdf39e0aef1433ff3fbfe57743d5fd" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler(IntradayStraddleService, IntradayStraddleProperties) may expose internal representation by storing an externally mutable object into IntradayStraddleScheduler.straddleService</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" start="17" end="85" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java">
+        <Message>At IntradayStraddleScheduler.java:[lines 17-85]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;Lcom/tradingbot/strategy/ttcstraddle/config/IntradayStraddleProperties;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" start="25" end="28" startBytecode="0" endBytecode="88" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java"/>
+      <Message>In method new com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler(IntradayStraddleService, IntradayStraddleProperties)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" name="straddleService" signature="Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java">
+        <Message>In IntradayStraddleScheduler.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler.straddleService</Message>
+    </Field>
+    <LocalVariable name="straddleService" register="1" pc="6" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named straddleService</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.scheduler.IntradayStraddleScheduler" primary="true" start="26" end="26" startBytecode="6" endBytecode="6" sourcefile="IntradayStraddleScheduler.java" sourcepath="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\scheduler\IntradayStraddleScheduler.java">
+      <Message>At IntradayStraddleScheduler.java:[line 26]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP" priority="2" rank="18" abbrev="EI" category="MALICIOUS_CODE" instanceHash="681338be8929d35b33b45a09fdfe52a5" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by returning reference to mutable object</ShortMessage>
+    <LongMessage>com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.getState() may expose internal representation by returning IntradayStraddleService.state</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="37" end="505" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>At IntradayStraddleService.java:[lines 37-505]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="getState" signature="()Lcom/tradingbot/strategy/ttcstraddle/model/StraddleDailyState;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="500" end="500" startBytecode="0" endBytecode="46" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.getState()</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="state" signature="Lcom/tradingbot/strategy/ttcstraddle/model/StraddleDailyState;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>In IntradayStraddleService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.state</Message>
+    </Field>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" start="500" end="500" startBytecode="4" endBytecode="4" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+      <Message>At IntradayStraddleService.java:[line 500]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="a9856326789f2a42fe3148cfeef54ddc" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService(IntradayStraddleProperties, ShoonyaMarketDataService, SignalPublisher, TelegramService) may expose internal representation by storing an externally mutable object into IntradayStraddleService.properties</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="37" end="505" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>At IntradayStraddleService.java:[lines 37-505]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="&lt;init&gt;" signature="(Lcom/tradingbot/strategy/ttcstraddle/config/IntradayStraddleProperties;Lcom/tradingbot/marketdata/ShoonyaMarketDataService;Lcom/tradingbot/bus/SignalPublisher;Lcom/tradingbot/telegram/TelegramService;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="54" end="60" startBytecode="0" endBytecode="156" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java"/>
+      <Message>In method new com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService(IntradayStraddleProperties, ShoonyaMarketDataService, SignalPublisher, TelegramService)</Message>
+    </Method>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="properties" signature="Lcom/tradingbot/strategy/ttcstraddle/config/IntradayStraddleProperties;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>In IntradayStraddleService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.properties</Message>
+    </Field>
+    <LocalVariable name="properties" register="1" pc="16" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named properties</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" start="55" end="55" startBytecode="16" endBytecode="16" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+      <Message>At IntradayStraddleService.java:[line 55]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="IS2_INCONSISTENT_SYNC" priority="2" rank="17" abbrev="IS" category="MT_CORRECTNESS" instanceHash="f07ef37228c621b3fa0817b86ba80730" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="366">
+    <ShortMessage>Inconsistent synchronization</ShortMessage>
+    <LongMessage>Inconsistent synchronization of com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.clock; locked 50% of time</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="37" end="505" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>At IntradayStraddleService.java:[lines 37-505]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService</Message>
+    </Class>
+    <Field classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="clock" signature="Ljava/time/Clock;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>In IntradayStraddleService.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.clock</Message>
+    </Field>
+    <Int value="50" role="INT_SYNC_PERCENT">
+      <Message>Synchronized 50% of the time</Message>
+    </Int>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" start="504" end="504" startBytecode="2" endBytecode="2" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java" role="SOURCE_LINE_UNSYNC_ACCESS">
+      <Message>Unsynchronized access at IntradayStraddleService.java:[line 504]</Message>
+    </SourceLine>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="63" end="63" startBytecode="2" endBytecode="2" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java" role="SOURCE_LINE_SYNC_ACCESS">
+      <Message>Synchronized access at IntradayStraddleService.java:[line 63]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="VA_FORMAT_STRING_USES_NEWLINE" priority="2" rank="20" abbrev="FS" category="BAD_PRACTICE" instanceHash="c034a03771354eb1ca106c5464dceca7" instanceOccurrenceNum="0" instanceOccurrenceMax="0">
+    <ShortMessage>Format string should use %n rather than \n</ShortMessage>
+    <LongMessage>Format string should use %n rather than \n in com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.checkAndExitShortLegIfSlHit(StraddleLeg, String)</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="37" end="505" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>At IntradayStraddleService.java:[lines 37-505]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="checkAndExitShortLegIfSlHit" signature="(Lcom/tradingbot/strategy/ttcstraddle/model/StraddleLeg;Ljava/lang/String;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="273" end="314" startBytecode="0" endBytecode="443" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.checkAndExitShortLegIfSlHit(StraddleLeg, String)</Message>
+    </Method>
+    <Method classname="java.lang.String" name="format" signature="(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;" isStatic="true" role="METHOD_CALLED">
+      <SourceLine classname="java.lang.String" start="4420" end="4420" startBytecode="0" endBytecode="78" sourcefile="String.java" sourcepath="java/lang/String.java"/>
+      <Message>Called method String.format(Locale, String, Object[])</Message>
+    </Method>
+    <String value="🛑 *Straddle Leg 30%% Stop-Loss Hit*\n• Leg: *%s*\n• Contract: `%s`\n• Trigger LTP: `₹%.2f` (SL: `₹%.2f`)\n• Leg Loss: `-₹%.2f`\n• Surviving leg continues running till 15:00 IST" role="STRING_FORMAT_STRING">
+      <Message>Format string &quot;🛑 *Straddle Leg 30%% Stop-Loss Hit*\n• Leg: *%s*\n• Contract: `%s`\n• Trigger LTP: `₹%.2f` (SL: `₹%.2f`)\n• Leg Loss: `-₹%.2f`\n• Surviving leg continues running till 15:00 IST&quot;</Message>
+    </String>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" start="305" end="305" startBytecode="221" endBytecode="221" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+      <Message>At IntradayStraddleService.java:[line 305]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="VA_FORMAT_STRING_USES_NEWLINE" priority="2" rank="20" abbrev="FS" category="BAD_PRACTICE" instanceHash="833ec1750670d60196d64e9efb9a5e3f" instanceOccurrenceNum="0" instanceOccurrenceMax="0">
+    <ShortMessage>Format string should use %n rather than \n</ShortMessage>
+    <LongMessage>Format string should use %n rather than \n in com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.executeHardSquareOff(String)</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="37" end="505" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>At IntradayStraddleService.java:[lines 37-505]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="executeHardSquareOff" signature="(Ljava/lang/String;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="318" end="338" startBytecode="0" endBytecode="246" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.executeHardSquareOff(String)</Message>
+    </Method>
+    <Method classname="java.lang.String" name="format" signature="(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;" isStatic="true" role="METHOD_CALLED">
+      <SourceLine classname="java.lang.String" start="4420" end="4420" startBytecode="0" endBytecode="78" sourcefile="String.java" sourcepath="java/lang/String.java"/>
+      <Message>Called method String.format(Locale, String, Object[])</Message>
+    </Method>
+    <String value="🏁 *Straddle Positions Fully Closed*\n• Reason: %s\n• Final Realized P&amp;L: `₹%.2f`" role="STRING_FORMAT_STRING">
+      <Message>Format string &quot;🏁 *Straddle Positions Fully Closed*\n• Reason: %s\n• Final Realized P&amp;L: `₹%.2f`&quot;</Message>
+    </String>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" start="333" end="333" startBytecode="130" endBytecode="130" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+      <Message>At IntradayStraddleService.java:[line 333]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="VA_FORMAT_STRING_USES_NEWLINE" priority="2" rank="20" abbrev="FS" category="BAD_PRACTICE" instanceHash="c7e2fdf8772052ea7639a3b823b3c70b" instanceOccurrenceNum="0" instanceOccurrenceMax="0">
+    <ShortMessage>Format string should use %n rather than \n</ShortMessage>
+    <LongMessage>Format string should use %n rather than \n in com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.executeHedgeWingEntry(LocalTime)</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="37" end="505" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>At IntradayStraddleService.java:[lines 37-505]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="executeHedgeWingEntry" signature="(Ljava/time/LocalTime;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="87" end="171" startBytecode="0" endBytecode="752" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.executeHedgeWingEntry(LocalTime)</Message>
+    </Method>
+    <Method classname="java.lang.String" name="format" signature="(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;" isStatic="true" role="METHOD_CALLED">
+      <SourceLine classname="java.lang.String" start="4420" end="4420" startBytecode="0" endBytecode="78" sourcefile="String.java" sourcepath="java/lang/String.java"/>
+      <Message>Called method String.format(Locale, String, Object[])</Message>
+    </Method>
+    <String value="🛡️ *Straddle 20-OTM Hedges Bought*\n• Underlying: *%s*\n• CE Hedge: `%s` @ ₹%.2f\n• PE Hedge: `%s` @ ₹%.2f" role="STRING_FORMAT_STRING">
+      <Message>Format string &quot;🛡️ *Straddle 20-OTM Hedges Bought*\n• Underlying: *%s*\n• CE Hedge: `%s` @ ₹%.2f\n• PE Hedge: `%s` @ ₹%.2f&quot;</Message>
+    </String>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" start="163" end="163" startBytecode="385" endBytecode="385" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+      <Message>At IntradayStraddleService.java:[line 163]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="VA_FORMAT_STRING_USES_NEWLINE" priority="2" rank="20" abbrev="FS" category="BAD_PRACTICE" instanceHash="ac16b4eea3af83a2da99bd5743810bfb" instanceOccurrenceNum="0" instanceOccurrenceMax="0">
+    <ShortMessage>Format string should use %n rather than \n</ShortMessage>
+    <LongMessage>Format string should use %n rather than \n in com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.executeStraddleEntry(LocalTime)</LongMessage>
+    <Class classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="37" end="505" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+        <Message>At IntradayStraddleService.java:[lines 37-505]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService</Message>
+    </Class>
+    <Method classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" name="executeStraddleEntry" signature="(Ljava/time/LocalTime;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Service">
+      <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" start="175" end="242" startBytecode="0" endBytecode="736" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java"/>
+      <Message>In method com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService.executeStraddleEntry(LocalTime)</Message>
+    </Method>
+    <Method classname="java.lang.String" name="format" signature="(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;" isStatic="true" role="METHOD_CALLED">
+      <SourceLine classname="java.lang.String" start="4420" end="4420" startBytecode="0" endBytecode="78" sourcefile="String.java" sourcepath="java/lang/String.java"/>
+      <Message>Called method String.format(Locale, String, Object[])</Message>
+    </Method>
+    <String value="⚡ *10:00 AM ATM Straddle Sold (30%% SL)*\n• Underlying: *%s*\n• Short CE: `%s` @ ₹%.2f (SL: ₹%.2f)\n• Short PE: `%s` @ ₹%.2f (SL: ₹%.2f)\n• Target Exit: 15:00 IST" role="STRING_FORMAT_STRING">
+      <Message>Format string &quot;⚡ *10:00 AM ATM Straddle Sold (30%% SL)*\n• Underlying: *%s*\n• Short CE: `%s` @ ₹%.2f (SL: ₹%.2f)\n• Short PE: `%s` @ ₹%.2f (SL: ₹%.2f)\n• Target Exit: 15:00 IST&quot;</Message>
+    </String>
+    <SourceLine classname="com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService" primary="true" start="232" end="232" startBytecode="396" endBytecode="396" sourcefile="IntradayStraddleService.java" sourcepath="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" relSourcepath="java\com\tradingbot\strategy\ttcstraddle\service\IntradayStraddleService.java">
+      <Message>At IntradayStraddleService.java:[line 232]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="b5140a4299ad4b248894376e761e700e" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient) may expose internal representation by storing an externally mutable object into TelegramBotCommandListener.lvrService</LongMessage>
     <Class classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="399" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-        <Message>At TelegramBotCommandListener.java:[lines 36-399]</Message>
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="530" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+        <Message>At TelegramBotCommandListener.java:[lines 36-530]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.telegram.TelegramBotCommandListener</Message>
     </Class>
-    <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="&lt;init&gt;" signature="(Lcom/tradingbot/service/LowestVolumeReversalService;Lcom/tradingbot/strategy/car/CarWeeklyGttService;Lcom/tradingbot/strategy/monthlyrange/service/MonthlyRangeService;Lcom/tradingbot/strategy/fiftytwohigh/service/FiftyTwoHighService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/fasterxml/jackson/databind/ObjectMapper;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="121" end="130" startBytecode="0" endBytecode="223" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
-      <Message>In method new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient)</Message>
+    <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="&lt;init&gt;" signature="(Lcom/tradingbot/service/LowestVolumeReversalService;Lcom/tradingbot/strategy/car/CarWeeklyGttService;Lcom/tradingbot/strategy/monthlyrange/service/MonthlyRangeService;Lcom/tradingbot/strategy/fiftytwohigh/service/FiftyTwoHighService;Lcom/tradingbot/strategy/monthlyrange/service/GarchRangeService;Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/fasterxml/jackson/databind/ObjectMapper;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="158" end="169" startBytecode="0" endBytecode="263" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
+      <Message>In method new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient)</Message>
     </Method>
     <Field classname="com.tradingbot.telegram.TelegramBotCommandListener" name="lvrService" signature="Lcom/tradingbot/service/LowestVolumeReversalService;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
       <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
@@ -4661,22 +5409,22 @@
     <LocalVariable name="lvrService" register="1" pc="18" role="LOCAL_VARIABLE_NAMED">
       <Message>Local variable named lvrService</Message>
     </LocalVariable>
-    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="122" end="122" startBytecode="18" endBytecode="18" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-      <Message>At TelegramBotCommandListener.java:[line 122]</Message>
+    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="159" end="159" startBytecode="18" endBytecode="18" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+      <Message>At TelegramBotCommandListener.java:[line 159]</Message>
     </SourceLine>
   </BugInstance>
-  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="cf9d551dbf5538f09c5de37ed3f5f355" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="62119a79cd29a47be5a397343abb680d" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
-    <LongMessage>new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient) may expose internal representation by storing an externally mutable object into TelegramBotCommandListener.objectMapper</LongMessage>
+    <LongMessage>new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient) may expose internal representation by storing an externally mutable object into TelegramBotCommandListener.objectMapper</LongMessage>
     <Class classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="399" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-        <Message>At TelegramBotCommandListener.java:[lines 36-399]</Message>
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="530" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+        <Message>At TelegramBotCommandListener.java:[lines 36-530]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.telegram.TelegramBotCommandListener</Message>
     </Class>
-    <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="&lt;init&gt;" signature="(Lcom/tradingbot/service/LowestVolumeReversalService;Lcom/tradingbot/strategy/car/CarWeeklyGttService;Lcom/tradingbot/strategy/monthlyrange/service/MonthlyRangeService;Lcom/tradingbot/strategy/fiftytwohigh/service/FiftyTwoHighService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/fasterxml/jackson/databind/ObjectMapper;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="121" end="130" startBytecode="0" endBytecode="223" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
-      <Message>In method new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient)</Message>
+    <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="&lt;init&gt;" signature="(Lcom/tradingbot/service/LowestVolumeReversalService;Lcom/tradingbot/strategy/car/CarWeeklyGttService;Lcom/tradingbot/strategy/monthlyrange/service/MonthlyRangeService;Lcom/tradingbot/strategy/fiftytwohigh/service/FiftyTwoHighService;Lcom/tradingbot/strategy/monthlyrange/service/GarchRangeService;Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/fasterxml/jackson/databind/ObjectMapper;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="158" end="169" startBytecode="0" endBytecode="263" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
+      <Message>In method new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient)</Message>
     </Method>
     <Field classname="com.tradingbot.telegram.TelegramBotCommandListener" name="objectMapper" signature="Lcom/fasterxml/jackson/databind/ObjectMapper;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
       <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
@@ -4684,25 +5432,25 @@
       </SourceLine>
       <Message>Field com.tradingbot.telegram.TelegramBotCommandListener.objectMapper</Message>
     </Field>
-    <LocalVariable name="objectMapper" register="7" pc="52" role="LOCAL_VARIABLE_NAMED">
+    <LocalVariable name="objectMapper" register="9" pc="64" role="LOCAL_VARIABLE_NAMED">
       <Message>Local variable named objectMapper</Message>
     </LocalVariable>
-    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="128" end="128" startBytecode="52" endBytecode="52" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-      <Message>At TelegramBotCommandListener.java:[line 128]</Message>
+    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="167" end="167" startBytecode="64" endBytecode="64" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+      <Message>At TelegramBotCommandListener.java:[line 167]</Message>
     </SourceLine>
   </BugInstance>
-  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="cd7a4031797316625193620cee426852" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="e939d8d7c18bef81915605395bf30c26" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
     <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
-    <LongMessage>new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient) may expose internal representation by storing an externally mutable object into TelegramBotCommandListener.shoonyaConfig</LongMessage>
+    <LongMessage>new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient) may expose internal representation by storing an externally mutable object into TelegramBotCommandListener.shoonyaConfig</LongMessage>
     <Class classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="399" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-        <Message>At TelegramBotCommandListener.java:[lines 36-399]</Message>
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="530" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+        <Message>At TelegramBotCommandListener.java:[lines 36-530]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.telegram.TelegramBotCommandListener</Message>
     </Class>
-    <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="&lt;init&gt;" signature="(Lcom/tradingbot/service/LowestVolumeReversalService;Lcom/tradingbot/strategy/car/CarWeeklyGttService;Lcom/tradingbot/strategy/monthlyrange/service/MonthlyRangeService;Lcom/tradingbot/strategy/fiftytwohigh/service/FiftyTwoHighService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/fasterxml/jackson/databind/ObjectMapper;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="121" end="130" startBytecode="0" endBytecode="223" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
-      <Message>In method new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient)</Message>
+    <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="&lt;init&gt;" signature="(Lcom/tradingbot/service/LowestVolumeReversalService;Lcom/tradingbot/strategy/car/CarWeeklyGttService;Lcom/tradingbot/strategy/monthlyrange/service/MonthlyRangeService;Lcom/tradingbot/strategy/fiftytwohigh/service/FiftyTwoHighService;Lcom/tradingbot/strategy/monthlyrange/service/GarchRangeService;Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/fasterxml/jackson/databind/ObjectMapper;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="158" end="169" startBytecode="0" endBytecode="263" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
+      <Message>In method new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient)</Message>
     </Method>
     <Field classname="com.tradingbot.telegram.TelegramBotCommandListener" name="shoonyaConfig" signature="Lcom/tradingbot/config/ShoonyaConfig;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
       <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
@@ -4710,24 +5458,50 @@
       </SourceLine>
       <Message>Field com.tradingbot.telegram.TelegramBotCommandListener.shoonyaConfig</Message>
     </Field>
-    <LocalVariable name="shoonyaConfig" register="6" pc="46" role="LOCAL_VARIABLE_NAMED">
+    <LocalVariable name="shoonyaConfig" register="8" pc="58" role="LOCAL_VARIABLE_NAMED">
       <Message>Local variable named shoonyaConfig</Message>
     </LocalVariable>
-    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="127" end="127" startBytecode="46" endBytecode="46" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-      <Message>At TelegramBotCommandListener.java:[line 127]</Message>
+    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="166" end="166" startBytecode="58" endBytecode="58" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+      <Message>At TelegramBotCommandListener.java:[line 166]</Message>
+    </SourceLine>
+  </BugInstance>
+  <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="811898b703d11a95ca90036c0ceb0ac2" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
+    <ShortMessage>May expose internal representation by incorporating reference to mutable object</ShortMessage>
+    <LongMessage>new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient) may expose internal representation by storing an externally mutable object into TelegramBotCommandListener.straddleService</LongMessage>
+    <Class classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="530" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+        <Message>At TelegramBotCommandListener.java:[lines 36-530]</Message>
+      </SourceLine>
+      <Message>In class com.tradingbot.telegram.TelegramBotCommandListener</Message>
+    </Class>
+    <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="&lt;init&gt;" signature="(Lcom/tradingbot/service/LowestVolumeReversalService;Lcom/tradingbot/strategy/car/CarWeeklyGttService;Lcom/tradingbot/strategy/monthlyrange/service/MonthlyRangeService;Lcom/tradingbot/strategy/fiftytwohigh/service/FiftyTwoHighService;Lcom/tradingbot/strategy/monthlyrange/service/GarchRangeService;Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;Lcom/tradingbot/telegram/TelegramService;Lcom/tradingbot/config/ShoonyaConfig;Lcom/fasterxml/jackson/databind/ObjectMapper;Ljava/net/http/HttpClient;)V" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="158" end="169" startBytecode="0" endBytecode="263" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
+      <Message>In method new com.tradingbot.telegram.TelegramBotCommandListener(LowestVolumeReversalService, CarWeeklyGttService, MonthlyRangeService, FiftyTwoHighService, GarchRangeService, IntradayStraddleService, TelegramService, ShoonyaConfig, ObjectMapper, HttpClient)</Message>
+    </Method>
+    <Field classname="com.tradingbot.telegram.TelegramBotCommandListener" name="straddleService" signature="Lcom/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+        <Message>In TelegramBotCommandListener.java</Message>
+      </SourceLine>
+      <Message>Field com.tradingbot.telegram.TelegramBotCommandListener.straddleService</Message>
+    </Field>
+    <LocalVariable name="straddleService" register="6" pc="46" role="LOCAL_VARIABLE_NAMED">
+      <Message>Local variable named straddleService</Message>
+    </LocalVariable>
+    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="164" end="164" startBytecode="46" endBytecode="46" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+      <Message>At TelegramBotCommandListener.java:[line 164]</Message>
     </SourceLine>
   </BugInstance>
   <BugInstance type="VA_FORMAT_STRING_USES_NEWLINE" priority="2" rank="20" abbrev="FS" category="BAD_PRACTICE" instanceHash="c28750cb24942efbaad7134ca53c3408" instanceOccurrenceNum="0" instanceOccurrenceMax="0">
     <ShortMessage>Format string should use %n rather than \n</ShortMessage>
     <LongMessage>Format string should use %n rather than \n in com.tradingbot.telegram.TelegramBotCommandListener.processCommand(String)</LongMessage>
     <Class classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="399" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-        <Message>At TelegramBotCommandListener.java:[lines 36-399]</Message>
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="530" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+        <Message>At TelegramBotCommandListener.java:[lines 36-530]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.telegram.TelegramBotCommandListener</Message>
     </Class>
     <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="processCommand" signature="(Ljava/lang/String;)Ljava/lang/String;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="244" end="399" startBytecode="0" endBytecode="2237" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="306" end="530" startBytecode="0" endBytecode="3266" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
       <Message>In method com.tradingbot.telegram.TelegramBotCommandListener.processCommand(String)</Message>
     </Method>
     <Method classname="java.lang.String" name="format" signature="(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;" isStatic="true" role="METHOD_CALLED">
@@ -4737,21 +5511,21 @@
     <String value="⚡ *Lowest Volume Reversal (LVR) Strategy Status*\n\n• Market Sentiment: *%s* (%d Adv / %d Dec)\n• Winning Sector: *%s* (%.2f%%)\n• Candidates (%d): `%s`\n• Active Setups: %d\n• Open Positions: %d\n• Closed Trades: %d\n• Exit Mode: *%s RR + Cost Floor + 10 EMA Trail*" role="STRING_FORMAT_STRING">
       <Message>Format string &quot;⚡ *Lowest Volume Reversal (LVR) Strategy Status*\n\n• Market Sentiment: *%s* (%d Adv / %d Dec)\n• Winning Sector: *%s* (%.2f%%)\n• Candidates (%d): `%s`\n• Active Setups: %d\n• Open Positions: %d\n• Closed Trades: %d\n• Exit Mode: *%s RR + Cost Floor + 10 EMA Trail*&quot;</Message>
     </String>
-    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="263" end="263" startBytecode="942" endBytecode="942" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-      <Message>At TelegramBotCommandListener.java:[line 263]</Message>
+    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="325" end="325" startBytecode="1094" endBytecode="1094" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+      <Message>At TelegramBotCommandListener.java:[line 325]</Message>
     </SourceLine>
   </BugInstance>
   <BugInstance type="VA_FORMAT_STRING_USES_NEWLINE" priority="2" rank="20" abbrev="FS" category="BAD_PRACTICE" instanceHash="a2c69aa694405ff260ab84a134ed1690" instanceOccurrenceNum="0" instanceOccurrenceMax="0">
     <ShortMessage>Format string should use %n rather than \n</ShortMessage>
     <LongMessage>Format string should use %n rather than \n in com.tradingbot.telegram.TelegramBotCommandListener.processCommand(String)</LongMessage>
     <Class classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="399" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-        <Message>At TelegramBotCommandListener.java:[lines 36-399]</Message>
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="36" end="530" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+        <Message>At TelegramBotCommandListener.java:[lines 36-530]</Message>
       </SourceLine>
       <Message>In class com.tradingbot.telegram.TelegramBotCommandListener</Message>
     </Class>
     <Method classname="com.tradingbot.telegram.TelegramBotCommandListener" name="processCommand" signature="(Ljava/lang/String;)Ljava/lang/String;" isStatic="false" primary="true" classAnnotationNames="org.springframework.stereotype.Component,org.springframework.boot.autoconfigure.condition.ConditionalOnProperty">
-      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="244" end="399" startBytecode="0" endBytecode="2237" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
+      <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" start="306" end="530" startBytecode="0" endBytecode="3266" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java"/>
       <Message>In method com.tradingbot.telegram.TelegramBotCommandListener.processCommand(String)</Message>
     </Method>
     <Method classname="java.lang.String" name="format" signature="(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;" isStatic="true" role="METHOD_CALLED">
@@ -4761,8 +5535,8 @@
     <String value="📈 *CAR Weekly GTT Strategy Status*\n\n• Total Capital: `₹%.2f`\n• Unit Size (1/40th): `₹%.2f`\n• Invested Units: `%d / %d`\n• Available Units: `%d`\n• Active Demat Holdings: `%d`\n• Active GTT Orders: `%d`" role="STRING_FORMAT_STRING">
       <Message>Format string &quot;📈 *CAR Weekly GTT Strategy Status*\n\n• Total Capital: `₹%.2f`\n• Unit Size (1/40th): `₹%.2f`\n• Invested Units: `%d / %d`\n• Available Units: `%d`\n• Active Demat Holdings: `%d`\n• Active GTT Orders: `%d`&quot;</Message>
     </String>
-    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="316" end="316" startBytecode="1162" endBytecode="1162" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
-      <Message>At TelegramBotCommandListener.java:[line 316]</Message>
+    <SourceLine classname="com.tradingbot.telegram.TelegramBotCommandListener" primary="true" start="378" end="378" startBytecode="1314" endBytecode="1314" sourcefile="TelegramBotCommandListener.java" sourcepath="com/tradingbot/telegram/TelegramBotCommandListener.java" relSourcepath="java\com\tradingbot\telegram\TelegramBotCommandListener.java">
+      <Message>At TelegramBotCommandListener.java:[line 378]</Message>
     </SourceLine>
   </BugInstance>
   <BugInstance type="EI_EXPOSE_REP2" priority="2" rank="18" abbrev="EI2" category="MALICIOUS_CODE" instanceHash="d1df9d54d5f2bff6ad2452874cafd4a1" instanceOccurrenceNum="0" instanceOccurrenceMax="0" cweid="374">
@@ -5600,7 +6374,7 @@ signals unexpected behavior by returning an atypical return value.
     <Description>Redundant comparison to null</Description>
   </BugCode>
   <Errors errors="0" missingClasses="0"></Errors>
-  <FindBugsSummary timestamp="Wed, 21 Oct 2026 06:31:04 +0530" total_classes="0" referenced_classes="0" total_bugs="201" total_size="0" num_packages="37" java_version="21.0.11" vm_version="21.0.11+10-LTS" cpu_seconds="231.34" clock_seconds="60.92" peak_mbytes="501.75" alloc_mbytes="3952.00" gc_seconds="0.68" priority_2="198" priority_1="3">
+  <FindBugsSummary timestamp="Fri, 23 Oct 2026 01:14:59 +0530" total_classes="0" referenced_classes="0" total_bugs="230" total_size="0" num_packages="42" java_version="21.0.11" vm_version="21.0.11+10-LTS" cpu_seconds="302.33" clock_seconds="70.27" peak_mbytes="529.43" alloc_mbytes="3952.00" gc_seconds="0.88" priority_2="227" priority_1="3">
     <FileStats path="com/tradingbot/auth/ShoonyaAuthenticator.java" bugCount="4" size="0" bugHash="65d352d89aa0dd492eb0d8e5bb94c8e8"/>
     <FileStats path="com/tradingbot/backtest/BacktestResult.java" bugCount="2" size="0" bugHash="8a093113d0fb60150996cd47de3331d7"/>
     <FileStats path="com/tradingbot/config/ShoonyaConfig.java" bugCount="1" size="0" bugHash="5793b3b0b49e4520fbc2e49abf67b460"/>
@@ -5641,6 +6415,9 @@ signals unexpected behavior by returning an atypical return value.
     <FileStats path="com/tradingbot/scheduler/PostCloseDataScheduler.java" bugCount="1" size="0" bugHash="a4749eef0c91dc1d83d57e9500778c58"/>
     <FileStats path="com/tradingbot/service/LowestVolumeReversalService.java" bugCount="40" size="0" bugHash="8932afb4674d94eafaa97beccdce6e80"/>
     <FileStats path="com/tradingbot/strategy/TradeSignal.java" bugCount="2" size="0" bugHash="f17e25ac04c2c2cb6b9256e93fcda268"/>
+    <FileStats path="com/tradingbot/strategy/breakoutvwap/scheduler/BreakoutVwapScheduler.java" bugCount="2" size="0" bugHash="778286e430f1ca206d127492fde5884f"/>
+    <FileStats path="com/tradingbot/strategy/breakoutvwap/service/BreakoutVwapService.java" bugCount="4" size="0" bugHash="46a10dd0422d017948ac0d1ec4ad62d5"/>
+    <FileStats path="com/tradingbot/strategy/breakoutvwap/service/BvsUniverseScanner.java" bugCount="5" size="0" bugHash="e71382c0d8def645e7c8d22284ff2238"/>
     <FileStats path="com/tradingbot/strategy/car/CarWeeklyGttService.java" bugCount="10" size="0" bugHash="4c0d5ddf27943feb5d19ff6c21853c25"/>
     <FileStats path="com/tradingbot/strategy/car/config/CarExecutionGate.java" bugCount="1" size="0" bugHash="81c2cc554446909a4acd17fa6750ff15"/>
     <FileStats path="com/tradingbot/strategy/car/config/CarWeeklyProperties.java" bugCount="3" size="0" bugHash="387e8df3106b795cb85c5204650760ea"/>
@@ -5648,14 +6425,17 @@ signals unexpected behavior by returning an atypical return value.
     <FileStats path="com/tradingbot/strategy/car/model/CarPortfolioState.java" bugCount="3" size="0" bugHash="9f695fe0858ee1814b7be8ceaaf0edb7"/>
     <FileStats path="com/tradingbot/strategy/monthlyrange/engine/GarchVolForecaster.java" bugCount="2" size="0" bugHash="325002c37a512d6658656b98fdb176a7"/>
     <FileStats path="com/tradingbot/strategy/monthlyrange/scheduler/MonthlyRangeScheduler.java" bugCount="1" size="0" bugHash="263f0c630f7d99d30b421335b162b339"/>
-    <FileStats path="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" bugCount="1" size="0" bugHash="d678c14a191dbdec7af8e08ca17486e4"/>
+    <FileStats path="com/tradingbot/strategy/monthlyrange/service/MonthlyRangeService.java" bugCount="1" size="0" bugHash="32b5f1d617c16e62e7ba4ee8384dba99"/>
     <FileStats path="com/tradingbot/strategy/silverorb/controller/SilverOrbController.java" bugCount="2" size="0" bugHash="efad3f2d594b972f039f94cb96e24761"/>
     <FileStats path="com/tradingbot/strategy/silverorb/engine/SilverOrbEngine.java" bugCount="2" size="0" bugHash="7bec61ff4fc275625cc6f8d643211f87"/>
     <FileStats path="com/tradingbot/strategy/silverorb/model/SilverOrbEvent.java" bugCount="2" size="0" bugHash="b7e7c486e8a7ba5cb60172545fb9f9e2"/>
     <FileStats path="com/tradingbot/strategy/silverorb/model/SilverOrbTrade.java" bugCount="8" size="0" bugHash="a1f55a96d87c96b168dfcf25cd1d0177"/>
     <FileStats path="com/tradingbot/strategy/silverorb/scheduler/SilverOrbScheduler.java" bugCount="1" size="0" bugHash="ed63e602b6b515071a36085d8d5a531c"/>
     <FileStats path="com/tradingbot/strategy/silverorb/service/SilverOrbService.java" bugCount="5" size="0" bugHash="41800f58e01c7270ceee7af8dc9a9c7b"/>
-    <FileStats path="com/tradingbot/telegram/TelegramBotCommandListener.java" bugCount="5" size="0" bugHash="5dbc3bf57e56f58cadb4234414ab1c20"/>
+    <FileStats path="com/tradingbot/strategy/ttcstraddle/model/StraddleDailyState.java" bugCount="8" size="0" bugHash="fa29044adefed6cd26f86729b2b2bcb7"/>
+    <FileStats path="com/tradingbot/strategy/ttcstraddle/scheduler/IntradayStraddleScheduler.java" bugCount="2" size="0" bugHash="5fb35327ca3fdb84440f8d94559746ce"/>
+    <FileStats path="com/tradingbot/strategy/ttcstraddle/service/IntradayStraddleService.java" bugCount="7" size="0" bugHash="09526c1f75f0d51cfd0f085e278d041c"/>
+    <FileStats path="com/tradingbot/telegram/TelegramBotCommandListener.java" bugCount="6" size="0" bugHash="24aa80b6c0ee1b76587e1335683d2a3b"/>
     <FileStats path="com/tradingbot/telegram/TelegramService.java" bugCount="20" size="0" bugHash="f3370acd581e839e86dd7be9656509f8"/>
     <FindBugsProfile></FindBugsProfile>
   </FindBugsSummary>

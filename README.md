@@ -54,6 +54,20 @@ Intraday stock futures and options momentum reversal on 5‑minute candles (`NSE
 
 ---
 
+### Breakout VWAP (BVS)
+
+Intraday stock-futures breakout on dual-level confluence with VWAP triggers (F&O equities):
+
+1. **09:25 Universe Scan (four buckets):** 3 live top gainers, 3 live top losers, 3 NSE OI spurts (staggered 09:25:05 prefetch) and 3 three-day lower-high / higher-low range contractions — F&O-eligible only, ban-listed symbols excluded, deduplicated across buckets with backfill from the next rank. A failed ban fetch stands the strategy down for the day.
+2. **Dual-Level Confluence Bias:** once the 09:30–10:00 session range completes, a 5m close above *both* the range high and the previous day's high latches LONG (below both lows latches SHORT); the latch holds until the opposite confluence flips it.
+3. **VWAP Trigger & Entry:** a bias-direction 5m candle closing across session VWAP arms a 5-minute entry window; entry is a futures order on the trigger candle's high/low break, with the stop at the opposite extreme. No entries after **14:30 IST**.
+4. **Risk Management:** 50% of the position is booked at a 1:2.5R target and the stop moves to breakeven; the runner exits on a 10-EMA close cross. Every open position is squared off at **15:00 IST**.
+5. **Operations:** daily state persisted to `./data/bvs-state.json` (restart-safe within the day), Telegram alerts prefixed `BVS |`, and a dedicated `shoonya-bvs` execution consumer lane so its signals never share ledgers with LVR/straddle (`SHOONYA_BVS_MODE`, paper by default).
+
+Key knobs: `BVS_ENABLED`, `BVS_SCHEDULER_ENABLED`, `BVS_BUCKET_SIZE`, `BVS_RR_PARTIAL`, `BVS_TRIGGER_WINDOW_MINUTES`, `BVS_ENTRY_CUTOFF`, `BVS_HARD_EXIT`, `BVS_SCAN_CRON`, `BVS_OI_SPURT_CRON`, `BVS_CYCLE_CRON`, `BVS_TICK_RATE_MS`, `BVS_RISK_PER_TRADE`, `BVS_PAPER_CAPITAL`, `BVS_LOTS`, `BVS_DYNAMIC_POSITION_SIZING`, `BVS_STATE_FILE`, `BVS_TELEGRAM_ALERTS`, `SHOONYA_BVS_MODE`.
+
+---
+
 ### Intraday Double-Session Straddle (1 & 0 NS 916 TTC)
 
 Non-directional clock-driven intraday option selling on NIFTY (Mon 1-DTE / Tue 0-DTE) and SENSEX (Wed 1-DTE):
