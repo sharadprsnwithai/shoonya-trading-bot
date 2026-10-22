@@ -24,13 +24,18 @@ import com.tradingbot.strategy.breakoutvwap.model.BvsPosition;
 import com.tradingbot.strategy.breakoutvwap.model.BvsSetup;
 import com.tradingbot.strategy.breakoutvwap.model.BvsSetupState;
 import com.tradingbot.strategy.breakoutvwap.model.BvsUniverse;
+import com.tradingbot.strategy.breakoutvwap.persistence.BvsDailyState;
+import com.tradingbot.strategy.breakoutvwap.persistence.BvsPositionSnapshot;
+import com.tradingbot.strategy.breakoutvwap.persistence.BvsStateStore;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import com.tradingbot.util.StockFnoRegistry;
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -42,6 +47,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
@@ -500,5 +506,68 @@ class BreakoutVwapServiceTest {
         assertThat(service.setups).isEmpty();
         verify(telegramService)
                 .sendTextMessage(org.mockito.ArgumentMatchers.contains("stood down"));
+    }
+
+    // --- persistence restore tests ---
+
+    @TempDir Path tempDir;
+
+    private BvsPositionSnapshot partialBookedSnapshot(String symbol) {
+        BvsPositionSnapshot snap = new BvsPositionSnapshot();
+        snap.symbol = symbol;
+        snap.brokerTradingSymbol = symbol + "23OCTFUT";
+        snap.token = "4321";
+        snap.direction = BvsBias.LONG;
+        snap.entryPrice = 25000.0;
+        snap.stopPrice = 25000.0;
+        snap.rValue = 40.0;
+        snap.targetPrice = 25100.0;
+        snap.totalQuantity = 25;
+        snap.remainingQuantity = 12;
+        snap.partialBooked = true;
+        snap.entryTime = Instant.parse("2026-10-22T05:40:00Z");
+        snap.tradeId = "BVS-RESTORE";
+        return snap;
+    }
+
+    private Path saveRestoreState(LocalDate date, BvsPositionSnapshot position) throws Exception {
+        BvsDailyState state = new BvsDailyState();
+        state.date = date;
+        state.savedAt = Instant.parse("2026-10-22T05:45:00Z");
+        state.openPositions.add(position);
+        Path file = tempDir.resolve("bvs-restore.json");
+        BvsStateStore.save(file, state);
+        properties.setStateFile(file.toString());
+        properties.setStatePersistenceEnabled(true);
+        return file;
+    }
+
+    @Test
+    @DisplayName("a restored partial-booked position is not partially booked again")
+    void restoredPartialBookedPositionDoesNotRepartial() throws Exception {
+        saveRestoreState(LocalDate.now(clock), partialBookedSnapshot("RELIANCE"));
+
+        service.restorePersistedState();
+
+        assertThat(service.openPositions).containsKey("RELIANCE");
+        assertThat(service.openPositions.get("RELIANCE").isPartialBooked()).isTrue();
+
+        // price beyond target again — the partial must not fire a second time
+        stubPrices(Map.of("RELIANCE", 25101.0));
+        service.evaluateLivePriceActions();
+
+        verify(signalPublisher, never()).publish(any());
+        assertThat(service.openPositions).containsKey("RELIANCE");
+    }
+
+    @Test
+    @DisplayName("a snapshot dated before today is ignored on restore")
+    void restoreSkipsStaleDate() throws Exception {
+        saveRestoreState(LocalDate.now(clock).minusDays(1), partialBookedSnapshot("RELIANCE"));
+
+        service.restorePersistedState();
+
+        assertThat(service.openPositions).isEmpty();
+        assertThat(service.setups).isEmpty();
     }
 }

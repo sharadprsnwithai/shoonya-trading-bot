@@ -14,16 +14,23 @@ import com.tradingbot.strategy.breakoutvwap.model.BvsPosition;
 import com.tradingbot.strategy.breakoutvwap.model.BvsSetup;
 import com.tradingbot.strategy.breakoutvwap.model.BvsSetupState;
 import com.tradingbot.strategy.breakoutvwap.model.BvsUniverse;
+import com.tradingbot.strategy.breakoutvwap.persistence.BvsDailyState;
+import com.tradingbot.strategy.breakoutvwap.persistence.BvsPositionSnapshot;
+import com.tradingbot.strategy.breakoutvwap.persistence.BvsSetupSnapshot;
+import com.tradingbot.strategy.breakoutvwap.persistence.BvsStateStore;
 import com.tradingbot.telegram.TelegramService;
 import com.tradingbot.util.NseTradingCalendarUtil;
 import com.tradingbot.util.StockFnoRegistry;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -33,6 +40,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -67,9 +75,16 @@ public class BreakoutVwapService {
     private final Map<String, ShoonyaMarketDataService.FuturesContract> contractCache =
             new ConcurrentHashMap<>();
 
-    final Map<String, BvsSetup> setups = new LinkedHashMap<>();
-    final Map<String, BvsPosition> openPositions = new LinkedHashMap<>();
-    final List<BvsPosition> tradeHistory = new ArrayList<>();
+    // Concurrent: the 5m cycle thread and the 30s tick thread both mutate and persist these.
+    final Map<String, BvsSetup> setups = new ConcurrentHashMap<>();
+    final Map<String, BvsPosition> openPositions = new ConcurrentHashMap<>();
+    final List<BvsPosition> tradeHistory = new CopyOnWriteArrayList<>();
+
+    /** True when today's scan stood the strategy down (ban/feed failure). */
+    volatile boolean stoodDownToday;
+
+    /** Today's selection, kept for the persisted snapshot. */
+    volatile BvsUniverse lastUniverse = BvsUniverse.empty();
 
     private Clock clock = Clock.system(NseTradingCalendarUtil.IST_ZONE);
 
@@ -105,11 +120,15 @@ public class BreakoutVwapService {
         BvsUniverse universe = scanner.scan();
         setups.clear();
         if (universe.allSymbols().isEmpty()) {
+            stoodDownToday = true;
             log.warn("BVS stood down: no universe selected today");
             notifyTelegram(
                     "BVS | stood down — no universe selected (ban list or feed unavailable)");
+            persistState();
             return;
         }
+        stoodDownToday = false;
+        lastUniverse = universe;
         LocalDate today = LocalDate.now(clock);
         for (String symbol : universe.allSymbols()) {
             BvsSetup setup = new BvsSetup(symbol);
@@ -118,6 +137,7 @@ public class BreakoutVwapService {
         }
         // Telegram per spec rule 26: stand-down, entry, partial, stop move, exit — no scan message.
         log.info("BVS scan complete: {} symbols — {}", setups.size(), setups.keySet());
+        persistState();
     }
 
     private void applyPreviousDayLevels(String symbol, BvsSetup setup, LocalDate today) {
@@ -203,6 +223,7 @@ public class BreakoutVwapService {
                 setup.setState(BvsSetupState.BIAS_ARMED);
                 log.info("BVS {} bias flipped {} — armed trigger cancelled", symbol, after);
             }
+            persistState();
         }
 
         if (manageOpenPosition(setup, last, candles, close)) {
@@ -596,6 +617,7 @@ public class BreakoutVwapService {
                         quantity));
         setup.setEntryConsumed(true);
         setup.setState(BvsSetupState.BIAS_ARMED);
+        persistState();
         return position;
     }
 
@@ -661,6 +683,7 @@ public class BreakoutVwapService {
                 String.format(
                         "BVS | PARTIAL %s @ %.2f — 50%% booked, stop moved to breakeven %.2f",
                         position.getSymbol(), price, position.getEntryPrice()));
+        persistState();
     }
 
     private synchronized void executeFullExit(
@@ -682,6 +705,7 @@ public class BreakoutVwapService {
                 String.format(
                         "BVS | EXIT %s @ %.2f (%s, qty %d)",
                         position.getSymbol(), price, reason, quantity));
+        persistState();
     }
 
     /**
@@ -705,6 +729,148 @@ public class BreakoutVwapService {
             double price = quote != null ? quote.ltp() : position.getEntryPrice();
             executeFullExit(position, price, "HARD_EXIT_1500", SignalAction.SQUARE_OFF);
         }
+    }
+
+    // --- persistence ---
+
+    /**
+     * Writes today's state (setups, positions, history, universe, stand-down latch) to the state
+     * file. Gated by {@code statePersistenceEnabled}; failures are logged, never thrown.
+     */
+    synchronized void persistState() {
+        if (!properties.isStatePersistenceEnabled()) {
+            return;
+        }
+        try {
+            BvsDailyState state = new BvsDailyState();
+            state.date = LocalDate.now(clock);
+            state.savedAt = Instant.now(clock);
+            state.stoodDownToday = stoodDownToday;
+            state.universeByBucket = new LinkedHashMap<>(lastUniverse.byBucket());
+            for (BvsSetup setup : setups.values()) {
+                state.setups.put(setup.getSymbol(), snapshotOf(setup));
+            }
+            for (BvsPosition position : openPositions.values()) {
+                state.openPositions.add(snapshotOf(position));
+            }
+            for (BvsPosition position : tradeHistory) {
+                state.tradeHistory.add(snapshotOf(position));
+            }
+            BvsStateStore.save(Path.of(properties.getStateFile()), state);
+        } catch (IOException | RuntimeException e) {
+            log.warn("BVS: state persist failed ({})", e.getMessage());
+        }
+    }
+
+    /**
+     * Restores today's state after a restart. A snapshot dated before today is ignored so a restart
+     * on a new day starts clean (the 09:25 scan then builds a fresh universe).
+     */
+    @PostConstruct
+    synchronized void restorePersistedState() {
+        if (!properties.isStatePersistenceEnabled()) {
+            return;
+        }
+        BvsDailyState state = BvsStateStore.load(Path.of(properties.getStateFile()));
+        if (state == null) {
+            return;
+        }
+        LocalDate today = LocalDate.now(clock);
+        if (!today.equals(state.date)) {
+            log.info("BVS ignoring state file dated {} (today is {})", state.date, today);
+            return;
+        }
+        setups.clear();
+        openPositions.clear();
+        tradeHistory.clear();
+        state.setups.forEach((symbol, snap) -> setups.put(symbol, setupFrom(snap)));
+        state.openPositions.forEach(snap -> openPositions.put(snap.symbol, positionFrom(snap)));
+        state.tradeHistory.forEach(snap -> tradeHistory.add(positionFrom(snap)));
+        stoodDownToday = state.stoodDownToday;
+        if (state.universeByBucket != null) {
+            lastUniverse = new BvsUniverse(state.universeByBucket);
+        }
+        log.info(
+                "BVS restored: {} setups, {} open, {} history",
+                setups.size(),
+                openPositions.size(),
+                tradeHistory.size());
+    }
+
+    @PreDestroy
+    void persistStateOnShutdown() {
+        persistState();
+    }
+
+    static BvsSetupSnapshot snapshotOf(BvsSetup setup) {
+        BvsSetupSnapshot snap = new BvsSetupSnapshot();
+        snap.symbol = setup.getSymbol();
+        snap.state = setup.getState();
+        snap.bias = setup.getBias();
+        snap.sessionRangeHigh = setup.getSessionRangeHigh();
+        snap.sessionRangeLow = setup.getSessionRangeLow();
+        snap.pdh = setup.getPdh();
+        snap.pdl = setup.getPdl();
+        snap.triggerHigh = setup.getTriggerHigh();
+        snap.triggerLow = setup.getTriggerLow();
+        snap.triggerArmedAt = setup.getTriggerArmedAt();
+        snap.entryConsumed = setup.isEntryConsumed();
+        return snap;
+    }
+
+    static BvsSetup setupFrom(BvsSetupSnapshot snap) {
+        BvsSetup setup = new BvsSetup(snap.symbol);
+        if (snap.state != null) {
+            setup.setState(snap.state);
+        }
+        if (snap.bias != null) {
+            setup.setBias(snap.bias);
+        }
+        setup.setSessionRangeHigh(snap.sessionRangeHigh);
+        setup.setSessionRangeLow(snap.sessionRangeLow);
+        setup.setPdh(snap.pdh);
+        setup.setPdl(snap.pdl);
+        setup.setTriggerHigh(snap.triggerHigh);
+        setup.setTriggerLow(snap.triggerLow);
+        setup.setTriggerArmedAt(snap.triggerArmedAt);
+        setup.setEntryConsumed(snap.entryConsumed);
+        return setup;
+    }
+
+    static BvsPositionSnapshot snapshotOf(BvsPosition position) {
+        BvsPositionSnapshot snap = new BvsPositionSnapshot();
+        snap.symbol = position.getSymbol();
+        snap.brokerTradingSymbol = position.getBrokerTradingSymbol();
+        snap.token = position.getToken();
+        snap.direction = position.getDirection();
+        snap.entryPrice = position.getEntryPrice();
+        snap.stopPrice = position.getStopPrice();
+        snap.rValue = position.getRValue();
+        snap.targetPrice = position.getTargetPrice();
+        snap.totalQuantity = position.getTotalQuantity();
+        snap.remainingQuantity = position.getRemainingQuantity();
+        snap.partialBooked = position.isPartialBooked();
+        snap.entryTime = position.getEntryTime();
+        snap.tradeId = position.getTradeId();
+        return snap;
+    }
+
+    static BvsPosition positionFrom(BvsPositionSnapshot snap) {
+        BvsPosition position = new BvsPosition();
+        position.setSymbol(snap.symbol);
+        position.setBrokerTradingSymbol(snap.brokerTradingSymbol);
+        position.setToken(snap.token);
+        position.setDirection(snap.direction);
+        position.setEntryPrice(snap.entryPrice);
+        position.setStopPrice(snap.stopPrice);
+        position.setRValue(snap.rValue);
+        position.setTargetPrice(snap.targetPrice);
+        position.setTotalQuantity(snap.totalQuantity);
+        position.setRemainingQuantity(snap.remainingQuantity);
+        position.setPartialBooked(snap.partialBooked);
+        position.setEntryTime(snap.entryTime);
+        position.setTradeId(snap.tradeId);
+        return position;
     }
 
     // --- pure decisions ---

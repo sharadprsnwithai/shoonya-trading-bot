@@ -28,7 +28,8 @@ class BvsPropertiesTest {
         assertThat(p.getCycleCron()).isEqualTo("20 */5 9-15 ? * MON-FRI");
         assertThat(p.getTickRateMs()).isEqualTo(30000L);
         assertThat(p.isTelegramAlerts()).isTrue();
-        assertThat(p.isStatePersistenceEnabled()).isTrue();
+        // class default OFF (direct instantiation must not touch disk); Spring config block = true
+        assertThat(p.isStatePersistenceEnabled()).isFalse();
         assertThat(p.getStateFile()).isEqualTo("./data/bvs-state.json");
         assertThat(p.getRiskPerTradePercent()).isEqualTo(1.0);
         assertThat(p.getPaperCapital()).isEqualTo(500000.0);

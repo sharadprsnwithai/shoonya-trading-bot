@@ -62,8 +62,12 @@ public class BvsProperties {
     /** Send Telegram alerts for scan/entry/partial/exit events (env BVS_TELEGRAM_ALERTS). */
     private boolean telegramAlerts = true;
 
-    /** Persist daily state to disk so restarts resume (env BVS_STATE_PERSISTENCE_ENABLED). */
-    private boolean statePersistenceEnabled = true;
+    /**
+     * Persist daily state to disk so restarts resume (env BVS_STATE_PERSISTENCE_ENABLED). Class
+     * default OFF for directly-instantiated (test) services — LVR M10 precedent; Spring
+     * environments turn it on via application.properties, whose default remains true.
+     */
+    private boolean statePersistenceEnabled = false;
 
     /** JSON state file surviving restarts (env BVS_STATE_FILE). */
     private String stateFile = "./data/bvs-state.json";
