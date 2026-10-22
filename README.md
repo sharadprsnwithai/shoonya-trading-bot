@@ -54,6 +54,28 @@ Intraday stock futures and options momentum reversal on 5‑minute candles (`NSE
 
 ---
 
+### Intraday Double-Session Straddle (1 & 0 NS 916 TTC)
+
+Non-directional clock-driven intraday option selling on NIFTY (Mon 1-DTE / Tue 0-DTE) and SENSEX (Wed 1-DTE):
+
+1. **Schedule & Focus Days:**
+   - **Monday:** NIFTY (1-DTE, Tuesday expiry) — 81.8% historical win rate.
+   - **Tuesday:** NIFTY (0-DTE, same-day expiry).
+   - **Wednesday:** SENSEX (1-DTE, Thursday expiry).
+   - *Thursday & Friday:* Cash-protected (Thursday Sensex 0-DTE disabled by default to avoid gamma whipsaws).
+2. **Double-Session Framework:**
+   - **09:16 AM:** Buy deep OTM protection wings (margin drop from ~₹1.3L to ~₹50k/lot).
+   - **09:22 AM:** Sell morning ATM straddle with 50% independent leg stop loss.
+   - **10:16 AM (NIFTY) / 10:30 AM (SENSEX):** Square off morning short legs (lock morning theta, keep hedges open).
+   - **14:17 PM:** Sell fresh afternoon ATM straddle with 50% SL.
+   - **15:35 PM:** Final hard square-off of all 4 open legs (flat EOD, zero overnight risk).
+3. **Institutional Armor:**
+   - 50% Stop loss per short leg (surviving leg continues running; no re-entry).
+   - Hard daily loss kill-switch (default ₹8,000) that automatically latches the strategy OFF on bad whipsaw days.
+   - Telegram commands: `/straddle_status` for live positions and `/straddle_exit` for manual emergency square-off.
+
+---
+
 ### Cumulative Average Reversal (CAR) Weekly GTT
 
 Positional swing accumulation and profit extraction on NIFTY 100 universe:
