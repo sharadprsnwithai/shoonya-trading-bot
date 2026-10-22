@@ -47,8 +47,11 @@ public class BvsProperties {
     /** Exclusive end of the session-range window, IST (env BVS_SESSION_RANGE_END). */
     private LocalTime sessionRangeEnd = LocalTime.of(10, 0);
 
-    /** Cron for the 09:25 universe scan (env BVS_SCAN_CRON). */
-    private String scanCron = "0 25 9 ? * MON-FRI";
+    /**
+     * Cron for the 09:25 universe scan (env BVS_SCAN_CRON). Must fire AFTER the 09:25:05 OI
+     * prefetch so the scan consumes the staged list instead of a day-stale one.
+     */
+    private String scanCron = "25 25 9 ? * MON-FRI";
 
     /** Cron for the OI-spurt prefetch, staggered after LVR's 09:25:00 (env BVS_OI_SPURT_CRON). */
     private String oiSpurtCron = "5 25 9 ? * MON-FRI";

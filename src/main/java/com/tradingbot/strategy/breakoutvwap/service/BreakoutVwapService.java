@@ -213,13 +213,20 @@ public class BreakoutVwapService {
 
     private void cycleOnSetup(BvsSetup setup) {
         String symbol = setup.getSymbol();
-        List<Candle> candles = marketDataService.fetch5MinCandles(symbol, 5);
-        if (candles == null || candles.isEmpty()) {
+        List<Candle> raw = marketDataService.fetch5MinCandles(symbol, 5);
+        if (raw == null || raw.isEmpty()) {
             log.warn("BVS: no 5m candles for {}", symbol);
             return;
         }
+        // The fetch spans several calendar days and may include today's forming bar; only
+        // today's completed bars may drive the range, VWAP, EMA and trigger decisions.
+        List<Candle> candles = completedTodayBars(raw, Instant.now(clock));
+        if (candles.isEmpty()) {
+            log.debug("BVS: no completed 5m bars for {} yet", symbol);
+            return;
+        }
         Candle last = candles.get(candles.size() - 1);
-        if (last == null || last.close() == null) {
+        if (last.close() == null) {
             return;
         }
         double close = last.close().doubleValue();
@@ -413,6 +420,23 @@ public class BreakoutVwapService {
      * @param rangeStart inclusive window start, IST
      * @param rangeEnd exclusive window end, IST
      */
+    /**
+     * Today's completed 5m bars only. The fetch spans several calendar days and can include the
+     * currently forming bar; both must be excluded or the session range becomes a multi-day
+     * composite and confluence can latch before 10:00. Bar timestamp = open time (LVR convention).
+     */
+    static List<Candle> completedTodayBars(List<Candle> candles, Instant now) {
+        LocalDate today = LocalDate.ofInstant(now, NseTradingCalendarUtil.IST_ZONE);
+        return candles.stream()
+                .filter(c -> c.timestamp() != null)
+                .filter(
+                        c ->
+                                LocalDate.ofInstant(c.timestamp(), NseTradingCalendarUtil.IST_ZONE)
+                                        .equals(today))
+                .filter(c -> c.timestamp().plusSeconds(FIVE_MINUTES_SECONDS).compareTo(now) <= 0)
+                .toList();
+    }
+
     public static void applySessionRange(
             List<Candle> candles5m, BvsSetup setup, LocalTime rangeStart, LocalTime rangeEnd) {
         if (setup == null || setup.getState() != BvsSetupState.AWAITING_RANGE) {
@@ -671,6 +695,9 @@ public class BreakoutVwapService {
      * (spec rules 16/18): PARTIAL_EXIT first, then UPDATE_STOP_LOSS at entry price.
      */
     private synchronized void executePartial(BvsPosition position, double price) {
+        if (position.isPartialBooked()) {
+            return;
+        }
         position.setPartialBooked(true);
         int partialQuantity = (position.getTotalQuantity() + 1) / 2;
         int remaining = position.getTotalQuantity() - partialQuantity;
@@ -710,8 +737,12 @@ public class BreakoutVwapService {
 
     private synchronized void executeFullExit(
             BvsPosition position, double price, String reason, SignalAction action) {
+        // Key+value remove: a concurrent tick/hard-exit pass may already have flattened this
+        // exact position — the loser of the race must not publish a duplicate exit.
+        if (!openPositions.remove(position.getSymbol(), position)) {
+            return;
+        }
         int quantity = position.getRemainingQuantity();
-        openPositions.remove(position.getSymbol());
         tradeHistory.add(position);
         publishSignal(
                 position.getSymbol(),
@@ -746,6 +777,9 @@ public class BreakoutVwapService {
                 feedClient == null
                         ? Map.of()
                         : feedClient.snapshots(openPositions.keySet(), QUOTE_MAX_AGE);
+        if (quotes == null) {
+            quotes = Map.of();
+        }
         int squared = 0;
         for (BvsPosition position : List.copyOf(openPositions.values())) {
             StockQuoteSnapshot quote = quotes.get(position.getSymbol());
@@ -1033,6 +1067,9 @@ public class BreakoutVwapService {
         Map<String, Object> meta = new HashMap<>();
         meta.put("positionSide", direction.name());
         meta.put("exchange", "NFO");
+        // Unlocks the consumer's broker-side protective stop (falls back to signal.stopLoss for
+        // FUTURES) and its futures tick-size validation; without it LIVE exits are strategy-only.
+        meta.put("instrumentType", "FUTURES");
         return meta;
     }
 

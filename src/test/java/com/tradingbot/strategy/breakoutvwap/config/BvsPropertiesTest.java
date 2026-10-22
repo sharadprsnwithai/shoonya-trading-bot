@@ -23,7 +23,8 @@ class BvsPropertiesTest {
         assertThat(p.getHardExit()).isEqualTo(LocalTime.of(15, 0));
         assertThat(p.getSessionRangeStart()).isEqualTo(LocalTime.of(9, 30));
         assertThat(p.getSessionRangeEnd()).isEqualTo(LocalTime.of(10, 0));
-        assertThat(p.getScanCron()).isEqualTo("0 25 9 ? * MON-FRI");
+        // scan fires at 09:25:25 — AFTER the 09:25:05 OI prefetch, never before it
+        assertThat(p.getScanCron()).isEqualTo("25 25 9 ? * MON-FRI");
         assertThat(p.getOiSpurtCron()).isEqualTo("5 25 9 ? * MON-FRI");
         assertThat(p.getCycleCron()).isEqualTo("20 */5 9-15 ? * MON-FRI");
         assertThat(p.getTickRateMs()).isEqualTo(30000L);

@@ -357,6 +357,43 @@ class BvsUniverseScannerTest {
         assertThat(fallbackScan.byBucket().getOrDefault(BvsBucket.OI_SPURT, List.of())).isEmpty();
     }
 
+    @Test
+    @DisplayName("the squeeze pool stops after twice the bucket size to cap the daily-candle work")
+    void squeezePoolCapsWorkAtDoubleBucket() {
+        stubUniverse(
+                "G1", "G2", "G3", "L1", "L2", "L3", "O1", "O2", "O3", "S1", "S2", "S3", "S4", "S5",
+                "S6", "S7");
+        Map<String, Double> pct = new LinkedHashMap<>();
+        pct.put("G1", 4.0);
+        pct.put("G2", 3.0);
+        pct.put("G3", 2.0);
+        pct.put("L1", -1.0);
+        pct.put("L2", -2.0);
+        pct.put("L3", -3.0);
+        for (String s : new String[] {"O1", "O2", "O3", "S1", "S2", "S3", "S4", "S5", "S6", "S7"}) {
+            pct.put(s, 0.0);
+        }
+        stubQuotes(pct);
+        when(oiSpurtClient.fetchTopUnderlyings(anyInt()))
+                .thenReturn(List.of(oiItem("O1"), oiItem("O2"), oiItem("O3")));
+        when(banPeriodClient.fetchBanList()).thenReturn(Set.of());
+        when(banPeriodClient.isLastFetchSuccessful()).thenReturn(true);
+        // every S* symbol is a contraction — the pool must still stop at bucketSize(3) * 2
+        when(ohlcCacheService.getDailyCandles(any()))
+                .thenAnswer(
+                        inv -> {
+                            String sym = inv.getArgument(0);
+                            return sym.startsWith("S") ? contractionSeries() : threeSessionSeries();
+                        });
+
+        BvsUniverse universe = scanner().scan();
+
+        // the 7th contraction is beyond the cap and must never be fetched
+        verify(ohlcCacheService, never()).getDailyCandles("S7");
+        assertThat(universe.byBucket().getOrDefault(BvsBucket.SQUEEZE, List.of()))
+                .containsExactly("S1", "S2", "S3");
+    }
+
     private static NseOiSpurtItem oiItem(String symbol) {
         return new NseOiSpurtItem(symbol, 100L, 90L, 10L, 5.0, 100.0);
     }

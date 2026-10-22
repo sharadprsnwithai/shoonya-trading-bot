@@ -154,9 +154,13 @@ public class BvsUniverseScanner {
         return candidates;
     }
 
-    /** Three-day contractions, in registry order, computed lazily until the pool runs out. */
+    /**
+     * Three-day contractions, in registry order, capped at twice the bucket size so a large
+     * registry cannot stall the scan while still leaving spare picks for ban/dedupe backfill.
+     */
     private List<String> squeezeCandidates(List<String> candidates) {
         List<String> pool = new ArrayList<>();
+        int cap = properties.getBucketSize() * 2;
         LocalDate today = LocalDate.now(NseTradingCalendarUtil.IST_ZONE);
         for (String symbol : candidates) {
             try {
@@ -180,6 +184,9 @@ public class BvsUniverseScanner {
                                 .toList();
                 if (isThreeDayContraction(completed)) {
                     pool.add(symbol);
+                    if (pool.size() >= cap) {
+                        break;
+                    }
                 }
             } catch (RuntimeException e) {
                 log.warn("BVS degrade: squeeze scan failed for {} ({})", symbol, e.getMessage());

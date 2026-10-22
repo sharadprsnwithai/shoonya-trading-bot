@@ -314,6 +314,10 @@ class BreakoutVwapServiceTest {
         assertThat(p.isPartialBooked()).isTrue();
         assertThat(p.getRemainingQuantity()).isEqualTo(12);
         assertThat(p.getStopPrice()).isEqualTo(25000.0);
+
+        // a second tick above target must not book the partial twice
+        service.evaluateLivePriceActions();
+        verify(signalPublisher, org.mockito.Mockito.times(2)).publish(any());
     }
 
     @Test
@@ -380,6 +384,66 @@ class BreakoutVwapServiceTest {
         assertThat(signals.get(1).action()).isEqualTo(SignalAction.SQUARE_OFF);
         assertThat(service.openPositions).isEmpty();
         assertThat(service.tradeHistory).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("hard exit still squares off when the feed returns no snapshot map")
+    void hardExitSurvivesNullQuoteMap() {
+        putLongPosition("RELIANCE", 25000.0, 24960.0, 40.0, 25100.0, 25);
+        when(feedClient.snapshots(any(Collection.class), any(Duration.class))).thenReturn(null);
+
+        service.executeHardExit(LocalTime.of(15, 0));
+
+        assertThat(service.openPositions).isEmpty();
+        assertThat(signalsPublished()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("range and confluence use only today's completed bars")
+    void cycleIgnoresPriorDayAndFormingCandles() {
+        BvsSetup setup = new BvsSetup("RELIANCE");
+        service.setups.put("RELIANCE", setup);
+        // yesterday's six in-window bars carry a wildly wider range — must be ignored
+        List<Candle> candles = new ArrayList<>();
+        Instant yesterdayBase =
+                ZonedDateTime.of(2026, 10, 21, 9, 30, 0, 0, NseTradingCalendarUtil.IST_ZONE)
+                        .toInstant();
+        for (int i = 0; i < 6; i++) {
+            candles.add(
+                    Candle.of5m(
+                            "X",
+                            yesterdayBase.plusSeconds(300L * i),
+                            BigDecimal.valueOf(25000),
+                            BigDecimal.valueOf(30000),
+                            BigDecimal.valueOf(20000),
+                            BigDecimal.valueOf(25000),
+                            5000L));
+        }
+        // today's six completed in-window bars (09:30..09:55): narrow range
+        for (int i = 3; i <= 8; i++) {
+            candles.add(candleAt(i, 25020, 24980, 25000));
+        }
+        // today's forming bar (opens at the clock's 11:00) with an extreme close
+        candles.add(
+                Candle.of5m(
+                        "X",
+                        ist(11, 0),
+                        BigDecimal.valueOf(25500),
+                        BigDecimal.valueOf(25500),
+                        BigDecimal.valueOf(25000),
+                        BigDecimal.valueOf(25500),
+                        5000L));
+        when(marketDataService.fetch5MinCandles("RELIANCE", 5)).thenReturn(candles);
+        when(marketDataService.fetchDailyCandles("RELIANCE", 10))
+                .thenReturn(List.of(dailyBar("2026-10-21", 25100, 24700)));
+
+        service.runCycle();
+
+        assertThat(setup.getSessionRangeHigh()).isEqualTo(25020.0);
+        assertThat(setup.getSessionRangeLow()).isEqualTo(24980.0);
+        // the forming bar's close must not latch a bias
+        assertThat(setup.getBias()).isEqualTo(BvsBias.NONE);
+        assertThat(setup.getState()).isEqualTo(BvsSetupState.AWAITING_CONFLUENCE);
     }
 
     @Test
