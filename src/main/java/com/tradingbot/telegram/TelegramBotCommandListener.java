@@ -42,6 +42,8 @@ public class TelegramBotCommandListener {
     private final com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService
             fiftyTwoHighService;
     private final com.tradingbot.strategy.monthlyrange.service.GarchRangeService garchRangeService;
+    private final com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService
+            straddleService;
     private final TelegramService telegramService;
     private final ShoonyaConfig shoonyaConfig;
     private final ObjectMapper objectMapper;
@@ -65,6 +67,9 @@ public class TelegramBotCommandListener {
             @Autowired(required = false)
                     com.tradingbot.strategy.monthlyrange.service.GarchRangeService
                             garchRangeService,
+            @Autowired(required = false)
+                    com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService
+                            straddleService,
             TelegramService telegramService,
             @Autowired(required = false) ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper) {
@@ -74,6 +79,29 @@ public class TelegramBotCommandListener {
                 monthlyRangeService,
                 fiftyTwoHighService,
                 garchRangeService,
+                straddleService,
+                telegramService,
+                shoonyaConfig,
+                objectMapper,
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build());
+    }
+
+    public TelegramBotCommandListener(
+            LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyRangeService,
+            com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService fiftyTwoHighService,
+            com.tradingbot.strategy.monthlyrange.service.GarchRangeService garchRangeService,
+            TelegramService telegramService,
+            @Autowired(required = false) ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper) {
+        this(
+                lvrService,
+                carWeeklyService,
+                monthlyRangeService,
+                fiftyTwoHighService,
+                garchRangeService,
+                null,
                 telegramService,
                 shoonyaConfig,
                 objectMapper,
@@ -123,6 +151,7 @@ public class TelegramBotCommandListener {
             com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyRangeService,
             com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService fiftyTwoHighService,
             com.tradingbot.strategy.monthlyrange.service.GarchRangeService garchRangeService,
+            com.tradingbot.strategy.ttcstraddle.service.IntradayStraddleService straddleService,
             TelegramService telegramService,
             ShoonyaConfig shoonyaConfig,
             ObjectMapper objectMapper,
@@ -132,10 +161,34 @@ public class TelegramBotCommandListener {
         this.monthlyRangeService = monthlyRangeService;
         this.fiftyTwoHighService = fiftyTwoHighService;
         this.garchRangeService = garchRangeService;
+        this.straddleService = straddleService;
         this.telegramService = telegramService;
         this.shoonyaConfig = shoonyaConfig;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
+    }
+
+    public TelegramBotCommandListener(
+            LowestVolumeReversalService lvrService,
+            com.tradingbot.strategy.car.CarWeeklyGttService carWeeklyService,
+            com.tradingbot.strategy.monthlyrange.service.MonthlyRangeService monthlyRangeService,
+            com.tradingbot.strategy.fiftytwohigh.service.FiftyTwoHighService fiftyTwoHighService,
+            com.tradingbot.strategy.monthlyrange.service.GarchRangeService garchRangeService,
+            TelegramService telegramService,
+            ShoonyaConfig shoonyaConfig,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
+        this(
+                lvrService,
+                carWeeklyService,
+                monthlyRangeService,
+                fiftyTwoHighService,
+                garchRangeService,
+                null,
+                telegramService,
+                shoonyaConfig,
+                objectMapper,
+                httpClient);
     }
 
     @PostConstruct
@@ -376,6 +429,82 @@ public class TelegramBotCommandListener {
                 var fiftyTwoReport = fiftyTwoHighService.scan();
                 return fiftyTwoHighService.formatTelegramMessage(fiftyTwoReport);
 
+            case "/straddle":
+            case "/straddle_status":
+                if (straddleService == null) {
+                    return "⚠️ Intraday Straddle Service not active.";
+                }
+                var sState = straddleService.getState();
+                if (sState == null) {
+                    return "ℹ️ Straddle state not initialized.";
+                }
+                StringBuilder ssb = new StringBuilder();
+                ssb.append("📊 *INTRADAY STRADDLE STATUS*\n");
+                ssb.append("• Date: `").append(sState.getTradeDate()).append("`\n");
+                ssb.append("• Instrument: *")
+                        .append(
+                                sState.getInstrument() != null
+                                        ? sState.getInstrument()
+                                        : "NONE (Rest/Off Day)")
+                        .append("*\n");
+                ssb.append("• Phase: `").append(sState.getPhase()).append("`\n");
+                ssb.append("• Realized P&L: `₹")
+                        .append(
+                                String.format(
+                                        BotLocale.INSTANCE,
+                                        "%.2f",
+                                        sState.getRealizedPnl().doubleValue()))
+                        .append("`\n");
+                ssb.append("• Kill-Switch: ")
+                        .append(sState.isKillSwitchTripped() ? "🔴 TRIPPED" : "🟢 ACTIVE")
+                        .append("\n\n");
+                if (sState.getHedgeLongCe() != null) {
+                    ssb.append("• Hedges: Long CE `")
+                            .append(sState.getHedgeLongCe().getTradingSymbol())
+                            .append("` | Long PE `")
+                            .append(sState.getHedgeLongPe().getTradingSymbol())
+                            .append("`\n");
+                }
+                if (sState.getMorningShortCe() != null && sState.getMorningShortCe().isActive()) {
+                    ssb.append("• Morning Short CE: `")
+                            .append(sState.getMorningShortCe().getTradingSymbol())
+                            .append("` (SL: `₹")
+                            .append(sState.getMorningShortCe().getStopLossPrice())
+                            .append("`)\n");
+                }
+                if (sState.getMorningShortPe() != null && sState.getMorningShortPe().isActive()) {
+                    ssb.append("• Morning Short PE: `")
+                            .append(sState.getMorningShortPe().getTradingSymbol())
+                            .append("` (SL: `₹")
+                            .append(sState.getMorningShortPe().getStopLossPrice())
+                            .append("`)\n");
+                }
+                if (sState.getAfternoonShortCe() != null
+                        && sState.getAfternoonShortCe().isActive()) {
+                    ssb.append("• Afternoon Short CE: `")
+                            .append(sState.getAfternoonShortCe().getTradingSymbol())
+                            .append("` (SL: `₹")
+                            .append(sState.getAfternoonShortCe().getStopLossPrice())
+                            .append("`)\n");
+                }
+                if (sState.getAfternoonShortPe() != null
+                        && sState.getAfternoonShortPe().isActive()) {
+                    ssb.append("• Afternoon Short PE: `")
+                            .append(sState.getAfternoonShortPe().getTradingSymbol())
+                            .append("` (SL: `₹")
+                            .append(sState.getAfternoonShortPe().getStopLossPrice())
+                            .append("`)\n");
+                }
+                return ssb.toString().trim();
+
+            case "/straddle_exit":
+            case "/straddle_panic":
+                if (straddleService == null) {
+                    return "⚠️ Intraday Straddle Service not active.";
+                }
+                straddleService.executeHardSquareOff("Manual Telegram /straddle_exit command");
+                return "🛑 Emergency square-off executed. All open straddle legs closed.";
+
             case "/exit":
             case "/squareoff":
                 if (lvrService == null) {
@@ -426,6 +555,8 @@ public class TelegramBotCommandListener {
                         + "• `/garch_weekly` - Force the weekly GARCH range forecast for the"
                         + " coming week\n"
                         + "• `/52wh` - NSE F&O equities that crossed their 52-week high\n"
+                        + "• `/straddle_status` - Live Intraday Straddle Positions & P&L\n"
+                        + "• `/straddle_exit` - Emergency square-off for all straddle legs\n"
                         + "• `/help` - Show this command menu";
         }
     }
