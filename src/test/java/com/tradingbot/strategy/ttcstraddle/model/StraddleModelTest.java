@@ -10,12 +10,12 @@ import org.junit.jupiter.api.Test;
 class StraddleModelTest {
 
     @Test
-    @DisplayName("StraddleLeg computes 50% stop loss accurately")
+    @DisplayName("StraddleLeg computes 30% stop loss accurately")
     void testStraddleLegStopLossCalculation() {
         BigDecimal entryPrice = BigDecimal.valueOf(100.00);
-        BigDecimal sl = StraddleLeg.computeStopLoss(entryPrice, 50.0);
+        BigDecimal sl = StraddleLeg.computeStopLoss(entryPrice, 30.0);
 
-        assertThat(sl).isEqualByComparingTo("150.00");
+        assertThat(sl).isEqualByComparingTo("130.00");
     }
 
     @Test
@@ -39,9 +39,9 @@ class StraddleModelTest {
                         BigDecimal.valueOf(180.0),
                         25,
                         true);
-        state.setMorningShortCe(shortCe);
+        state.setShortCe(shortCe);
 
-        assertThat(state.getMorningShortCe()).isNotNull();
-        assertThat(state.getMorningShortCe().isActive()).isTrue();
+        assertThat(state.getShortCe()).isNotNull();
+        assertThat(state.getShortCe().isActive()).isTrue();
     }
 }

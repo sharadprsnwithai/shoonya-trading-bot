@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/** Clock-Driven Scheduler for the 1 & 0 NS 916 TTC Double-Session Intraday Straddle Strategy. */
+/** Clock-Driven Scheduler for the 10:00 AM Intraday Straddle Strategy with 30% Stop Loss. */
 @Service
 public class IntradayStraddleScheduler {
 
@@ -37,65 +37,44 @@ public class IntradayStraddleScheduler {
         straddleService.resetDaily();
     }
 
-    /** 09:16:00 IST: Buy protection wings. */
+    /** 09:16:00 IST: Buy 20-strikes OTM protection wings. */
     @Scheduled(cron = "0 16 9 ? * MON-THU", zone = "Asia/Kolkata")
     public void scheduledHedgeEntry() {
         if (!properties.isSchedulerEnabled() || !properties.isEnabled()) {
             return;
         }
-        log.info("[STRADDLE-SCHEDULER] 09:16 IST: Triggering protection hedge entry.");
+        log.info("[STRADDLE-SCHEDULER] 09:16 IST: Triggering 20-OTM protection hedge entry.");
         straddleService.executeHedgeWingEntry(LocalTime.now(IST));
     }
 
-    /** 09:22:00 IST: Sell morning ATM straddle with 50% SL. */
-    @Scheduled(cron = "0 22 9 ? * MON-THU", zone = "Asia/Kolkata")
-    public void scheduledMorningStraddleEntry() {
+    /** 10:00:00 IST: Sell ATM Straddle with 30% Stop-Loss. */
+    @Scheduled(cron = "0 0 10 ? * MON-THU", zone = "Asia/Kolkata")
+    public void scheduledStraddleEntry() {
         if (!properties.isSchedulerEnabled() || !properties.isEnabled()) {
             return;
         }
-        log.info("[STRADDLE-SCHEDULER] 09:22 IST: Triggering morning ATM straddle entry.");
-        straddleService.executeMorningStraddleEntry(LocalTime.now(IST));
+        log.info("[STRADDLE-SCHEDULER] 10:00 IST: Triggering 10:00 AM ATM straddle entry.");
+        straddleService.executeStraddleEntry(LocalTime.now(IST));
     }
 
-    /** 10:16 IST (Nifty) / 10:30 IST (Sensex): Square off morning short legs. */
-    @Scheduled(cron = "0 16,30 10 ? * MON-THU", zone = "Asia/Kolkata")
-    public void scheduledMorningStraddleExit() {
-        if (!properties.isSchedulerEnabled() || !properties.isEnabled()) {
-            return;
-        }
-        LocalTime now = LocalTime.now(IST);
-        log.info("[STRADDLE-SCHEDULER] {} IST: Triggering morning short straddle square-off.", now);
-        straddleService.executeMorningStraddleExit(now);
-    }
-
-    /** 14:17:00 IST: Sell fresh afternoon ATM straddle with 50% SL. */
-    @Scheduled(cron = "0 17 14 ? * MON-THU", zone = "Asia/Kolkata")
-    public void scheduledAfternoonStraddleEntry() {
-        if (!properties.isSchedulerEnabled() || !properties.isEnabled()) {
-            return;
-        }
-        log.info("[STRADDLE-SCHEDULER] 14:17 IST: Triggering afternoon ATM straddle entry.");
-        straddleService.executeAfternoonStraddleEntry(LocalTime.now(IST));
-    }
-
-    /** 15:35:00 IST: Final hard square-off of all 4 open legs (flat EOD). */
-    @Scheduled(cron = "0 35 15 ? * MON-THU", zone = "Asia/Kolkata")
+    /** 15:00:00 IST: Square off surviving short leg and hedges (flat EOD). */
+    @Scheduled(cron = "0 0 15 ? * MON-THU", zone = "Asia/Kolkata")
     public void scheduledFinalHardExit() {
         if (!properties.isSchedulerEnabled() || !properties.isEnabled()) {
             return;
         }
-        log.info("[STRADDLE-SCHEDULER] 15:35 IST: Final EOD Hard Square-Off triggered.");
-        straddleService.executeHardSquareOff("15:35 IST Scheduled EOD Square-Off");
+        log.info("[STRADDLE-SCHEDULER] 15:00 IST: Final EOD Hard Square-Off triggered.");
+        straddleService.executeHardSquareOff("15:00 IST Scheduled EOD Square-Off");
     }
 
-    /** 10-second ticker loop to monitor 50% Stop Loss breaches. */
+    /** 10-second ticker loop to monitor 30% Stop Loss breaches between 10:00 and 15:00. */
     @Scheduled(fixedRate = 10000)
     public void scheduledStopLossCheck() {
         if (!properties.isSchedulerEnabled() || !properties.isEnabled()) {
             return;
         }
         LocalTime now = LocalTime.now(IST);
-        if (now.isBefore(LocalTime.of(9, 22)) || now.isAfter(LocalTime.of(15, 35))) {
+        if (now.isBefore(LocalTime.of(10, 0)) || now.isAfter(LocalTime.of(15, 0))) {
             return;
         }
         try {

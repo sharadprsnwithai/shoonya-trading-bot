@@ -465,34 +465,18 @@ public class TelegramBotCommandListener {
                             .append(sState.getHedgeLongPe().getTradingSymbol())
                             .append("`\n");
                 }
-                if (sState.getMorningShortCe() != null && sState.getMorningShortCe().isActive()) {
-                    ssb.append("• Morning Short CE: `")
-                            .append(sState.getMorningShortCe().getTradingSymbol())
+                if (sState.getShortCe() != null && sState.getShortCe().isActive()) {
+                    ssb.append("• Short CE: `")
+                            .append(sState.getShortCe().getTradingSymbol())
                             .append("` (SL: `₹")
-                            .append(sState.getMorningShortCe().getStopLossPrice())
+                            .append(sState.getShortCe().getStopLossPrice())
                             .append("`)\n");
                 }
-                if (sState.getMorningShortPe() != null && sState.getMorningShortPe().isActive()) {
-                    ssb.append("• Morning Short PE: `")
-                            .append(sState.getMorningShortPe().getTradingSymbol())
+                if (sState.getShortPe() != null && sState.getShortPe().isActive()) {
+                    ssb.append("• Short PE: `")
+                            .append(sState.getShortPe().getTradingSymbol())
                             .append("` (SL: `₹")
-                            .append(sState.getMorningShortPe().getStopLossPrice())
-                            .append("`)\n");
-                }
-                if (sState.getAfternoonShortCe() != null
-                        && sState.getAfternoonShortCe().isActive()) {
-                    ssb.append("• Afternoon Short CE: `")
-                            .append(sState.getAfternoonShortCe().getTradingSymbol())
-                            .append("` (SL: `₹")
-                            .append(sState.getAfternoonShortCe().getStopLossPrice())
-                            .append("`)\n");
-                }
-                if (sState.getAfternoonShortPe() != null
-                        && sState.getAfternoonShortPe().isActive()) {
-                    ssb.append("• Afternoon Short PE: `")
-                            .append(sState.getAfternoonShortPe().getTradingSymbol())
-                            .append("` (SL: `₹")
-                            .append(sState.getAfternoonShortPe().getStopLossPrice())
+                            .append(sState.getShortPe().getStopLossPrice())
                             .append("`)\n");
                 }
                 return ssb.toString().trim();

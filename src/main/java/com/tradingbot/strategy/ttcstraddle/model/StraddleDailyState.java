@@ -14,10 +14,8 @@ public class StraddleDailyState {
 
     private volatile StraddleLeg hedgeLongCe;
     private volatile StraddleLeg hedgeLongPe;
-    private volatile StraddleLeg morningShortCe;
-    private volatile StraddleLeg morningShortPe;
-    private volatile StraddleLeg afternoonShortCe;
-    private volatile StraddleLeg afternoonShortPe;
+    private volatile StraddleLeg shortCe;
+    private volatile StraddleLeg shortPe;
 
     public StraddleDailyState(LocalDate tradeDate, String instrument) {
         this.tradeDate = tradeDate;
@@ -74,35 +72,19 @@ public class StraddleDailyState {
         this.hedgeLongPe = hedgeLongPe;
     }
 
-    public StraddleLeg getMorningShortCe() {
-        return morningShortCe;
+    public StraddleLeg getShortCe() {
+        return shortCe;
     }
 
-    public void setMorningShortCe(StraddleLeg morningShortCe) {
-        this.morningShortCe = morningShortCe;
+    public void setShortCe(StraddleLeg shortCe) {
+        this.shortCe = shortCe;
     }
 
-    public StraddleLeg getMorningShortPe() {
-        return morningShortPe;
+    public StraddleLeg getShortPe() {
+        return shortPe;
     }
 
-    public void setMorningShortPe(StraddleLeg morningShortPe) {
-        this.morningShortPe = morningShortPe;
-    }
-
-    public StraddleLeg getAfternoonShortCe() {
-        return afternoonShortCe;
-    }
-
-    public void setAfternoonShortCe(StraddleLeg afternoonShortCe) {
-        this.afternoonShortCe = afternoonShortCe;
-    }
-
-    public StraddleLeg getAfternoonShortPe() {
-        return afternoonShortPe;
-    }
-
-    public void setAfternoonShortPe(StraddleLeg afternoonShortPe) {
-        this.afternoonShortPe = afternoonShortPe;
+    public void setShortPe(StraddleLeg shortPe) {
+        this.shortPe = shortPe;
     }
 }

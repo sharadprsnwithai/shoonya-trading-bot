@@ -26,7 +26,8 @@ class IntradayStraddleSchedulerTest {
     }
 
     @Test
-    @DisplayName("Scheduler delegates daily reset, hedge entry, and morning entry to service")
+    @DisplayName(
+            "Scheduler delegates daily reset, 09:16 hedge entry, 10:00 straddle entry, and 15:00 hard exit")
     void testSchedulerLifecycleDelegation() {
         scheduler.scheduledDailyReset();
         verify(service, times(1)).resetDaily();
@@ -34,14 +35,8 @@ class IntradayStraddleSchedulerTest {
         scheduler.scheduledHedgeEntry();
         verify(service, times(1)).executeHedgeWingEntry(any(LocalTime.class));
 
-        scheduler.scheduledMorningStraddleEntry();
-        verify(service, times(1)).executeMorningStraddleEntry(any(LocalTime.class));
-
-        scheduler.scheduledMorningStraddleExit();
-        verify(service, times(1)).executeMorningStraddleExit(any(LocalTime.class));
-
-        scheduler.scheduledAfternoonStraddleEntry();
-        verify(service, times(1)).executeAfternoonStraddleEntry(any(LocalTime.class));
+        scheduler.scheduledStraddleEntry();
+        verify(service, times(1)).executeStraddleEntry(any(LocalTime.class));
 
         scheduler.scheduledFinalHardExit();
         verify(service, times(1)).executeHardSquareOff(any(String.class));

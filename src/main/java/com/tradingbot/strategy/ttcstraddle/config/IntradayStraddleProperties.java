@@ -3,7 +3,7 @@ package com.tradingbot.strategy.ttcstraddle.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-/** Configuration properties for the Intraday Double-Session Straddle Strategy. */
+/** Configuration properties for the 10:00 AM Intraday Straddle Strategy with 30% SL. */
 @Component
 @ConfigurationProperties(prefix = "trading-bot.strategy.intraday-straddle")
 public class IntradayStraddleProperties {
@@ -12,8 +12,8 @@ public class IntradayStraddleProperties {
     private boolean schedulerEnabled = true;
     private int lots = 1;
     private double maxDailyLoss = 8000.0;
-    private double slPercentage = 50.0;
-    private boolean thursdayEnabled = false; // Default false (Sensex 0-DTE gamma protection)
+    private double slPercentage = 30.0;
+    private boolean thursdayEnabled = true; // Monday-Thursday active
     private boolean telegramAlerts = true;
     private String stateFile = "./data/straddle-state.json";
 

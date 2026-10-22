@@ -36,8 +36,8 @@ class IntradayStraddleServiceTest {
         properties = new IntradayStraddleProperties();
         properties.setLots(1);
         properties.setMaxDailyLoss(8000.0);
-        properties.setSlPercentage(50.0);
-        properties.setThursdayEnabled(false);
+        properties.setSlPercentage(30.0);
+        properties.setThursdayEnabled(true);
 
         marketDataService = mock(ShoonyaMarketDataService.class);
         signalPublisher = mock(SignalPublisher.class);
@@ -49,14 +49,13 @@ class IntradayStraddleServiceTest {
     }
 
     @Test
-    @DisplayName("09:16 buys protection wings for NIFTY on Monday (1-DTE)")
+    @DisplayName("09:16 buys 20-strikes OTM protection wings for NIFTY on Monday (1-DTE)")
     void testHedgeWingEntryMonday() {
         // Monday 2026-10-19 09:16 IST
         LocalDate monday = LocalDate.of(2026, 10, 19);
         service.setClock(Clock.fixed(Instant.parse("2026-10-19T03:46:00Z"), IST));
         service.resetDaily(monday);
 
-        // Mock spot price 23,000
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
@@ -66,120 +65,126 @@ class IntradayStraddleServiceTest {
         assertThat(service.getState().getHedgeLongCe()).isNotNull();
         assertThat(service.getState().getHedgeLongPe()).isNotNull();
 
-        // 23,025 rounded to 50 step is 23,000. Wings are 20 strikes (1000 pts) out.
+        // 23,000 spot: 20 strikes (1000 pts) out -> 24000 CE and 22000 PE
         assertThat(service.getState().getHedgeLongCe().getStrike()).isEqualByComparingTo("24000");
         assertThat(service.getState().getHedgeLongPe().getStrike()).isEqualByComparingTo("22000");
     }
 
     @Test
-    @DisplayName("09:22 sells morning ATM straddle with 50% stop loss")
-    void testMorningStraddleEntry() {
+    @DisplayName("10:00 sells ATM straddle with 30% stop loss")
+    void testStraddleEntry10am() {
         LocalDate monday = LocalDate.of(2026, 10, 19);
-        service.setClock(Clock.fixed(Instant.parse("2026-10-19T03:52:00Z"), IST));
-        service.resetDaily(monday);
-
-        ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
-        when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
-
-        // Transition to hedges bought first
-        service.executeHedgeWingEntry(LocalTime.of(9, 16));
-
-        // Sell morning straddle
-        service.executeMorningStraddleEntry(LocalTime.of(9, 22));
-
-        assertThat(service.getState().getPhase())
-                .isEqualTo(StraddleSessionPhase.MORNING_STRADDLE_ACTIVE);
-        assertThat(service.getState().getMorningShortCe()).isNotNull();
-        assertThat(service.getState().getMorningShortPe()).isNotNull();
-
-        // Verify SL is 50% higher than entry
-        BigDecimal ceEntry = service.getState().getMorningShortCe().getEntryPrice();
-        BigDecimal ceSl = service.getState().getMorningShortCe().getStopLossPrice();
-        assertThat(ceSl).isEqualByComparingTo(ceEntry.multiply(BigDecimal.valueOf(1.50)));
-    }
-
-    @Test
-    @DisplayName("10:16 squares off morning short straddle while keeping hedges open")
-    void testMorningSquareOffPreservesHedges() {
-        LocalDate monday = LocalDate.of(2026, 10, 19);
-        service.setClock(Clock.fixed(Instant.parse("2026-10-19T03:52:00Z"), IST));
+        service.setClock(Clock.fixed(Instant.parse("2026-10-19T04:30:00Z"), IST)); // 10:00 IST
         service.resetDaily(monday);
 
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
         service.executeHedgeWingEntry(LocalTime.of(9, 16));
-        service.executeMorningStraddleEntry(LocalTime.of(9, 22));
+        service.executeStraddleEntry(LocalTime.of(10, 0));
 
-        // Execute 10:16 square off
-        service.executeMorningStraddleExit(LocalTime.of(10, 16));
+        assertThat(service.getState().getPhase()).isEqualTo(StraddleSessionPhase.STRADDLE_ACTIVE);
+        assertThat(service.getState().getShortCe()).isNotNull();
+        assertThat(service.getState().getShortPe()).isNotNull();
 
-        assertThat(service.getState().getPhase())
-                .isEqualTo(StraddleSessionPhase.MORNING_STRADDLE_EXITED);
-        assertThat(service.getState().getMorningShortCe().isActive()).isFalse();
-        assertThat(service.getState().getMorningShortPe().isActive()).isFalse();
-
-        // Hedges must remain active
-        assertThat(service.getState().getHedgeLongCe().isActive()).isTrue();
-        assertThat(service.getState().getHedgeLongPe().isActive()).isTrue();
+        // Verify SL is 30% higher than entry
+        BigDecimal ceEntry = service.getState().getShortCe().getEntryPrice();
+        BigDecimal ceSl = service.getState().getShortCe().getStopLossPrice();
+        assertThat(ceSl).isEqualByComparingTo(ceEntry.multiply(BigDecimal.valueOf(1.30)));
     }
 
     @Test
-    @DisplayName("50% SL breach exits the tested leg immediately without closing surviving leg")
+    @DisplayName(
+            "30% SL breach exits the tested leg immediately while surviving leg continues running")
     void testStopLossBreachExitsSingleLeg() {
         LocalDate monday = LocalDate.of(2026, 10, 19);
-        service.setClock(Clock.fixed(Instant.parse("2026-10-19T03:52:00Z"), IST));
+        service.setClock(Clock.fixed(Instant.parse("2026-10-19T04:30:00Z"), IST));
         service.resetDaily(monday);
 
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
         service.executeHedgeWingEntry(LocalTime.of(9, 16));
-        service.executeMorningStraddleEntry(LocalTime.of(9, 22));
+        service.executeStraddleEntry(LocalTime.of(10, 0));
 
-        // Mock Call price spiking to 151.0 (breaching SL 150.0), while Put price drops to 50.0
-        BigDecimal ceSl = service.getState().getMorningShortCe().getStopLossPrice();
+        // Mock Call price spiking to 131.0 (breaching SL 130.0), while Put price drops to 50.0
+        BigDecimal ceSl = service.getState().getShortCe().getStopLossPrice();
         ObjectNode spikedCallQuote =
                 mapper.createObjectNode().put("lp", ceSl.add(BigDecimal.ONE).toString());
         ObjectNode decayingPutQuote = mapper.createObjectNode().put("lp", "50.00");
 
-        String ceSymbol = service.getState().getMorningShortCe().getTradingSymbol();
-        String peSymbol = service.getState().getMorningShortPe().getTradingSymbol();
+        String ceSymbol = service.getState().getShortCe().getTradingSymbol();
+        String peSymbol = service.getState().getShortPe().getTradingSymbol();
 
         when(marketDataService.resolveToken(ceSymbol)).thenReturn("CALL_TOKEN");
         when(marketDataService.resolveToken(peSymbol)).thenReturn("PUT_TOKEN");
         when(marketDataService.fetchQuote("NFO", "CALL_TOKEN")).thenReturn(spikedCallQuote);
         when(marketDataService.fetchQuote("NFO", "PUT_TOKEN")).thenReturn(decayingPutQuote);
 
-        service.evaluateStopLossBreaches(LocalTime.of(9, 45));
+        service.evaluateStopLossBreaches(LocalTime.of(10, 45));
 
-        // Short Call should be inactive, Put should still be active
-        assertThat(service.getState().getMorningShortCe().isActive()).isFalse();
-        assertThat(service.getState().getMorningShortPe().isActive()).isTrue();
+        // Short Call should be inactive (exited at 30% SL), Short Put must remain active
+        assertThat(service.getState().getShortCe().isActive()).isFalse();
+        assertThat(service.getState().getShortPe().isActive()).isTrue();
     }
 
     @Test
-    @DisplayName("15:35 final hard exit squares off all remaining legs completely")
-    void testFinalHardExit() {
+    @DisplayName("If other leg premium ALSO increases by 30%, it exits that leg as well")
+    void testDoubleStopLossBreachExitsBothLegs() {
         LocalDate monday = LocalDate.of(2026, 10, 19);
-        service.setClock(Clock.fixed(Instant.parse("2026-10-19T08:47:00Z"), IST)); // 14:17 IST
+        service.setClock(Clock.fixed(Instant.parse("2026-10-19T04:30:00Z"), IST));
         service.resetDaily(monday);
 
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
         service.executeHedgeWingEntry(LocalTime.of(9, 16));
-        service.executeMorningStraddleEntry(LocalTime.of(9, 22));
-        service.executeMorningStraddleExit(LocalTime.of(10, 16));
-        service.executeAfternoonStraddleEntry(LocalTime.of(14, 17));
+        service.executeStraddleEntry(LocalTime.of(10, 0));
 
-        // Execute final hard exit
-        service.executeHardSquareOff("15:35 EOD Hard Exit");
+        // Mock market whipsaw: both Call and Put spiked above their 30% SLs
+        BigDecimal ceSl = service.getState().getShortCe().getStopLossPrice();
+        BigDecimal peSl = service.getState().getShortPe().getStopLossPrice();
+
+        ObjectNode spikedCallQuote =
+                mapper.createObjectNode().put("lp", ceSl.add(BigDecimal.ONE).toString());
+        ObjectNode spikedPutQuote =
+                mapper.createObjectNode().put("lp", peSl.add(BigDecimal.ONE).toString());
+
+        String ceSymbol = service.getState().getShortCe().getTradingSymbol();
+        String peSymbol = service.getState().getShortPe().getTradingSymbol();
+
+        when(marketDataService.resolveToken(ceSymbol)).thenReturn("CALL_TOKEN");
+        when(marketDataService.resolveToken(peSymbol)).thenReturn("PUT_TOKEN");
+        when(marketDataService.fetchQuote("NFO", "CALL_TOKEN")).thenReturn(spikedCallQuote);
+        when(marketDataService.fetchQuote("NFO", "PUT_TOKEN")).thenReturn(spikedPutQuote);
+
+        service.evaluateStopLossBreaches(LocalTime.of(11, 15));
+
+        // Both legs should be exited
+        assertThat(service.getState().getShortCe().isActive()).isFalse();
+        assertThat(service.getState().getShortPe().isActive()).isFalse();
+    }
+
+    @Test
+    @DisplayName("15:00 PM hard exit squares off surviving short leg and hedges completely")
+    void testFinalHardExitAt1500() {
+        LocalDate monday = LocalDate.of(2026, 10, 19);
+        service.setClock(Clock.fixed(Instant.parse("2026-10-19T04:30:00Z"), IST));
+        service.resetDaily(monday);
+
+        ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
+        when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
+
+        service.executeHedgeWingEntry(LocalTime.of(9, 16));
+        service.executeStraddleEntry(LocalTime.of(10, 0));
+
+        // Execute 15:00 hard exit
+        service.executeHardSquareOff("15:00 PM EOD Hard Exit");
 
         assertThat(service.getState().getPhase()).isEqualTo(StraddleSessionPhase.ALL_CLOSED);
         assertThat(service.getState().getHedgeLongCe().isActive()).isFalse();
         assertThat(service.getState().getHedgeLongPe().isActive()).isFalse();
-        assertThat(service.getState().getAfternoonShortCe().isActive()).isFalse();
-        assertThat(service.getState().getAfternoonShortPe().isActive()).isFalse();
+        assertThat(service.getState().getShortCe().isActive()).isFalse();
+        assertThat(service.getState().getShortPe().isActive()).isFalse();
     }
 }
