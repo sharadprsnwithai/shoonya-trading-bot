@@ -37,13 +37,13 @@ public class IntradayStraddleScheduler {
         straddleService.resetDaily();
     }
 
-    /** 09:30:00 IST: Buy 20-strikes OTM protection wings. */
-    @Scheduled(cron = "0 30 9 ? * MON-THU", zone = "Asia/Kolkata")
+    /** 09:45:00 IST: Buy 20-strikes OTM protection wings. */
+    @Scheduled(cron = "0 45 9 ? * MON-THU", zone = "Asia/Kolkata")
     public void scheduledHedgeEntry() {
         if (!properties.isSchedulerEnabled() || !properties.isEnabled()) {
             return;
         }
-        log.info("[STRADDLE-SCHEDULER] 09:30 IST: Triggering 20-OTM protection hedge entry.");
+        log.info("[STRADDLE-SCHEDULER] 09:45 IST: Triggering 20-OTM protection hedge entry.");
         straddleService.executeHedgeWingEntry(LocalTime.now(IST));
     }
 

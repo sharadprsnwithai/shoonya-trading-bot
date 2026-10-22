@@ -65,7 +65,7 @@ Non-directional clock-driven intraday option selling on NIFTY (Mon 1-DTE / Tue 0
    - **Thursday:** SENSEX (0-DTE, same-day expiry).
    - *Friday:* Cash-protected (off).
 2. **Execution Framework:**
-   - **09:30 AM:** Buy 20-strikes OTM protection wings (`ATM ± 1,000 pts` on Nifty, `ATM ± 2,000 pts` on Sensex) to drop exchange margin from ~₹1.3L to ~₹50,000/lot.
+   - **09:45 AM:** Buy 20-strikes OTM protection wings (`ATM ± 1,000 pts` on Nifty, `ATM ± 2,000 pts` on Sensex) to drop exchange margin from ~₹1.3L to ~₹50,000/lot.
    - **10:00 AM:** Sell ATM Call & ATM Put (1x CE, 1x PE) at 10:00 AM spot.
    - **30% Independent Stop Loss:** If either leg rises by 30%, exit that leg immediately. Surviving leg continues running. If other leg ALSO rises by 30% from entry, exit it as well.
    - **15:00 PM:** Hard square-off of surviving short leg and hedges (flat EOD, zero overnight risk).

@@ -49,17 +49,17 @@ class IntradayStraddleServiceTest {
     }
 
     @Test
-    @DisplayName("09:30 buys 20-strikes OTM protection wings for NIFTY on Monday (1-DTE)")
+    @DisplayName("09:45 buys 20-strikes OTM protection wings for NIFTY on Monday (1-DTE)")
     void testHedgeWingEntryMonday() {
-        // Monday 2026-10-19 09:30 IST
+        // Monday 2026-10-19 09:45 IST
         LocalDate monday = LocalDate.of(2026, 10, 19);
-        service.setClock(Clock.fixed(Instant.parse("2026-10-19T04:00:00Z"), IST)); // 09:30 IST
+        service.setClock(Clock.fixed(Instant.parse("2026-10-19T04:15:00Z"), IST)); // 09:45 IST
         service.resetDaily(monday);
 
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
-        service.executeHedgeWingEntry(LocalTime.of(9, 30));
+        service.executeHedgeWingEntry(LocalTime.of(9, 45));
 
         assertThat(service.getState().getPhase()).isEqualTo(StraddleSessionPhase.HEDGES_BOUGHT);
         assertThat(service.getState().getHedgeLongCe()).isNotNull();
@@ -80,7 +80,7 @@ class IntradayStraddleServiceTest {
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
-        service.executeHedgeWingEntry(LocalTime.of(9, 30));
+        service.executeHedgeWingEntry(LocalTime.of(9, 45));
         service.executeStraddleEntry(LocalTime.of(10, 0));
 
         assertThat(service.getState().getPhase()).isEqualTo(StraddleSessionPhase.STRADDLE_ACTIVE);
@@ -104,7 +104,7 @@ class IntradayStraddleServiceTest {
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
-        service.executeHedgeWingEntry(LocalTime.of(9, 30));
+        service.executeHedgeWingEntry(LocalTime.of(9, 45));
         service.executeStraddleEntry(LocalTime.of(10, 0));
 
         // Mock Call price spiking to 131.0 (breaching SL 130.0), while Put price drops to 50.0
@@ -138,7 +138,7 @@ class IntradayStraddleServiceTest {
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
-        service.executeHedgeWingEntry(LocalTime.of(9, 30));
+        service.executeHedgeWingEntry(LocalTime.of(9, 45));
         service.executeStraddleEntry(LocalTime.of(10, 0));
 
         // Mock market whipsaw: both Call and Put spiked above their 30% SLs
@@ -175,7 +175,7 @@ class IntradayStraddleServiceTest {
         ObjectNode spotQuote = mapper.createObjectNode().put("lp", "23000.00");
         when(marketDataService.fetchQuote("NSE", "26000")).thenReturn(spotQuote);
 
-        service.executeHedgeWingEntry(LocalTime.of(9, 30));
+        service.executeHedgeWingEntry(LocalTime.of(9, 45));
         service.executeStraddleEntry(LocalTime.of(10, 0));
 
         // Execute 15:00 hard exit
